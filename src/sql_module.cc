@@ -51,6 +51,8 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void query( const v8::FunctionCallbackInfo<Value>& args );
+	static void old_query( const v8::FunctionCallbackInfo<Value>& args ); // to delete
+	static void promisedQuery( const v8::FunctionCallbackInfo<Value>& args );
 	static void escape( const v8::FunctionCallbackInfo<Value>& args );
 	static void unescape( const v8::FunctionCallbackInfo<Value>& args );
 	static void option( const v8::FunctionCallbackInfo<Value>& args );
@@ -79,7 +81,6 @@ public:
 
 	static void getRequire( const v8::FunctionCallbackInfo<Value>& args );
 	static void setRequire( const v8::FunctionCallbackInfo<Value>& args );
-
 	static void OnOpen( uintptr_t psv, PODBC odbc );
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
 
@@ -116,17 +117,34 @@ public:
 };
 
 enum UserMessageModes {
-	OnOpen,
-	OnClose,
+	OnOpen,  // open callback event
+	OnClose, // close connection event
+	Query, // async (promised) query
 	OnDeallocate, // used to also be same as close
 	OnSqliteFunction,
 	OnSqliteAggStep,
 	OnSqliteAggFinal,
 };
 
+struct query_thread_params {
+	Isolate* isolate;
+	SqlObject* sql;
+	PTEXT statement;
+	PDATALIST pdlParams;
+	Local<Context> context;
+	Persistent<Promise::Resolver> promise;
+	PDATALIST pdlRecord;
+	Local<Array> results;
+	//PTHREAD waiter;
+};
+
 struct userMessage{
 	enum UserMessageModes mode;
 
+	// really a union of this and all of the following
+	struct query_thread_params* params;
+
+	// state variables for a function/aggregate callback into JS from sqlite
 	struct sqlite3_context*onwhat;
 	int argc;
 	struct sqlite3_value**argv;
@@ -178,6 +196,7 @@ void SqlObjectInit( Local<Object> exports ) {
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "do", SqlObject::query );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "run", SqlObject::promisedQuery );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "escape", SqlObject::escape );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "unescape", SqlObject::unescape );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "encode", SqlObject::escape );
@@ -281,7 +300,12 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			argv[1] = args[1];
 		class constructorSet *c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->sqlConstructor );
-		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), args.Length(), argv ).ToLocalChecked() );
+		MaybeLocal<Object> result = cons->NewInstance(isolate->GetCurrentContext(), args.Length(), argv);
+		if( !result.IsEmpty() )
+			args.GetReturnValue().Set( result.ToLocalChecked() );
+		else
+			isolate->ThrowException(Exception::Error(
+				String::NewFromUtf8(isolate, TranslateText("Database Constructor callback failed"), v8::NewStringType::kNormal).ToLocalChecked()));
 	}
 }
 
@@ -363,7 +387,7 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	CloseDatabase( sql->odbc );
 	if( sql->thread ) {
 		static struct userMessage msg;
-		msg.done = OnClose;
+		msg.mode = OnClose;
 		EnqueLink( &sql->messages, &msg );
 		uv_async_send( &sql->async );
 		// cant' wait here.
@@ -538,7 +562,460 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	return TRUE;
 }
 
+static void buildQueryResult( struct query_thread_params* params ) {
+	Isolate* isolate = params->isolate;
+	Local<Context> context = isolate->GetCurrentContext();
+	SqlObject* sql = params->sql;
+	INDEX idx = 0;
+	int items;
+	struct jsox_value_container* jsval;
+	PDATALIST pdlRecord = params->pdlRecord;
+
+	DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
+		if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
+	}
+	items = (int)idx;
+
+	//&sql->columns, &sql->result, &sql->resultLens, &sql->fields
+	if (pdlRecord)
+	{
+		int usedFields = 0;
+		int maxDepth = 0;
+		struct fieldTypes {
+			const char* name;
+			int used;
+			int first;
+			int hasArray;
+			Local<Array> array;
+		} *fields = NewArray( struct fieldTypes, items );
+		int usedTables = 0;
+		struct tables {
+			//const char *table;
+			const char* alias;
+			Local<Object> container;
+		}  *tables = NewArray( struct tables, items + 1 );
+		struct colMap {
+			int depth;
+			int col;
+			//const char *table;
+			const char* alias;
+			Local<Object> container;
+			struct tables* t;
+		}  *colMap = NewArray( struct colMap, items );
+		//tables[usedTables].table = NULL;
+		tables[usedTables].alias = NULL;
+		usedTables++;
+		//lprintf( "adding a table usage NULL" );
+
+		DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
+			int m;
+			if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
+
+			for (m = 0; m < usedFields; m++) {
+				if (StrCaseCmp( fields[m].name, jsval->name ) == 0) {
+					// this field duplicated a field already in the structure
+					colMap[idx].col = m;
+					colMap[idx].depth = fields[m].used;
+					if (colMap[idx].depth > maxDepth)
+						maxDepth = colMap[idx].depth + 1;
+					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+					//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
+					int table;
+					for (table = 0; table < usedTables; table++) {
+						if (StrCmp( tables[table].alias, colMap[idx].alias ) == 0) {
+							//lprintf( "Table already existed?");
+							colMap[idx].t = tables + table;
+							break;
+						}
+					}
+					if (table == usedTables) {
+						//tables[table].table = colMap[idx].table;
+						tables[table].alias = colMap[idx].alias;
+						colMap[idx].t = tables + table;
+						usedTables++;
+						//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
+					}
+					fields[m].used++;
+					break;
+				}
+			}
+
+			if (m == usedFields) {
+				colMap[idx].col = m;
+				colMap[idx].depth = 0;
+				//colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->odbc, (int)idx ) );
+				colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+				//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
+				if (colMap[idx].alias && colMap[idx].alias[0]) {
+					int table;
+					for (table = 0; table < usedTables; table++) {
+						if (StrCmp( tables[table].alias, colMap[idx].alias ) == 0) {
+							colMap[idx].t = tables + table;
+							break;
+						}
+					}
+					if (table == usedTables) {
+						//tables[table].table = colMap[idx].table;
+						tables[table].alias = colMap[idx].alias;
+						colMap[idx].t = tables + table;
+						usedTables++;
+						//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
+					}
+				}
+				else
+					colMap[idx].t = tables;
+				fields[usedFields].first = (int)idx;
+				fields[usedFields].name = jsval->name;// sql->fields[idx];
+				fields[usedFields].used = 1;
+				fields[usedFields].hasArray = FALSE;
+				usedFields++;
+			}
+		}
+		// NULL and 1 is just 1 table still...
+		if (usedTables > 2)
+			for (int m = 0; m < usedFields; m++) {
+				for (int t = 1; t < usedTables; t++) {
+					if (StrCaseCmp( fields[m].name, tables[t].alias ) == 0) {
+						fields[m].used++;
+					}
+				}
+			}
+		Local<Array> records = Array::New( isolate );
+		Local<Object> record;
+		if (pdlRecord) {
+			int row = 0;
+			do {
+				Local<Value> val;
+				tables[0].container = record = Object::New( isolate );
+				if (usedTables > 2 && maxDepth > 1)
+					for (int n = 1; n < usedTables; n++) {
+						tables[n].container = Object::New( isolate );
+						SETVAR( record, tables[n].alias, tables[n].container );
+					}
+				else
+					for (int n = 0; n < usedTables; n++)
+						tables[n].container = record;
+
+				DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
+					if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
+
+					Local<Object> container = colMap[idx].t->container;
+					if (fields[colMap[idx].col].used > 1) {
+						// add an array on the name for each result to be stored
+						if (fields[colMap[idx].col].first == idx) {
+							if (!jsval->name)
+								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( params->statement ) );
+							else {
+								SETVAR( record, jsval->name
+									, fields[colMap[idx].col].array = Array::New( isolate )
+								);
+								fields[colMap[idx].col].hasArray = TRUE;
+							}
+						}
+					}
+
+					switch (jsval->value_type) {
+					default:
+						lprintf( "Unhandled value result type:%d", jsval->value_type );
+						break;
+					case JSOX_VALUE_DATE:
+					{
+						Local<Script> script;
+						char buf[64];
+						snprintf( buf, 64, "new Date('%s')", jsval->string );
+						script = Script::Compile( isolate->GetCurrentContext()
+							, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+#if ( NODE_MAJOR_VERSION >= 16 )
+							, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter"
+#else
+								, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
+#endif
+									, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+						val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
+					}
+					break;
+					case JSOX_VALUE_TRUE:
+						val = True( isolate );
+						break;
+					case JSOX_VALUE_FALSE:
+						val = False( isolate );
+						break;
+					case JSOX_VALUE_NULL:
+						val = Null( isolate );
+						break;
+					case JSOX_VALUE_NUMBER:
+						if (jsval->float_result) {
+							val = Number::New( isolate, jsval->result_d );
+						}
+						else {
+							val = Number::New( isolate, (double)jsval->result_n );
+						}
+						break;
+					case JSOX_VALUE_STRING:
+						if (!jsval->string)
+							val = Null( isolate );
+						else
+							val = localString( isolate, (char*)Hold( jsval->string ), (int)jsval->stringLen );
+						break;
+					case JSOX_VALUE_TYPED_ARRAY:
+						//lprintf( "Should result with a binary thing" );
+
+#if ( NODE_MAJOR_VERSION >= 14 )
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( Hold( jsval->string ), jsval->stringLen, releaseBufferBackingStore, NULL );
+						Local<Object> ab = ArrayBuffer::New( isolate, bs );
+						//Local<ArrayBuffer> ab =
+						//	ArrayBuffer::New( isolate, (char*)Hold( jsval->string ), jsval->stringLen );
+
+#else
+						Local<ArrayBuffer> ab =
+							ArrayBuffer::New( isolate, (char*)Hold( jsval->string ), jsval->stringLen );
+
+						PARRAY_BUFFER_HOLDER holder = GetHolder();
+						holder->o.Reset( isolate, ab );
+						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+						holder->buffer = jsval->string;
+						jsval->string = NULL; // steal this buffer, don't let DB release it.
+#endif
+
+						val = ab;
+						break;
+					}
+					if (fields[colMap[idx].col].used == 1) {
+						if (!jsval->name)
+							lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( params->statement ) );
+						else
+							SETVAR( record, jsval->name, val );
+					}
+					else if (fields[colMap[idx].col].used > 1) {
+						if (!jsval->name)
+							lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( params->statement ) );
+						else
+							SETVAR( colMap[idx].t->container, jsval->name, val );
+						if (fields[colMap[idx].col].hasArray) {
+							if (colMap[idx].alias)
+								SETVAR( fields[colMap[idx].col].array, colMap[idx].alias, val );
+							SETN( fields[colMap[idx].col].array, colMap[idx].depth, val );
+						}
+					}
+				}
+				SETN( records, row++, record );
+			} while (FetchSQLRecordJS( sql->odbc, &pdlRecord ));
+		}
+		{
+			int c;
+			for (c = 0; c < items; c++) {
+				if (colMap[c].alias) Deallocate( const char*, colMap[c].alias );
+				//if( colMap[c].table ) Deallocate( char*, colMap[c].table );
+			}
+		}
+		Deallocate( struct fieldTypes*, fields );
+		Deallocate( struct tables*, tables );
+		Deallocate( struct colMap*, colMap );
+
+		LineRelease( params->statement );
+		SQLEndQuery( sql->odbc );
+		if (!params->promise.IsEmpty()) {
+			Local<Promise::Resolver> res = params->promise.Get( isolate );
+			res->Resolve( context, records );
+			params->promise.Reset();
+			delete params;
+		}
+		else
+			params->results = records;
+
+		//args.GetReturnValue().Set(records);
+	}
+	else
+	{
+		LineRelease( params->statement );
+		SQLEndQuery( sql->odbc );
+		if (!params->promise.IsEmpty()) {
+			params->promise.Get( isolate )->Resolve( context, Array::New( isolate ) );
+			params->promise.Reset();
+			delete params;
+		}
+		else
+			params->results = Array::New( isolate );
+		//args.GetReturnValue().Set();
+	}
+
+}
+
+static void DoQuery( struct query_thread_params *params ) {
+	Isolate* isolate = params->isolate;
+	Local<Context> context = params->context;
+
+	SqlObject* sql = params->sql;
+	PTEXT statement = params->statement;
+	PDATALIST pdlParams = params->pdlParams;
+	
+	if (!SQLRecordQuery_js(sql->odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, pdlParams DBG_SRC)) {
+		const char* error;
+		FetchSQLError(sql->odbc, &error);
+		params->promise.Get(isolate)->Reject( context, String::NewFromUtf8(isolate, error).ToLocalChecked() );
+		params->promise.Reset();
+		return;
+	}
+
+	//DeleteDataList(&pdlParams);
+}
+
+static uintptr_t queryThread( PTHREAD thread ) {
+	struct query_thread_params* params = (struct query_thread_params*)GetThreadParam( thread );
+	struct userMessage* msg = NewArray( struct userMessage, 1 );
+	DoQuery( params );
+	//delete params;
+
+	msg->mode = UserMessageModes::Query;
+	msg->params = params;
+	msg->onwhat = NULL;
+	msg->argc = 0;
+	msg->argv = NULL;
+	msg->done = 0;
+	EnqueLink( &params->sql->messages, msg );
+	uv_async_send( &params->sql->async );
+	return 0;
+}
+
+
+static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject *sql, LOGICAL promised ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if (args.Length() == 0) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Required parameter, SQL query, is missing." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+	PTEXT statement = NULL;
+	PDATALIST pdlParams = NULL;
+
+	if (args.Length() == 1) {
+		String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+		statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
+	}
+
+
+	if (args.Length() > 1) {
+		int arg = 1;
+		LOGICAL isFormatString;
+		PVARTEXT pvtStmt = VarTextCreate();
+		struct jsox_value_container val;
+		memset( &val, 0, sizeof( val ) );
+		if (StrChr( *sqlStmt, ':' )
+			|| StrChr( *sqlStmt, '@' )
+			|| StrChr( *sqlStmt, '$' )) {
+			if (args[1]->IsObject()) {
+				arg = 2;
+				pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
+				Local<Object> params = Local<Object>::Cast( args[1] );
+				Local<Array> paramNames = params->GetOwnPropertyNames( isolate->GetCurrentContext() ).ToLocalChecked();
+				for (uint32_t p = 0; p < paramNames->Length(); p++) {
+					Local<Value> valName = GETN( paramNames, p );
+					Local<Value> value = GETV( params, valName );
+					String::Utf8Value name( USE_ISOLATE( isolate ) valName->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					if (!PushValue( isolate, &pdlParams, value, &name, p )) {
+						lprintf( "bad value in SQL:%s", *sqlStmt );
+					}
+				}
+			}
+			else {
+				isolate->ThrowException( Exception::Error(
+					String::NewFromUtf8( isolate, TranslateText( "Required parameter 2, Named Paramter Object, is missing." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				return;
+			}
+			isFormatString = TRUE;
+		}
+		else if (StrChr( *sqlStmt, '?' )) {
+			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
+			isFormatString = TRUE;
+		}
+		else {
+			arg = 0;
+			isFormatString = FALSE;
+		}
+
+		if (!pdlParams)
+			pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
+		if (!isFormatString) {
+			for (; arg < args.Length(); arg++) {
+				if (args[arg]->IsString()) {
+					String::Utf8Value text( USE_ISOLATE( isolate ) args[arg]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					if (arg & 1) { // every odd parameter is inserted
+						val.value_type = JSOX_VALUE_STRING;
+						val.string = DupCStrLen( *text, text.length() );
+						AddDataItem( &pdlParams, &val );
+						VarTextAddCharacter( pvtStmt, '?' );
+					}
+					else {
+						VarTextAddData( pvtStmt, *text, text.length() );
+						continue;
+					}
+				}
+				else {
+					if (!PushValue( isolate, &pdlParams, args[arg], NULL, arg ))
+						lprintf( "bad value in format parameter string:%s", *sqlStmt );
+					VarTextAddCharacter( pvtStmt, '?' );
+				}
+			}
+			statement = VarTextGet( pvtStmt );
+			VarTextDestroy( &pvtStmt );
+		}
+		else {
+			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
+			for (; arg < args.Length(); arg++) {
+				if (!PushValue( isolate, &pdlParams, args[arg], NULL, 0 ))
+					lprintf( "Bad value in sql statement:%s", *sqlStmt );
+			}
+		}
+	}
+	if (statement) {
+		struct query_thread_params *params = new query_thread_params();
+		params->isolate = isolate;
+		params->context = context;
+		params->sql = sql;
+		params->statement = statement;
+		params->pdlParams = pdlParams;
+		if (promised) {
+			//lprintf( "Making promise?", promised, sql->thread );
+			if (!sql->thread) {
+				sql->thread = MakeThread();
+				//lprintf( "This should keep it open..." );
+				class constructorSet* c = getConstructors( isolate );
+				uv_async_init( c->loop, &sql->async, sqlUserAsyncMsg );
+				sql->async.data = sql;
+			}
+			//lprintf( " making promise to return..." );
+			Local<Promise::Resolver> pr = Promise::Resolver::New( context ).ToLocalChecked();
+			params->promise.Reset( isolate, pr );
+			ThreadTo( queryThread, (uintptr_t)params );
+			args.GetReturnValue().Set( pr->GetPromise() );
+			//lprintf("Should return now?");
+		}
+		else
+		{
+			DoQuery( params );
+			buildQueryResult( params );
+			args.GetReturnValue().Set( params->results );
+			delete params;
+		}
+	}
+}
+
+
+void SqlObject::promisedQuery( const v8::FunctionCallbackInfo<Value>& args ) {
+	SqlObject* sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	queryBuilder( args, sql, TRUE );
+}
+
 void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
+	SqlObject* sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	queryBuilder( args, sql, FALSE );
+}
+
+void SqlObject::old_query( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	if( args.Length() == 0 ) {
@@ -633,9 +1110,16 @@ void SqlObject::query( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	
 	if( statement ) {
+		SqlObject* sql = ObjectWrap::Unwrap<SqlObject>(args.This());
+		struct query_thread_params params;
+		params.isolate = isolate;
+		params.context = context;
+		params.sql = sql;
+		params.statement = statement;
+		params.pdlParams = pdlParams;
+		DoQuery(&params);
 		//String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
 
-		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 		PDATALIST pdlRecord = NULL;
 		INDEX idx = 0;
 		int items;
@@ -1497,9 +1981,15 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 	LOGICAL closing = FALSE;
 	SqlObject* myself = (SqlObject*)handle->data;
 	Isolate *isolate = myself->isolate;
+	HandleScope scope( isolate );
 	struct userMessage *msg = (struct userMessage*)DequeLink( &myself->messages );
-
-	if( msg->mode == UserMessageModes::OnOpen ) {
+	if (msg->mode == UserMessageModes::Query) {
+		buildQueryResult( msg->params );
+		// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
+		//lprintf( "Releasing message..." );
+		Release( msg );
+		msg = NULL;
+	} else if (msg->mode == UserMessageModes::OnOpen) {
 		Local<Function> cb = myself->openCallback.Get( isolate );
 		Local<Value> args[1] = {myself->_this.Get( isolate )};
 		MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), args[0], 1, args );
@@ -1521,15 +2011,19 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 		myself->thread = NULL;
 		uv_close( (uv_handle_t*)&myself->async, NULL );		
 	}	
-	msg->done = 1;
-	if( msg->waiter )
-		WakeThread( msg->waiter );
+	if( msg ) {
+		msg->done = 1;
+		if (msg->waiter)
+			WakeThread( msg->waiter );
+	}
 
 	if( !closing )
 	{
+		//lprintf( "Should be calling idle proc..." );
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		//lprintf( "called proc?" );
 	}
 }
 

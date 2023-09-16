@@ -1,5 +1,14 @@
 
-# Sqlite Interface
+# SQL
+
+`sack.Sqlite` is also aliased as `sack.DB` and `sack.ODBC`; the database access is not exclusively Sqlite.
+All three are the same function.
+
+
+
+## SQL Interface
+
+
 
   (result from `vfs.Sqlite("dbName.db")` or `vfs.Volume().Sqlite("dbName.db")`)
 
@@ -44,6 +53,7 @@ There are methods on the Sqlite() function call...
 | do | ( &lt;Format String&gt; [,bound parameters... ] ) | This varaition, if the first string contains '?', then the first string is taken as the sql statement, and all extra paramters are passed to be bound to 1-N.  |
 | do | ( &lt;Format String&gt; , object  [,bound parameters... ] ) | This varaition, if the first string contains ':','@', or '$', works like other format string, but second parameter must be an object with field names that match the names specified in the query.   (see examples below) |
 | do | ( &lt;String&gt; [,bound parameters , &lt;More SQL String&gt; [,param,sql ... ] ) | The SQL statement is composed dynamically from parts.  Literal text of the query is interleaved with bound variables.  Each variable is replaced with a '?', and passed as an argument to bind to the statement. |
+| run | any do args | behaves like `do(...)` but returns a promise, and is executed in a background thread. |
 | op  | (section [, opName],defaultValue) |  get an option from sqlite option database; return defaultValue  if not set, and set the option int he database to the default value.
 | getOption | (section [,opName],defaultValue) | longer name of 'op' |
 | so | (section [,opName] ,value) | set an option in sqlite option database |
