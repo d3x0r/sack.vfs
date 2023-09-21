@@ -256,6 +256,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
     - Added http:// support in import.mjs node loader module.
     - Improved user-agent support for HTTP requests; added `agent` option, but also pay attention to 'user-agent' if specified as an option in `headers` in request options.
     - Added a callback when a SQL connection is opened (or re-opened after a failure) to be able to condition the connection.
+    - added content-type handling for `.webm` and `.mp4` in default websocket/HTTP(S) modules.
 - 1.1.816
     - (Windows)Add method to get task window title.
     - Sqlite method added - `provider` - returns what the target database is from ODBC information.
