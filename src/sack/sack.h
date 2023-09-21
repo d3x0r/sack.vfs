@@ -1186,7 +1186,7 @@ SACK_NAMESPACE
 /* 8 bit unsigned decimal output printf format specifier. This would
    otherwise be defined in \<inttypes.h\>                */
 #define _8f   "u"
-/* 8 bit hex output printf format specifier. This would
+/* 8 bit hex output printf format sppecifier. This would
    otherwise be defined in \<inttypes.h\>                */
 #define _8fx   "x"
 /* 8 bit HEX output printf format specifier. This would
@@ -1580,23 +1580,24 @@ typedef uint64_t THREAD_ID;
    bytes of the data stored.  Length is in characters       */
 _CONTAINER_NAMESPACE
 /* LIST is a slab array of pointers, each pointer may be
-   assigned to point to any user data.
-   Remarks
-   When the list is filled to the capacity of Cnt elements, the
-   list is reallocated to be larger.
-   Cannot add NULL pointer to list, empty elements in the list
-   are represented with NULL, and may be filled by any non-NULL
-   value.                                                       */
-_LINKLIST_NAMESPACE
-/* <combine sack::containers::list::LinkBlock>
-   \ \                                         */
-typedef struct LinkBlock
+	assigned to point to any user data.
+	Remarks
+	When the list is filled to the capacity of Cnt elements, the
+	list is reallocated to be larger.
+	Cannot add NULL pointer to list, empty elements in the list
+	are represented with NULL, and may be filled by any non-NULL
+	value.                                                       */
+	_LINKLIST_NAMESPACE
+	/* <combine sack::containers::list::LinkBlock>
+		\ \                                         */
+	typedef struct LinkBlock
 {
 	/* How many pointers the list can contain now. */
 	INDEX     Cnt;
 	/* \ \  */
 	POINTER pNode[1];
-} LIST, *PLIST;
+} LIST;
+typedef struct LinkBlock volatile* volatile PLIST;
 _LINKLIST_NAMESPACE_END
 #ifdef __cplusplus
 using namespace sack::containers::list;
@@ -1605,7 +1606,7 @@ _DATALIST_NAMESPACE
 /* a list of data structures... a slab array of N members of X size */
 typedef struct DataBlock  DATALIST;
 /* A typedef of a pointer to a DATALIST struct DataList. */
-typedef struct DataBlock *PDATALIST;
+typedef struct DataBlock volatile * volatile PDATALIST;
 /* Data Blocks are like LinkBlocks, and store blocks of data in
    slab format. If the count of elements exceeds available, the
    structure is grown, to always contain a continuous array of
@@ -1629,26 +1630,27 @@ struct DataBlock
 };
 _DATALIST_NAMESPACE_END
 /* This is a stack that contains pointers to user objects.
-   Remarks
-   This is a stack 'by reference'. When extended, the stack will
-   occupy different memory, care must be taken to not duplicate
-   pointers to this stack.                                       */
-typedef struct LinkStack
+	Remarks
+	This is a stack 'by reference'. When extended, the stack will
+	occupy different memory, care must be taken to not duplicate
+	pointers to this stack.                                       */
+	typedef struct LinkStack
 {
 	/* This is the index of the next pointer to be pushed or popped.
-	   If top == 0, the stack is empty, until a pointer is added and
-	   top is incremented.                                           */
+		If top == 0, the stack is empty, until a pointer is added and
+		top is incremented.                                           */
 	INDEX     Top;
 	/* How many pointers the stack can contain. */
 	INDEX     Cnt;
 	/* thread interlock using InterlockedExchange semaphore. For
-	                  thread safety.                                            */
-	//volatile uint32_t     Lock;
-	/*  a defined maximum capacity of stacked values... values beyond this are lost from the bottom  */
+							thread safety.                                            */
+							//volatile uint32_t     Lock;
+							/*  a defined maximum capacity of stacked values... values beyond this are lost from the bottom  */
 	uint32_t     Max;
 	/* Reserved data portion that stores the pointers. */
 	POINTER pNode[1];
-} LINKSTACK, *PLINKSTACK;
+} LINKSTACK;
+typedef struct LinkStack volatile* volatile PLINKSTACK;
 /* A Stack that stores information in an array of structures of
    known size.
    Remarks
@@ -1661,8 +1663,8 @@ typedef struct DataListStack
 {
 	volatile INDEX     Top;
  /* enable logging the program executable (probably the same for
-	                all messages, unless they are network)
-	                                                                             */
+						 all messages, unless they are network)
+																										  */
  // How many elements are on the stack.
 	INDEX     Cnt;
 	//volatile uint32_t     Lock;  /* thread interlock using InterlockedExchange semaphore. For
@@ -1670,29 +1672,31 @@ typedef struct DataListStack
 	INDEX     Size;
 	INDEX     Max;
 	uint8_t      data[1];
-} DATASTACK, *PDATASTACK;
+} DATASTACK;
+typedef struct DataListStack volatile* volatile PDATASTACK;
 /* A queue which contains pointers to user objects. If the queue
    is filled to capacity and new queue is allocated, and all
    existing pointers are transferred.                            */
 typedef struct LinkQueue
 {
 	/* This is the index of the next pointer to be added to the
-	   queue. If Top==Bottom, then the queue is empty, until a
-	   pointer is added to the queue, and Top is incremented.   */
+		queue. If Top==Bottom, then the queue is empty, until a
+		pointer is added to the queue, and Top is incremented.   */
 	volatile INDEX     Top;
 	/* This is the index of the next element to leave the queue. */
 	volatile INDEX     Bottom;
 	/* This is the current count of pointers that can be stored in
-	   the queue.                                                  */
+		the queue.                                                  */
 	INDEX     Cnt;
 	/* thread interlock using InterlockedExchange semaphore. For
-	   thread safety.                                            */
+		thread safety.                                            */
 #if USE_CUSTOM_ALLOCER
 	volatile uint32_t     Lock;
 #endif
  // need two to have distinct empty/full conditions
 	POINTER pNode[2];
-} LINKQUEUE, *PLINKQUEUE;
+} LINKQUEUE;
+typedef struct LinkQueue volatile* volatile PLINKQUEUE;
 /* A queue of structure elements.
    Remarks
    The size of each element must be known at stack creation
@@ -1703,26 +1707,27 @@ typedef struct LinkQueue
 typedef struct DataQueue
 {
 	/* This is the next index to be added to. If Top==Bottom, the
-	   queue is empty, until an entry is added at Top, and Top
-	   increments.                                                */
+		queue is empty, until an entry is added at Top, and Top
+		increments.                                                */
 	volatile INDEX     Top;
 	/* The current bottom index. This is the next one to be
-	   returned.                                            */
+		returned.                                            */
 	volatile INDEX     Bottom;
 	/* How many elements the queue can hold. If a queue has more
-	   elements added to it than it has count, it will be expanded,
-	   and a new queue returned.                                    */
+		elements added to it than it has count, it will be expanded,
+		and a new queue returned.                                    */
 	INDEX     Cnt;
 	/* thread interlock using InterlockedExchange semaphore */
 	//volatile uint32_t     Lock;
 	/* How big each element in the queue is. */
 	INDEX     Size;
 	/* How many elements to expand the queue by, when its capacity
-	   is reached.                                                 */
+		is reached.                                                 */
 	INDEX     ExpandBy;
 	/* The data area of the queue. */
 	uint8_t      data[1];
-} DATAQUEUE, *PDATAQUEUE;
+} DATAQUEUE;
+typedef struct DataQueue volatile* volatile PDATAQUEUE;
 /* A mostly obsolete function, but can return the status of
    whether all initially scheduled startups are completed. (Or
    maybe whether we are not complete, and are processing
@@ -1753,17 +1758,17 @@ _LINKLIST_NAMESPACE
 //--------------------------------------------------------
 TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        CreateListEx   ( DBG_VOIDPASS );
 /* Destroy a PLIST. */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        DeleteListEx   ( volatile PLIST *plist DBG_PASS );
+TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        DeleteListEx   ( PLIST *plist DBG_PASS );
 /* See <link AddLink>.
    See <link DBG_PASS>. */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        AddLinkEx      ( volatile PLIST *pList, POINTER p DBG_PASS );
+TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        AddLinkEx      ( PLIST *pList, POINTER p DBG_PASS );
 /* Sets the value of a link at the specified index.
    Parameters
    pList :     address of a PLIST
    idx :       index of the element to set
    p :         new link value to be set at the specified index
    DBG_PASS :  debug file and line information                 */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        SetLinkEx      ( volatile PLIST *pList, INDEX idx, POINTER p DBG_PASS );
+TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        SetLinkEx      ( PLIST *pList, INDEX idx, POINTER p DBG_PASS );
 /* Gets the link at the specified index.
    Parameters
    pList :  address of a PLIST pointer.
@@ -2699,7 +2704,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  DeleteFromSetExx( GENERICSET *set, POINTER 
 #define DeleteFromSetEx( name, set, member, xx ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
 /* <combine sack::containers::sets::DeleteFromSetExx@GENERICSET *@POINTER@int@int max>
    \ \                                                                                 */
-#define DeleteFromSet( name, set, member ) DeleteFromSetExx( (GENERICSET*)set, member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
+#define DeleteFromSet( name, set, member ) DeleteFromSetExx( (GENERICSET*)set, (POINTER)member, sizeof( name ), MAX##name##SPERSET DBG_SRC )
 /* Marks a member in a set as usable.
    Parameters
    set :       pointer to a genericset pointer
@@ -5868,7 +5873,7 @@ MEM_PROC  POINTER MEM_API  ReleaseEx ( POINTER pData DBG_PASS ) ;
 #else
 /* <combine sack::memory::ReleaseEx@POINTER pData>
    \ \                                             */
-#define Release(p) ReleaseEx( (p) DBG_SRC )
+#define Release(p) ReleaseEx( (POINTER)(p) DBG_SRC )
 #endif
 /* Adds a usage count to a block of memory. For each count
    added, an additional release must be used. This can be used
@@ -5895,7 +5900,7 @@ MEM_PROC  POINTER MEM_API  ReleaseEx ( POINTER pData DBG_PASS ) ;
 MEM_PROC  POINTER MEM_API  HoldEx ( POINTER pData DBG_PASS  );
 /* <combine sack::memory::HoldEx@POINTER pData>
    \ \                                          */
-#define Hold(p) HoldEx(p DBG_SRC )
+#define Hold(p) HoldEx((POINTER)p DBG_SRC )
 /* This can be used to add additional space after the end of a
    memory block.
    Parameters
