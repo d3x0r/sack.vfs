@@ -13,6 +13,8 @@ import {sack} from "sack.vfs";
 
 const debug_ = false;
 const forceModule = ( process.env.FORCE_IMPORT_MODULE ) || false;
+const forceHttpModule = ( process.env.FORCE_IMPORT_HTTP_MODULE ) || false;
+
 /**
  * @param {string} url
  * @param {Object} context (currently empty)
@@ -22,7 +24,7 @@ const forceModule = ( process.env.FORCE_IMPORT_MODULE ) || false;
 export async function getFormat(url, context, defaultGetFormat) {
 	const exten = path.extname( url );
 	//if( exten === '' ) return { format:'module' }
-	console.log( "Format of:", url, context, defaultGetFormat );
+	debug_ && console.log( "Format of:", url, context, defaultGetFormat );
 	if( exten === ".jsox" || exten === ".json6" ){
 	    return { format: 'module' };
 	}
@@ -79,11 +81,15 @@ export async function load(urlin, context, defaultLoad) {
 	debug_&&console.log( "LOAD:", urlin, exten, context );
 	if( urlin.startsWith( "http://" ) || urlin.startsWith( "https://" ) ) {
 		const url = new URL( urlin );
+		const exten = path.extname( url.pathname );
+		console.log( "Real extension:", exten );
+		url.has = "";
+		url.search = "";
 		const request = { hostname:url.hostname, path:url.pathname, port:Number(url.port) };
 		const result = sack.HTTP.get( request );
 		if( result.statusCode === 200  )
 			return {
-				format:( !forceModule && exten===".js" )?"commonjs":"module",
+				format:( !forceModule && !forceHttpModule && exten===".js" )?"commonjs":"module",
 				source:result.content,
 				shortCircuit:true,
 			}

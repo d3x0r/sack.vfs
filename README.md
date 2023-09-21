@@ -230,7 +230,7 @@ The loader hooks are loaded with the option
 Previously support for `.json6` and `.jsox` were only provided for `require()`.
 
 Loading either JS version of [JSON6](https://github.com/d3x0r/json6) or [JSOX](https://github.com/d3x0r/jsox) should be done after this, allowing them to replace the globalThis versions.
-The sack.vfs version is still available via `SACK.JSOX` or `SACK.JSON6`.  
+The sack.vfs version is still available via `SACK.JSOX` or `SACK.JSON6`.
 
 Performance-wise the JS versions have advantages if the information to parse is sourced in JS, while the SACK versions
 can operate directly on the array buffers loaded from SACK databases, Volumes and files.  Which limits the copy one side; otherwise
@@ -240,7 +240,22 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.817(in progress)
+- 1.1.818(in progress)
+- 1.1.817
+    - Aliased `Sqlite` to `ODBC` and `DB` also; since it is not specifically Sqlite.
+    - Added `run()` function in SQL module; this returns a promise and runs the query in a background thread.
+    - Added support for windows to set window and class styles; manually control borders of other windows for example.
+    - Added support to stop/kill processes by process ID on windows (instead of just launched tasks).
+    - Added windows Process List (sack.Task.getProcessList) support.
+    - Added linux process list (sack.Task.getProcessList) support.
+    - Updated Libressl to 3.2.3.
+    - Fixed default stdio handle inheritance.
+    - Improved stdio inheritance disabling when launching tasks (prevent holding stdout/stderr redirected logging locks for example).
+    - (windows) Added set and get window position to set where a position is; both for launched tasks, and by task ID.
+    - Added better mouse support on windows to set/get mouse position. Can also generate arbitrary mouse clicks.
+    - Added http:// support in import.mjs node loader module.
+    - Improved user-agent support for HTTP requests; added `agent` option, but also pay attention to 'user-agent' if specified as an option in `headers` in request options.
+    - Added a callback when a SQL connection is opened (or re-opened after a failure) to be able to condition the connection.
 - 1.1.816
     - (Windows)Add method to get task window title.
     - Sqlite method added - `provider` - returns what the target database is from ODBC information.

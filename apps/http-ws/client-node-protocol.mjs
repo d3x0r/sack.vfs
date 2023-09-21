@@ -20,7 +20,7 @@ export class Protocol extends Events {
 
 	connect(protocol, this_) {
 		if( this.ws ) this.ws.close( 1006, "close duplicate socket" );
-		this.ws = new sack.WebSocketClient( this.address, protocol );
+		this.ws = new sack.WebSocket.Client( this.address, protocol );
 		this.ws.onmessage = (msg)=>this.onmessage(msg) ;
 		this.ws.onclose = (code,reason)=>this.onclose(code,reason) ;
 		this.ws.onopen = (msg)=>this.onopen.call( evt) ;

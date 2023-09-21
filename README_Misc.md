@@ -374,6 +374,7 @@ handle inheritance.  (Many handles created by SACK have inheritance disabled by 
 
 | Task Static Methods | description |
 | loadLibrary( libname ) | Load external shared library. ex: `sack.Task.loadLibrary( "xxx" );` |
+| getProcessList( partial name) | gets a list of processes that the program name matches the optional `partial name` parameter; if no parameter or null is specified, then all processes are returned|
 | getDisplays() | (Windows) returns an array of information about displays. |
 | getStyles( processId ) | (Windows) returns an object with `window`, `windowEx` and `class` members that are the style values|
 | setStyles( processId, window, windowEx, class ) | (Windows) Sets the style of a window associated with the process ID, -1 does not set any bits |

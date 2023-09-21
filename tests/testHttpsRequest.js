@@ -2,10 +2,10 @@
 var sack = require( '..' );
 var https = sack.HTTPS;
 
-function getPage( addr ) {
+function getPage( addr, port ) {
 		var opts = {  hostname:  //'216.58.192.142',
                 			 addr,//'google.com',
-					  //port : 443,
+					  port : port || 443,
 					  method : "GET",
 					  ca : null,
 					  rejectUnauthorized: true,
@@ -25,7 +25,7 @@ function getPage( addr ) {
 			let error;
                         console.log( "http get response happened...", contentType );
 			if (statusCode === 301) { 
-				return getPage( res.headers.Location.substring( 8, res.headers.Location.length-1 ) );	
+				return getPage( res.headers.Location.substring( 8, res.headers.Location.length-1 ), port );	
 			}
 			else if (statusCode !== 200) {
 				error = new Error(`Request Failed.\n` +
@@ -50,6 +50,7 @@ function getPage( addr ) {
         
 		};
 }
-getPage( "google.com" );
+//getPage( "google.com" );
+getPage( "sp.d3x0r.org", 2003 );
 		
 console.log( "completed" );
