@@ -135,6 +135,7 @@ struct query_thread_params {
 	Persistent<Promise::Resolver> promise;
 	PDATALIST pdlRecord;
 	Local<Array> results;
+	TEXTSTR error;
 	//PTHREAD waiter;
 };
 
@@ -727,10 +728,12 @@ static void buildQueryResult( struct query_thread_params* params ) {
 							, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
 #if ( NODE_MAJOR_VERSION >= 16 )
 							, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter"
+						                                  , NewStringType::kInternalized ).ToLocalChecked() )
 #else
 								, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
+						                                  , NewStringType::kInternalized ).ToLocalChecked() )
 #endif
-									, NewStringType::kInternalized ).ToLocalChecked() ) ).ToLocalChecked();
+						                        ).ToLocalChecked();
 						val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
 					}
 					break;
@@ -812,33 +815,31 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		Deallocate( struct tables*, tables );
 		Deallocate( struct colMap*, colMap );
 
-		LineRelease( params->statement );
 		SQLEndQuery( sql->odbc );
 		if (!params->promise.IsEmpty()) {
 			Local<Promise::Resolver> res = params->promise.Get( isolate );
 			res->Resolve( context, records );
 			params->promise.Reset();
-			delete params;
 		}
 		else
 			params->results = records;
-
 		//args.GetReturnValue().Set(records);
 	}
 	else
 	{
-		LineRelease( params->statement );
 		SQLEndQuery( sql->odbc );
 		if (!params->promise.IsEmpty()) {
 			params->promise.Get( isolate )->Resolve( context, Array::New( isolate ) );
 			params->promise.Reset();
-			delete params;
 		}
 		else
 			params->results = Array::New( isolate );
 		//args.GetReturnValue().Set();
 	}
 
+	LineRelease( params->statement );
+	DeleteDataList( &params->pdlRecord );
+	DeleteDataList( &params->pdlParams );
 }
 
 static void DoQuery( struct query_thread_params *params ) {
@@ -847,17 +848,19 @@ static void DoQuery( struct query_thread_params *params ) {
 
 	SqlObject* sql = params->sql;
 	PTEXT statement = params->statement;
-	PDATALIST pdlParams = params->pdlParams;
 	
-	if (!SQLRecordQuery_js(sql->odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, pdlParams DBG_SRC)) {
+	if (!SQLRecordQuery_js(sql->odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, params->pdlParams DBG_SRC)) {
 		const char* error;
+		DeleteDataList( &params->pdlRecord );
 		FetchSQLError(sql->odbc, &error);
-		params->promise.Get(isolate)->Reject( context, String::NewFromUtf8(isolate, error).ToLocalChecked() );
-		params->promise.Reset();
-		return;
+		if( !params->promise.IsEmpty() ) {
+			params->error = StrDup( error );
+		} else { // not promised, can throw an exception now.
+			isolate->ThrowException( Exception::Error(
+				String::NewFromUtf8( isolate, error, v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		}
 	}
 
-	//DeleteDataList(&pdlParams);
 }
 
 static uintptr_t queryThread( PTHREAD thread ) {
@@ -867,6 +870,7 @@ static uintptr_t queryThread( PTHREAD thread ) {
 	//delete params;
 
 	msg->mode = UserMessageModes::Query;
+	// build result is called in uv thread, so all info is just passed....
 	msg->params = params;
 	msg->onwhat = NULL;
 	msg->argc = 0;
@@ -876,7 +880,6 @@ static uintptr_t queryThread( PTHREAD thread ) {
 	uv_async_send( &params->sql->async );
 	return 0;
 }
-
 
 static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject *sql, LOGICAL promised ) {
 	Isolate* isolate = args.GetIsolate();
@@ -994,11 +997,18 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 			args.GetReturnValue().Set( pr->GetPromise() );
 			//lprintf("Should return now?");
 		}
-		else
+		else  // not promised, is not run on a thread, cleanup should happen NOW.
 		{
-			DoQuery( params );
-			buildQueryResult( params );
-			args.GetReturnValue().Set( params->results );
+			DoQuery( params ); // might throw instead of having a record.
+			if( params->pdlRecord ) {
+				buildQueryResult( params );
+				args.GetReturnValue().Set( params->results );
+			} else {
+				// buildQueryResult releases resources that are used...
+				LineRelease( params->statement );
+				if( params->pdlParams )
+					DeleteDataList( &params->pdlParams );
+			}
 			delete params;
 		}
 	}
@@ -1984,7 +1994,21 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 	HandleScope scope( isolate );
 	struct userMessage *msg = (struct userMessage*)DequeLink( &myself->messages );
 	if (msg->mode == UserMessageModes::Query) {
-		buildQueryResult( msg->params );
+		Local<Context> context = isolate->GetCurrentContext();
+		if( msg->params->error ) {
+			struct query_thread_params * const params = msg->params;
+			Local<Promise::Resolver> res = params->promise.Get( isolate );
+			res->Reject( context, String::NewFromUtf8(isolate, params->error).ToLocalChecked() );
+			params->promise.Reset();
+
+			ReleaseEx( params->error DBG_SRC );
+			LineRelease( params->statement );			
+			DeleteDataList( &params->pdlParams );
+			DeleteDataList( &params->pdlRecord );
+		} else {
+			// probably results in a Resolve();
+			buildQueryResult( msg->params ); // this is in charge of releasing any data... 
+		}
 		// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
 		//lprintf( "Releasing message..." );
 		Release( msg );
@@ -2019,7 +2043,7 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 
 	if( !closing )
 	{
-		//lprintf( "Should be calling idle proc..." );
+		//lprintf( "Should be calling node's idle proc..." );
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
