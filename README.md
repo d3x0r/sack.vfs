@@ -240,7 +240,9 @@ there's a conversion to string from binary and a copy of that string from JS to 
 ---
 
 ## Changelog
-- 1.1.818(in progress)
+- 1.1.819(in progress)
+- 1.1.818
+    - Fix fatal error with non-async SQL command that generated an error.
 - 1.1.817
     - Aliased `Sqlite` to `ODBC` and `DB` also; since it is not specifically Sqlite.
     - Added `run()` function in SQL module; this returns a promise and runs the query in a background thread.
