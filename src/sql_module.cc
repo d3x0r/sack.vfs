@@ -848,16 +848,17 @@ static void DoQuery( struct query_thread_params *params ) {
 
 	SqlObject* sql = params->sql;
 	PTEXT statement = params->statement;
-	
+
 	if (!SQLRecordQuery_js(sql->odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, params->pdlParams DBG_SRC)) {
 		const char* error;
 		DeleteDataList( &params->pdlRecord );
 		FetchSQLError(sql->odbc, &error);
-		if( !params->promise.IsEmpty() ) {
-			params->error = StrDup( error );
-		} else { // not promised, can throw an exception now.
+		params->error = StrDup( error );
+		if( params->promise.IsEmpty() ) {
+			// not promised, can throw an exception now.
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, error, v8::NewStringType::kNormal ).ToLocalChecked() ) );
+
 		}
 	}
 
@@ -1005,6 +1006,8 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 				args.GetReturnValue().Set( params->results );
 			} else {
 				// buildQueryResult releases resources that are used...
+				if( params->error ) ReleaseEx( params->error DBG_SRC );
+				else args.GetReturnValue().Set( Array::New( isolate ) );
 				LineRelease( params->statement );
 				if( params->pdlParams )
 					DeleteDataList( &params->pdlParams );
