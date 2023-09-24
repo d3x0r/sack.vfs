@@ -576,7 +576,6 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
 	}
 	items = (int)idx;
-
 	//&sql->columns, &sql->result, &sql->resultLens, &sql->fields
 	if (pdlRecord)
 	{
@@ -821,8 +820,9 @@ static void buildQueryResult( struct query_thread_params* params ) {
 			res->Resolve( context, records );
 			params->promise.Reset();
 		}
-		else
+		else {
 			params->results = records;
+		}
 		//args.GetReturnValue().Set(records);
 	}
 	else
@@ -834,6 +834,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		}
 		else
 			params->results = Array::New( isolate );
+			//lprintf( "Probably an empty result...");
 		//args.GetReturnValue().Set();
 	}
 
@@ -1001,7 +1002,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		else  // not promised, is not run on a thread, cleanup should happen NOW.
 		{
 			DoQuery( params ); // might throw instead of having a record.
-			if( params->pdlRecord ) {
+			if( !params->error ) {
 				buildQueryResult( params );
 				args.GetReturnValue().Set( params->results );
 			} else {
