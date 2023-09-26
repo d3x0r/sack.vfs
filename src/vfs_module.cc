@@ -347,6 +347,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	ObjectStorageInit( isolate, exports );
 	fileMonitorInit( isolate, exports );
 	SystemInit( isolate, exports );
+	ConfigScriptInit( isolate, exports );
 	textObjectInit( isolate, exports );
 #ifdef INCLUDE_GUI
 	ImageObject::Init( exports );

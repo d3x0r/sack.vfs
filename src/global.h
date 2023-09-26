@@ -190,7 +190,8 @@ class constructorSet {
 	v8::Persistent<v8::Function> monitorConstructor;  // File Monitor
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
 	v8::Persistent<v8::Function> MouseHidObject_constructor;
-
+	v8::Persistent<v8::Function> ConfigObject_constructor;
+	
 
 	//Persistent<Function> onCientPost;
 	uv_loop_t* loop;
@@ -519,9 +520,9 @@ Local<String> localString( Isolate *isolate, const char *data, int len = -1 );
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len = -1, const char *real_root = NULL );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
-void ConfigScriptInit( Local<Object> exports );
+void ConfigScriptInit( Isolate *isolate, Local<Object> exports );
 
-void ObjectStorageInit( Isolate *isoalte, Local<Object> exports );
+void ObjectStorageInit( Isolate *isolate, Local<Object> exports );
 
 
 void SqlObjectInit( Local<Object> exports );
