@@ -1,7 +1,7 @@
 'use strict';
 // require.js
 // Node.js only: adds a import() hook for .jsox files, just like the native
-// hook for .json files.
+// hook for .jsox files.  Also adds support for HTTP/HTTPS requested files.
 //
 // Usage:
 // import {default as config} from "config.jsox";
@@ -79,7 +79,7 @@ export async function load(urlin, context, defaultLoad) {
 	const { format } = context;
 	const exten = path.extname( urlin );
 	debug_&&console.log( "LOAD:", urlin, exten, context );
-	if( urlin.startsWith( "http://" ) || urlin.startsWith( "https://" ) ) {
+	if( urlin.startsWith( "http://" ) || urlin.startsWith( "https://" ) || urlin.startsWith( "HTTP://" ) || urlin.startsWith( "HTTPS://" ) ) {
 		const url = new URL( urlin );
 		const exten = path.extname( url.pathname );
 		debug_&&console.log( "Real extension:", exten );
