@@ -170,10 +170,9 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 		Local<Value> result = ml_result.ToLocalChecked();
 		config->lastValue.Reset( config->isolate, result );
 		//config->lastResult = (uintptr_t)*result;
-		result.Clear();
-		return (uintptr_t)config;
+		//result.Clear();
 	}
-	return NULL;
+	return (uintptr_t)config;
 }
 
 void ConfigObject::Add( const v8::FunctionCallbackInfo<Value>& args ) {
