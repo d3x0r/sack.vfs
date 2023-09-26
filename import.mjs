@@ -82,20 +82,26 @@ export async function load(urlin, context, defaultLoad) {
 	if( urlin.startsWith( "http://" ) || urlin.startsWith( "https://" ) ) {
 		const url = new URL( urlin );
 		const exten = path.extname( url.pathname );
-		console.log( "Real extension:", exten );
+		debug_&&console.log( "Real extension:", exten );
 		url.has = "";
 		url.search = "";
-		const request = { hostname:url.hostname, path:url.pathname, port:Number(url.port) };
-		const result = sack.HTTP.get( request );
-		if( result.statusCode === 200  )
-			return {
-				format:( !forceModule && !forceHttpModule && exten===".js" )?"commonjs":"module",
-				source:result.content,
-				shortCircuit:true,
-			}
-		else {
-			sack.log( util.format( "request for (", urlin, ") failed:", result ) );
-		}
+		return new Promise( (res,rej)=>{
+			const request = { hostname:url.hostname, path:url.pathname, port:Number(url.port), onReply(result){
+
+				if( result.statusCode === 200  ) {
+					debug_ && console.log( "Got back success...", !forceModule, !forceHttpModule, ( !forceModule && !forceHttpModule && exten===".js" )?"commonjs":"module", result.content.substr(0, 40) )
+					res( {
+						format:( !forceModule && !forceHttpModule && exten===".js" )?"commonjs":"module",
+						source:result.content,
+						shortCircuit:true,
+					} );
+				} else {
+					rej(util.format( "request for (", urlin, ") failed:", result ) );
+					//sack.log(  );
+				}
+			} };
+			sack.HTTP.get( request );
+		})
 	}
 	else if( exten === ".jsox" || exten === '.json6' ){
 	  	const { format } = context;
