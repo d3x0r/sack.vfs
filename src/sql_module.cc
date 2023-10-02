@@ -1,6 +1,15 @@
 
 #include "global.h"
 
+//#define DEBUG_EVENTS 
+//#define EVENT_DEBUG_STDOUT
+
+#ifdef EVENT_DEBUG_STDOUT
+#  undef lprintf
+#  define lprintf(f,...)  printf( "%d~" f "\n", (int)(GetThisThreadID() & 0x7FFFFFF),##__VA_ARGS__)
+#endif
+
+
 #ifdef INCLUDE_GUI
 void editOptions( const v8::FunctionCallbackInfo<Value>& args );
 #endif
@@ -27,24 +36,33 @@ public:
 	static void Set( const v8::FunctionCallbackInfo<Value>& args );
 };
 
-class SqlObject : public node::ObjectWrap {
-public:
+struct sql_object_state {
 	PODBC odbc;
 	int optionInitialized;
-	//static v8::Persistent<v8::Function> constructor;
-	//int columns;
-	//CTEXTSTR *result;
-	//size_t *resultLens;
-	//CTEXTSTR *fields;
-	v8::Persistent<v8::Function> onCorruption;
-	Persistent<Object> _this;
-	//Persistent<Object> volume;
-public:
 	PTHREAD thread;
 	Isolate *isolate; // this is constant for the life of the connection
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLIST userFunctions;
 	PLINKQUEUE messages;
+	class SqlObject *sql;
+};
+
+//#define optionInitialized  state->optionInitialized
+//#define userFunctions      state->userFunctions
+
+class SqlObject : public node::ObjectWrap {
+public:
+	struct sql_object_state *state;
+
+	/*
+	PODBC odbc;
+	int optionInitialized;
+	PTHREAD thread;
+	Isolate *isolate; // this is constant for the life of the connection
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLIST userFunctions;
+	PLINKQUEUE messages;
+	*/
 
 	//static void Init( Local<Object> exports );
 	SqlObject( const char *dsn, Isolate *isolate, Local<Object>, Local<Function> openCallback );
@@ -83,7 +101,8 @@ public:
 	static void setRequire( const v8::FunctionCallbackInfo<Value>& args );
 	static void OnOpen( uintptr_t psv, PODBC odbc );
 	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
-
+	v8::Persistent<v8::Function> onCorruption;
+	Persistent<Object> _this;
 
 	static void doWrap( SqlObject *sql, Local<Object> o );
 
@@ -153,6 +172,7 @@ struct userMessage{
 	PTHREAD waiter;
 };
 
+static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal );
 static void sqlUserAsyncMsg( uv_async_t* handle );
 
 /* This is used from external code... */
@@ -385,12 +405,15 @@ int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	CloseDatabase( sql->odbc );
-	if( sql->thread ) {
+	CloseDatabase( sql->state->odbc );
+	if( sql->state->thread ) {
 		static struct userMessage msg;
 		msg.mode = OnClose;
-		EnqueLink( &sql->messages, &msg );
-		uv_async_send( &sql->async );
+		EnqueLink( &sql->state->messages, &msg );
+#ifdef DEBUG_EVENTS
+		lprintf( "uv_send closeDb %p", &sql->state->async );
+#endif		
+		uv_async_send( &sql->state->async );
 		// cant' wait here.
 	}
 
@@ -401,21 +424,21 @@ void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = args.GetIsolate()->GetCurrentContext();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetSQLAutoTransact( sql->odbc, args[0]->TOBOOL(args.GetIsolate()) );
+	SetSQLAutoTransact( sql->state->odbc, args[0]->TOBOOL(args.GetIsolate()) );
 }
 //-----------------------------------------------------------
 void SqlObject::transact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SQLBeginTransact( sql->odbc );
+	SQLBeginTransact( sql->state->odbc );
 }
 //-----------------------------------------------------------
 void SqlObject::commit( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SQLCommit( sql->odbc );
+	SQLCommit( sql->state->odbc );
 }
 //-----------------------------------------------------------
 
@@ -429,7 +452,7 @@ void SqlObject::escape( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	size_t resultlen;
-	char *out = EscapeSQLBinaryExx(sql->odbc, (*tmp), tmp.length(), &resultlen, FALSE DBG_SRC );
+	char *out = EscapeSQLBinaryExx(sql->state->odbc, (*tmp), tmp.length(), &resultlen, FALSE DBG_SRC );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)resultlen ).ToLocalChecked() );
 	Deallocate( char*, out );
 
@@ -618,7 +641,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					colMap[idx].depth = fields[m].used;
 					if (colMap[idx].depth > maxDepth)
 						maxDepth = colMap[idx].depth + 1;
-					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
 					//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
 					int table;
 					for (table = 0; table < usedTables; table++) {
@@ -643,8 +666,8 @@ static void buildQueryResult( struct query_thread_params* params ) {
 			if (m == usedFields) {
 				colMap[idx].col = m;
 				colMap[idx].depth = 0;
-				//colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->odbc, (int)idx ) );
-				colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+				//colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->state->odbc, (int)idx ) );
+				colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
 				//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
 				if (colMap[idx].alias && colMap[idx].alias[0]) {
 					int table;
@@ -801,7 +824,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					}
 				}
 				SETN( records, row++, record );
-			} while (FetchSQLRecordJS( sql->odbc, &pdlRecord ));
+			} while (FetchSQLRecordJS( sql->state->odbc, &pdlRecord ));
 		}
 		{
 			int c;
@@ -814,7 +837,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		Deallocate( struct tables*, tables );
 		Deallocate( struct colMap*, colMap );
 
-		SQLEndQuery( sql->odbc );
+		SQLEndQuery( sql->state->odbc );
 		if (!params->promise.IsEmpty()) {
 			Local<Promise::Resolver> res = params->promise.Get( isolate );
 			res->Resolve( context, records );
@@ -827,7 +850,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 	}
 	else
 	{
-		SQLEndQuery( sql->odbc );
+		SQLEndQuery( sql->state->odbc );
 		if (!params->promise.IsEmpty()) {
 			params->promise.Get( isolate )->Resolve( context, Array::New( isolate ) );
 			params->promise.Reset();
@@ -850,10 +873,10 @@ static void DoQuery( struct query_thread_params *params ) {
 	SqlObject* sql = params->sql;
 	PTEXT statement = params->statement;
 
-	if (!SQLRecordQuery_js(sql->odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, params->pdlParams DBG_SRC)) {
+	if (!SQLRecordQuery_js(sql->state->odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, params->pdlParams DBG_SRC)) {
 		const char* error;
 		DeleteDataList( &params->pdlRecord );
-		FetchSQLError(sql->odbc, &error);
+		FetchSQLError(sql->state->odbc, &error);
 		params->error = StrDup( error );
 		if( params->promise.IsEmpty() ) {
 			// not promised, can throw an exception now.
@@ -878,8 +901,11 @@ static uintptr_t queryThread( PTHREAD thread ) {
 	msg->argc = 0;
 	msg->argv = NULL;
 	msg->done = 0;
-	EnqueLink( &params->sql->messages, msg );
-	uv_async_send( &params->sql->async );
+	EnqueLink( &params->sql->state->messages, msg );
+#ifdef DEBUG_EVENTS
+	lprintf( "uv_send queryThread %p", &params->sql->state->async );
+#endif	
+	uv_async_send( &params->sql->state->async );
 	return 0;
 }
 
@@ -984,13 +1010,15 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		params->statement = statement;
 		params->pdlParams = pdlParams;
 		if (promised) {
-			//lprintf( "Making promise?", promised, sql->thread );
-			if (!sql->thread) {
-				sql->thread = MakeThread();
+#ifdef DEBUG_EVENTS
+			lprintf( "Making promise?", promised, sql->state->thread );
+#endif			
+			if (!sql->state->thread) {
+				sql->state->thread = MakeThread();
 				//lprintf( "This should keep it open..." );
 				class constructorSet* c = getConstructors( isolate );
-				uv_async_init( c->loop, &sql->async, sqlUserAsyncMsg );
-				sql->async.data = sql;
+				uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+				sql->state->async.data = sql->state;
 			}
 			//lprintf( " making promise to return..." );
 			Local<Promise::Resolver> pr = Promise::Resolver::New( context ).ToLocalChecked();
@@ -1139,9 +1167,9 @@ void SqlObject::old_query( const v8::FunctionCallbackInfo<Value>& args ) {
 		int items;
 		struct jsox_value_container * jsval;
 
-		if( !SQLRecordQuery_js( sql->odbc, GetText(statement), GetTextSize(statement), &pdlRecord, pdlParams DBG_SRC ) ) {
+		if( !SQLRecordQuery_js( sql->state->odbc, GetText(statement), GetTextSize(statement), &pdlRecord, pdlParams DBG_SRC ) ) {
 			const char *error;
-			FetchSQLError( sql->odbc, &error );
+			FetchSQLError( sql->state->odbc, &error );
 			isolate->ThrowException( Exception::Error(
 				String::NewFromUtf8( isolate, error, v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			DeleteDataList( &pdlParams );
@@ -1195,7 +1223,7 @@ void SqlObject::old_query( const v8::FunctionCallbackInfo<Value>& args ) {
 						colMap[idx].depth = fields[m].used;
 						if( colMap[idx].depth > maxDepth )
 							maxDepth = colMap[idx].depth+1;
-						colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+						colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
 						//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
 						int table;
 						for( table = 0; table < usedTables; table++ ) {
@@ -1220,8 +1248,8 @@ void SqlObject::old_query( const v8::FunctionCallbackInfo<Value>& args ) {
 				if( m == usedFields ) {
 					colMap[idx].col = m;
 					colMap[idx].depth = 0;
-					//colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->odbc, (int)idx ) );
-					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->odbc, (int)idx ) );
+					//colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->state->odbc, (int)idx ) );
+					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
 					//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
 					if( colMap[idx].alias && colMap[idx].alias[0] ) {
 						int table;
@@ -1375,7 +1403,7 @@ void SqlObject::old_query( const v8::FunctionCallbackInfo<Value>& args ) {
 						}
 					}
 					SETN( records, row++, record );
-				} while( FetchSQLRecordJS( sql->odbc, &pdlRecord ) );
+				} while( FetchSQLRecordJS( sql->state->odbc, &pdlRecord ) );
 			}
 			{
 				int c;
@@ -1388,12 +1416,12 @@ void SqlObject::old_query( const v8::FunctionCallbackInfo<Value>& args ) {
 			Deallocate( struct tables*, tables );
 			Deallocate( struct colMap*, colMap );
 
-			SQLEndQuery( sql->odbc );
+			SQLEndQuery( sql->state->odbc );
 			args.GetReturnValue().Set( records );
 		}
 		else
 		{
-			SQLEndQuery( sql->odbc );
+			SQLEndQuery( sql->state->odbc );
 			args.GetReturnValue().Set( Array::New( isolate ) );
 		}
 		DeleteDataList( &pdlParams );
@@ -1407,22 +1435,29 @@ void SqlObject::OnOpen( uintptr_t psv, PODBC odbc ){
 	if( this_->openCallback.IsEmpty() ) return;
 	PTHREAD thread = MakeThread();
 	struct userMessage msg;
-	this_->odbc = odbc;
+	this_->state->odbc = odbc;
 	msg.mode = UserMessageModes::OnOpen;
 	msg.onwhat = NULL;
 	msg.done = 0;
 	
-	if( thread != this_->thread ) {
+	if( thread != this_->state->thread ) {
 		msg.waiter = thread;
-		EnqueLink( &this_->messages, &msg );
-		uv_async_send( &this_->async );
+		EnqueLink( &this_->state->messages, &msg );
+#ifdef DEBUG_EVENTS
+		lprintf( "uv_send onOpen %p", &this_->state->async );
+#endif		
+		uv_async_send( &this_->state->async );
 		while( !msg.done ) WakeableSleep( 1000 );
 	} else {
 		msg.waiter = NULL;
-		EnqueLink( &this_->messages, &msg );
+		EnqueLink( &this_->state->messages, &msg );
 		// might be multiple things queued... (probably not)
-		while( !msg.done )
-			sqlUserAsyncMsg( &this_->async );
+		while( !msg.done ) {
+#ifdef DEBUG_EVENTS			
+			lprintf( "OnOpen Called async handler directly %p", &this_->state->async );
+#endif			
+			sqlUserAsyncMsgEx( &this_->state->async, TRUE );
+		}
 	}
 }
 //-----------------------------------------------------------
@@ -1432,15 +1467,20 @@ static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
 	void *parameter = info.GetParameter();
 	//lprintf( "Sql object garbage collected (close UV)");
 	SqlObject *sql = (SqlObject*)parameter;
-	if( sql->async.data ){
+	if( sql->state->async.data ){
 		// only do this if we started an async callback on it.
 		struct userMessage msg;
 		msg.mode = UserMessageModes::OnDeallocate;
 		msg.onwhat = NULL;
 		msg.done = 0;
 		msg.waiter = NULL;
-		EnqueLink( &sql->messages, &msg );
-		while( !msg.done ) sqlUserAsyncMsg( &sql->async );
+		EnqueLink( &sql->state->messages, &msg );
+		while( !msg.done ) {
+#ifdef DEBUG_EVENTS			
+			lprintf( "weakRef Called async handler directly %p", &sql->state->async );
+#endif			
+			sqlUserAsyncMsgEx( &sql->state->async, TRUE );
+		}
 	}
 	sql->_this.Reset();
 }
@@ -1449,50 +1489,64 @@ static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
 
 SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Local<Function> _openCallback )
 {
-	memset( &async, 0, sizeof( async ) );
-	messages = NULL;
-	userFunctions = NULL;
-	thread = NULL;
-	this->isolate = isolate;
+	state = NewArray( struct sql_object_state, 1 );
+	state->sql = this;
+	memset( &state->async, 0, sizeof( state->async ) );
+	state->messages = NULL;
+	state->userFunctions = NULL;
+	state->thread = NULL;
+	state->optionInitialized = FALSE;
+
+	state->isolate = isolate;
 	this->_this.Reset( isolate, jsThis );
 	this->_this.SetWeak( (void*)this, WeakReferenceReleased, WeakCallbackType::kParameter );
 	this->Wrap( jsThis );
 
 	if( !_openCallback.IsEmpty() ) {
-		thread = MakeThread();
+#ifdef DEBUG_EVENTS
+		lprintf( "Open Callback inits handle.... %p", &this->state->async );
+#endif		
+		state->thread = MakeThread();
 		class constructorSet *c = getConstructors( isolate );
-		this->async.data = this;
-		uv_async_init( c->loop, &this->async, sqlUserAsyncMsg );
-		this->isolate = isolate;
+		this->state->async.data = this->state;
+		uv_async_init( c->loop, &this->state->async, sqlUserAsyncMsg );
 		this->openCallback.Reset( isolate, _openCallback );
 	}
-	odbc = ConnectToDatabaseLoginCallback( dsn, NULL, NULL, FALSE, SqlObject::OnOpen, (uintptr_t)this DBG_SRC );
-	SetSQLThreadProtect( odbc, FALSE );
+	state->odbc = ConnectToDatabaseLoginCallback( dsn, NULL, NULL, FALSE, SqlObject::OnOpen, (uintptr_t)this DBG_SRC );
+	SetSQLThreadProtect( state->odbc, FALSE );
 	//SetSQLAutoClose( odbc, TRUE );
-	optionInitialized = FALSE;
 }
 
 SqlObject::~SqlObject() {
 	INDEX idx;
 	struct SqlObjectUserFunction *data;
-	LIST_FORALL( userFunctions, idx, struct SqlObjectUserFunction*, data ) {
+#ifdef DEBUG_EVENTS
+	lprintf( "Deleting Object" );
+#endif	
+	LIST_FORALL( state->userFunctions, idx, struct SqlObjectUserFunction*, data ) {
 		data->cb.Reset();
 	}
-	if( thread )
+	// state->thread is probably already cleared 1) weskRef closes the handle, and dispatches close immediately
+	// end() or close() sends a close event to UV, which deletes the queue, and clears this too.
+	if( state->thread )
 	{
 		struct userMessage msg;
 		msg.mode = UserMessageModes::OnDeallocate;
 		msg.onwhat = NULL;
 		msg.done = 0;
 		msg.waiter = MakeThread();
-		EnqueLink( &messages, &msg );
-		uv_async_send( &async );
-
+		EnqueLink( &state->messages, &msg );
+#ifdef DEBUG_EVENTS
+		lprintf( "uv_send sqlObject Destroy %p", &state->async );
+#endif
+		uv_async_send( &state->async );
+		lprintf( "~SqlObject(): This wait on close should never finish?");
 		while( !msg.done ) {
 			WakeableSleep( SLEEP_FOREVER );
 		}
 	}
-	CloseDatabase( odbc );
+	CloseDatabase( state->odbc );
+	ReleaseEx( state DBG_SRC );
 }
 
 //-----------------------------------------------------------
@@ -1560,9 +1614,9 @@ void SqlObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	if( !sqlParent->optionInitialized ) {
-		SetOptionDatabaseOption( sqlParent->odbc );
-		sqlParent->optionInitialized = TRUE;
+	if( !sqlParent->state->optionInitialized ) {
+		SetOptionDatabaseOption( sqlParent->state->odbc );
+		sqlParent->state->optionInitialized = TRUE;
 	}
 
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
@@ -1574,9 +1628,9 @@ void SqlObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( o.ToLocalChecked() );
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o.ToLocalChecked() );
-	oto->odbc = sqlParent->odbc;
+	oto->odbc = sqlParent->state->odbc;
 	//lprintf( "SO Get %p ", sqlParent->odbc );
-	oto->node =  GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
+	oto->node =  GetOptionIndexExx( sqlParent->state->odbc, NULL, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
 }
 
 
@@ -1619,11 +1673,11 @@ void SqlObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *optionPath = StrDup( *tmp );
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	if( !sqlParent->optionInitialized ) {
-		SetOptionDatabaseOption( sqlParent->odbc );
-		sqlParent->optionInitialized = TRUE;
+	if( !sqlParent->state->optionInitialized ) {
+		SetOptionDatabaseOption( sqlParent->state->odbc );
+		sqlParent->state->optionInitialized = TRUE;
 	}
-	POPTION_TREE_NODE newNode = GetOptionIndexExx( sqlParent->odbc, NULL, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
+	POPTION_TREE_NODE newNode = GetOptionIndexExx( sqlParent->state->odbc, NULL, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
 
 	if( newNode ) {
 		class constructorSet *c = getConstructors( isolate );
@@ -1632,7 +1686,7 @@ void SqlObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
 		OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
-		oto->odbc = sqlParent->odbc;
+		oto->odbc = sqlParent->state->odbc;
 		oto->node = newNode;
 	}
 	Release( optionPath );
@@ -1710,11 +1764,11 @@ static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args, SqlObj
 	Isolate* isolate = args.GetIsolate();
 	LOGICAL dropODBC;
 	if( sqlParent ) {
-		if( !sqlParent->optionInitialized ) {
-			SetOptionDatabaseOption( sqlParent->odbc );
-			sqlParent->optionInitialized = TRUE;
+		if( !sqlParent->state->optionInitialized ) {
+			SetOptionDatabaseOption( sqlParent->state->odbc );
+			sqlParent->state->optionInitialized = TRUE;
 		}
-		callbackArgs.odbc = sqlParent->odbc;
+		callbackArgs.odbc = sqlParent->state->odbc;
 		dropODBC = FALSE;
 	}
 	else {
@@ -1826,11 +1880,11 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	{
 		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
 
-		if( !sql->optionInitialized ) {
-			SetOptionDatabaseOption( sql->odbc );
-			sql->optionInitialized = TRUE;
+		if( !sql->state->optionInitialized ) {
+			SetOptionDatabaseOption( sql->state->odbc );
+			sql->state->optionInitialized = TRUE;
 		}
-		use_odbc = sql->odbc;
+		use_odbc = sql->state->odbc;
 	}
 	SACK_GetPrivateProfileStringExxx( use_odbc
 		, sect
@@ -1906,7 +1960,7 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 	} else 
 	{
 		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
-		use_odbc = sql->odbc;
+		use_odbc = sql->state->odbc;
 	}
 	if( ( sect && sect[0] == '/' ) ) {
 		SACK_GetPrivateProfileStringExxx(use_odbc
@@ -1977,7 +2031,7 @@ void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 		table = GetFieldsInSQLEx( tableCommand, false DBG_SRC );
 		if( !table ) 
 			args.GetReturnValue().Set( False( isolate ) );
-		else if( CheckODBCTable( sql->odbc, table, CTO_MERGE ) )
+		else if( CheckODBCTable( sql->state->odbc, table, CTO_MERGE ) )
 			args.GetReturnValue().Set( True(isolate) );
 		else
 			args.GetReturnValue().Set( False( isolate ) );
@@ -1991,9 +2045,15 @@ static void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sq
 static void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv );
 static void callAggFinal( struct sqlite3_context*onwhat );
 
-static void sqlUserAsyncMsg( uv_async_t* handle ) {
+static void uv_closed_sql( uv_handle_t* handle ) {
+	struct sql_object_state* myself = (struct sql_object_state*)handle->data;
+	lprintf( "Closed uv_handle(6?)");
+	ReleaseEx( myself DBG_SRC );
+}
+
+static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 	LOGICAL closing = FALSE;
-	SqlObject* myself = (SqlObject*)handle->data;
+	struct sql_object_state* myself = (struct sql_object_state*)handle->data;
 	Isolate *isolate = myself->isolate;
 	HandleScope scope( isolate );
 	struct userMessage *msg = (struct userMessage*)DequeLink( &myself->messages );
@@ -2018,8 +2078,8 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 		Release( msg );
 		msg = NULL;
 	} else if (msg->mode == UserMessageModes::OnOpen) {
-		Local<Function> cb = myself->openCallback.Get( isolate );
-		Local<Value> args[1] = {myself->_this.Get( isolate )};
+		Local<Function> cb = myself->sql->openCallback.Get( isolate );
+		Local<Value> args[1] = {myself->sql->_this.Get( isolate )};
 		MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), args[0], 1, args );
 	}
 	else if( msg->onwhat ) {
@@ -2032,12 +2092,20 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 		else if( msg->mode == UserMessageModes::OnSqliteAggFinal ) {
 			callAggFinal( msg->onwhat );
 			myself->thread = NULL;
-			uv_close( (uv_handle_t*)&myself->async, NULL );
+			Hold( myself );
+#ifdef DEBUG_EVENTS
+			lprintf( "Sack uv_close5");
+#endif
+			uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
 		}
 	} else {
 		closing = TRUE;
 		myself->thread = NULL;
-		uv_close( (uv_handle_t*)&myself->async, NULL );		
+		Hold( myself );
+#ifdef DEBUG_EVENTS
+		lprintf( "Sack uv_close6 %p", &myself->async );
+#endif
+		uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
 	}	
 	if( msg ) {
 		msg->done = 1;
@@ -2045,14 +2113,20 @@ static void sqlUserAsyncMsg( uv_async_t* handle ) {
 			WakeThread( msg->waiter );
 	}
 
-	if( !closing )
+	if( !internal && !closing )
 	{
-		//lprintf( "Should be calling node's idle proc..." );
+#ifdef DEBUG_EVENTS
+		lprintf( "Should be calling node's idle proc..." );
+#endif
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 		//lprintf( "called proc?" );
 	}
+}
+
+static void sqlUserAsyncMsg( uv_async_t* handle ) {
+	sqlUserAsyncMsgEx( handle, FALSE );
 }
 
 static void releaseBuffer( void *buffer ) {
@@ -2061,7 +2135,7 @@ static void releaseBuffer( void *buffer ) {
 
 void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv ) {
 	struct SqlObjectUserFunction *userData = (struct SqlObjectUserFunction*)PSSQL_GetSqliteFunctionData( onwhat );
-	if( userData->sql->thread != MakeThread() ) {
+	if( userData->sql->state->thread != MakeThread() ) {
 		struct userMessage msg;
 		msg.mode = UserMessageModes::OnSqliteFunction;
 		msg.onwhat = onwhat;
@@ -2069,8 +2143,11 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 		msg.argv = argv;
 		msg.done = 0;
 		msg.waiter = MakeThread();
-		EnqueLink( &userData->sql->messages, &msg );
-		uv_async_send( &userData->sql->async );
+		EnqueLink( &userData->sql->state->messages, &msg );
+#ifdef DEBUG_EVENTS
+		lprintf( "uv_send call user function %p", &userData->sql->state->async );
+#endif		
+		uv_async_send( &userData->sql->state->async );
 
 		while( !msg.done ) {
 			WakeableSleep( SLEEP_FOREVER );
@@ -2193,11 +2270,11 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	int argc = args.Length();
-	if( !sql->thread ) {
-		sql->thread = MakeThread();
+	if( !sql->state->thread ) {
+		sql->state->thread = MakeThread();
 		class constructorSet *c = getConstructors( isolate );
-		uv_async_init( c->loop, &sql->async, sqlUserAsyncMsg );
-		sql->async.data = sql;
+		uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+		sql->state->async.data = sql->state;
 	}
 
 	if( argc > 0 ) {
@@ -2206,7 +2283,7 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->sql = sql;
-		PSSQL_AddSqliteFunction( sql->odbc, *name, callUserFunction, destroyUserData, -1, userData );
+		PSSQL_AddSqliteFunction( sql->state->odbc, *name, callUserFunction, destroyUserData, -1, userData );
 	}
 }
 
@@ -2214,11 +2291,11 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	int argc = args.Length();
-	if( !sql->thread ) {
-		sql->thread = MakeThread();
+	if( !sql->state->thread ) {
+		sql->state->thread = MakeThread();
 		class constructorSet *c = getConstructors( isolate );
-		uv_async_init( c->loop, &sql->async, sqlUserAsyncMsg );
-		sql->async.data = sql;
+		uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+		sql->state->async.data = sql->state;
 	}
 
 	if( argc > 0 ) {
@@ -2227,13 +2304,13 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->sql = sql;
-		PSSQL_AddSqliteProcedure( sql->odbc, *name, callUserFunction, destroyUserData, -1, userData );
+		PSSQL_AddSqliteProcedure( sql->state->odbc, *name, callUserFunction, destroyUserData, -1, userData );
 	}
 }
 
 void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value**argv ) {
 	struct SqlObjectUserFunction *userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( onwhat );
-	if( userData->sql->thread != MakeThread() ) {
+	if( userData->sql->state->thread != MakeThread() ) {
 		struct userMessage msg;
 		msg.mode = UserMessageModes::OnSqliteAggStep;
 		msg.onwhat = onwhat;
@@ -2241,8 +2318,11 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 		msg.argv = argv;
 		msg.done = 0;
 		msg.waiter = MakeThread();
-		EnqueLink( &userData->sql->messages, &msg );
-		uv_async_send( &userData->sql->async );
+		EnqueLink( &userData->sql->state->messages, &msg );
+#ifdef DEBUG_EVENTS
+		lprintf( "uv_send AggStep %p", &userData->sql->state->async );
+#endif		
+		uv_async_send( &userData->sql->state->async );
 
 		while( !msg.done ) {
 			WakeableSleep( SLEEP_FOREVER );
@@ -2317,14 +2397,17 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 
 void callAggFinal( struct sqlite3_context*onwhat ) {
 	struct SqlObjectUserFunction *userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( onwhat );
-	if( userData->sql->thread != MakeThread() ) {
+	if( userData->sql->state->thread != MakeThread() ) {
 		struct userMessage msg;
 		msg.mode = UserMessageModes::OnSqliteAggFinal;
 		msg.onwhat = onwhat;
 		msg.done = 0;
 		msg.waiter = MakeThread();
-		EnqueLink( &userData->sql->messages, &msg );
-		uv_async_send( &userData->sql->async );
+		EnqueLink( &userData->sql->state->messages, &msg );
+#ifdef DEBUG_EVENTS
+		lprintf( "uv_send aggFinal %p", &userData->sql->state->async );
+#endif		
+		uv_async_send( &userData->sql->state->async );
 
 		while( !msg.done ) {
 			WakeableSleep( SLEEP_FOREVER );
@@ -2337,8 +2420,11 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 		msg.onwhat = NULL;
 		msg.done = 0;
 		msg.waiter = MakeThread();
-		EnqueLink( &userData->sql->messages, &msg );
-		uv_async_send( &userData->sql->async );
+		EnqueLink( &userData->sql->state->messages, &msg );
+#ifdef DEBUG_EVENTS
+		lprintf( "uv_send aggFinal2 %p", &userData->sql->state->async );
+#endif		
+		uv_async_send( &userData->sql->state->async );
 	}
 
 	Local<Function> cb2 = Local<Function>::New( userData->isolate, userData->cb2 );
@@ -2390,13 +2476,13 @@ void SqlObject::getRequire( const v8::FunctionCallbackInfo<Value>& args ) {
 void SqlObject::setRequire( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetConnectionRequired( sql->odbc, args[0]->TOBOOL( isolate ) );
+	SetConnectionRequired( sql->state->odbc, args[0]->TOBOOL( isolate ) );
 }
 
 void SqlObject::getLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	args.GetReturnValue().Set( GetConnectionRequired( sql->odbc )?True(isolate):False( isolate ) );
+	args.GetReturnValue().Set( GetConnectionRequired( sql->state->odbc )?True(isolate):False( isolate ) );
 }
 
 void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -2405,9 +2491,9 @@ void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() ) {
 		bool b( args[0]->TOBOOL( isolate ) );
 		if( b )
-			SetSQLLoggingDisable( sql->odbc, FALSE );
+			SetSQLLoggingDisable( sql->state->odbc, FALSE );
 		else
-			SetSQLLoggingDisable( sql->odbc, TRUE );
+			SetSQLLoggingDisable( sql->state->odbc, TRUE );
 	}
 }
 
@@ -2415,7 +2501,7 @@ void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 void SqlObject::error( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	const char *error;
-	FetchSQLError( sql->odbc, &error );
+	FetchSQLError( sql->state->odbc, &error );
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), error, NewStringType::kNormal, (int)strlen(error) ).ToLocalChecked() );
 
 }
@@ -2423,7 +2509,7 @@ void SqlObject::error( const v8::FunctionCallbackInfo<Value>& args ) {
 void SqlObject::getProvider( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject* sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	int provider = GetDatabaseProvider( sql->odbc );
+	int provider = GetDatabaseProvider( sql->state->odbc );
 	args.GetReturnValue().Set( Number::New( isolate, provider ) );
 
 }
@@ -2441,7 +2527,7 @@ void SqlObject::setOnCorruption( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	int argc = args.Length();
 	sql->onCorruption.Reset( isolate, Local<Function>::Cast( args[0] ) );
-	SetSQLCorruptionHandler( sql->odbc, handleCorruption, (uintptr_t)sql );
+	SetSQLCorruptionHandler( sql->state->odbc, handleCorruption, (uintptr_t)sql );
 
 }
 
@@ -2457,13 +2543,13 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->cb2.Reset( isolate, Local<Function>::Cast( args[2] ) );
 		userData->sql = sql;
-		PSSQL_AddSqliteAggregate( sql->odbc, *name, callAggStep, callAggFinal, destroyUserData, -1, userData );
+		PSSQL_AddSqliteAggregate( sql->state->odbc, *name, callAggStep, callAggFinal, destroyUserData, -1, userData );
 
-		if( !sql->thread ) {
-			sql->thread = MakeThread();
+		if( !sql->state->thread ) {
+			sql->state->thread = MakeThread();
 			class constructorSet *c = getConstructors( isolate );
-			uv_async_init( c->loop, &sql->async, sqlUserAsyncMsg );
-			sql->async.data = sql;
+			uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+			sql->state->async.data = sql->state;
 		}
 	}
 	else {
