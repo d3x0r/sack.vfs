@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "1.1.817",
+  "version": "1.1.818",
   "description": "SACK abstraction library exposed to JS to provide low level system services.",
   "repository": {
     "type": "git",
