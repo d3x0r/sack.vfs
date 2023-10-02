@@ -1,6 +1,16 @@
 
 #include "global.h"
 
+//#define DEBUG_EVENTS
+//#define EVENT_DEBUG_STDOUT
+
+#ifdef DEBUG_EVENTS
+#  ifdef EVENT_DEBUG_STDOUT
+#    undef lprintf
+#    define lprintf(f,...)  printf( "%d~" f "\n", (int)(GetThisThreadID() & 0x7FFFFFF),##__VA_ARGS__)
+#  endif
+#endif
+
 /*
 
 MessageEvent.data Read only
@@ -884,6 +894,9 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
 				Deallocate( HTTPRequestOptions*, myself->opts);
 
 				DeleteLinkQueue(&myself->eventQueue);
+#ifdef DEBUG_EVENTS				
+				lprintf( "Sack uv_close1 %p", &myself->async );
+#endif				
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_httpRequest );
 				DropHttpRequestEvent( eventMessage );
 				break;
@@ -961,6 +974,9 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, callback ) {
 					callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 				}
+#ifdef DEBUG_EVENTS				
+				lprintf( "Sack uv_close2 %p", &myself->async);
+#endif
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wssi );
 				DropWssiEvent( eventMessage );
 				DeleteLinkQueue( &myself->eventQueue );
@@ -1173,6 +1189,8 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				eventMessage->data.write->buffer.Reset();
 			} else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
 				myself->readyState = CLOSED;
+				lprintf( "Sack uv_close2 %p", &myself->async);
+
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_wss );
 				if( !myself->closeCallback.IsEmpty() ) {
 					Local<Function> cb = myself->closeCallback.Get( isolate );
@@ -1282,6 +1300,9 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					LIST_FORALL( wsc->closeCallbacks, idx, callbackFunction*, callback ) {
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
 					}
+#ifdef DEBUG_EVENTS				
+					lprintf( "Sack uv_close3 %p", &wsc->async);
+#endif					
 					uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
 					DeleteLinkQueue( &wsc->eventQueue );
 					wsc->readyState = CLOSED;
@@ -1320,7 +1341,9 @@ static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssi
 				trans->protocolResponse = obj->protocolResponse;
 				obj->protocolResponse = NULL;
 				AddLink( &station->transport, trans );
-				//lprintf( "Send Post Request %p", station->clientSocketPoster );
+#ifdef DEBUG_EVENTS
+				lprintf( "Send Post Request %p", &station->clientSocketPoster );
+#endif				
 				uv_async_send( &station->clientSocketPoster );
 
 				break;
@@ -1454,6 +1477,9 @@ static void handlePostedClient( uv_async_t* async ) {
 		unload->this_.Reset();
 		DeleteLink( &l.transportDestinations, unload );
 		SetLink( &unload->transport, 0, NULL );
+#ifdef DEBUG_EVENTS				
+		lprintf( "Sack uv_close3 %p", async);
+#endif
 		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 		break;
 	}
@@ -1710,6 +1736,9 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ){
 		EnqueLink( &wssi->eventQueue, pevt );
                 //lprintf( "Send Event:%p", &wss->async );
                 wssi->readyState = wsReadyStates::OPEN;
+#ifdef DEBUG_EVENTS
+		lprintf( "Open event send...%p", &wssi->async );
+#endif		
 		uv_async_send( &wssi->async );
 		// can't change this result later, so need to send 
 		// it as a refernence, in case the JS object changes
@@ -1731,8 +1760,12 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 	if( (*pevt).waiter == l.jsThread ) {
 		wssAsyncMsg( &wss->async );
 	}
-	else
+	else {
+#ifdef DEBUG_EVENTS
+		lprintf( "socket close send %p", &wss->async);
+#endif
 		uv_async_send( &wss->async );
+	}
 	/*
 	while( wss->event_waker ) {
 		WakeThread( wss->event_waker );
@@ -1755,6 +1788,9 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		(*pevt).buflen = StrLen( reason );
 		wssi->pc = NULL;
 		EnqueLink( &wssi->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+		lprintf( "socket server close send %p", &wssi->async);
+#endif		
 		uv_async_send( &wssi->async );
 	}
 	else {
@@ -1793,8 +1829,12 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 			if( (*pevt).waiter == l.jsThread ) {
 				wssAsyncMsg( &wss->async );
 			}
-			else
+			else {
+#ifdef DEBUG_EVENTS
+				lprintf( "socket server close send2 %p", &wss->async);
+#endif
 				uv_async_send( &wss->async );
+			}
 
 			while( !(*pevt).done )
 				Wait();
@@ -1818,6 +1858,9 @@ static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ){
 	(*pevt).eventType = WS_EVENT_ERROR;
 	(*pevt)._this = wssi;
 	EnqueLink( &wssi->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+	lprintf( "socket server error send %p", &wssi->async);
+#endif	
 	uv_async_send( &wssi->async );
 }
 
@@ -1833,6 +1876,9 @@ static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOIN
 	memcpy( (char*)(*pevt).buf, buffer, msglen );
 	(*pevt).buflen = msglen;
 	EnqueLink( &wssi->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+	lprintf( "socket data evnet send %p", &wssi->async );
+#endif	
 	uv_async_send( &wssi->async );
 
 }
@@ -1857,8 +1903,12 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* proto
 	EnqueLink( &wss->eventQueue, pevt );
 	if( ( *pevt ).waiter == l.jsThread ) {
 		wssAsyncMsg( &wss->async );
-	} else
+	} else {
+#ifdef DEBUG_EVENTS
+		lprintf( "socket server accept %p", &wss->async );
+#endif		
 		uv_async_send( &wss->async );
+	}
 
 	while( !( *pevt ).done )
 		Wait();
@@ -2069,8 +2119,12 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					//lprintf( "Send Request" );
 					if( (*pevt).waiter == l.jsThread ) {
 						wssAsyncMsg( &obj->wss->async );
-					} else
+					} else {
+#ifdef DEBUG_EVENTS
+						lprintf( "socket HTTP Parse Send %p", &obj->wss->async);
+#endif						
 						uv_async_send(&obj->wss->async);
+					}
 					break;
 				}
 			}
@@ -2115,6 +2169,9 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 		wssAsyncMsg( &wss->async );
 	}
 	else {
+#ifdef DEBUG_EVENTS
+		lprintf( "socket HTTP close Send %p", &wss->async);
+#endif		
 		uv_async_send( &wss->async );
 		while( (*pevt).done )
 			Wait();
@@ -2136,6 +2193,9 @@ static void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len ) {
 				pevt->eventType = WS_EVENT_RELEASE_BUFFER;
 				pevt->data.write = write;
 				EnqueLink( &write->wss->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+				lprintf( "socket write complete Send %p", &write->wss->async );
+#endif
 				uv_async_send( &write->wss->async );
 				SetLink( &l.pendingWrites, idx, NULL );
 				break;
@@ -2157,6 +2217,9 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		(*pevt). pc = pc;
 		(*pevt)._this = wss;
 		EnqueLink( &wss->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+		lprintf( "socket HTTP Request Send %p", &wss->async );
+#endif		
 		uv_async_send( &wss->async );
 		//while (!(*pevt).done) WakeableSleep(SLEEP_FOREVER);
 		//lprintf("queued and evented  request event to JS");
@@ -2187,6 +2250,9 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	(*pevt).waiter = MakeThread();
 	HoldWssEvent( pevt );
 	EnqueLink( &wss->eventQueue, pevt );
+#ifdef DEBUG_EVENTS
+	lprintf( "socket HTTP LowError Send %p", &wss->async);
+#endif	
 	uv_async_send( &wss->async );
 	while( !(*pevt).done )
 		WakeableSleep( 1000 );
@@ -2200,8 +2266,12 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 static uintptr_t catchLostEvents( PTHREAD thread ) {
 	wssObject *wss = (wssObject*)GetThreadParam( thread );
 	while( !wss->closing ) {
-		if( wss->last_count_handled )
+		if( wss->last_count_handled ) {
+#ifdef DEBUG_EVENTS
+			lprintf( "socket Lost Event Send %p", &wss->async );
+#endif			
 			uv_async_send( &wss->async );
+		}
 		WakeableSleep( 1000 );
 	}
 	wss->event_waker = NULL;
@@ -2879,7 +2949,7 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
-	lprintf( "Send Open Request" );
+	lprintf( "Send Open Request %p", &wsc->async );
 #endif
 	uv_async_send( &wsc->async );
 	return psv;
@@ -2897,7 +2967,7 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	(*pevt).buflen = StrLen( reason );
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
-	lprintf( "Send Close Request" );
+	lprintf( "Send Close Request %p", &wsc->async );
 #endif
 	uv_async_send( &wsc->async );
 	wsc->pc = NULL;
@@ -2912,7 +2982,7 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 	(*pevt).code = error;
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
-	lprintf( "Send Error Request" );
+	lprintf( "Send Error Request %p", &wsc->async );
 #endif
 	uv_async_send( &wsc->async );
 }
@@ -2929,7 +2999,7 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	(*pevt)._this = wsc;
 	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
-	lprintf( "Send Client Read Request" );
+	lprintf( "Send Client Read Request %p", &wsc->async );
 #endif
 	uv_async_send( &wsc->async );
 }
@@ -3462,6 +3532,9 @@ static uintptr_t DoRequest( PTHREAD thread ) {
 		(*pevt)._this = req;
 		(*pevt).state = state;
 		EnqueLink(&req->eventQueue, pevt);
+#ifdef DEBUG_EVENTS
+		lprintf( "socket DoRequest Send %p", &req->async);
+#endif		
 		uv_async_send(&req->async);
 	}
 	else {
