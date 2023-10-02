@@ -79,7 +79,21 @@ export async function load(urlin, context, defaultLoad) {
 	const { format } = context;
 	const exten = path.extname( urlin );
 	debug_&&console.log( "LOAD:", urlin, exten, context );
-	if( urlin.startsWith( "http://" ) || urlin.startsWith( "https://" ) || urlin.startsWith( "HTTP://" ) || urlin.startsWith( "HTTPS://" ) ) {
+	if( urlin.startsWith( "module://./" ) ) {
+		// this handles forcing load of a module (even if extension is .js)
+		// otherwise loading the file normally would work better.
+		// This is for pretending that the load happens as if it happened over the HTTP connection
+		// The rules for the HTTP loader would redirect /node_modules and /common to different locations than the resource path.
+		// environment variables that control this: COMMON_PATH for /common; NODE_MODULE_PATH for "/node_modules"; and RESOURCE_PATH for everything else
+		context.format="module";
+		let pathOnly = urlin.substring( 10 );
+		debug_ && console.log( "pathOnly:", pathOnly, urlin )
+		if( pathOnly.startsWith( "/common" ) ) pathOnly = pathOnly.replace( "/common", process.env.COMMON_PATH ) ?? "../..";
+		else if( pathOnly.startsWith( "/node_modules" ) ) pathOnly = pathOnly.replace( "/node_modules", process.env.NODE_MODULE_PATH ) ?? "../../node_modules";
+		else pathOnly = ( process.env.RESOURCE_PATH??".") + pathOnly;
+		urlin = url.pathToFileURL( pathOnly ).href;
+		debug_ && console.log( "Resulting urlin:", urlin );
+	} else if( urlin.startsWith( "http://" ) || urlin.startsWith( "https://" ) || urlin.startsWith( "HTTP://" ) || urlin.startsWith( "HTTPS://" ) ) {
 		const url = new URL( urlin );
 		const exten = path.extname( url.pathname );
 		debug_&&console.log( "Real extension:", exten );
@@ -107,7 +121,7 @@ export async function load(urlin, context, defaultLoad) {
 	  	const { format } = context;
 		debug_&&console.log( "urlin is a string?", typeof urlin );
 		const file = url.fileURLToPath(urlin);
-		debug_&&console.log( "FILE?:", file )
+		debug_&&console.log( "FILE?:", urlin, file )
 		const result = fs.readFileSync(file).toString("utf8");
    	 
 

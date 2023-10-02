@@ -236,6 +236,17 @@ Performance-wise the JS versions have advantages if the information to parse is 
 can operate directly on the array buffers loaded from SACK databases, Volumes and files.  Which limits the copy one side; otherwise
 there's a conversion to string from binary and a copy of that string from JS to C potentially.
 
+Loader also supports fetching files over `HTTP://` and `HTTPS://` (or `http://` and `https://`).  This performs a request, and then sends the result as the loaded module.
+
+As a further feature, since web files often just use `.js` as the extension for modules, and everything loaded from a `type="module"` script is loaded as a module,
+the loader supports loading from `module://./` (the '.' is important, since really the host is always this computer, and becomes part of the requests when a module loads another module).
+The `module://./` prefix is substituted, and uses environment variables `RESOURCE_PATH` for where to load default files, if the file path starts with `/common` then `COMMON_PATH` environment
+variable is prepended to the file, and `/node_modules` file prefix uses `NODE_MODULE_PATH` environment variable to load modules; native modules will probably not load this way, but typical 
+javascript modules can be loaded this way.
+
+There is a race condition, if `http(s)://` is used from the local server, then the loading might stall waiting for the server to become available; this is the reason
+that `module://` support was added.  TODO: Fix stall, workaround, use `module://` instead of `http(s)://` for local files loaded from a self contained server.
+
 
 ---
 
@@ -243,6 +254,9 @@ there's a conversion to string from binary and a copy of that string from JS to 
 - 1.1.819(in progress)
 - 1.1.818
     - Fix fatal error with non-async SQL command that generated an error.
+    - Fix race condition crash with new SQL open callback; the db object was deallocated before uv_close event happened.
+    - Improved import.mjs experimental loader support; added `module://./` support for it.
+    - Fixed SQL result error when no records returned for non-promised query (returned undefined instead of empty array).
 - 1.1.817
     - Aliased `Sqlite` to `ODBC` and `DB` also; since it is not specifically Sqlite.
     - Added `run()` function in SQL module; this returns a promise and runs the query in a background thread.
@@ -258,7 +272,7 @@ there's a conversion to string from binary and a copy of that string from JS to 
     - Added http:// support in import.mjs node loader module.
     - Improved user-agent support for HTTP requests; added `agent` option, but also pay attention to 'user-agent' if specified as an option in `headers` in request options.
     - Added a callback when a SQL connection is opened (or re-opened after a failure) to be able to condition the connection.
-    - added content-type handling for `.webm` and `.mp4` in default websocket/HTTP(S) modules.
+    - added content-type handling for `.webm` and `.mp4` in default websocket/HTTP(S) modules ("sack.vfs/http-ws" or "sack.vfs/apps/http-ws").
 - 1.1.816
     - (Windows)Add method to get task window title.
     - Sqlite method added - `provider` - returns what the target database is from ODBC information.
