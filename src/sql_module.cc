@@ -2047,7 +2047,9 @@ static void callAggFinal( struct sqlite3_context*onwhat );
 
 static void uv_closed_sql( uv_handle_t* handle ) {
 	struct sql_object_state* myself = (struct sql_object_state*)handle->data;
+#ifdef DEBUG_EVENTS
 	lprintf( "Closed uv_handle(6?)");
+#endif
 	ReleaseEx( myself DBG_SRC );
 }
 
