@@ -4,7 +4,6 @@
 
 import {sack} from "sack.vfs"
 
-
 const pch = sack.Config();
 
 		pch.add( "alias service %w %w", HandleAlias );
@@ -28,7 +27,10 @@ const pch = sack.Config();
 		pch.add( "pmodule %w", HandlePrivateModule );
 		pch.add( "modulepath %m", HandleModulePath );
 
+//sack.memDump();
+//for( let i = 0; i < 100; i++ )
 pch.go( "interface.conf" );
+//sack.memDump();
 
 function SetProducerName( name ) {
 	console.log( "SetProducerName", name );
