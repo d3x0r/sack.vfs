@@ -51,6 +51,7 @@ static uintptr_t CPROC releaseArg( uintptr_t lastArg ) {
 ConfigObject::ConfigObject() {
 	pch = CreateConfigurationHandler();
 	lastResult = (uintptr_t)this;
+	//unhandled.Reset();
 	SetConfigurationEndProc( pch, releaseArg );
 }
 
@@ -66,7 +67,6 @@ static uintptr_t HandleUnhandled( uintptr_t psv, CTEXTSTR line ) {
 		Local<Function> handler = config->unhandled.Get( config->isolate );
 		if (line) {
 			Local<Value> argv[1] = { String::NewFromUtf8( config->isolate, line, v8::NewStringType::kNormal ).ToLocalChecked() };
-
 			handler->Call( config->isolate->GetCurrentContext(), config->lastValue.Get( config->isolate ), 1, argv );
 		}else
 			handler->Call( config->isolate->GetCurrentContext(), config->lastValue.Get( config->isolate ), 0, NULL );
@@ -244,7 +244,7 @@ static void configColor( const v8::FunctionCallbackInfo<Value>& args ) {
 void ConfigObject::Go( const v8::FunctionCallbackInfo<Value>& args ) {
 	ConfigObject *config = ObjectWrap::Unwrap<ConfigObject>( args.This() );
 	String::Utf8Value filename( USE_ISOLATE( args.GetIsolate() ) args[0] );
-	ProcessConfigurationFile( config->pch, *filename, (uintptr_t)(*Null(args.GetIsolate() )) );
+	ProcessConfigurationFile( config->pch, *filename, (uintptr_t)(config) );
 }
 
 void ConfigObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
