@@ -44,6 +44,8 @@ processor.add( "%m Unable to negotiate with %w port %w: no matching key exchange
 processor.add( "%m Bad protocol version identification %m from  %w port %i", failed_pass );
 processor.add( "%m fatal: Timeout before authentication for %w port %i", failed_pass3 );
 
+processor.add( "%m Disconnected from invalid user %w %w port %i [preauth]", failed_pass );
+
 processor.add( "%m Failed password for %w from %w port %i ssh2", failed_pass );
 processor.add( "%m Failed password for %w from %w", failed_pass );
 processor.add( "%m Invalid user %w from %w", failed_pass );
