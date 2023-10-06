@@ -60,31 +60,32 @@ processor.add( "%m sshd[%i]: Connection closed by %w port %i", failed_key_close 
 
 processor.on( "unhandled", (str)=> console.log( "Unhandled line:", str ) );
 
-function failed_user_single( leader, ip ) {
-	AddBan( ip );
+function failed_user_single( leader, ip, line ) {
+	AddBan( ip, line );
 }
 
-function failed_pass3( leader, ip, port ) {
-	AddBan( ip );
+function failed_pass3( leader, ip, port, line ) {
+	AddBan( ip, line );
 }
 
-function failed_pass2( leader, user, ip, port ) {
-	AddBan( ip );
+function failed_pass2( leader, user, ip, port, line ) {
+	AddBan( ip, line );
 }
 
-function failed_pass( leader, user, ip, port ) {
-	AddBan( ip );
+function failed_pass( leader, user, ip, port, line ) {
+	AddBan( ip, line );
 }
 
-function failed_key( leader, pid ) {
+function failed_key( leader, pid, line ) {
 	lbs.pendingKeys.set( pid, true );
+	console.log( "Handled:", line );
 }
 
-function failed_key_close( leader, pid, ip, port ) {
+function failed_key_close( leader, pid, ip, port, line ) {
 	//console.log( "Got pid:", pid );
 	if( lbs.pendingKeys.get( pid ) ) {
 		lbs.pendingKeys.delete( pid );
-		AddBan( ip );
+		AddBan( ip, line );
 		//console.log( "fkc", leader, ip, port );
 	}
 }
@@ -97,8 +98,9 @@ function ExecFirewall( )
 	lbs.exec_timer = 0;
 }
 
-function AddBan( IP )
+function AddBan( IP, line )
 {
+	console.log( "Handled:", line );
 	console.log( "ban IP:", IP );
 	if( lbs.db ) {
 		const result = lbs.db.do( "select 1 from banlist where IP=?", IP )
@@ -113,7 +115,7 @@ function AddBan( IP )
 	}
 	if( !lbs.lastban || lbs.lastban.localeCompare( IP ) ) {
 		lbs.file = disk.File( lbs.output );		
-		console.log( "add", IP );
+		//console.log( "add", IP, "to", lbs.output );
 		lbs.file.writeLine( IP );
 		lbs.file.close();
 		if( lbs.exec_timer )
@@ -140,4 +142,4 @@ Oct 06 05:24:49 tower systemd-resolved[420]: Using degraded feature set UDP inst
 	processor.write( "Sep 25 22:02:27 tower sshd[123]: error: kex_exchange_identification: Connection closed by remote host\n" );
 	processor.write( "Sep 25 22:02:27 tower sshd[123]: Connection closed by 1.2.3.4 port 55555\n" );
 }
-testProcess();
+//testProcess();
