@@ -1806,10 +1806,13 @@ void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::closeFile( const v8::FunctionCallbackInfo<Value>& args ) {
 	FileObject* file = ObjectWrap::Unwrap<FileObject>( args.This() );
-	if( file->vol->volNative )
+	if( file->vol->volNative ) {
 		sack_vfs_close( file->file );
-	else 
+		file->file = NULL;
+	} else {
 		sack_fclose( file->cfile );
+		file->cfile = NULL;
+	}
 }
 
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
@@ -1975,10 +1978,11 @@ FileObject::~FileObject() {
 	//printf( "File object evaporated.\n" );
 	if( buf )
 		Deallocate( char*, buf );
-	if( vol->volNative )
-		sack_vfs_close( file );
-	else
-		sack_fclose( cfile );
+	if( vol->volNative ) {
+		if( file ) sack_vfs_close( file );
+	} else {
+		if( cfile ) sack_fclose( cfile );
+	}
 	volume.Reset();
 }
 
