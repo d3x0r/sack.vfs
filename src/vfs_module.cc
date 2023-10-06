@@ -1757,12 +1757,16 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 			if( file->vol->volNative ) {
 				if( setOffset )
 					sack_vfs_seek( file->file, offset, SEEK_SET );
+				else
+					sack_vfs_seek( file->file, 0, SEEK_END );
 				sack_vfs_write( file->file, *data, data.length() );
 				sack_vfs_write( file->file, "\n", 1 );
 			}
 			else {
 				if( setOffset )
 					sack_fseek( file->cfile, offset, SEEK_SET );
+				else
+					sack_fseek( file->cfile, 0, SEEK_END );
 				sack_fputs( *data, file->cfile );
 				sack_fputs( "\n", file->cfile );
 			}
