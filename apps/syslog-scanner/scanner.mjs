@@ -109,9 +109,10 @@ function AddBan( IP )
 		}
 	}
 	if( !lbs.lastban || lbs.lastban.localeCompare( IP ) ) {
-		
+		lbs.file = disk.File( lbs.output );		
 		console.log( "add", IP );
 		lbs.file.writeLine( IP );
+		lbs.file.close();
 		if( lbs.exec_timer )
 			clearTimeout( lbs.exec_timer );
 
