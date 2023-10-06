@@ -257,6 +257,8 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
     - Fix race condition crash with new SQL open callback; the db object was deallocated before uv_close event happened.
     - Improved import.mjs experimental loader support; added `module://./` support for it.
     - Fixed SQL result error when no records returned for non-promised query (returned undefined instead of empty array).
+    - Fix failure to generate callback opening Sqlite databases.
+    - Fixed configuration parser; added syslog scanner to generate bans by IP.
 - 1.1.817
     - Aliased `Sqlite` to `ODBC` and `DB` also; since it is not specifically Sqlite.
     - Added `run()` function in SQL module; this returns a promise and runs the query in a background thread.
