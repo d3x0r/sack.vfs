@@ -1799,6 +1799,15 @@ void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 		sack_ftruncate( file->cfile );
 }
 
+
+void FileObject::closeFile( const v8::FunctionCallbackInfo<Value>& args ) {
+	FileObject* file = ObjectWrap::Unwrap<FileObject>( args.This() );
+	if( file->vol->volNative )
+		sack_vfs_close( file->file );
+	else 
+		sack_fclose( file->cfile );
+}
+
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	Local<Context> context = Isolate::GetCurrent()->GetCurrentContext();
 	//size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
@@ -1853,6 +1862,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "seek", seekFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pos", tellFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "trunc", truncateFile );
+		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "close", closeFile );
 		// read stream methods
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pause", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "resume", openFile );

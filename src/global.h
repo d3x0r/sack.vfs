@@ -340,6 +340,7 @@ public:
 	static void seekFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void tellFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void truncateFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void closeFile( const v8::FunctionCallbackInfo<Value>& args );
 
 	//static void readFile( const v8::FunctionCallbackInfo<Value>& args );
 
