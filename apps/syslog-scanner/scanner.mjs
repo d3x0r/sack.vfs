@@ -20,22 +20,19 @@ configProcessor.add( "command=%m", (c)=>lbs.command = c );
 configProcessor.add( "output=%m", (c)=>lbs.output = c );
 configProcessor.add( "input=%m", (c)=>{
 	const words = c.split( " " );
-	sack.Task( { bin:c[0], args:c.slice( 1 ).join(" " ), input(buf)=>{ 
-			console.log( "Buf is:", buf );
+	sack.Task( { bin:words[0], args:words.slice( 1 ).join(" " ), input(buf) { 
+			//console.log( "Buf is:", buf );
+			processor.write( buf );
 		} } );
 } );
 configProcessor.add( "DSN=%m", (c)=>lbs.DSN = c );
 configProcessor.go( "linux_syslog_scanner.conf" );
 
 lbs.db = sack.DB( lbs.DSN, (db)=>{
-	console.log( "make table?" );
 	try {
 		db.makeTable( "create table banlist ( IP char(48) PRIMARY KEY, last_hit DATETIME default CURRENT_TIMESTAMP )" );
 	} catch( err ) { console.log( "create failed?", err ); }
 } );
-
-console.log( "Sending output to:", lbs.output );
-lbs.file = disk.File( lbs.output );
 
 
 const processor = sack.Config();
