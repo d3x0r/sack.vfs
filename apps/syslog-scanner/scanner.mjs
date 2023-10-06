@@ -1,11 +1,9 @@
 
 import {sack} from "sack.vfs"
 
-const disk = sack.Volume();
 
 const lbs = {
 	command : "/root/bin/iptables-setup",
-	output : "/etc/firewall/banlist",
 	DSN : "maria-firewall",
 	exec_timer : 0,
 	lastban : null,
@@ -17,7 +15,6 @@ const lbs = {
 
 const configProcessor = sack.Config();
 configProcessor.add( "command=%m", (c)=>lbs.command = c );
-configProcessor.add( "output=%m", (c)=>lbs.output = c );
 configProcessor.add( "input=%m", (c)=>{
 	const words = c.split( " " );
 	sack.Task( { bin:words[0], args:words.slice( 1 ).join(" " ), input(buf) { 
@@ -91,12 +88,6 @@ function failed_key_close( leader, pid, ip, port, line ) {
 }
 
 
-
-function ExecFirewall( )
-{
-	var task1 = sack.Task( {bin:lbs.command, args:[lbs.output] } );
-	lbs.exec_timer = 0;
-}
 
 function AddBan( IP, line )
 {
