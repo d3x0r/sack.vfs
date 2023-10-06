@@ -132,7 +132,12 @@ function testProcess() {
 	processor.write( "Sep 25 22:00:57 tower sshd[2677773]: Did not receive identification string from 1.1.1.1\n" );
 	processor.write( "Sep 25 22:00:57 tower sshd[2677773]: Failed password for invalid user admin from 180.165.132.101 port 50554 ssh2\n" );
 	processor.write( "Sep 25 22:02:27 tower sshd[2677696]: fatal: Timeout before authentication for 115.205.228.215 port 1767\n" );
+	processor.write( `Oct 06 05:19:15 tower systemd-resolved[420]: Using degraded feature set TCP instead of UDP for DNS server 10.173.0.1.
+Oct 06 05:19:15 tower systemd-resolved[420]: Using degraded feature set UDP instead of TCP for DNS server 10.173.0.1.
+Oct 06 05:24:49 tower systemd-resolved[420]: Using degraded feature set TCP instead of UDP for DNS server 10.173.0.1.
+Oct 06 05:24:49 tower systemd-resolved[420]: Using degraded feature set UDP instead of TCP for DNS server 10.173.0.1.
+` );
 	processor.write( "Sep 25 22:02:27 tower sshd[123]: error: kex_exchange_identification: Connection closed by remote host\n" );
 	processor.write( "Sep 25 22:02:27 tower sshd[123]: Connection closed by 1.2.3.4 port 55555\n" );
 }
-//testProcess();
+testProcess();
