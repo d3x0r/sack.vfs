@@ -57,19 +57,6 @@ processor.add( "%m sshd[%i]: Connection closed by %w port %i", failed_key_close 
 
 processor.on( "unhandled", (str)=> console.log( "Unhandled line:", str ) );
 
-function testProcess() {
-	console.log( "Test processing..." );
-	processor.write( "Test failed line...\n" );
-	console.log( "should have been an unknown" );
-
-	processor.write( "Sep 25 22:00:57 tower sshd[2677773]: Did not receive identification string from 1.1.1.1\n" );
-	processor.write( "Sep 25 22:00:57 tower sshd[2677773]: Failed password for invalid user admin from 180.165.132.101 port 50554 ssh2\n" );
-	processor.write( "Sep 25 22:02:27 tower sshd[2677696]: fatal: Timeout before authentication for 115.205.228.215 port 1767\n" );
-	processor.write( "Sep 25 22:02:27 tower sshd[123]: error: kex_exchange_identification: Connection closed by remote host\n" );
-	processor.write( "Sep 25 22:02:27 tower sshd[123]: Connection closed by 1.2.3.4 port 55555\n" );
-}
-testProcess();
-
 function failed_user_single( leader, ip ) {
 	AddBan( ip );
 }
@@ -131,3 +118,17 @@ function AddBan( IP )
 		lbs.exec_timer = setTimeout( ExecFirewall, 1000 );
 	}
 }
+
+
+function testProcess() {
+	console.log( "Test processing..." );
+	processor.write( "Test failed line...\n" );
+	console.log( "should have been an unknown" );
+
+	processor.write( "Sep 25 22:00:57 tower sshd[2677773]: Did not receive identification string from 1.1.1.1\n" );
+	processor.write( "Sep 25 22:00:57 tower sshd[2677773]: Failed password for invalid user admin from 180.165.132.101 port 50554 ssh2\n" );
+	processor.write( "Sep 25 22:02:27 tower sshd[2677696]: fatal: Timeout before authentication for 115.205.228.215 port 1767\n" );
+	processor.write( "Sep 25 22:02:27 tower sshd[123]: error: kex_exchange_identification: Connection closed by remote host\n" );
+	processor.write( "Sep 25 22:02:27 tower sshd[123]: Connection closed by 1.2.3.4 port 55555\n" );
+}
+//testProcess();
