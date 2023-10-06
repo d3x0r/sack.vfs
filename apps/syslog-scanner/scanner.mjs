@@ -114,14 +114,7 @@ function AddBan( IP, line )
 		}
 	}
 	if( !lbs.lastban || lbs.lastban.localeCompare( IP ) ) {
-		lbs.file = disk.File( lbs.output );		
-		//console.log( "add", IP, "to", lbs.output );
-		lbs.file.writeLine( IP );
-		lbs.file.close();
-		if( lbs.exec_timer )
-			clearTimeout( lbs.exec_timer );
-
-		lbs.exec_timer = setTimeout( ExecFirewall, 1000 );
+		sack.Task( {bin:lbs.command, args:[IP] } );
 	}
 }
 

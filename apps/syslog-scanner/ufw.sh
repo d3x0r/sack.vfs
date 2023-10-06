@@ -1,4 +1,3 @@
+#!/bin/bash
 
-for i in $(cat $1); do
-	ufw deny from $i
-done
+ufw deny from $1
