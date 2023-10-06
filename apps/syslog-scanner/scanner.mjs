@@ -18,6 +18,12 @@ const lbs = {
 const configProcessor = sack.Config();
 configProcessor.add( "command=%m", (c)=>lbs.command = c );
 configProcessor.add( "output=%m", (c)=>lbs.output = c );
+configProcessor.add( "input=%m", (c)=>{
+	const words = c.split( " " );
+	sack.Task( { bin:c[0], args:c.slice( 1 ).join(" " ), input(buf)=>{ 
+			console.log( "Buf is:", buf );
+		} } );
+} );
 configProcessor.add( "DSN=%m", (c)=>lbs.DSN = c );
 configProcessor.go( "linux_syslog_scanner.conf" );
 
