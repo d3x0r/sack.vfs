@@ -24,7 +24,7 @@ configProcessor.go( "linux_syslog_scanner.conf" );
 lbs.db = sack.DB( lbs.DSN, (db)=>{
 	console.log( "make table?" );
 	try {
-		db.makeTable( "create table banlist ( IP char(48) PRIMARY KEY, last_hit DATETIME default CURRENT_DATETIME )" );
+		db.makeTable( "create table banlist ( IP char(48) PRIMARY KEY, last_hit DATETIME default CURRENT_TIMESTAMP )" );
 	} catch( err ) { console.log( "create failed?", err ); }
 } );
 
