@@ -1,11 +1,9 @@
 
 import {sack} from "sack.vfs"
 
-const disk = sack.Volume();
 
 const lbs = {
 	command : "/root/bin/iptables-setup",
-	output : "/etc/firewall/banlist",
 	DSN : "maria-firewall",
 	exec_timer : 0,
 	lastban : null,
@@ -30,13 +28,15 @@ lbs.db = sack.DB( lbs.DSN, (db)=>{
 
 
 const ips = lbs.db.do( "select IP from banlist" );
-const file = disk.File( lbs.output );
-for( let ip of ips ) {
-	file.writeLine( ip.IP );
-	console.log( "rewrite:", ip.IP );
-}
+let i = 0;
 
-sack.Task( {bin:lbs.command, args:[lbs.output], noKill:true } );
+function ban() {
+	if( i >= ips.length ) return;
+	
+	sack.Task( {bin:lbs.command, args:[ips[i].IP], noKill:true, end(){ ban()} } );
+	i++;
+}
+ban();
 
 lbs.db.close();
 

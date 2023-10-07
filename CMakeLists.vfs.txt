@@ -405,7 +405,7 @@ endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation -std=c++17")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 
