@@ -103,6 +103,9 @@ typedef struct udpEvent UDP_EVENT;
 #define MAXUDP_EVENTSPERSET 128
 DeclareSet( UDP_EVENT );
 
+static void getName( const v8::FunctionCallbackInfo<Value>& args );
+static void ping( const v8::FunctionCallbackInfo<Value>& args );
+
 static struct local {
 	int data;
 	PLIST strings;
@@ -235,6 +238,13 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		c->udpConstructor.Reset( isolate, udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	}
+	{
+		Local<Object> icmpObject = Object::New( isolate );
+		NODE_SET_METHOD( icmpObject, "ping", ping );
+		NODE_SET_METHOD( icmpObject, "nameOf", getName );
+		
+		SET_READONLY( oNet, "ICMP", icmpObject );
 	}
 	{
 		Local<FunctionTemplate> addrTemplate;
@@ -699,4 +709,184 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 		args.GetReturnValue().Set( addr->_this.Get( isolate ) );
 	}
+}
+
+static void getName( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	struct hostent* phe;
+	uint8_t ipv4[4];
+	uint16_t ipv6[8];
+	LOGICAL isv4;
+	TEXTSTR start, end;
+	if( args.Length() < 0 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "A string to decode as an IP to lookup." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	String::Utf8Value addr( USE_ISOLATE( isolate ) args[0] );
+	start = *addr;
+	if( end = StrChr( start, ':' ) ) {
+		int byte = 0;
+		isv4 = FALSE;
+		while( start[0] && byte < 8 ) {
+			if( end ) end[0] = 0;
+			ipv6[byte++] = (uint16_t)strtol( start, NULL, 16 );
+			if( end ) start = end + 1;
+			if( start[0] ) end = StrChr( start, ':' );
+		}
+	} else if( end = StrChr( start, '.' ) ) {
+		int byte = 0;
+		isv4 = TRUE;
+		while( start[0] && byte < 4 ) {
+			if( end ) end[0] = 0;
+			ipv4[byte++] = (uint8_t)strtol( start, NULL, 10 );
+			if( end ) start = end + 1;
+			if( start[0] ) end = StrChr( start, '.' );
+		}
+	}
+	if( isv4 )
+		phe = gethostbyaddr( (char*)ipv4, 4, AF_INET);
+	else
+		phe = gethostbyaddr( (char*)ipv6, 16, AF_INET6 );
+
+	if( phe )
+	{
+		Local<Array> result = Array::New( isolate );
+		int rnum = 0;
+		char** alias = phe->h_aliases;
+		if( phe->h_name )
+		result->Set( isolate->GetCurrentContext(), rnum++, String::NewFromUtf8( isolate, phe->h_name ).ToLocalChecked() );
+		//printf( "%s %s", argv[1], phe->h_name );
+		while( alias[0] )
+		{
+			result->Set( isolate->GetCurrentContext(), rnum++, String::NewFromUtf8( isolate, alias[0] ).ToLocalChecked() );
+			alias++;
+		}
+		args.GetReturnValue().Set( result );
+	} else {
+		args.GetReturnValue().Set( Null(isolate) );
+	}
+}
+
+struct pingState {
+	uv_async_t async;
+	Persistent<Function> cb;
+	Isolate* isolate;
+	volatile int done;
+	volatile int handled;
+	struct {
+		uint32_t dwIp;
+		CTEXTSTR name;
+		int min;
+		int max;
+		int avg;
+		int drop;
+		int hops;
+	} result;
+};
+
+struct pingParams {
+	struct pingState* state;
+	TEXTSTR addr;
+	int ttl;
+	int count;
+	int time;
+	volatile int received;
+};
+
+static void asyncClosed( uv_handle_t* async ) {
+	struct pingState* state = (struct pingState*)async->data;
+	ReleaseEx( state DBG_SRC );
+}
+
+static void pingAsync( uv_async_t* async ) {
+	struct pingState* state = (struct pingState*)async->data;
+	HandleScope scope( state->isolate );
+	Local<Object> data = Object::New( state->isolate );
+	Local<Context> context = state->isolate->GetCurrentContext();
+	if( !state->done ) {
+		if( state->result.name )
+			data->Set( context, String::NewFromUtf8Literal( state->isolate, "IP" ), String::NewFromUtf8( state->isolate, state->result.name ).ToLocalChecked() );
+		else
+			data->Set( context, String::NewFromUtf8Literal( state->isolate, "IP" ), Null( state->isolate ) );
+		data->Set( context, String::NewFromUtf8Literal( state->isolate, "dwIP" ), Number::New( state->isolate, state->result.dwIp ) );
+		data->Set( context, String::NewFromUtf8Literal( state->isolate, "min" ), Number::New( state->isolate, state->result.min ) );
+		data->Set( context, String::NewFromUtf8Literal( state->isolate, "max" ), Number::New( state->isolate, state->result.max ) );
+		data->Set( context, String::NewFromUtf8Literal( state->isolate, "avg" ), Number::New( state->isolate, state->result.avg ) );
+		data->Set( context, String::NewFromUtf8Literal( state->isolate, "drop" ), Number::New( state->isolate, state->result.drop ) );
+		data->Set( context, String::NewFromUtf8Literal( state->isolate, "hops" ), Number::New( state->isolate, state->result.hops ) );
+		Local<Value> args[1] = { data };
+		state->cb.Get( state->isolate )->Call( context, Null( state->isolate ), 1, args );
+		state->handled = TRUE;
+	} else {
+		state->cb.Reset();
+		uv_close( (uv_handle_t*)&state->async, asyncClosed );
+	}
+}
+
+static void pingResult( uintptr_t psv, uint32_t dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops ) {
+	struct pingState* state = (struct pingState*)psv;
+	state->result.dwIp = dwIP;
+	state->result.name = StrDup( name );
+	state->result.min = min;
+	state->result.max = max;
+	state->result.avg = avg;
+	state->result.drop = drop;
+	state->result.hops = hops;
+	state->handled = FALSE;
+	uv_async_send( &state->async );
+	while( !state->handled ) Relinquish();
+}
+
+static uintptr_t pingThread( PTHREAD thread ) {
+	struct pingParams* params = (struct pingParams*)GetThreadParam( thread );
+	struct pingState* state = params->state;
+	params->received = 1;
+	DoPingEx( params->addr, params->ttl, params->time, params->count, NULL, FALSE, pingResult, (uintptr_t)params->state );
+	state->done = TRUE;
+	uv_async_send( &state->async );
+	return 0;
+}
+
+
+static void ping( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Function> cb;
+	if( args.Length() < 2 ) {
+		return;
+	}
+	struct pingParams params;
+	struct pingState* state = NewArray( struct pingState, 1 );
+	NetworkStart();
+	params.received = 0;
+	params.state = state;
+	MemSet( state, 0, sizeof( *state ) );
+	state->isolate = isolate;
+	state->async.data = (void*)state;
+	if( args.Length() > 1 ) {
+		state->cb.Reset( isolate, args[0].As<Function>() );
+		{
+			params.ttl = 0;
+			params.time = 1000;
+			params.count = 1;
+			String::Utf8Value addr( USE_ISOLATE( isolate ) args[1] );
+			if( args.Length() > 2 ) {
+				Local<Integer> i = args[2].As<Integer>();
+				params.ttl = (int)i->Value();
+			}
+			if( args.Length() > 3 ) {
+				Local<Integer> i = args[3].As<Integer>();
+				params.count = (int)i->Value();
+			}
+			if( args.Length() > 4 ) {
+				Local<Integer> i = args[4].As<Integer>();
+				params.time = (int)i->Value();
+			}
+			class constructorSet* c = getConstructors( isolate );
+			uv_async_init( c->loop, &state->async, pingAsync );
+			params.addr = *addr;
+			ThreadTo( pingThread, (uintptr_t)&params );
+			while( !params.received ) Relinquish();
+		}
+	}
+	else ReleaseEx( state DBG_SRC );
 }
