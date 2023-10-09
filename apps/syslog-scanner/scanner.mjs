@@ -8,6 +8,7 @@ const lbs = {
 	exec_timer : 0,
 	lastban : null,
 	pendingKeys : new Map(), // there's a 2 part ban command...
+	pendingFailAuth : new Map(), // there's a 2 part ban command...
 	db : null,
 	file : null
 }
@@ -56,8 +57,29 @@ processor.add( "%m Invalid user %w from %w port %i", failed_pass );
 processor.add( "%m sshd[%i]: error: kex_exchange_identification: Connection closed by remote host", failed_key );
 processor.add( "%m sshd[%i]: Connection closed by %w port %i", failed_key_close );
 
+processor.add( "%m Disconnected from authenticating user %w %w port %i [preauth]", fail_auth );
 
 processor.on( "unhandled", (str)=> console.log( "Unhandled line:", str ) );
+
+function fail_auth( leader, user, ip, port, line ) {
+	const oldTries = lbs.pendingFailAuth.get( ip );
+	if( !oldTries ) {
+		lbs.pendingFailAuth.set( ip, [ Date.now() ] );
+	} else {
+		const now = Date.now();
+		oldTries.push( now );
+		let i;
+		for( i = 0; i < oldTries.length; i++ ) {
+			if( ( now - oldTries[i] ) < 3600_000 ) break;
+		}
+		if( i )
+			oldTries.splice( 0, i );
+		if( oldTries.length > 5 ) {
+			AddBan( ip, line );
+			lbs.pendingFailAuth.delete( ip );
+		}
+	}
+}
 
 function failed_user_single( leader, ip, line ) {
 	AddBan( ip, line );
