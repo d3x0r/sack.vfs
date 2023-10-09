@@ -65,11 +65,12 @@ processor.on( "unhandled", (str)=> console.log( "Unhandled line:", str ) );
 function fail_auth( leader, user, ip, port, line ) {
 	const oldTries = lbs.pendingFailAuth.get( ip );
 
-	console.log( "Auth rule:", line )
 	if( !oldTries ) {
 		lbs.pendingFailAuth.set( ip, [ Date.now() ] );
+		console.log( "Auth rule: first", line );
 	} else {
 		const now = Date.now();
+		console.log( "Auth rule:", oldTries.length, line );
 		oldTries.push( now );
 		let i;
 		for( i = 0; i < oldTries.length; i++ ) {
