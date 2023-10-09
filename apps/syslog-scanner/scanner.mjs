@@ -58,6 +58,7 @@ processor.add( "%m sshd[%i]: error: kex_exchange_identification: Connection clos
 processor.add( "%m sshd[%i]: Connection closed by %w port %i", failed_key_close );
 
 processor.add( "%m Disconnected from authenticating user %w %w port %i [preauth]", fail_auth );
+processor.add( "%m Connection closed by authenticating user %w %w port %i [preauth]", fail_auth );
 
 processor.on( "unhandled", (str)=> console.log( "Unhandled line:", str ) );
 
