@@ -58,15 +58,25 @@ processor.add( "%m sshd[%i]: error: kex_exchange_identification: Connection clos
 processor.add( "%m sshd[%i]: Connection closed by %w port %i", failed_key_close );
 
 processor.add( "%m Disconnected from authenticating user %w %w port %i [preauth]", fail_auth );
+processor.add( "%m Connection closed by authenticating user %w %w port %i [preauth]", fail_auth );
+processor.add( "%m Unable to negotiate with %w port %i: no matching host key type found. Their offer: %m [preauth]", fail_negotiate );
 
 processor.on( "unhandled", (str)=> console.log( "Unhandled line:", str ) );
 
+
+function fail_negotiate( leader, ip, port, offer, line ) {
+	AddBan( ip, line );
+}
+
 function fail_auth( leader, user, ip, port, line ) {
 	const oldTries = lbs.pendingFailAuth.get( ip );
+
 	if( !oldTries ) {
 		lbs.pendingFailAuth.set( ip, [ Date.now() ] );
+		console.log( "Auth rule: first", line );
 	} else {
 		const now = Date.now();
+		console.log( "Auth rule:", oldTries.length, line );
 		oldTries.push( now );
 		let i;
 		for( i = 0; i < oldTries.length; i++ ) {
