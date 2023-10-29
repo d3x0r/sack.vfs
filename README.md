@@ -251,7 +251,11 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.1.819(in progress)
+- 1.1.820(in progress)
+- 1.1.819
+    - published final parser fixes.
+- 1.1.818.1-4
+    - minor fixes for common language parser multi-rule matching
 - 1.1.818
     - Fix fatal error with non-async SQL command that generated an error.
     - Fix race condition crash with new SQL open callback; the db object was deallocated before uv_close event happened.
