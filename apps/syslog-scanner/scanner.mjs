@@ -61,6 +61,8 @@ processor.add( "%m Disconnected from authenticating user %w %w port %i [preauth]
 processor.add( "%m Connection closed by authenticating user %w %w port %i [preauth]", fail_auth );
 processor.add( "%m Unable to negotiate with %w port %i: no matching host key type found. Their offer: %m [preauth]", fail_negotiate );
 
+processor.add( "%m Unable to negotiate with %w port %i: no matching key exchange method found. Their offer: %m [preauth]", fail_negotiate );
+
 processor.on( "unhandled", (str)=> console.log( "Unhandled line:", str ) );
 
 
