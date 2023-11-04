@@ -22,12 +22,12 @@ configProcessor.go( "linux_syslog_scanner.conf" );
 
 lbs.db = sack.DB( lbs.DSN, (db)=>{
 	try {
-		db.makeTable( "create table banlist ( IP char(48) PRIMARY KEY, last_hit DATETIME default CURRENT_TIMESTAMP )" );
+		db.makeTable( "create table banlist ( IP char(48) PRIMARY KEY, last_hit DATETIME default CURRENT_TIMESTAMP, allow int default 0 )" );
 	} catch( err ) { console.log( "create failed?", err ); }
 } );
 
 
-const ips = lbs.db.do( "select IP from banlist" );
+const ips = lbs.db.do( "select IP from banlist where allow=0" );
 let i = 0;
 
 function ban() {
