@@ -63,6 +63,7 @@ static void setProcessWindowStyles( const FunctionCallbackInfo<Value>& args );  
 static void getProcessWindowStyles( const FunctionCallbackInfo<Value>& args );  // get window and class styles
 static void getProcessWindowPos( const FunctionCallbackInfo<Value>& args );
 static void setProcessWindowPos( const FunctionCallbackInfo<Value>& args );
+static void dropConsole( const FunctionCallbackInfo<Value>& args );
 #endif
 //v8::Persistent<v8::Function> TaskObject::constructor;
 
@@ -194,6 +195,7 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
 #ifdef _WIN32
+	SET_READONLY_METHOD( taskF, "dropConsole", dropConsole );
 	SET_READONLY_METHOD( taskF, "getDisplays", TaskObject::getDisplays );
 	SET_READONLY_METHOD( taskF, "getPosition", ::getProcessWindowPos );
 	SET_READONLY_METHOD( taskF, "getStyles", ::getProcessWindowStyles );
@@ -859,6 +861,11 @@ void TaskObject::getExitCode( const FunctionCallbackInfo<Value>& args ) {
 }
 
 #if _WIN32
+
+static void dropConsole( const FunctionCallbackInfo<Value>& args ) {
+	FreeConsole();
+}
+
 static void moveTaskWindowResult( uintptr_t psv, LOGICAL success ){
 	TaskObject *task = (TaskObject*)psv;
 	//lprintf( "result... send event?" );
