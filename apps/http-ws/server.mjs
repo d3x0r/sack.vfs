@@ -74,10 +74,10 @@ export function getRequestHandler( serverOpts ) {
 		if( disk.exists( filePath ) ) {
 			const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
 			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
-			res.writeHead(200, headers );
 			const fc = disk.read(filePath );
 
 			if( fc ) {
+				res.writeHead(200, headers );
 				res.end( fc );
 
 				if( requests.length !== 0 )
