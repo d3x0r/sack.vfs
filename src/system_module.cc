@@ -6,6 +6,15 @@ static struct system_local {
 	
 }local;
 
+#ifdef WIN32
+
+void isElevated( const v8::FunctionCallbackInfo<Value>& args );
+void beginWindowsShell( const v8::FunctionCallbackInfo<Value>& args );
+void setShell( const v8::FunctionCallbackInfo<Value>& args );
+void disableTaskManager( const v8::FunctionCallbackInfo<Value>& args );
+
+#endif
+
 static void openMemory( const v8::FunctionCallbackInfo<Value>& args ) {
   Isolate* isolate = args.GetIsolate();
   int hasWhat = args.Length() > 0;
@@ -513,13 +522,15 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
   NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
 #ifdef _WIN32
-  NODE_SET_METHOD( systemInterface, "createConsole", create );
-  NODE_SET_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
-  NODE_SET_METHOD( systemInterface, "hideCursor", hideCursor );
+  SET_READONLY_METHOD( systemInterface, "createConsole", create );
+  SET_READONLY_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
+  SET_READONLY_METHOD( systemInterface, "hideCursor", hideCursor );
+  SET_READONLY_METHOD( systemInterface, "isElevated", isElevated );
+  SET_READONLY_METHOD( systemInterface, "triggerLogin", beginWindowsShell );
+  SET_READONLY_METHOD( systemInterface, "setShell", setShell );
+  SET_READONLY_METHOD( systemInterface, "disableTaskManager", disableTaskManager );
 #endif
 
   SET( exports, "system", systemInterface );
 
 }
-
-

@@ -24,6 +24,7 @@ struct optionStrings {
 	Eternal<String>* detachedString;
 	Eternal<String>* noInheritStdio;
 #if _WIN32
+	Eternal<String>* adminString;
 	Eternal<String>* moveToString;
 	Eternal<String>* styleString;
 
@@ -98,6 +99,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->noInheritStdio =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noInheritStdio" ) );
 		
 #if _WIN32
+		check->adminString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "admin" ) );
 		check->moveToString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "moveTo" ) );
 		check->styleString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "style" ) );
 		check->windowString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "window" ) );
@@ -505,6 +507,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool useSignal = false;
 			bool noWindow = false;
 			bool noKill = false;
+			bool asAdmin = false;
 			bool noWait = true;
 			bool detach = false;
 			bool noInheritStdio = false;
@@ -555,6 +558,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->detachedString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					detach = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			if( opts->Has( context, optName = strings->adminString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					asAdmin = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->useBreakString->Get( isolate ) ).ToChecked() ) {
@@ -719,6 +727,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( hidden ? 0 : LPP_OPTION_DO_NOT_HIDE )
 				| ( useSignal ? LPP_OPTION_USE_SIGNAL:0 )
 				| ( detach ? LPP_OPTION_DETACH : 0 )
+				| ( asAdmin ? LPP_OPTION_ELEVATE : 0 )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
