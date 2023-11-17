@@ -567,6 +567,7 @@ void VolumeObject::chDir( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		sack_chdirEx( 0, *fName, NULL );
 	}
 }
