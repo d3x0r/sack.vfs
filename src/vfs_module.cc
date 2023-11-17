@@ -401,6 +401,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	SET_READONLY_METHOD( exports, "log", logString );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
+	SET_READONLY_METHOD( VolFunc, "chdir", chDir );
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
@@ -559,6 +560,14 @@ void VolumeObject::changeDirectory( const v8::FunctionCallbackInfo<Value>& args 
 				sack_chdirEx( 0, *fName, vol->fsMount );
 			}
 		}
+	}
+}
+
+void VolumeObject::chDir( const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+		sack_chdirEx( 0, *fName, NULL );
 	}
 }
 
