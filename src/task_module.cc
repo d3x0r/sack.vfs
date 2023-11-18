@@ -54,6 +54,10 @@ static struct local {
 	PLIST tasks;
 } l;
 
+
+static void GetProcessId( const FunctionCallbackInfo<Value>& args );  // get title by process ID
+static void GetProcessParentId( const FunctionCallbackInfo<Value>& args );
+
 #if _WIN32
 static void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HWND hWnd, Local<Object> opts ); // move a task window
 static void doStyleWindow( Isolate* isolate, Local<Context> context, TaskObject* task, HWND hWnd, Local<Object> opts ); // style a task window
@@ -192,6 +196,8 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
 	SET_READONLY_METHOD( taskF, "getProcessList", TaskObject::GetProcessList );
+	SET_READONLY_METHOD( taskF, "processId", ::GetProcessId );
+	SET_READONLY_METHOD( taskF, "parentId", ::GetProcessParentId );
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
 #ifdef _WIN32
@@ -1523,6 +1529,23 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 	else
 		kill( id, SIGINT );
 #endif
+}
+
+
+void GetProcessId( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	THREAD_ID tid = GetMyThreadID();
+	uint32_t pid = ((uint64_t)tid) >> 32;
+	args.GetReturnValue().Set( Integer::New( isolate, pid ) );	
+}
+
+void GetProcessParentId( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	if( id > 0 ) {
+		int pid = GetProcessParent( id );
+		args.GetReturnValue().Set( Integer::New( isolate, pid ) );	
+	}
 }
 
 void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
