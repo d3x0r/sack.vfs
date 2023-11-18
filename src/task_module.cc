@@ -1275,7 +1275,7 @@ struct handle_data {
 };
 
 static BOOL is_main_window( HWND handle ) {
-	return GetWindow( handle, GW_OWNER ) == (HWND)0 && IsWindowVisible( handle );
+	return GetWindow( handle, GW_OWNER ) == (HWND)0;// && IsWindowVisible( handle );
 }
 static BOOL CALLBACK enum_windows_callback( HWND handle, LPARAM lParam ) {
 	struct handle_data* data = (struct handle_data*)lParam;
@@ -1317,7 +1317,7 @@ static void setProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	int64_t winStylesEx = args[2]->IsNumber() ? args[2]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
 	int64_t classStyles = args[3]->IsNumber() ? args[3]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
 	HWND hWnd = find_main_window( id );
-	//lprintf( "Set Values: %08x %08x %08x", winStyles, winStylesEx, classStyles );
+	//lprintf( "Set Values: %d %p %08x %08x %08x", id, hWnd, winStyles, winStylesEx, classStyles );
 	if( winStyles != -1 )
 		SetWindowLongPtr( hWnd, GWL_STYLE, winStyles );
 	if( winStylesEx != -1 )
@@ -1338,6 +1338,7 @@ static void getProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	int32_t winStylesEx = (int32_t)GetWindowLongPtr( hWnd, GWL_EXSTYLE );
 	int32_t classStyles = (int32_t)GetClassLongPtr( hWnd, GCL_STYLE );
 	Local<Object> styles = Object::New( isolate );
+	//lprintf( "Got Values: %d %p %08x %08x %08x", id, hWnd, winStyles, winStylesEx, classStyles );
 	SET_READONLY( styles, "window", Integer::New( isolate, winStyles ) );
 	SET_READONLY( styles, "windowEx", Integer::New( isolate, winStylesEx ) );
 	SET_READONLY( styles, "class", Integer::New( isolate, classStyles ) );
