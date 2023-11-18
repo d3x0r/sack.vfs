@@ -21,6 +21,51 @@ struct info {
 	wchar_t chars[1];
 };
 
+int GetProcessParent( int pid ) {
+	PLIST results = NULL;
+	HANDLE hToken;
+	BOOL bOpenToken = OpenProcessToken( GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken );
+
+	LUID luid;
+	LookupPrivilegeValue( NULL, SE_DEBUG_NAME, &luid );
+	//LookupPrivilegeValue( NULL, SE_, &luid3 );
+	TOKEN_PRIVILEGES tp;
+	tp.PrivilegeCount = 1;
+	tp.Privileges[0].Luid = luid;
+	tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+	// Enable the privilege
+	BOOL bAdjust = AdjustTokenPrivileges( hToken,
+		FALSE,
+		&tp,
+		0, // size of the next privilege thing
+		(PTOKEN_PRIVILEGES)NULL,
+		(PDWORD)NULL );
+	//lprintf( "Token Adjust: %d %d", bOpenToken, bAdjust );
+	HANDLE hp = CreateToolhelp32Snapshot( TH32CS_SNAPPROCESS, 0 );
+	PROCESSENTRY32 pe = { 0 };
+	pe.dwSize = sizeof( PROCESSENTRY32 );
+	int found = 0;
+	{
+			if( Process32First( hp, &pe ) ) {
+				do {
+					if( pe.th32ProcessID < 5) continue; // skip idle and System
+					//static wchar_t processBaseName[256];
+					
+					if( pe.th32ProcessID == pid ) {
+						if( pe.th32ParentProcessID > 5)
+							found = pe.th32ParentProcessID;
+						break;
+					}
+
+				} while( Process32Next( hp, &pe ) );
+			}
+	}
+	CloseHandle( hp );
+	CloseHandle( hToken );
+	return found;
+}
+
+
 PLIST GetProcessCommandLines( const char* process ) {
 	PLIST results = NULL;
 	HANDLE hToken;
@@ -132,6 +177,7 @@ PLIST GetProcessCommandLines( const char* process ) {
 		ReleaseEx( processFileName DBG_SRC );
 	}
 	CloseHandle( hp );
+	CloseHandle( hToken );
 	return results;
 }
 
