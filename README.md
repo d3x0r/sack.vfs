@@ -255,6 +255,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 - 1.1.820
     - Fix ability to launch task as admin on windows.
     - Added some tests for windows tasks (testing admin).
+    - Added some windows shell utility interfaces; set windows shell, add logout, enable/disable task manager.
     - Added some app utility scripts for syslog scanner.
     - Fix environment variable for windows '~/' path to USERPROFILE instead of HOMEPATH
 - 1.1.819
