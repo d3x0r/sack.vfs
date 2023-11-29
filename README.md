@@ -251,7 +251,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.1.821(in progress)
+- 1.1.822(in progress)
+- 1.1.821
+    - Linux build fix; don't use windows admin option.
 - 1.1.820
     - Fix ability to launch task as admin on windows.
     - Added some tests for windows tasks (testing admin).
