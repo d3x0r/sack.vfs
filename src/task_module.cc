@@ -568,11 +568,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					detach = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
+#if _WIN32
 			if( opts->Has( context, optName = strings->adminString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					asAdmin = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
+#endif
 			if( opts->Has( context, optName = strings->useBreakString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					useBreak = GETV( opts, optName )->TOBOOL( isolate );
