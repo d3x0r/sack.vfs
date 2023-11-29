@@ -251,7 +251,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.1.820(in progress)
+- 1.1.821(in progress)
+- 1.1.820
+    - Fix environment variable for windows '~/' path to USERPROFILE instead of HOMEPATH
 - 1.1.819
     - published final parser fixes.
 - 1.1.818.1-4
