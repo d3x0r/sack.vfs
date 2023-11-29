@@ -13,17 +13,18 @@ export class Task {
 	#task = null; // task definition
 	#run = null;  // running service instance handle
 	#ws = []; // task definition
-	#resume = false;
+	#restart = false;
 
 	constructor(task) {
 		this.#task = task;
 		this.name = task.name;
 		task.work = pwd + "/" + task.work;
+		this.#restart = task.restart || false;
 		//console.log( "Making work:", task.work );
 	}
 
 	set resume(val) {
-		this.#resume = val;
+		this.#restart = val;
 	}
 	
 	static load( task ) {
@@ -33,7 +34,7 @@ export class Task {
 	}
 
 	get resume() {
-		return this.#resume;
+		return this.#restart;
 	}
 
 	get log() {
@@ -91,6 +92,15 @@ export class Task {
 		  args:this.#task.args,
 		  end: stop,
 			env:this.#task.env,
+			newGroup: this.#task.newGroup,
+			noKill: this.#task.noKill,
+			noWait: this.#task.noWait,
+			newConsole : this.#task.newConsole,
+			useSignal : this.#task.useSignal,
+			useBreak : this.#task.useBreak,
+			moveTo : this.#task.moveTo,
+			style : this.#task.style,
+			noInheritStdio : this.#task.noInheritStdio,
 		  input: log,
 			errorInput: log2,
 		} );
@@ -124,7 +134,7 @@ export class Task {
 			this_.ended = new Date();
 			this_.running = false;
 			this_.#run = null;
-			if( this_.#resume ) 
+			if( this_.#restart ) 
 				if( this_.#task.restartDelay )
 					setTimeout( ()=>this_.start(), this_.#task.restartDelay );
 				else 

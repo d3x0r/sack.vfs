@@ -354,6 +354,7 @@ if( WIN32 )
 		src/hid_module.cc
 		src/playSound_module.cc
 		src/win32/commandline.cc
+		src/win32/window_shell.cc
 #		src/fixup_windows_executable.cc
 		)
 elseif( UNIX )

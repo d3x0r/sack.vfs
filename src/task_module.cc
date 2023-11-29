@@ -24,6 +24,7 @@ struct optionStrings {
 	Eternal<String>* detachedString;
 	Eternal<String>* noInheritStdio;
 #if _WIN32
+	Eternal<String>* adminString;
 	Eternal<String>* moveToString;
 	Eternal<String>* styleString;
 
@@ -53,6 +54,10 @@ static struct local {
 	PLIST tasks;
 } l;
 
+
+static void GetProcessId( const FunctionCallbackInfo<Value>& args );  // get title by process ID
+static void GetProcessParentId( const FunctionCallbackInfo<Value>& args );
+
 #if _WIN32
 static void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HWND hWnd, Local<Object> opts ); // move a task window
 static void doStyleWindow( Isolate* isolate, Local<Context> context, TaskObject* task, HWND hWnd, Local<Object> opts ); // style a task window
@@ -62,6 +67,7 @@ static void setProcessWindowStyles( const FunctionCallbackInfo<Value>& args );  
 static void getProcessWindowStyles( const FunctionCallbackInfo<Value>& args );  // get window and class styles
 static void getProcessWindowPos( const FunctionCallbackInfo<Value>& args );
 static void setProcessWindowPos( const FunctionCallbackInfo<Value>& args );
+static void dropConsole( const FunctionCallbackInfo<Value>& args );
 #endif
 //v8::Persistent<v8::Function> TaskObject::constructor;
 
@@ -98,6 +104,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->noInheritStdio =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noInheritStdio" ) );
 		
 #if _WIN32
+		check->adminString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "admin" ) );
 		check->moveToString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "moveTo" ) );
 		check->styleString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "style" ) );
 		check->windowString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "window" ) );
@@ -189,9 +196,12 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY( exports, "Task", taskF = taskTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	SET_READONLY_METHOD( taskF, "loadLibrary", TaskObject::loadLibrary );
 	SET_READONLY_METHOD( taskF, "getProcessList", TaskObject::GetProcessList );
+	SET_READONLY_METHOD( taskF, "processId", ::GetProcessId );
+	SET_READONLY_METHOD( taskF, "parentId", ::GetProcessParentId );
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
 #ifdef _WIN32
+	SET_READONLY_METHOD( taskF, "dropConsole", dropConsole );
 	SET_READONLY_METHOD( taskF, "getDisplays", TaskObject::getDisplays );
 	SET_READONLY_METHOD( taskF, "getPosition", ::getProcessWindowPos );
 	SET_READONLY_METHOD( taskF, "getStyles", ::getProcessWindowStyles );
@@ -505,6 +515,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool useSignal = false;
 			bool noWindow = false;
 			bool noKill = false;
+			bool asAdmin = false;
 			bool noWait = true;
 			bool detach = false;
 			bool noInheritStdio = false;
@@ -555,6 +566,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->detachedString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					detach = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			if( opts->Has( context, optName = strings->adminString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					asAdmin = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->useBreakString->Get( isolate ) ).ToChecked() ) {
@@ -719,6 +735,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( hidden ? 0 : LPP_OPTION_DO_NOT_HIDE )
 				| ( useSignal ? LPP_OPTION_USE_SIGNAL:0 )
 				| ( detach ? LPP_OPTION_DETACH : 0 )
+				| ( asAdmin ? LPP_OPTION_ELEVATE : 0 )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
@@ -850,6 +867,11 @@ void TaskObject::getExitCode( const FunctionCallbackInfo<Value>& args ) {
 }
 
 #if _WIN32
+
+static void dropConsole( const FunctionCallbackInfo<Value>& args ) {
+	FreeConsole();
+}
+
 static void moveTaskWindowResult( uintptr_t psv, LOGICAL success ){
 	TaskObject *task = (TaskObject*)psv;
 	//lprintf( "result... send event?" );
@@ -1253,7 +1275,7 @@ struct handle_data {
 };
 
 static BOOL is_main_window( HWND handle ) {
-	return GetWindow( handle, GW_OWNER ) == (HWND)0 && IsWindowVisible( handle );
+	return GetWindow( handle, GW_OWNER ) == (HWND)0;// && IsWindowVisible( handle );
 }
 static BOOL CALLBACK enum_windows_callback( HWND handle, LPARAM lParam ) {
 	struct handle_data* data = (struct handle_data*)lParam;
@@ -1295,7 +1317,7 @@ static void setProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	int64_t winStylesEx = args[2]->IsNumber() ? args[2]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
 	int64_t classStyles = args[3]->IsNumber() ? args[3]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
 	HWND hWnd = find_main_window( id );
-	//lprintf( "Set Values: %08x %08x %08x", winStyles, winStylesEx, classStyles );
+	//lprintf( "Set Values: %d %p %08x %08x %08x", id, hWnd, winStyles, winStylesEx, classStyles );
 	if( winStyles != -1 )
 		SetWindowLongPtr( hWnd, GWL_STYLE, winStyles );
 	if( winStylesEx != -1 )
@@ -1316,6 +1338,7 @@ static void getProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	int32_t winStylesEx = (int32_t)GetWindowLongPtr( hWnd, GWL_EXSTYLE );
 	int32_t classStyles = (int32_t)GetClassLongPtr( hWnd, GCL_STYLE );
 	Local<Object> styles = Object::New( isolate );
+	//lprintf( "Got Values: %d %p %08x %08x %08x", id, hWnd, winStyles, winStylesEx, classStyles );
 	SET_READONLY( styles, "window", Integer::New( isolate, winStyles ) );
 	SET_READONLY( styles, "windowEx", Integer::New( isolate, winStylesEx ) );
 	SET_READONLY( styles, "class", Integer::New( isolate, classStyles ) );
@@ -1507,6 +1530,23 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 	else
 		kill( id, SIGINT );
 #endif
+}
+
+
+void GetProcessId( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	THREAD_ID tid = GetMyThreadID();
+	uint32_t pid = ((uint64_t)tid) >> 32;
+	args.GetReturnValue().Set( Integer::New( isolate, pid ) );	
+}
+
+void GetProcessParentId( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	if( id > 0 ) {
+		int pid = GetProcessParent( id );
+		args.GetReturnValue().Set( Integer::New( isolate, pid ) );	
+	}
 }
 
 void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {

@@ -381,7 +381,7 @@ void asyncmsg( uv_async_t* handle ) {
 						return;
 					}
 					else {
-						msg->used = result.ToLocalChecked()-> TOBOOL( isolate );
+						msg->used = result.ToLocalChecked()->TOBOOL( isolate );
 						if( msg->used ) {
 							msg->done = TRUE;
 							WakeThread( msg->waiter );

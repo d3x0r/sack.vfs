@@ -291,6 +291,8 @@ public:
 	static void openVolDb( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileVolDelete( const v8::FunctionCallbackInfo<Value>& args );
 	static void makeDirectory( const v8::FunctionCallbackInfo<Value>& args );
+	static void changeDirectory( const v8::FunctionCallbackInfo<Value>& args );
+	static void chDir( const v8::FunctionCallbackInfo<Value>& args );
 	static void isDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void mkdir( const v8::FunctionCallbackInfo<Value>& args );
 	static void volRekey( const v8::FunctionCallbackInfo<Value>& args );
@@ -562,4 +564,6 @@ struct command_line_result {
 #endif
 // returns a PLIST of struct command_line_results
 PLIST GetProcessCommandLines( const char* process );
+int GetProcessParent( int pid );
+
 void ReleaseCommandLineResults( PLIST* ppResults );

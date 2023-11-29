@@ -383,6 +383,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "flush", flush );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "chdir", changeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "delete", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "unlink", fileVolDelete );
@@ -400,6 +401,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	SET_READONLY_METHOD( exports, "log", logString );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
+	SET_READONLY_METHOD( VolFunc, "chdir", chDir );
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
@@ -539,6 +541,34 @@ void VolumeObject::mkdir( const v8::FunctionCallbackInfo<Value>& args ){
 	if( argc > 0 ) {
   		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		sack_mkdir( 0, *fName );
+	}
+}
+
+
+void VolumeObject::changeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		if( vol ) {
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+			if( vol->volNative ) {
+				// no directory support; noop.
+				if( vol->fsInt->_mkdir )
+					vol->fsInt->_mkdir( sack_get_mounted_filesystem_instance( vol->fsMount ), *fName );
+			} else {
+				sack_chdirEx( 0, *fName, vol->fsMount );
+			}
+		}
+	}
+}
+
+void VolumeObject::chDir( const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+		sack_chdirEx( 0, *fName, NULL );
 	}
 }
 

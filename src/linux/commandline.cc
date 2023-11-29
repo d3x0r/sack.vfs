@@ -119,3 +119,9 @@ void ReleaseCommandLineResults( PLIST* ppResults ){
 	}
 	DeleteList( ppResults );
 }
+
+int GetProcessParent( int pid ) { 
+		// returns non zero if there was a parent, 0 if no parent
+	lprintf( "Linux get top parent is unimplemented yet.." );
+	return 0;
+}
