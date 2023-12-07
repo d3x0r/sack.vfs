@@ -337,6 +337,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->hostnameString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hostname" ) );
 		check->hostString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "host" ) );
 		check->hostsString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hosts" ) );
+		check->retriesString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "retries" ) );
+		check->timeoutString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "timeout" ) );
 		check->pathString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "path" ) );
 		check->methodString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "method" ) );
 		check->redirectString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "redirect" ) );
@@ -412,6 +414,8 @@ public:
 	const char *method = "GET";
 	const char* content = NULL;
 	size_t contentLen = 0;
+	int timeout = 3000;
+	int retries = 3;
 	PLIST headers = NULL;
 	char *ca = NULL;
 	char *path = NULL;
@@ -3581,6 +3585,15 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		httpRequest->method = StrDup( *value );
 	}
 
+	if( options->Has( context, optName = strings->retriesString->Get( isolate ) ).ToChecked() ) {
+		int32_t x = GETV( options, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		httpRequest->retries = x;
+	}
+	if( options->Has( context, optName = strings->timeoutString->Get( isolate ) ).ToChecked() ) {
+		int32_t x = GETV( options, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		httpRequest->timeout = x;
+	}
+
 	if (options->Has(context, optName = strings->contentString->Get(isolate)).ToChecked()) {
 		Local<Value> content = GETV( options, optName );
 		if( content->IsArrayBuffer() ) {
@@ -3654,6 +3667,8 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->address = address;
 		opts->ssl = httpRequest->ssl;
 		opts->headers = httpRequest->headers;
+		opts->timeout = httpRequest->timeout;
+		opts->retries = httpRequest->retries;
 		opts->certChain = httpRequest->ca;
 		opts->method = httpRequest->method;
 		opts->agent = httpRequest->agent;
