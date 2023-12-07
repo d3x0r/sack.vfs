@@ -132,6 +132,8 @@ struct optionStrings {
 	Eternal<String> *versionString;
 	Eternal<String> *onReplyString;
 	Eternal<String> *agentString;
+	Eternal<String> *timeoutString;
+	Eternal<String> *retriesString;
 };
 
 static PLIST strings;

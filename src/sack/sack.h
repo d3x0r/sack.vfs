@@ -13249,6 +13249,10 @@ struct HTTPRequestOptions {
 	size_t contentLen;
  // set to true to request over SSL;
 	LOGICAL ssl;
+ // defaults to 3 seconds if set to 0.
+	int timeout;
+ // defaults to 3 retries if set to 0.
+	int retries;
  //optionally this can be used to specify the certain, if not set, uses parameter, which will otherwise be NULL.
 	const char* certChain;
 	LOGICAL rejectUnauthorized;
