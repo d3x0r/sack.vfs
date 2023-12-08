@@ -1209,6 +1209,7 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 		}
 		while( bin[argStart] ) {
 			while( bin[argStart] == ' ' ) argStart++;
+			if( !bin[argStart] ) break;
 			argEnd = argStart + 1;
 			if( bin[argStart] == '"' ) {
 				argStart++;
