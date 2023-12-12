@@ -128,14 +128,14 @@ export async function load(urlin, context, defaultLoad) {
 		if( exten === ".jsox" ){
 			return {
 			   format:"module",
-			   source: "const data = JSOX.parse( '" + escape(result) + "'); export default data;",
+			   source: "import {sack} from 'sack.vfs'; const data = sack.JSOX.parse( '" + escape(result) + "'); export default data;",
 			   shortCircuit:true,
 			};
 		}
 		if( exten === ".json6" ){
 		    return {
 			   format:"module",
-			   source: "const data = JSON6.parse( '" + escape(result) + "'); export default data;",
+			   source: "import {sack} from 'sack.vfs'; const data = sack.JSON6.parse( '" + escape(result) + "'); export default data;",
 			   shortCircuit:true,
 			};
 		}
@@ -185,3 +185,67 @@ globalThis.JSON6 = globalThis.SACK.JSON6;
 `;
 
 }
+
+export function initialize( data ) {
+	//console.log( "Got:", data );	
+}
+
+export function resolve( specifier, context, nextResolve ) {
+	debug_ && console.log( "resolve continue?", specifier, context );		
+	if( specifier.startsWith( "http:" ) || specifier.startsWith( "https:" ) || specifier.startsWith( "module:" )  ) {
+		return {
+	      shortCircuit: true,
+	      url: context.parentURL ?
+        	new URL(specifier, context.parentURL).href :
+	        new URL(specifier).href,
+	    };	
+		return {
+			shortCircuit: true,
+			url: parentURL ?
+        			new URL(specifier, context.parentURL).href :
+				new URL(specifier).href,
+		};	
+	} else if( specifier.endsWith( ".jsox" ) ){
+		return {
+			shortCircuit: true,
+			url: context.parentURL ?
+        			new URL(specifier, context.parentURL).href :
+				new URL(specifier).href,
+		};	
+	} else if( specifier.endsWith( ".json6" ) ){
+		return {
+			shortCircuit: true,
+			url: context.parentURL ?
+        			new URL(specifier, context.parentURL).href :
+				new URL(specifier).href,
+		};	
+		
+	}
+	if( forceModule ) {
+		console.log( "Return forced module:" );
+		return nextResolve( specifier, {
+				format: "module"
+			} );
+	}
+	// nextResolve( specifier, {modified options} );
+	return nextResolve( specifier );
+}
+
+
+import {register} from "node:module";
+//import {pathToFileURL} from "node:url";
+const fileURL = url.pathToFileURL("./", import.meta.url );
+debug_ && console.log( "FileURL?", fileURL );
+//register( "sack.vfs/import.mjs", fileURL );
+register( "sack.vfs/import.mjs", fileURL );
+
+/*
+{
+  parentURL: import.meta.url,
+  data: { number: 1, port: port2 },
+  transferList: [port2],
+}
+*/
+// --import 'data:text/javascript,import { register } from "node:module"; import { pathToFileURL } from "node:url"; register("sack.vfs/import.mjs", pathToFileURL("./"));'
+
+//--import "sack.vfs/import"
