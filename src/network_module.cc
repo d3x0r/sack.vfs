@@ -408,7 +408,8 @@ void udpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		udpOpts.port = 0;
 		udpOpts.broadcast = false;
 		udpOpts.addressDefault = false;
-		udpOpts.messageCallback.Empty();
+		// if it was uninitialized it would fail to reset
+		//udpOpts.messageCallback.Reset();
 
 		if( args[argBase]->IsString() ) {
 			udpOpts.address = StrDup( *String::Utf8Value( isolate,  args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
