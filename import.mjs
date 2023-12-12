@@ -232,12 +232,14 @@ export function resolve( specifier, context, nextResolve ) {
 }
 
 
-import {register} from "node:module";
-//import {pathToFileURL} from "node:url";
-const fileURL = url.pathToFileURL("./", import.meta.url );
-debug_ && console.log( "FileURL?", fileURL );
-//register( "sack.vfs/import.mjs", fileURL );
-register( "sack.vfs/import.mjs", fileURL );
+import module from "node:module";
+const version = process.version.slice(1).split('.'  ).map( a=>Number(a));
+if( version[0] >= 21 || ( version[0] >= 20 && version[1] >= 6 ) ) {
+	const fileURL = url.pathToFileURL("./", import.meta.url );
+	debug_ && console.log( "FileURL?", fileURL );
+	//module.register( "sack.vfs/import.mjs", fileURL );
+	module.register( "sack.vfs/import.mjs", fileURL );
+}
 
 /*
 {
