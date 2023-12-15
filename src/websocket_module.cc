@@ -416,7 +416,7 @@ public:
 	const char *method = "GET";
 	const char* content = NULL;
 	size_t contentLen = 0;
-	const char* httpVersion;
+	const char* httpVersion = NULL;
 	int timeout = 3000;
 	int retries = 3;
 	PLIST headers = NULL;
