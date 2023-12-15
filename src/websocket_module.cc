@@ -3677,6 +3677,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->httpVersion = httpRequest->httpVersion;
 		opts->timeout = httpRequest->timeout;
 		opts->retries = httpRequest->retries;
+	lprintf( "Setting timeout and retries: %d %d", opts->timeout, opts->retries );
 		opts->certChain = httpRequest->ca;
 		opts->method = httpRequest->method;
 		opts->agent = httpRequest->agent;
@@ -3709,8 +3710,8 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 					Release(header);
 				DeleteList(&opts->headers);
 			}
-			Deallocate( opts->httpVersion );
-			Deallocate( opts->method );
+			Deallocate( char*, (char*)(httpRequest->httpVersion) );
+			Deallocate( char*, (char*)httpRequest->method );
 			if (!state) {
 				SET(result, "error",
 					state ? String::NewFromUtf8(isolate, "No Content", v8::NewStringType::kNormal).ToLocalChecked() : String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
