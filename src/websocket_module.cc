@@ -3677,7 +3677,6 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->httpVersion = httpRequest->httpVersion;
 		opts->timeout = httpRequest->timeout;
 		opts->retries = httpRequest->retries;
-	lprintf( "Setting timeout and retries: %d %d", opts->timeout, opts->retries );
 		opts->certChain = httpRequest->ca;
 		opts->method = httpRequest->method;
 		opts->agent = httpRequest->agent;
