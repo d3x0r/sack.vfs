@@ -32,8 +32,8 @@ export class Protocol extends Events {
 	}
 
 	get ready() {
-		if( this_.#Protocol.ws )
-			if( this_.#Protocol.ws.readyState == 1 ) return true;
+		if( this.#Protocol.ws )
+			if( this.#Protocol.ws.readyState == 1 ) return true;
 		return false;
 	}
 	
