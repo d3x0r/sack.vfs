@@ -52,7 +52,7 @@ export class Protocol extends Events {
 		const event = this.on( "close", [evt.code, evt.reason] );
 		Protocol.ws = null;
 		if( evt.code === 1000 ) this.connect();
-		else setTimeout( this.connect, 5000 );
+		else setTimeout( this.connect.bind(this), 5000 );
 	}
 
 	static onmessage( evt ) {
