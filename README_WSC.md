@@ -1,6 +1,12 @@
 
 ### Websocket Client Interface
 
+
+``` js
+const ws = sack.WebSocket.Client( /*url*/, /*protocol*/, /*options*/ );
+```
+
+
 Client constructor parameters
   - URL - the URL to connect to
   - protocol - the protocol for this connection.  Accepts either a string or an array of strings to send as protocols.

@@ -235,6 +235,7 @@ export function resolve( specifier, context, nextResolve ) {
 import module from "node:module";
 const version = process.version.slice(1).split('.'  ).map( a=>Number(a));
 if( version[0] >= 21 || ( version[0] >= 20 && version[1] >= 6 ) ) {
+	// https://nodejs.org/api/module.html#resolvespecifier-context-nextresolve
 	const fileURL = url.pathToFileURL("./", import.meta.url );
 	debug_ && console.log( "FileURL?", fileURL );
 	//module.register( "sack.vfs/import.mjs", fileURL );

@@ -1,6 +1,23 @@
 
 ### Websocket Server Interface
 
+``` js
+// primary method, pass options object
+const ws = sack.WebSocket.Server( /*options*/ );
+
+// example of some sample options
+const ws = sack.WebSocket.Server( { port: 1234, address: "::0" } );
+
+
+// the constructor can also take a URL and port as arguments instead of in option object
+// but the option object is the common method
+const ws = sack.WebSocket.Server( [/*url*/, /*port*/,] /*options*/ );
+
+
+
+```
+
+
 Server Constructor Parameters
   - (optional) URL - a URL formatted string specifying server address and optional port.
   - (optional) Port - a number indicating which port number to listen on; if No URL, and no address option specified, listens on all addresses on this port.

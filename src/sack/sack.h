@@ -13249,6 +13249,8 @@ struct HTTPRequestOptions {
 	size_t contentLen;
  // set to true to request over SSL;
 	LOGICAL ssl;
+ // HTTP Version ("1.0" default)
+	const char *httpVersion;
  // defaults to 3 seconds if set to 0.
 	int timeout;
  // defaults to 3 retries if set to 0.

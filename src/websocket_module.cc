@@ -416,6 +416,7 @@ public:
 	const char *method = "GET";
 	const char* content = NULL;
 	size_t contentLen = 0;
+	const char* httpVersion = NULL;
 	int timeout = 3000;
 	int retries = 3;
 	PLIST headers = NULL;
@@ -3591,6 +3592,10 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		int32_t x = GETV( options, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		httpRequest->retries = x;
 	}
+	if( options->Has( context, optName = strings->versionString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+		httpRequest->httpVersion = StrDup(*value);
+	}
 	if( options->Has( context, optName = strings->timeoutString->Get( isolate ) ).ToChecked() ) {
 		int32_t x = GETV( options, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		httpRequest->timeout = x;
@@ -3669,6 +3674,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->address = address;
 		opts->ssl = httpRequest->ssl;
 		opts->headers = httpRequest->headers;
+		opts->httpVersion = httpRequest->httpVersion;
 		opts->timeout = httpRequest->timeout;
 		opts->retries = httpRequest->retries;
 		opts->certChain = httpRequest->ca;
@@ -3703,6 +3709,8 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 					Release(header);
 				DeleteList(&opts->headers);
 			}
+			Deallocate( char*, (char*)(httpRequest->httpVersion) );
+			Deallocate( char*, (char*)httpRequest->method );
 			if (!state) {
 				SET(result, "error",
 					state ? String::NewFromUtf8(isolate, "No Content", v8::NewStringType::kNormal).ToLocalChecked() : String::NewFromUtf8(isolate, "Connect Error", v8::NewStringType::kNormal).ToLocalChecked());
