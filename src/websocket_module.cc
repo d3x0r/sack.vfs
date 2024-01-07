@@ -859,6 +859,8 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
 					cb->Call( context, myself->_this.Get( isolate ), 1, argv );
 
 					//args.GetReturnValue().Set( result );
+					myself->_this.Reset();
+					myself->resultCallback.Reset();
 
 					break;
 				}
@@ -904,6 +906,8 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
 #ifdef DEBUG_EVENTS				
 				lprintf( "Sack uv_close1 %p", &myself->async );
 #endif				
+				myself->_this.Reset();
+				myself->resultCallback.Reset();
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_httpRequest );
 				DropHttpRequestEvent( eventMessage );
 				break;
@@ -3643,6 +3647,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		httpRequest->path = StrDup( *value );
 	}
 	if( options->Has( context, optName = strings->onReplyString->Get( isolate ) ).ToChecked() ) {
+		httpRequest->_this.Reset( isolate, args.Holder() );
 		httpRequest->resultCallback.Reset( isolate, GETV( options, optName ).As<Function>());
 	}
 	if( options->Has( context, optName = strings->agentString->Get( isolate ) ).ToChecked() ) {
