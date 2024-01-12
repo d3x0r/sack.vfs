@@ -594,7 +594,6 @@ static void buildQueryResult( struct query_thread_params* params ) {
 	int items;
 	struct jsox_value_container* jsval;
 	PDATALIST pdlRecord = params->pdlRecord;
-
 	DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
 		if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
 	}
@@ -837,7 +836,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		Deallocate( struct tables*, tables );
 		Deallocate( struct colMap*, colMap );
 
-		SQLEndQuery( sql->state->odbc );
+		//SQLEndQuery( sql->state->odbc );
 		if (!params->promise.IsEmpty()) {
 			Local<Promise::Resolver> res = params->promise.Get( isolate );
 			res->Resolve( context, records );
@@ -850,17 +849,17 @@ static void buildQueryResult( struct query_thread_params* params ) {
 	}
 	else
 	{
-		SQLEndQuery( sql->state->odbc );
+		//SQLEndQuery( sql->state->odbc );
 		if (!params->promise.IsEmpty()) {
 			params->promise.Get( isolate )->Resolve( context, Array::New( isolate ) );
 			params->promise.Reset();
 		}
-		else
+		else {
 			params->results = Array::New( isolate );
+		}
 			//lprintf( "Probably an empty result...");
 		//args.GetReturnValue().Set();
 	}
-
 	LineRelease( params->statement );
 	DeleteDataList( &params->pdlRecord );
 	DeleteDataList( &params->pdlParams );
@@ -872,7 +871,7 @@ static void DoQuery( struct query_thread_params *params ) {
 
 	SqlObject* sql = params->sql;
 	PTEXT statement = params->statement;
-
+	//lprintf( "Doing Query:%s", GetText( params->statement ) );
 	if (!SQLRecordQuery_js(sql->state->odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, params->pdlParams DBG_SRC)) {
 		const char* error;
 		DeleteDataList( &params->pdlRecord );
@@ -891,6 +890,8 @@ static void DoQuery( struct query_thread_params *params ) {
 static uintptr_t queryThread( PTHREAD thread ) {
 	struct query_thread_params* params = (struct query_thread_params*)GetThreadParam( thread );
 	struct userMessage* msg = NewArray( struct userMessage, 1 );
+	SetSQLThreadProtect( params->sql->state->odbc, TRUE );
+	//lprintf( "ThreadTo Doing Query:%s", GetText( params->statement ) );
 	DoQuery( params );
 	//delete params;
 
@@ -1029,6 +1030,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		}
 		else  // not promised, is not run on a thread, cleanup should happen NOW.
 		{
+			//lprintf( "Non Promised query... %s", GetText( params->statement ) );
 			DoQuery( params ); // might throw instead of having a record.
 			if( !params->error ) {
 				buildQueryResult( params );
@@ -1416,12 +1418,12 @@ void SqlObject::old_query( const v8::FunctionCallbackInfo<Value>& args ) {
 			Deallocate( struct tables*, tables );
 			Deallocate( struct colMap*, colMap );
 
-			SQLEndQuery( sql->state->odbc );
+			//SQLEndQuery( sql->state->odbc );
 			args.GetReturnValue().Set( records );
 		}
 		else
 		{
-			SQLEndQuery( sql->state->odbc );
+			//SQLEndQuery( sql->state->odbc );
 			args.GetReturnValue().Set( Array::New( isolate ) );
 		}
 		DeleteDataList( &pdlParams );
@@ -1541,8 +1543,9 @@ SqlObject::~SqlObject() {
 #endif
 		uv_async_send( &state->async );
 		lprintf( "~SqlObject(): This wait on close should never finish?");
-		while( !msg.done ) {
-			WakeableSleep( SLEEP_FOREVER );
+		int tries = 0;
+		while( !msg.done && tries < 2 ) {
+			WakeableSleep( 1000 );
 		}
 	}
 	CloseDatabase( state->odbc );
@@ -2058,7 +2061,8 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 	struct sql_object_state* myself = (struct sql_object_state*)handle->data;
 	Isolate *isolate = myself->isolate;
 	HandleScope scope( isolate );
-	struct userMessage *msg = (struct userMessage*)DequeLink( &myself->messages );
+	struct userMessage *msg;
+	while( msg  = (struct userMessage*)DequeLink( &myself->messages ) ) {
 	if (msg->mode == UserMessageModes::Query) {
 		Local<Context> context = isolate->GetCurrentContext();
 		if( msg->params->error ) {
@@ -2114,7 +2118,7 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 		if (msg->waiter)
 			WakeThread( msg->waiter );
 	}
-
+	}
 	if( !internal && !closing )
 	{
 #ifdef DEBUG_EVENTS
