@@ -6,4 +6,5 @@ sql.config
 *.tgz
 package-lock.json
 option.db
+src/sack/libressl/3.8.0/include/openssl/opensslconf.h
 
