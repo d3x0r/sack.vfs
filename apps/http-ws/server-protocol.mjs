@@ -2,6 +2,7 @@
 import {sack} from "sack.vfs"
 import {openServer} from "./server.mjs"
 import {Events} from "../events/events.mjs";
+const JSOX = sack.JSOX;
 
 function loopBack( that, to ) {
 
@@ -25,7 +26,7 @@ export class Protocol extends Events {
 	#accept( server, ws ) {
 		//console.log( "this, server, ws", this, server, ws );
 		const results = this.on( "accept", ws );
-		if( results.length > 0 ) {
+		if( results && results.length > 0 ) {
 			if( results.includes( true ) ) server.accept();
 			else server.reject();
 			return;			
@@ -43,8 +44,8 @@ export class Protocol extends Events {
 	#connect(ws) {
 		const myWS = new WS( ws );
 		const this_ = this;
-		const results = this.on( "connect", [ws, myWs] );
-		if( results.length ) {
+		const results = this.on( "connect", [ws, myWS] );
+		if( results && results.length ) {
 			// assume the on-connect provdies its own open/close handlers
 			if( results.includes( true ) ) return;
 		}
