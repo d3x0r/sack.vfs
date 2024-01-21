@@ -228,7 +228,7 @@ export function resolve( specifier, context, nextResolve ) {
 			} );
 	}
 	// nextResolve( specifier, {modified options} );
-	return nextResolve( specifier );
+	return nextResolve( specifier, context );
 }
 
 
