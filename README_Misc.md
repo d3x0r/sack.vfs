@@ -391,6 +391,7 @@ to interact with the process.
  |end() | attempt to cause a task to exit.  It will first dispatch ctrl-c, ctrl-break, post a WM_QUIT message, and if the program does not end soon enough, terminates the process.  (closing pipes to task could also be implemented?)| 
  |terminate() | Terminates the task.  Terminates the process. |
  |write(buf) | Writes data to the task's stdin. |
+ |isRunning() | Tests if the process is till running. |
  |send(buf) | Writes data to the task's stdin. |
  |exitCode | After/during the `end` callback, this may be queried to get the return code of the task |
  |moveWindow(object) | (Windows only) Move the task's primary window to the specifed location.  See Move options below. |
