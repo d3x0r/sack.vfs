@@ -155,7 +155,11 @@ TaskObject::~TaskObject() {
 
 	while( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output2 ) )
 		Deallocate( struct taskObjectOutputItem*, outmsg );
-
+	for( int i = 0; i < nArg; i++ ) {
+		if( argArray[i] )
+			Deallocate( char*, argArray[i] );
+	}
+	ReleaseEx( argArray DBG_SRC );
 	DeleteLink( &l.tasks, this );
 	DeleteLinkQueue( &output );
 	DeleteLinkQueue( &output2 );
@@ -342,6 +346,7 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		task->ended = TRUE;
 		// these is a chance output will still come in?
 		uv_close( (uv_handle_t*)&task->async, taskAsyncClosed );
+		task->_this.Reset();
 	}
 	{
 		struct taskObjectOutputItem* output;
@@ -522,9 +527,6 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			newTask->killAtExit = true;
 
-			char **argArray = NULL;
-			PLIST envList = NULL;
-			int nArg;
 
 			
 			if( opts->Has( context, optName = strings->noWindowString->Get( isolate ) ).ToChecked() ) {
@@ -615,25 +617,25 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				if( GETV( opts, optName )->IsString() ) {
 					char **args2;
 					args = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-					ParseIntoArgs( *args[0], &nArg, &argArray );
+					ParseIntoArgs( *args[0], &newTask->nArg, &newTask->argArray );
 
-					args2 = NewArray( char*, nArg + 1 );
+					args2 = NewArray( char*, newTask->nArg + 1 );
 			
 					int n;
-					for( n = 0; n < nArg; n++ )
-						args2[n] = argArray[n];
+					for( n = 0; n < newTask->nArg; n++ )
+						args2[n] = newTask->argArray[n];
 					args2[n] = NULL;
-					Release( argArray );
-					argArray = args2;
+					Release( newTask->argArray );
+					newTask->argArray = args2;
 				} else if( GETV( opts, optName )->IsArray() ) {
 					uint32_t n;
 					Local<Array> arr = Local<Array>::Cast( GETV( opts, optName ) );
 
-					argArray = NewArray( char *, arr->Length() + 1 );
+					newTask->argArray = NewArray( char *, newTask->nArg = arr->Length() + 1 );
 					for( n = 0; n < arr->Length(); n++ ) {
-						argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) GETN( arr, n )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+						newTask->argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) GETN( arr, n )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 					}
-					argArray[n] = NULL;
+					newTask->argArray[n] = NULL;
 				}
 			}
 			if( opts->Has( context, optName = strings->workString->Get( isolate ) ).ToChecked() ) {
@@ -644,7 +646,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->envString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				Local<Object> env = GETV( opts, optName ).As<Object>();
-				readEnv( isolate, context, env, &envList );
+				readEnv( isolate, context, env, &newTask->envList );
 				//lprintf( "env params not supported(yet)" );
 				/*
 				if( GETV( opts, optName )->IsString() ) {
@@ -726,7 +728,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			//lprintf( "What is this? %d %d %d %d %d", ( end || input || input2 || !noWait ), end, input, input2, !noWait );
 			newTask->task = LaunchPeerProgram_v2( bin?*bin[0]:NULL
 				, work?*work[0]:NULL
-				, argArray
+				, newTask->argArray
 				, ( firstArgIsArg? LPP_OPTION_FIRST_ARG_IS_ARG:0 )
 				| ( hidden?0:LPP_OPTION_DO_NOT_HIDE)
 				| (newGroup? LPP_OPTION_NEW_GROUP : 0)
@@ -742,7 +744,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
 				, (uintptr_t)newTask 
-				, envList
+				, newTask->envList
 				DBG_SRC );
 
 			// if the option is specified

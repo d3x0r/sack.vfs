@@ -31,6 +31,11 @@ public:
 
 	bool stopped;
 	bool killed;
+
+	char** argArray = NULL;
+	PLIST envList = NULL;
+	int nArg;
+
 #if _WIN32
 	int moved;
 	LOGICAL moveSuccess;
