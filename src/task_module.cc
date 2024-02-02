@@ -346,7 +346,6 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		task->ended = TRUE;
 		// these is a chance output will still come in?
 		uv_close( (uv_handle_t*)&task->async, taskAsyncClosed );
-		task->_this.Reset();
 	}
 	{
 		struct taskObjectOutputItem* output;
