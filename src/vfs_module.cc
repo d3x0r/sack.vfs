@@ -294,7 +294,7 @@ void decodeFlags( int flags ) {
 	if( flags & O_DSYNC ) fprintf( stderr, "dsync " );
 	if( flags & FASYNC ) fprintf( stderr, "fasycn " );
 	if( flags & O_DIRECT ) fprintf( stderr, "direct " );
-	/*if( flags & O_LARGEFILE )*/ fprintf( stderr, "largefile %08x ", O_LARGEFILE );
+	/*if( flags & O_LARGEFILE )* / fprintf( stderr, "largefile %08x ", O_LARGEFILE );
 	if( flags & O_DIRECTORY ) fprintf( stderr, "directory " );
 	if( flags & O_NOFOLLOW ) fprintf( stderr, "nofollow " );
 	if( flags & O_CLOEXEC ) fprintf( stderr, "cloexec " );
