@@ -274,6 +274,34 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
+/*
+void decodeFlags2( int flags ) {
+
+	fprintf( stderr, "FD FLAGS:%08x ", flags );
+	fprintf( stderr, "%08x\n", FD_CLOEXEC );
+}
+
+
+void decodeFlags( int flags ) {
+	if( flags & O_RDONLY ) fprintf( stderr, "rdonly " );
+	if( flags & O_WRONLY ) fprintf( stderr, "wronly " );
+	if( flags & O_RDWR ) fprintf( stderr, "rdwr " );
+	if( flags & O_CREAT ) fprintf( stderr, "create " );
+	if( flags & O_EXCL ) fprintf( stderr, "excl " );
+	if( flags & O_NONBLOCK ) fprintf( stderr, "noblock " );
+	if( flags & O_TRUNC ) fprintf( stderr, "truync " );
+	if( flags & O_APPEND ) fprintf( stderr, "append " );
+	if( flags & O_DSYNC ) fprintf( stderr, "dsync " );
+	if( flags & FASYNC ) fprintf( stderr, "fasycn " );
+	if( flags & O_DIRECT ) fprintf( stderr, "direct " );
+	/*if( flags & O_LARGEFILE )*/ fprintf( stderr, "largefile %08x ", O_LARGEFILE );
+	if( flags & O_DIRECTORY ) fprintf( stderr, "directory " );
+	if( flags & O_NOFOLLOW ) fprintf( stderr, "nofollow " );
+	if( flags & O_CLOEXEC ) fprintf( stderr, "cloexec " );
+	fprintf( stderr, "%08x\n", O_CLOEXEC );
+}
+*/
+
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	static int runOnce = 1;
 	Isolate* isolate = Isolate::GetCurrent();
@@ -296,6 +324,25 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 		SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 		SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 	}
+#endif
+#ifdef __LINUX__
+		fcntl( 0, F_SETFD, fcntl( 0, F_GETFD ) & ~FD_CLOEXEC );
+		fcntl( 1, F_SETFD, fcntl( 1, F_GETFD ) & ~FD_CLOEXEC );
+		fcntl( 2, F_SETFD, fcntl( 2, F_GETFD ) & ~FD_CLOEXEC );
+
+/*
+		decodeFlags( fcntl( 0, F_GETFL, 0 ) );
+		decodeFlags( fcntl( 1, F_GETFL, 0 ) );
+		decodeFlags( fcntl( 2, F_GETFL, 0 ) );
+		decodeFlags2( fcntl( 0, F_GETFD, 0 ) );
+		decodeFlags2( fcntl( 1, F_GETFD, 0 ) );
+		decodeFlags2( fcntl( 2, F_GETFD, 0 ) );
+
+		fprintf( stderr, "Default handle inherit in node: %08x %08x %08x\n"
+		       , fcntl( 0, F_GETFL, 0 )
+		       , fcntl( 1, F_GETFL, 0 )
+		       , fcntl( 2, F_GETFL, 0 ) );
+*/
 #endif
 	if( runOnce ) {
 		InvokeDeadstart();
