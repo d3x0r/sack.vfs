@@ -204,6 +204,7 @@ add_library(${PROJECT} SHARED
 	src/vfs_module.cc
 	src/system_module.cc
 	src/text_object.cc
+	src/config_module.cc
 	${MORE_MODULE_SOURCES}
 	${GUI_SOURCES}	
         )
