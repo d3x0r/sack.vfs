@@ -5158,6 +5158,8 @@ SYSTEM_PROC( int, pprintf )( PTASK_INFO task, CTEXTSTR format, ... );
 // if a task has been opened with an otuput handler, than IO is trapped, and this is a method of
 // sending output to a task.
 SYSTEM_PROC( int, vpprintf )( PTASK_INFO task, CTEXTSTR format, va_list args );
+// send data to child process.  buffer is an array of bytes of length buflen
+SYSTEM_PROC( size_t, task_send )( PTASK_INFO task, const uint8_t*buffer, size_t buflen );
 typedef void (CPROC*generic_function)(void);
 SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR library, CTEXTSTR function, LOGICAL bPrivate DBG_PASS);
 SYSTEM_PROC( generic_function, LoadFunctionEx )( CTEXTSTR library, CTEXTSTR function DBG_PASS);
