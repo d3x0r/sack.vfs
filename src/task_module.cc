@@ -178,7 +178,9 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "send", TaskObject::Write );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
-	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Write );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Print );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "log", TaskObject::Print );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "print", TaskObject::Print );
 #if _WIN32
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getStyles", TaskObject::getProcessWindowStyles );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getPosition", TaskObject::getProcessWindowPos );
@@ -829,14 +831,50 @@ void TaskObject::loadLibrary( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( LoadFunction( *s, NULL ) )
 		args.GetReturnValue().Set( True( isolate ) );
 	args.GetReturnValue().Set( False( isolate ) );
-
 }
 
 void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
-	pprintf( task->task, "%s", *s );
+	if( task->task ) {
+		if( args[0]->IsTypedArray() ) {
+			Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
+			Local<ArrayBuffer> ab = ta->Buffer();
+	#if ( NODE_MAJOR_VERSION >= 14 )
+			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+	#else
+			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+	#endif
+		} else if( args[0]->IsUint8Array() ) {
+			Local<Uint8Array> body = args[0].As<Uint8Array>();
+			Local<ArrayBuffer> ab = body->Buffer();
+	#if ( NODE_MAJOR_VERSION >= 14 )
+			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+	#else
+			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+	#endif
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+	#if ( NODE_MAJOR_VERSION >= 14 )
+			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+	#else
+			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+	#endif
+		}
+		else {
+			String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+			task_send( task->task, (const uint8_t*)*s, s.length() );
+		}
+	}
+}
+
+void TaskObject::Print( const v8::FunctionCallbackInfo<Value>& args ) {
+	//Isolate* isolate = args.GetIsolate();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	if( task->task ) {
+		String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		pprintf( task->task, "%s", *s );
+	}
 }
 
 void TaskObject::End( const v8::FunctionCallbackInfo<Value>& args ) {
