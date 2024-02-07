@@ -1094,6 +1094,11 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					break;
 				}
 				Local<Object> wssi = _wssi.ToLocalChecked();
+				SET_READONLY( wssi, "OPEN", Integer::New( isolate, wsReadyStates::OPEN ) );
+				SET_READONLY( wssi, "CLOSED", Integer::New( isolate, wsReadyStates::CLOSED ) );
+				SET_READONLY( wssi, "CLOSING", Integer::New( isolate, wsReadyStates::CLOSING ) );
+				SET_READONLY( wssi, "CONNECTING", Integer::New( isolate, wsReadyStates::CONNECTING ) );
+				SET_READONLY( wssi, "INITIALIZING", Integer::New( isolate, wsReadyStates::INITIALIZING ) );
 				struct optionStrings *strings = getStrings( isolate );
 				Local<Object> socket;
 				wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
@@ -1449,6 +1454,11 @@ static void handlePostedClient( uv_async_t* async ) {
 		Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
 
 		Local<Object> newThreadSocket = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
+		SET_READONLY( newThreadSocket, "OPEN", Integer::New( isolate, wsReadyStates::OPEN ) );
+		SET_READONLY( newThreadSocket, "CLOSED", Integer::New( isolate, wsReadyStates::CLOSED ) );
+		SET_READONLY( newThreadSocket, "CLOSING", Integer::New( isolate, wsReadyStates::CLOSING ) );
+		SET_READONLY( newThreadSocket, "CONNECTING", Integer::New( isolate, wsReadyStates::CONNECTING ) );
+		SET_READONLY( newThreadSocket, "INITIALIZING", Integer::New( isolate, wsReadyStates::INITIALIZING ) );
 
 		Local<Value> args[] = { localStringExternal( isolate, **( unload->s ), unload->s->length() ), newThreadSocket };
 		wssiObject* obj = wssiObject::Unwrap<wssiObject>( newThreadSocket );
