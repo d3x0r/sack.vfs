@@ -1645,6 +1645,12 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "send", wscObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "on", wscObject::on );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "ping", wscObject::ping );
+		wscTemplate->Set( isolate, "OPEN", Integer::New( isolate, wsReadyStates::OPEN ) );
+		wscTemplate->Set( isolate, "CLOSED", Integer::New( isolate, wsReadyStates::CLOSED ) );
+		wscTemplate->Set( isolate, "CLOSING", Integer::New( isolate, wsReadyStates::CLOSING ) );
+		wscTemplate->Set( isolate, "CONNECTING", Integer::New( isolate, wsReadyStates::CONNECTING ) );
+		wscTemplate->Set( isolate, "INITIALIZING", Integer::New( isolate, wsReadyStates::INITIALIZING ) );
+
 		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readyState" )
 			, FunctionTemplate::New( isolate, wscObject::getReadyState )
 			, Local<FunctionTemplate>() );
@@ -1680,6 +1686,11 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "post", postClientSocketObject );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "block", blockClientSocketAccept );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "resume", resumeClientSocketAccept );
+		wssiTemplate->Set( isolate, "OPEN", Integer::New( isolate, wsReadyStates::OPEN ) );
+		wssiTemplate->Set( isolate, "CLOSED", Integer::New( isolate, wsReadyStates::CLOSED ) );
+		wssiTemplate->Set( isolate, "CLOSING", Integer::New( isolate, wsReadyStates::CLOSING ) );
+		wssiTemplate->Set( isolate, "CONNECTING", Integer::New( isolate, wsReadyStates::CONNECTING ) );
+		wssiTemplate->Set( isolate, "INITIALIZING", Integer::New( isolate, wsReadyStates::INITIALIZING ) );
 
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "send", wssiObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
