@@ -94,6 +94,7 @@ Server events
 
 Providing a `onrequest` callback to the server, will allow the server to handle HTTP(S) request events.
 The request is given a `req`uest and a `res`ponse object which are used to serve the HTTP(S) request.
+request has 'connection' which has information about the local and remote address/port/MAC addresses if available.
 
 ### Websocket Node Worker-Thread Support
 
