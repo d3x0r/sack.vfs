@@ -103,6 +103,8 @@ struct optionStrings {
 	Eternal<String> *addressString;
 	Eternal<String> *localAddrString;
 	Eternal<String> *remoteAddrString;
+	Eternal<String> *localMacString;
+	Eternal<String> *remoteMacString;
 	Eternal<String> *headerString;
 	Eternal<String> *certString;
 	Eternal<String> *CGIString;
@@ -314,6 +316,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "address" ) );
 		check->localAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localAddress" ) );
 		check->remoteAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remoteAddress" ) );
+		check->localMacString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localMAC" ) );
+		check->remoteMacString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remoteMAC" ) );
 		check->localFamilyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localFamily" ) );
 		check->remoteFamilyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remoteFamily" ) );
 		check->headerString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "headers" ) );
@@ -703,6 +707,28 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	SOCKADDR *localAddress = (SOCKADDR *)GetNetworkLong( pc, GNL_LOCAL_ADDRESS );
 	Local<String> remote = String::NewFromUtf8( isolate, remoteAddress?GetAddrName( remoteAddress ):"0.0.0.0", v8::NewStringType::kNormal ).ToLocalChecked();
 	Local<String> local = String::NewFromUtf8( isolate, localAddress?GetAddrName( localAddress ):"0.0.0.0", v8::NewStringType::kNormal ).ToLocalChecked();
+	uint8_t mac[12];
+	TEXTCHAR macText[36];
+	size_t maclen = 12;
+	uint8_t macRemote[12];
+	TEXTCHAR macRemoteText[36];
+	size_t macRemoteLen = 12;
+	GetMacAddress( pc, mac, &maclen, macRemote, &macRemoteLen );
+	if( !maclen )
+		snprintf( macText, 36, "00:00:00:00:00:00" );
+	else
+		snprintf( macText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5] );
+	if( !macRemoteLen )
+		snprintf( macRemoteText, 36, "00:00:00:00:00:00" );
+	else
+		snprintf( macRemoteText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", macRemote[0], macRemote[1], macRemote[2], macRemote[3], macRemote[4], macRemote[5] );
+	Local<String> localMac = String::NewFromUtf8( isolate, macText, v8::NewStringType::kNormal ).ToLocalChecked();
+	Local<String> remoteMac = String::NewFromUtf8( isolate, macRemoteText, v8::NewStringType::kNormal ).ToLocalChecked();
+
+	lprintf( "Mac AAddress of socket:" );
+	LogBinary( mac, maclen );
+	LogBinary( macRemote, macRemoteLen );
+	//	Local<String> localMac = String::NewFromUtf8( isolate, GetAddrName( remoteAddress ):"0.0.0.0", v8::NewStringType::kNormal ).ToLocalChecked();
 	Local<Object> result = Object::New( isolate );
 	Local<Object> arr = Object::New( isolate );
 	INDEX idx;
@@ -726,6 +752,7 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 		);
 	SETV( result, strings->remoteAddrString->Get( isolate ), remote );
 	SETV( result, strings->remotePortString->Get( isolate ), Integer::New( isolate, (int32_t)GetNetworkLong( pc, GNL_PORT ) ) );
+	SETV( result, strings->remoteMacString->Get( isolate ), remoteMac );
 	if( localAddress )
 		SETV( result, strings->localFamilyString->Get( isolate )
 			, (localAddress->sa_family == AF_INET)?strings->v4String->Get(isolate):
@@ -733,6 +760,11 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 		);
 	SETV( result, strings->localAddrString->Get( isolate ), local );
 	SETV( result, strings->localPortString->Get( isolate ), Integer::New( isolate, (int32_t)GetNetworkLong( pc, GNL_MYPORT ) ) );
+	SETV( result, strings->localMacString->Get( isolate ), localMac );
+
+
+//	SETV( result, strings->localMacString->Get( isolate ), localMac );
+
 	return result;
 }
 
