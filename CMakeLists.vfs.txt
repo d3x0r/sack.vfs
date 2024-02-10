@@ -415,7 +415,7 @@ set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
    # so picky about not setting c++17 for C files - who cares?
 	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
-			COMPILE_DEFINITIONS "-std=c++17" )
+			COMPILE_FLAGS "-std=c++17" )
 
    set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion")
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
