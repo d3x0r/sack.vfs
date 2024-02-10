@@ -99,6 +99,10 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		"TARGET_INSTALL_PREFIX=\"${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}\""
                  )
 
+if( __ANDROID__ )
+	SET( DEFINITIONS ${DEFINITIONS} __ANDROID__ )
+endif( __ANDROID__ )
+
 if( USE_SYSTEM_SSL ) 
 	add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/include/openssl
 			COMMAND ${CMAKE_COMMAND} -E create_symlink /usr/include/openssl ${CMAKE_CURRENT_SOURCE_DIR}/include/openssl

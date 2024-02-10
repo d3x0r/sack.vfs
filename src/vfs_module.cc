@@ -345,6 +345,19 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 */
 #endif
 	if( runOnce ) {
+#ifdef __ANDROID__
+		{
+			//SACKSystemSetProgramPath( "" );
+			// maybe if this is set I can get the program path with the maps scanner?
+			SACKSystemSetProgramName( "node" );
+			char buf[1024];
+			getcwd( buf, 1024 );
+			SACKSystemSetWorkingPath( buf );
+			// this should have been filled by maps scan?
+			SACKSystemSetLibraryPath( TARGET_INSTALL_PREFIX );
+		}
+#endif
+
 		InvokeDeadstart();
 		MarkRootDeadstartComplete();
 
