@@ -725,9 +725,10 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	Local<String> localMac = String::NewFromUtf8( isolate, macText, v8::NewStringType::kNormal ).ToLocalChecked();
 	Local<String> remoteMac = String::NewFromUtf8( isolate, macRemoteText, v8::NewStringType::kNormal ).ToLocalChecked();
 
-	lprintf( "Mac AAddress of socket:" );
-	LogBinary( mac, maclen );
-	LogBinary( macRemote, macRemoteLen );
+	//lprintf( "Mac AAddress of socket:" );
+	//LogBinary( mac, maclen );
+	//LogBinary( macRemote, macRemoteLen );
+	
 	//	Local<String> localMac = String::NewFromUtf8( isolate, GetAddrName( remoteAddress ):"0.0.0.0", v8::NewStringType::kNormal ).ToLocalChecked();
 	Local<Object> result = Object::New( isolate );
 	Local<Object> arr = Object::New( isolate );

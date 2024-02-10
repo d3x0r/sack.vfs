@@ -7496,6 +7496,15 @@ NETWORK_PROC( LOGICAL, IsAddressV6 )( SOCKADDR *addr );
  // return a copy of this address...
 NETWORK_PROC( SOCKADDR *, DuplicateAddressEx )( SOCKADDR *pAddr DBG_PASS );
 #define DuplicateAddress(a) DuplicateAddressEx( a DBG_SRC )
+/*
+ *  Duplicate a sockaddr appropriately for the specified network.
+ *  SOCKADDR has in(near) it the size of the address block, so this
+ * can safely duplicate the the right amount of memory.
+ * If the address is a v6 address, it will be converted to a v4 address.
+ */
+ // return a copy of this address...
+NETWORK_PROC( SOCKADDR*, DuplicateAddress_6to4_Ex )( SOCKADDR *pAddr DBG_PASS );
+#define DuplicateAddress_6to4(a) DuplicateAddress_6to4_Ex( a DBG_SRC )
 /* Transmission Control Protocol connection methods. This
    controls opening sockets that are based on TCP.        */
 _TCP_NAMESPACE
