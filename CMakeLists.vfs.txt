@@ -4,6 +4,10 @@ project (sack_vfs)
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
 
+if( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
+	SET( __ANDROID__ ON )
+endif( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
+
 ## Compute node version...
 string(REPLACE "." ";" VERSION_LIST ${NODE_RUNTIMEVERSION})
 list(GET VERSION_LIST 0 NODE_VERSION_MAJOR)
@@ -441,7 +445,9 @@ if( UNIX )
    endif( NOT APPLE )
 endif( UNIX )
 
-
+if( __ANDROID__ )
+	target_link_libraries( ${PROJECT} log )
+endif( __ANDROID__ )
 
 #add_library( ntdll SHARED ntdll.c )
 #add_library( kernel32 SHARED kernel32.c )
