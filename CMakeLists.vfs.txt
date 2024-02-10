@@ -92,7 +92,7 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		__DISABLE_SYSLOGD_SYSLOG__  # there's no options to enable this so just don't include it.
 		xOPENSSL_API_LEVEL=10100 
 		#OPENSSL_API_COMPAT=10101
-		"TARGET_INSTALL_PREFIX=${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}"
+		"TARGET_INSTALL_PREFIX=\"${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}\""
                  )
 
 if( USE_SYSTEM_SSL ) 
@@ -405,8 +405,13 @@ if( UNIX )
 endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion -std=c++17")
+endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation -Wno-parentheses -Wno-empty-body -std=c++17")
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation -std=c++17")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 
