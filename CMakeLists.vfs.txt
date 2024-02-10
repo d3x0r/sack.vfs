@@ -363,8 +363,7 @@ elseif( UNIX )
 	)
 endif( WIN32 )
 
-set( PROJECT sack_vfs )
-add_library(${PROJECT} SHARED
+SET( CPP_SOURCES
 	src/vfs_module.cc
 	src/objStore_module.cc
 	src/thread_module.cc
@@ -382,9 +381,16 @@ add_library(${PROJECT} SHARED
 	src/system_module.cc
 	src/text_object.cc
 	${MORE_MODULE_SOURCES}
-	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
-        )
+)
+SET( C_SOURCES
+	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
+)
+
+set( PROJECT sack_vfs )
+add_library(${PROJECT} SHARED 	${CPP_SOURCES} ${C_SOURCES}  )
+
+
 
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROPERTIES 
 	COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0;SQLITE_OMIT_UTF16;SQLITE_ENABLE_COLUMN_METADATA;SQLITE_ENABLE_STAT4" )
@@ -407,7 +413,11 @@ endif( UNIX )
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion -std=c++17")
+   # so picky about not setting c++17 for C files - who cares?
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_DEFINITIONS "-std=c++17" )
+
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion")
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 if( CMAKE_COMPILER_IS_GNUCC )
