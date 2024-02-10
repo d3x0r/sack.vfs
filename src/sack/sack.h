@@ -5211,13 +5211,13 @@ SYSTEM_PROC( LOGICAL, sack_system_allow_spawn )( void );
 SYSTEM_PROC( void, sack_system_disallow_spawn )( void );
 #ifdef __ANDROID__
 // sets the path the program using this is at
-SYSTEM_PROC(void, SACKSystemSetProgramPath)( char *path );
+SYSTEM_PROC(void, SACKSystemSetProgramPath)( CTEXTSTR path );
 // sets the name of the program using this library
-SYSTEM_PROC(void, SACKSystemSetProgramName)( char *name );
+SYSTEM_PROC(void, SACKSystemSetProgramName)( CTEXTSTR name );
 // sets the current working path of the system using this library(getcwd doesn't work?)
-SYSTEM_PROC(void, SACKSystemSetWorkingPath)( char *name );
+SYSTEM_PROC(void, SACKSystemSetWorkingPath)( CTEXTSTR name );
 // Set the path of this library.
-SYSTEM_PROC(void, SACKSystemSetLibraryPath)( char *name );
+SYSTEM_PROC(void, SACKSystemSetLibraryPath)( CTEXTSTR name );
 #endif
 #if _WIN32
 /*
