@@ -1161,21 +1161,16 @@ SqlObject::~SqlObject() {
 	// end() or close() sends a close event to UV, which deletes the queue, and clears this too.
 	if( state->thread )
 	{
-		struct userMessage msg;
-		msg.mode = UserMessageModes::OnDeallocate;
-		msg.onwhat = NULL;
-		msg.done = 0;
-		msg.waiter = MakeThread();
-		EnqueLink( &state->messages, &msg );
+		struct userMessage *msg = NewArray( struct userMessage, 1 );
+		msg->mode = UserMessageModes::OnDeallocate;
+		msg->onwhat = NULL;
+		msg->done = 0;
+		msg->waiter = NULL;
+		EnqueLink( &state->messages, msg );
 #ifdef DEBUG_EVENTS
 		lprintf( "uv_send sqlObject Destroy %p", &state->async );
 #endif
 		uv_async_send( &state->async );
-		lprintf( "~SqlObject(): This wait on close should never finish?");
-		int tries = 0;
-		while( !msg.done && tries < 2 ) {
-			WakeableSleep( 1000 );
-		}
 	}
 	CloseDatabase( state->odbc );
 	ReleaseEx( state DBG_SRC );
@@ -1692,61 +1687,64 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 	HandleScope scope( isolate );
 	struct userMessage *msg;
 	while( msg  = (struct userMessage*)DequeLink( &myself->messages ) ) {
-	if (msg->mode == UserMessageModes::Query) {
-		Local<Context> context = isolate->GetCurrentContext();
-		if( msg->params->error ) {
-			struct query_thread_params * const params = msg->params;
-			Local<Promise::Resolver> res = params->promise.Get( isolate );
-			res->Reject( context, String::NewFromUtf8(isolate, params->error).ToLocalChecked() );
-			params->promise.Reset();
+		if (msg->mode == UserMessageModes::Query) {
+			Local<Context> context = isolate->GetCurrentContext();
+			if( msg->params->error ) {
+				struct query_thread_params * const params = msg->params;
+				Local<Promise::Resolver> res = params->promise.Get( isolate );
+				res->Reject( context, String::NewFromUtf8(isolate, params->error).ToLocalChecked() );
+				params->promise.Reset();
 
-			ReleaseEx( params->error DBG_SRC );
-			LineRelease( params->statement );			
-			DeleteDataList( &params->pdlParams );
-			ReleaseSQLResults( &params->pdlRecord );
-		} else {
-			// probably results in a Resolve();
-			buildQueryResult( msg->params ); // this is in charge of releasing any data... 
+				ReleaseEx( params->error DBG_SRC );
+				LineRelease( params->statement );			
+				DeleteDataList( &params->pdlParams );
+				ReleaseSQLResults( &params->pdlRecord );
+			} else {
+				// probably results in a Resolve();
+				buildQueryResult( msg->params ); // this is in charge of releasing any data... 
+			}
+			// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
+			//lprintf( "Releasing message..." );
+			Release( msg );
+			msg = NULL;
+		} else if (msg->mode == UserMessageModes::OnOpen) {
+			Local<Function> cb = myself->sql->openCallback.Get( isolate );
+			Local<Value> args[1] = {myself->sql->_this.Get( isolate )};
+			MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), args[0], 1, args );
 		}
-		// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
-		//lprintf( "Releasing message..." );
-		Release( msg );
-		msg = NULL;
-	} else if (msg->mode == UserMessageModes::OnOpen) {
-		Local<Function> cb = myself->sql->openCallback.Get( isolate );
-		Local<Value> args[1] = {myself->sql->_this.Get( isolate )};
-		MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), args[0], 1, args );
-	}
-	else if( msg->onwhat ) {
-		struct SqlObjectUserFunction* userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( msg->onwhat );
-		Isolate* isolate = userData->isolate;
-		if( msg->mode == UserMessageModes::OnSqliteFunction )
-			callUserFunction( msg->onwhat, msg->argc, msg->argv );
-		else if( msg->mode == UserMessageModes::OnSqliteAggStep )
-			callAggStep( msg->onwhat, msg->argc, msg->argv );
-		else if( msg->mode == UserMessageModes::OnSqliteAggFinal ) {
-			callAggFinal( msg->onwhat );
+		else if( msg->onwhat ) {
+			struct SqlObjectUserFunction* userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( msg->onwhat );
+			Isolate* isolate = userData->isolate;
+			if( msg->mode == UserMessageModes::OnSqliteFunction )
+				callUserFunction( msg->onwhat, msg->argc, msg->argv );
+			else if( msg->mode == UserMessageModes::OnSqliteAggStep )
+				callAggStep( msg->onwhat, msg->argc, msg->argv );
+			else if( msg->mode == UserMessageModes::OnSqliteAggFinal ) {
+				callAggFinal( msg->onwhat );
+				myself->thread = NULL;
+				Hold( myself );
+#ifdef DEBUG_EVENTS
+				lprintf( "Sack uv_close5");
+#endif
+				uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
+			}
+		} else {
+			closing = TRUE;
 			myself->thread = NULL;
 			Hold( myself );
 #ifdef DEBUG_EVENTS
-			lprintf( "Sack uv_close5");
+			lprintf( "Sack uv_close6 %p", &myself->async );
 #endif
 			uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
+		}	
+		if( msg ) {
+			msg->done = 1;
+			if (msg->waiter)
+				WakeThread( msg->waiter );
 		}
-	} else {
-		closing = TRUE;
-		myself->thread = NULL;
-		Hold( myself );
-#ifdef DEBUG_EVENTS
-		lprintf( "Sack uv_close6 %p", &myself->async );
-#endif
-		uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
-	}	
-	if( msg ) {
-		msg->done = 1;
-		if (msg->waiter)
-			WakeThread( msg->waiter );
-	}
+		if( msg->mode == UserMessageModes::OnDeallocate ) {
+			ReleaseEx( msg DBG_SRC );
+		}
 	}
 	if( !internal && !closing )
 	{
