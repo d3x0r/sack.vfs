@@ -713,15 +713,20 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	uint8_t macRemote[12];
 	TEXTCHAR macRemoteText[36];
 	size_t macRemoteLen = 12;
-	GetMacAddress( pc, mac, &maclen, macRemote, &macRemoteLen );
-	if( !maclen )
-		snprintf( macText, 36, "00:00:00:00:00:00" );
-	else
-		snprintf( macText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5] );
-	if( !macRemoteLen )
-		snprintf( macRemoteText, 36, "00:00:00:00:00:00" );
-	else
-		snprintf( macRemoteText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", macRemote[0], macRemote[1], macRemote[2], macRemote[3], macRemote[4], macRemote[5] );
+	if( !GetMacAddress( pc, mac, &maclen, macRemote, &macRemoteLen ) ) {
+		strcpy( macText, "00:00:00:00:00:00" );
+		strcpy( macRemoteText, "00:00:00:00:00:00" );
+	}
+	else {
+		if( !maclen )
+			snprintf( macText, 36, "00:00:00:00:00:00" );
+		else
+			snprintf( macText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5] );
+		if( !macRemoteLen )
+			snprintf( macRemoteText, 36, "00:00:00:00:00:00" );
+		else
+			snprintf( macRemoteText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", macRemote[0], macRemote[1], macRemote[2], macRemote[3], macRemote[4], macRemote[5] );
+	}
 	Local<String> localMac = String::NewFromUtf8( isolate, macText, v8::NewStringType::kNormal ).ToLocalChecked();
 	Local<String> remoteMac = String::NewFromUtf8( isolate, macRemoteText, v8::NewStringType::kNormal ).ToLocalChecked();
 
