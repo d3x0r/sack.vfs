@@ -4,7 +4,7 @@ import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
 
 export class Protocol extends Events {
-	static debug = true;
+	static debug = false;
 	protocol = null;
 	#Protocol = Protocol; // this is the proper class container of the implemented protocol
 	get debug() {
