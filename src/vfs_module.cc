@@ -1961,6 +1961,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "trunc", truncateFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "close", closeFile );
 		// read stream methods
+		/*
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pause", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "resume", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setEncoding", openFile );
@@ -1974,6 +1975,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setDefaultEncoding", openFile );
 
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
+		*/
 
 		c->fileConstructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		//exports->Set( String::NewFromUtf8Literal( isolate, "File" ),
