@@ -545,6 +545,12 @@ libssh2_session_callback_set2(LIBSSH2_SESSION *session, enum LIBSSH2_CALLBACKS c
         session->agentSignCallback =
             (LIBSSH2_AUTHAGENT_SIGN_FUNC((*)))callback;
         return oldcb;
+
+    case LIBSSH2_CALLBACK_EOF:
+        oldcb = (libssh2_cb_generic *)session->eof;
+        session->eof = (LIBSSH2_CHANNEL_EOF_FUNC((*)))callback;
+        return oldcb;
+
     }
     _libssh2_debug((session, LIBSSH2_TRACE_TRANS, "Setting Callback %d",
                    cbtype));

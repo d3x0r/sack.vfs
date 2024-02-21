@@ -269,6 +269,9 @@ struct iovec {
 #define LIBSSH2_RECV(session, buffer, length, flags) \
     LIBSSH2_RECV_FD(session, session->socket_fd, buffer, length, flags)
 
+#define LIBSSH2_CHANNEL_EOF( session, channel ) \
+    ((session->eof)?(session->eof( session, channel, &session->abstract)):(void)0)
+
 typedef struct _LIBSSH2_KEX_METHOD LIBSSH2_KEX_METHOD;
 typedef struct _LIBSSH2_HOSTKEY_METHOD LIBSSH2_HOSTKEY_METHOD;
 typedef struct _LIBSSH2_CRYPT_METHOD LIBSSH2_CRYPT_METHOD;
@@ -688,6 +691,7 @@ struct _LIBSSH2_SESSION
     LIBSSH2_AUTHAGENT_SIGN_FUNC((*agentSignCallback));
     LIBSSH2_SEND_FUNC((*send));
     LIBSSH2_RECV_FUNC((*recv));
+    LIBSSH2_CHANNEL_EOF_FUNC((*eof));
 
     /* Method preferences -- NULL yields "load order" */
     char *kex_prefs;

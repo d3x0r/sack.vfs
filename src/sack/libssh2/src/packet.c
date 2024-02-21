@@ -1101,6 +1101,7 @@ libssh2_packet_add_jump_point1:
                                channelp->local.id,
                                channelp->remote.id));
                 channelp->remote.eof = 1;
+                LIBSSH2_CHANNEL_EOF( session, channelp );
             }
             LIBSSH2_FREE(session, data);
             session->packAdd_state = libssh2_NB_state_idle;
@@ -1231,6 +1232,7 @@ libssh2_packet_add_jump_point4:
 
             channelp->remote.close = 1;
             channelp->remote.eof = 1;
+            LIBSSH2_CHANNEL_EOF( session, channelp );
 
             LIBSSH2_FREE(session, data);
             session->packAdd_state = libssh2_NB_state_idle;

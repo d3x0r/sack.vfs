@@ -391,6 +391,11 @@ typedef struct _LIBSSH2_SK_SIG_INFO {
                  const void *buffer, size_t length,                     \
                  int flags, void **abstract)
 
+#define LIBSSH2_CHANNEL_EOF_FUNC(name)   \
+    void name( LIBSSH2_SESSION* session, \
+               LIBSSH2_CHANNEL* channel, \
+               void **abstract )
+
 /* libssh2_session_callback_set() constants */
 enum LIBSSH2_CALLBACKS {
 	LIBSSH2_CALLBACK_IGNORE               = 0,
@@ -402,7 +407,8 @@ enum LIBSSH2_CALLBACKS {
 	LIBSSH2_CALLBACK_RECV                 = 6,
 	LIBSSH2_CALLBACK_AUTHAGENT            = 7,
 	LIBSSH2_CALLBACK_AUTHAGENT_IDENTITIES = 8,
-	LIBSSH2_CALLBACK_AUTHAGENT_SIGN       = 9
+	LIBSSH2_CALLBACK_AUTHAGENT_SIGN       = 9,
+	LIBSSH2_CALLBACK_EOF                  = 10,
 };
 
 /* libssh2_session_method_pref() constants */
