@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 
+set_property(GLOBAL PROPERTY USE_FOLDERS On)
+
 project (sack_vfs)
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
@@ -141,6 +143,7 @@ ENDFOREACH()
 
 FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NO_AUTO_VECTLIB_NAMES\n" )
 FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NODE_ADDON_BUILD\n" )
+FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define SHA2_LOCAL\n" )
 
 
 SET( EXTRA_HEADERS
@@ -345,6 +348,8 @@ if( EXISTS ${PPCTOOL} )
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
+  SET_TARGET_PROPERTIES(doit PROPERTIES FOLDER "SACK Amalgamator" )
+
 endif( EXISTS ${PPCTOOL} )
 
 else( EXISTS ${SACK_BASE} )
@@ -398,6 +403,7 @@ SET( CPP_SOURCES
 	src/fileMonitor_module.cc
 	src/system_module.cc
 	src/text_object.cc
+	src/ssh_module.cc
 	${MORE_MODULE_SOURCES}
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
 )
@@ -405,8 +411,26 @@ SET( C_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 )
 
+
+    SET( ZBASEDIR src/sack/zlib-1.3 )
+    include( ${ZBASEDIR}/CMakeLists.part )
+    source_group("Source Files\\zlib-1.3 Library" FILES ${ZLIB_SOURCE})
+
+
+   SET( LIBSSH2_SKIP_INSTALL ON )
+   set( LIBSSH2_BUILD_SHARED_LIBS OFF )
+   SET( LIBSSH2_SKIP_DOCS ON )
+   set( BUILD_EXAMPLES OFF )
+   set( BUILD_TESTING OFF ) 
+   SET( ENABLE_ZLIB_COMPRESSION ON )
+   SET( OPENSSL_ROOT_DIR ../libressl/3.8.0 )
+   add_subdirectory( src/sack/libssh2 )
+   include_directories( src/sack/libssh2/include )
+   
+
+
 set( PROJECT sack_vfs )
-add_library(${PROJECT} SHARED 	${CPP_SOURCES} ${C_SOURCES}  )
+add_library(${PROJECT} SHARED 	${CPP_SOURCES} ${ZLIB_SOURCE} ${C_SOURCES}  )
 
 
 
@@ -448,7 +472,7 @@ set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_E
 #	add_dependencies( ${PROJECT} dossl )
 #endif( USE_SYSTEM_SSL )
 
-target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${CMAKE_JS_LIB} )
+target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${CMAKE_JS_LIB} libssh2 )
 if( WIN32 )
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
 endif( WIN32 )
@@ -462,6 +486,11 @@ endif( UNIX )
 if( __ANDROID__ )
 	target_link_libraries( ${PROJECT} log )
 endif( __ANDROID__ )
+
+SET_TARGET_PROPERTIES(${SSL_LIBS} PROPERTIES FOLDER "LibreSSL" )
+SET_TARGET_PROPERTIES(bs_obj crypto_obj crypto-static ssl_obj ssl-static tls_obj tls-static PROPERTIES FOLDER "LibreSSL" )
+SET_TARGET_PROPERTIES( libssh2 PROPERTIES FOLDER "LibSSH2" )
+
 
 #add_library( ntdll SHARED ntdll.c )
 #add_library( kernel32 SHARED kernel32.c )
