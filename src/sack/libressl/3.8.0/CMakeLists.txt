@@ -106,6 +106,11 @@ add_definitions(-DOPENSSL_NO_HW_PADLOCK)
 add_definitions(-D__BEGIN_HIDDEN_DECLS=)
 add_definitions(-D__END_HIDDEN_DECLS=)
 
+if( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
+	set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__ANDROID_HOST__" )
+endif()
+
+
 set(CMAKE_POSITION_INDEPENDENT_CODE true)
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang")
@@ -447,7 +452,6 @@ endif()
 if(ENABLE_LIBRESSL_INSTALL)
 	install(FILES cert.pem openssl.cnf x509v3.cnf DESTINATION ${CONF_DIR})
 	install(DIRECTORY DESTINATION ${CONF_DIR}/certs)
-endif(ENABLE_LIBRESSL_INSTALL)
 
 if(NOT TARGET uninstall)
 	configure_file(
@@ -458,3 +462,6 @@ if(NOT TARGET uninstall)
 	add_custom_target(uninstall
 		COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
 endif()
+
+endif(ENABLE_LIBRESSL_INSTALL)
+
