@@ -488,7 +488,8 @@ if( __ANDROID__ )
 endif( __ANDROID__ )
 
 SET_TARGET_PROPERTIES(${SSL_LIBS} PROPERTIES FOLDER "LibreSSL" )
-SET_TARGET_PROPERTIES(bs_obj crypto_obj crypto-static ssl_obj ssl-static tls_obj tls-static PROPERTIES FOLDER "LibreSSL" )
+SET_TARGET_PROPERTIES(bs_obj crypto_obj ssl_obj tls_obj PROPERTIES FOLDER "LibreSSL" )
+#SET_TARGET_PROPERTIES(crypto-static ssl-static tls-static PROPERTIES FOLDER "LibreSSL" )
 SET_TARGET_PROPERTIES( libssh2 PROPERTIES FOLDER "LibSSH2" )
 
 
