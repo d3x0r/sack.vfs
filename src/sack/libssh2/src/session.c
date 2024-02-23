@@ -418,17 +418,6 @@ libssh2_session_banner_set(LIBSSH2_SESSION * session, const char *banner)
     return 0;
 }
 
-#ifndef LIBSSH2_NO_DEPRECATED
-/* libssh2_banner_set
- * Set the local banner. DEPRECATED VERSION
- */
-LIBSSH2_API int
-libssh2_banner_set(LIBSSH2_SESSION * session, const char *banner)
-{
-    return libssh2_session_banner_set(session, banner);
-}
-#endif
-
 /*
  * libssh2_session_init_ex
  *
@@ -546,9 +535,14 @@ libssh2_session_callback_set2(LIBSSH2_SESSION *session, enum LIBSSH2_CALLBACKS c
             (LIBSSH2_AUTHAGENT_SIGN_FUNC((*)))callback;
         return oldcb;
 
-    case LIBSSH2_CALLBACK_EOF:
+    case LIBSSH2_CALLBACK_CHANNEL_EOF:
         oldcb = (libssh2_cb_generic *)session->eof;
         session->eof = (LIBSSH2_CHANNEL_EOF_FUNC((*)))callback;
+        return oldcb;
+
+    case LIBSSH2_CALLBACK_CHANNEL_DATA:
+        oldcb = (libssh2_cb_generic*)session->data;
+        session->data = (LIBSSH2_CHANNEL_DATA_FUNC( (*) ))callback;
         return oldcb;
 
     }
@@ -871,24 +865,6 @@ libssh2_session_handshake(LIBSSH2_SESSION *session, libssh2_socket_t sock)
     return rc;
 }
 
-#ifndef LIBSSH2_NO_DEPRECATED
-/*
- * libssh2_session_startup
- *
- * DEPRECATED. Use libssh2_session_handshake() instead! This function is not
- * portable enough.
- *
- * session: LIBSSH2_SESSION struct allocated and owned by the calling program
- * sock:    *must* be populated with an opened and connected socket.
- *
- * Returns: 0 on success, or non-zero on failure
- */
-LIBSSH2_API int
-libssh2_session_startup(LIBSSH2_SESSION *session, int sock)
-{
-    return libssh2_session_handshake(session, (libssh2_socket_t) sock);
-}
-#endif
 
 /*
  * session_free

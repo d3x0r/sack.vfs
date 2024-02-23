@@ -272,6 +272,9 @@ struct iovec {
 #define LIBSSH2_CHANNEL_EOF( session, channel ) \
     ((session->eof)?(session->eof( session, channel, &session->abstract)):(void)0)
 
+#define LIBSSH2_CHANNEL_DATA( session, channel, stdio, buffer, length ) \
+    ((session->data)?(session->data( session, channel, stdio, buffer, length, &session->abstract),0):1)
+
 typedef struct _LIBSSH2_KEX_METHOD LIBSSH2_KEX_METHOD;
 typedef struct _LIBSSH2_HOSTKEY_METHOD LIBSSH2_HOSTKEY_METHOD;
 typedef struct _LIBSSH2_CRYPT_METHOD LIBSSH2_CRYPT_METHOD;
@@ -301,6 +304,13 @@ typedef enum
     libssh2_NB_state_end,
     libssh2_NB_state_jumpauthagent
 } libssh2_nonblocking_states;
+
+// tracks receive states for sessions or where the network data
+// itself can't route the message to the correct state
+enum libssh2_session_state {
+    SS_RESET,
+    SS_HANDSHAKE,
+};
 
 typedef struct packet_require_state_t
 {
@@ -692,12 +702,14 @@ struct _LIBSSH2_SESSION
     LIBSSH2_SEND_FUNC((*send));
     LIBSSH2_RECV_FUNC((*recv));
     LIBSSH2_CHANNEL_EOF_FUNC((*eof));
+    LIBSSH2_CHANNEL_DATA_FUNC((*data));
 
     /* Method preferences -- NULL yields "load order" */
     char *kex_prefs;
     char *hostkey_prefs;
 
     int state;
+    enum libssh2_session_state session_state;
 
     /* Flag options */
     struct flags flag;

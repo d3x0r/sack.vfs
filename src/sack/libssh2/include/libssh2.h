@@ -396,6 +396,14 @@ typedef struct _LIBSSH2_SK_SIG_INFO {
                LIBSSH2_CHANNEL* channel, \
                void **abstract )
 
+#define LIBSSH2_CHANNEL_DATA_FUNC(name) \
+    void name( LIBSSH2_SESSION*session, \
+               LIBSSH2_CHANNEL*channel, \
+               int is_stderr,           \
+               const void*buffer,       \
+               size_t length,           \
+               void **abstract )
+
 /* libssh2_session_callback_set() constants */
 enum LIBSSH2_CALLBACKS {
 	LIBSSH2_CALLBACK_IGNORE               = 0,
@@ -408,7 +416,8 @@ enum LIBSSH2_CALLBACKS {
 	LIBSSH2_CALLBACK_AUTHAGENT            = 7,
 	LIBSSH2_CALLBACK_AUTHAGENT_IDENTITIES = 8,
 	LIBSSH2_CALLBACK_AUTHAGENT_SIGN       = 9,
-	LIBSSH2_CALLBACK_EOF                  = 10,
+	LIBSSH2_CALLBACK_CHANNEL_EOF          = 10,
+	LIBSSH2_CALLBACK_CHANNEL_DATA         = 11,
 };
 
 /* libssh2_session_method_pref() constants */
@@ -669,14 +678,6 @@ LIBSSH2_API void *libssh2_session_callback_set(LIBSSH2_SESSION *session,
                                                int cbtype, void *callback);
 LIBSSH2_API int libssh2_session_banner_set(LIBSSH2_SESSION *session,
                                            const char *banner);
-#ifndef LIBSSH2_NO_DEPRECATED
-LIBSSH2_DEPRECATED(1.4.0, "Use libssh2_session_banner_set()")
-LIBSSH2_API int libssh2_banner_set(LIBSSH2_SESSION *session,
-                                   const char *banner);
-
-LIBSSH2_DEPRECATED(1.2.8, "Use libssh2_session_handshake()")
-LIBSSH2_API int libssh2_session_startup(LIBSSH2_SESSION *session, int sock);
-#endif
 LIBSSH2_API int libssh2_session_handshake(LIBSSH2_SESSION *session,
                                           libssh2_socket_t sock);
 LIBSSH2_API int libssh2_session_disconnect_ex(LIBSSH2_SESSION *session,
@@ -827,6 +828,13 @@ libssh2_userauth_publickey_sk(LIBSSH2_SESSION *session,
 
 LIBSSH2_API int libssh2_poll(LIBSSH2_POLLFD *fds, unsigned int nfds,
                              long timeout);
+
+/* data input into the ssh session; results with 
+    _send callbacks or
+    _DATA callbacks 
+   replaces _RECV callback.
+*/
+LIBSSH2_API int libssh2_transport_add_data(LIBSSH2_SESSION * session, uint8_t* buffer, size_t length );
 
 /* Channel API */
 #define LIBSSH2_CHANNEL_WINDOW_DEFAULT  (2*1024*1024)

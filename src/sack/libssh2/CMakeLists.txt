@@ -54,13 +54,13 @@ project(libssh2 C)
 
 set(CMAKE_UNITY_BUILD_BATCH_SIZE 32)
 
-option(BUILD_STATIC_LIBS "Build Static Libraries" ON)
-add_feature_info("Static library" BUILD_STATIC_LIBS
-  "creating libssh2 static library")
+#option(BUILD_STATIC_LIBS "Build Static Libraries" ON)
+#add_feature_info("Static library" BUILD_STATIC_LIBS
+#  "creating libssh2 static library")
 
-option(BUILD_SHARED_LIBS "Build Shared Libraries" ON)
-add_feature_info("Shared library" BUILD_SHARED_LIBS
-  "creating libssh2 shared library (.so/.dll)")
+#option(BUILD_SHARED_LIBS "Build Shared Libraries" ON)
+#add_feature_info("Shared library" BUILD_SHARED_LIBS
+#  "creating libssh2 shared library (.so/.dll)")
 
 # Parse version
 
@@ -404,10 +404,7 @@ endif()
 # Detect platform-specific crypto-backends last:
 
 
-MESSAGE( "---------------------------------- setup local libressl ${CRYPTO_BACKEND}")
-
 if( NOT CRYPTO_BACKEND )
-MESSAGE( "---------------------------------- setup local libressl ")
     set(CRYPTO_BACKEND "LibreSSL")
     set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
     set(CRYPTO_BACKEND_INCLUDE_DIR ../libressl/3.8.0)
