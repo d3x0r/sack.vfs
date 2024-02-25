@@ -465,8 +465,14 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
    set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion")
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
+
+
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation -std=c++17")
+
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "-std=c++17" )
+
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation")
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 
