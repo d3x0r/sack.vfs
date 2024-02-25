@@ -1469,6 +1469,7 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	char *sect;
 	char *optname;
 	char *defaultVal;
+	char *filename;
 
 	if( argc > 0 ) {
 		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
@@ -1492,11 +1493,20 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	}
 	else {
 		if ((sect && sect[0] == '/')) {
+			optname = NULL;
 		}
 		else {
 			optname = sect;
 			sect = NULL;
 		}
+	}
+
+	if( argc > 3 ) {
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[3] );
+		filename = StrDup(*tmp);
+	}
+	else {
+		filename = NULL;
 	}
 
 	TEXTCHAR readbuf[1024];
@@ -1519,7 +1529,7 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 		, defaultVal
 		, readbuf
 		, 1024
-		, NULL
+		, filename
 		, TRUE
 		DBG_SRC
 		);
@@ -1527,6 +1537,7 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	Local<String> returnval = String::NewFromUtf8( isolate, readbuf, v8::NewStringType::kNormal ).ToLocalChecked();
 	args.GetReturnValue().Set( returnval );
 
+	Deallocate( char*, filename );
 	Deallocate( char*, optname );
 	Deallocate( char*, sect );
 	Deallocate( char*, defaultVal );
