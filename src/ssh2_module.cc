@@ -454,7 +454,7 @@ void test( void ) {
 	const char* username = "d3x0r";
 	const char* fn1 = "fn1";
 	const char* fn2 = "fn2";
-	const char* password = "P3ap0dm4n";
+	const char* password = "";
 	if( libssh2_userauth_password( session, username, password ) ) {
 		lprintf( "Authentication by public key failed." );
 
@@ -552,8 +552,8 @@ static uintptr_t startTest( PTHREAD thread ) {
 }
 
 PRELOAD( testinit ) {
-	ssl_InitLibrary();
-	ThreadTo( startTest, 0 );
+	//ssl_InitLibrary();
+	//ThreadTo( startTest, 0 );
 }
 
 void connect( void ) {
