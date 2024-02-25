@@ -108,8 +108,8 @@ else()
   endif()
 endif()
 
-option(BUILD_EXAMPLES "Build libssh2 examples" ON)
-option(BUILD_TESTING "Build libssh2 test suite" ON)
+#option(BUILD_EXAMPLES "Build libssh2 examples" OFF)
+#option(BUILD_TESTING "Build libssh2 test suite" OFF)
 
 if(NOT BUILD_STATIC_LIBS AND NOT BUILD_SHARED_LIBS)
   set(BUILD_STATIC_LIBS ON)
