@@ -1,6 +1,7 @@
 /*CMake Option defined*/
 #define NO_AUTO_VECTLIB_NAMES
 #define NODE_ADDON_BUILD
+#define SHA2_LOCAL
 /* Includes the system platform as required or appropriate. If
    under a linux system, include appropriate basic linux type
    headers, if under windows pull "windows.h".
@@ -8124,6 +8125,8 @@ NETWORK_PROC( SOCKADDR*, GetInterfaceAddressForBroadcast )(SOCKADDR *addr);
 NETWORK_PROC( struct interfaceAddress*, GetInterfaceForAddress )( SOCKADDR *addr );
 NETWORK_PROC( LOGICAL, IsBroadcastAddressForInterface )( struct interfaceAddress *address, SOCKADDR *addr );
 NETWORK_PROC( void, LoadNetworkAddresses )(void);
+// This initializes the libressl library, which registers the correct allocation methods...
+NETWORK_PROC( LOGICAL, ssl_InitLibrary )( void );
 //----- PING.C ------
 NETWORK_PROC( LOGICAL, DoPing )( CTEXTSTR pstrHost,
              int maxTTL,
