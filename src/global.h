@@ -92,6 +92,7 @@
 using namespace v8;
 
 #include "task_module.h"
+#include "ssh2_module.h"
 
 //fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
 
@@ -191,7 +192,7 @@ class constructorSet {
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
 	v8::Persistent<v8::Function> MouseHidObject_constructor;
 	v8::Persistent<v8::Function> ConfigObject_constructor;
-	
+	v8::Persistent<v8::Function> SSH_Object_constructor;
 
 	//Persistent<Function> onCientPost;
 	uv_loop_t* loop;

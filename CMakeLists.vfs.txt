@@ -403,7 +403,7 @@ SET( CPP_SOURCES
 	src/fileMonitor_module.cc
 	src/system_module.cc
 	src/text_object.cc
-#	src/ssh_module.cc
+#	src/ssh2_module.cc
 	${MORE_MODULE_SOURCES}
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
 )
