@@ -21,6 +21,9 @@
     "./import.mjs": {
       "default": "./import.mjs"
     },
+    "./import": {
+      "default": "./import.mjs"
+    },
     "./object-storage": {
       "default": "./object-storage.mjs"
     },
