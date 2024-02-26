@@ -213,9 +213,18 @@ import {Protocol} from "sack.vfs/protocol";
 class MyProtocol extends Protocol {
 	constructor( opts ) {
 		super( opts );
+		// optional message handler handle messages...
+		this.on( "message", (ws,msg)=>{
+			
+		}
 	}
 }
 
-// new MyProtocol( {port:5252 } );
+
+//const protocol = new MyProtocol( {port:5252 } );
+
+// otherwise users of 
+protocol can use protocol.on( "msgtype" ) where "msgtype" will be the command of 'op' contained in a mesage.
+
 ```
 
