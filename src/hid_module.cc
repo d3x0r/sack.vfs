@@ -661,7 +661,14 @@ void MouseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void MouseObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	// set read callback
+   Isolate *isolate = args.GetIsolate();
 	MouseObject* com = ObjectWrap::Unwrap<MouseObject>( args.This() );
+	if( args.Length() > 0 ) {
+		if( args[0]->IsFunction() ) {
+			Local<Function> arg0 = Local<Function>::Cast( args[0] );
+			com->readCallback.Reset( isolate, arg0 );
+		}
+	}
 }
 
 void MouseObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
