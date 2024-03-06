@@ -41,8 +41,9 @@ function openServer( opts, cb )
 		let filePath = "." + unescape(req.url);
 		if( req.url.startsWith( "/node_modules/" ) && req.url.startsWith( "/node_modules/@d3x0r" ) )
 			filePath="." + unescape(req.url);
+		if( disk.isDir( filePath ) ) 
+			filePath += "/index.html";
 		let extname = path.extname(filePath);
-
 		let contentEncoding = encMap[extname];
 		if( contentEncoding ) {
 			extname = path.extname(path.basename(filePath,extname));
