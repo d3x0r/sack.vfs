@@ -8452,6 +8452,21 @@ using namespace sack::network::udp;
 #define getsockopt ?
 #define heh yeah these have exact equivalents ....
 */
+NETWORK_PROC( struct ssh_session *, sack_ssh_session_init)( uintptr_t psv );
+NETWORK_PROC( void, sack_ssh_session_close)(struct ssh_session *session);
+NETWORK_PROC( int, sack_ssh_set_handshake_callback)(struct ssh_session *session, void (*cb)(uintptr_t psv));
+NETWORK_PROC( int, sack_ssh_session_set_auth_complete)(struct ssh_session *session, void (*cb)(uintptr_t psv, LOGICAL success));
+NETWORK_PROC( int, sack_ssh_set_channel_open)(struct ssh_session *session, void (*cb)(uintptr_t psv, struct ssh_channel *channel));
+NETWORK_PROC( int, sack_ssh_set_pty_open)(struct ssh_session *session, void (*cb)(uintptr_t psv, struct ssh_channel *channel));
+NETWORK_PROC( int, sack_ssh_set_channel_data)(struct ssh_channel *channel, void (*cb)(uintptr_t psv, struct ssh_channel *channel, int stream, uint8_t *data, size_t len));
+NETWORK_PROC( int, sack_ssh_set_channel_eof)(struct ssh_channel *channel, void (*cb)(uintptr_t psv, struct ssh_channel *channel));
+NETWORK_PROC( int, sack_ssh_set_channel_closed)(struct ssh_channel *channel, void (*cb)(uintptr_t psv, struct ssh_channel *channel));
+NETWORK_PROC( void, sack_auth_user_password )( struct ssh_session *session, const char *user, const char *password );
+NETWORK_PROC( void, sack_auth_user_cert )( struct ssh_session*session, CTEXTSTR user
+                                         , CTEXTSTR pubkey
+                                         , CTEXTSTR privkey
+                                         , CTEXTSTR pass );
+NETWORK_PROC( void, sack_ssh_channel_request_pty )( struct ssh_session *session, struct ssh_channel *channel, CTEXTSTR term );
 /* more documentation at end */
 /*
  *
