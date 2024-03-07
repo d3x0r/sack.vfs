@@ -4,14 +4,14 @@
 
 struct client_ssh {
 	PCLIENT pc;
-	LIBSSH2_SESSION* session;
+	struct ssh_session* session;
 	PDATALIST buffers;
 	PTHREAD waiter;
 };
 
 
 
-class SSH2_Object {
+class SSH2_Object : public node::ObjectWrap {
 
 public:
     struct client_ssh *client;
