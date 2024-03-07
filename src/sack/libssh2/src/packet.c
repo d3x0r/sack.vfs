@@ -1353,7 +1353,7 @@ libssh2_packet_add_jump_authagent:
         packetp->data_head = data_head;
 
         int rc_cb = 0;
-        if( channelp->data_cb )
+        if( channelp && channelp->data_cb )
             if( (data[0] == SSH_MSG_CHANNEL_DATA) || (data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA) ) {
                 if( (data[0] == SSH_MSG_CHANNEL_DATA) ){
                     LIBSSH2_CHANNEL_DATA( session, channelp, 0, data + data_head, datalen - data_head );

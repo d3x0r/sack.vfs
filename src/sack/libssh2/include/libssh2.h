@@ -862,6 +862,8 @@ libssh2_channel_open_ex(LIBSSH2_SESSION *session, const char *channel_type,
                             LIBSSH2_CHANNEL_WINDOW_DEFAULT, \
                             LIBSSH2_CHANNEL_PACKET_DEFAULT, NULL, 0)
 
+LIBSSH2_API void** libssh2_channel_abstract( LIBSSH2_CHANNEL* session );
+
 LIBSSH2_API libssh2_cb_generic*
 libssh2_channel_callback_set( LIBSSH2_CHANNEL* channel,
     int cbtype,

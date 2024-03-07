@@ -3076,6 +3076,10 @@ libssh2_channel_signal_ex(LIBSSH2_CHANNEL *channel,
     return rc;
 }
 
+void** libssh2_channel_abstract( LIBSSH2_CHANNEL* channel ) {
+    return &channel->abstract;
+}
+
 libssh2_cb_generic*
 libssh2_channel_callback_set( LIBSSH2_CHANNEL *channel,
                               int cbtype,
@@ -3084,7 +3088,7 @@ libssh2_channel_callback_set( LIBSSH2_CHANNEL *channel,
     libssh2_cb_generic* oldcb;
 
     if(!channel)
-        return LIBSSH2_ERROR_BAD_USE;
+        return NULL;
 
     switch(cbtype) {
     case LIBSSH2_CALLBACK_CHANNEL_EOF:
