@@ -392,7 +392,8 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 #      define JSON_EMITTER_SOURCE
-/* Defined when SACK_BAG_EXPORTS is defined. This was an
+#      define JSOX_EMITTER_SOURCE
+	/* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 #    define SERVICE_SOURCE
 #    ifndef __NO_SQL__
@@ -7593,6 +7594,8 @@ NETWORK_PROC( void, SetNetworkListenerReady )( PCLIENT pListen );
 /* <combine sack::network::tcp::OpenTCPListenerEx@uint16_t@cNotifyCallback>
    \ \                                                                 */
 #define OpenTCPServerAddrEx OpenTCPListenerAddrEx
+// used with OpenTCPClientAddrExx
+// use NetworkConnectTCP to begin connection
 #define OPEN_TCP_FLAG_DELAY_CONNECT 1
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>

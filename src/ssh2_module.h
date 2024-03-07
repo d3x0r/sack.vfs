@@ -1,10 +1,6 @@
 #include <libssh2.h>
 
-struct data_buffer {
-	uint8_t* buffer;
-	size_t length;
-	size_t used;
-};
+
 
 struct client_ssh {
 	PCLIENT pc;

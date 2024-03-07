@@ -108,23 +108,24 @@ else()
   endif()
 endif()
 
-#option(BUILD_EXAMPLES "Build libssh2 examples" OFF)
-#option(BUILD_TESTING "Build libssh2 test suite" OFF)
+#option(BUILD_EXAMPLES "Build libssh2 examples" ON)
+#option(BUILD_TESTING "Build libssh2 test suite" ON)
 
-if(NOT BUILD_STATIC_LIBS AND NOT BUILD_SHARED_LIBS)
-  set(BUILD_STATIC_LIBS ON)
+if(NOT LIBSSH2_BUILD_STATIC_LIBS AND NOT LIBSSH2_BUILD_SHARED_LIBS)
+  set(LIBSSH2_BUILD_STATIC_LIBS ON)
 endif()
 
 set(LIB_NAME "libssh2")
-IF( DEFINED LIBSSH2_BUILD_SHARED_LIBS )
-set(LIB_STATIC "${LIB_NAME}")
-set(LIB_SHARED "${LIB_NAME}")
-ELSE()
+if( LIBSSH2_BUILD_STATIC_LIBS AND LIBSSH2_BUILD_SHARED_LIBS )
 set(LIB_STATIC "${LIB_NAME}_static")
 set(LIB_SHARED "${LIB_NAME}_shared")
+else()
+set(LIB_STATIC "${LIB_NAME}")
+set(LIB_SHARED "${LIB_NAME}")
 endif()
+
 # lib flavour selected for example and test programs.
-if(BUILD_SHARED_LIBS)
+if(LIBSSH_BUILD_SHARED_LIBS)
   set(LIB_SELECTED ${LIB_SHARED})
 else()
   set(LIB_SELECTED ${LIB_STATIC})
@@ -135,9 +136,7 @@ endif()
 option(HIDE_SYMBOLS "Set to ON to hide all libssh2 symbols that are not officially external" ON)
 mark_as_advanced(HIDE_SYMBOLS)
 if(HIDE_SYMBOLS)
-  if( NOT DEFINED LIBSSH2_BUILD_SHARED_LIBS OR LIBSSH2_BUILD_SHARED_LIBS )
-	  set(LIB_SHARED_DEFINITIONS "LIBSSH2_EXPORTS")
-  endif()
+  set(LIB_SHARED_DEFINITIONS "LIBSSH2_EXPORTS")
   if(WIN32)
   elseif((CMAKE_C_COMPILER_ID MATCHES "Clang") OR
          (CMAKE_COMPILER_IS_GNUCC AND NOT CMAKE_C_COMPILER_VERSION VERSION_LESS 4.0) OR
@@ -403,14 +402,12 @@ endif()
 
 # Detect platform-specific crypto-backends last:
 
-
 if( NOT CRYPTO_BACKEND )
     set(CRYPTO_BACKEND "LibreSSL")
     set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
     set(CRYPTO_BACKEND_INCLUDE_DIR ../libressl/3.8.0)
     list(APPEND LIBRARIES ssl crypto tls )
 endif()
-# Global functions
 
 
 if(CRYPTO_BACKEND STREQUAL "WinCNG" OR NOT CRYPTO_BACKEND)
@@ -424,6 +421,8 @@ if(CRYPTO_BACKEND STREQUAL "WinCNG" OR NOT CRYPTO_BACKEND)
     message(FATAL_ERROR "WinCNG not available")
   endif()
 endif()
+
+# Global functions
 
 # Convert GNU Make assignments into CMake ones.
 function(transform_makefile_inc INPUT_FILE OUTPUT_FILE)

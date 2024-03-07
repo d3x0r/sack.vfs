@@ -1101,7 +1101,8 @@ libssh2_packet_add_jump_point1:
                                channelp->local.id,
                                channelp->remote.id));
                 channelp->remote.eof = 1;
-                LIBSSH2_CHANNEL_EOF( session, channelp );
+                if( channelp->eof_cb )
+                    LIBSSH2_CHANNEL_EOF( session, channelp );
             }
             LIBSSH2_FREE(session, data);
             session->packAdd_state = libssh2_NB_state_idle;
@@ -1232,7 +1233,9 @@ libssh2_packet_add_jump_point4:
 
             channelp->remote.close = 1;
             channelp->remote.eof = 1;
-            LIBSSH2_CHANNEL_EOF( session, channelp );
+            if( channelp->close_cb ) {
+                LIBSSH2_CHANNEL_CLOSE( session, channelp );
+            }
 
             LIBSSH2_FREE(session, data);
             session->packAdd_state = libssh2_NB_state_idle;
@@ -1349,24 +1352,23 @@ libssh2_packet_add_jump_authagent:
         packetp->data_len = datalen;
         packetp->data_head = data_head;
 
-        int rc = 0;
-        if( (data[0] == SSH_MSG_CHANNEL_DATA) || (data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA) ) {
-            uint32_t chid = _libssh2_ntohu32(data + 1);
-            channelp = _libssh2_channel_locate(session, chid);
-            if( (data[0] == SSH_MSG_CHANNEL_DATA) ){
-                rc = LIBSSH2_CHANNEL_DATA( session, channelp, 0, data + data_head, datalen - data_head );
-            } else if( ( data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA ) ){
-                uint32_t sid = _libssh2_ntohu32(data + 5);
-                if( (sid == SSH_EXTENDED_DATA_STDERR) ){
-                    rc = LIBSSH2_CHANNEL_DATA( session, channelp, 1, data + data_head, datalen - data_head );
-                }  if( ( channelp->remote.extended_data_ignore_mode ==
-                        LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE) ) {
-                    rc = LIBSSH2_CHANNEL_DATA( session, channelp, sid, data + data_head, datalen - data_head );
+        int rc_cb = 0;
+        if( channelp->data_cb )
+            if( (data[0] == SSH_MSG_CHANNEL_DATA) || (data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA) ) {
+                if( (data[0] == SSH_MSG_CHANNEL_DATA) ){
+                    LIBSSH2_CHANNEL_DATA( session, channelp, 0, data + data_head, datalen - data_head );
+                } else if( ( data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA ) ){
+                    uint32_t sid = _libssh2_ntohu32(data + 5);
+                    if( (sid == SSH_EXTENDED_DATA_STDERR) ){
+                        LIBSSH2_CHANNEL_DATA( session, channelp, 1, data + data_head, datalen - data_head );
+                    }  if( ( channelp->remote.extended_data_ignore_mode ==
+                            LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE) ) {
+                        LIBSSH2_CHANNEL_DATA( session, channelp, sid, data + data_head, datalen - data_head );
+                    }
                 }
             }
-        }
 
-        if( !rc )
+        if( !rc_cb )
             _libssh2_list_add(&session->packets, &packetp->node);
         else LIBSSH2_FREE( session, packetp );
 

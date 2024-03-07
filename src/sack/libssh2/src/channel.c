@@ -2514,6 +2514,8 @@ static int channel_send_eof(LIBSSH2_CHANNEL *channel)
                               "Unable to send EOF on channel");
     }
     channel->local.eof = 1;
+    if( channel->eof_cb )
+        LIBSSH2_CHANNEL_EOF( session, channel );
 
     return 0;
 }
@@ -3072,4 +3074,34 @@ libssh2_channel_signal_ex(LIBSSH2_CHANNEL *channel,
     BLOCK_ADJUST(rc, channel->session,
                  channel_signal(channel, signame, signame_len));
     return rc;
+}
+
+libssh2_cb_generic*
+libssh2_channel_callback_set( LIBSSH2_CHANNEL *channel,
+                              int cbtype,
+                              libssh2_cb_generic* callback)
+{
+    libssh2_cb_generic* oldcb;
+
+    if(!channel)
+        return LIBSSH2_ERROR_BAD_USE;
+
+    switch(cbtype) {
+    case LIBSSH2_CALLBACK_CHANNEL_EOF:
+        oldcb = (libssh2_cb_generic*)channel->close_cb;
+        channel->eof_cb = (LIBSSH2_CHANNEL_EOF_FUNC((*)))callback;
+        break;
+    case LIBSSH2_CALLBACK_CHANNEL_CLOSE:
+        oldcb = (libssh2_cb_generic*)channel->close_cb;
+        channel->close_cb = (LIBSSH2_CHANNEL_CLOSE_FUNC((*)))callback;
+        break;
+    case LIBSSH2_CALLBACK_CHANNEL_DATA:
+        oldcb = (libssh2_cb_generic*)channel->data_cb;
+        channel->data_cb = (LIBSSH2_CHANNEL_DATA_FUNC((*)))callback;
+        break;
+    default:
+        return NULL;
+    }
+
+    return oldcb;
 }
