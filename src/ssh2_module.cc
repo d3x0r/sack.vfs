@@ -325,7 +325,7 @@ void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 	const char* username = "d3x0r";
 	const char* fn1 = "fn1";
 	const char* fn2 = "fn2";
-	const char* password = "P3ap0dm4n";
+	const char* password = "";
 	if( libssh2_userauth_password( session, username, password ) ) {
 		lprintf( "Authentication by public key failed." );
 
@@ -415,7 +415,7 @@ static void handshook( uintptr_t psv, CTEXTSTR string ) {
 	const char* username = "d3x0r";
 	const char* fn1 = "fn1";
 	const char* fn2 = "fn2";
-	const char* password = "P3ap0dm4n";
+	const char* password = "";
 	sack_auth_user_password( cs->session, username, password );
 
 }

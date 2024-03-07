@@ -252,6 +252,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.1.822(in progress)
+    - Add client SSH module; using libssh2 for support.
     - Added local and remote MAC addresses to websocket connection for clients and accepted server sockets.
     - Applied some minor fixes to build under termux on android.
     - Added isRunning() method to tasks to return if a task is still running.
