@@ -21,7 +21,7 @@
 			}
 
 struct optionStrings {
-	Isolate *isolate;
+	Isolate* isolate;
 	//Eternal<String> *String;
 	DEF_STRING( address );
 	DEF_STRING( user );
@@ -32,7 +32,7 @@ struct optionStrings {
 	DEF_STRING( data );
 	DEF_STRING( close );
 
-}
+};
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
 	static PLIST strings;
@@ -73,18 +73,18 @@ static LIBSSH2_SEND_FUNC( SendCallback ) {
 
 static LIBSSH2_CHANNEL_EOF_FUNC( EofCallback ) {
 	/* session, channel, void** abstract */
-	struct client_ssh* cs = (struct client_ssh*)abstract[0];
+	struct client_ssh* cs = (struct client_ssh*)session_abstract[0];
 	
 }
 
 static LIBSSH2_CHANNEL_DATA_FUNC( DataCallback ) {
 	/* session, channel, stderr, POINTER buffer, size_t length, void** abstract */
-	struct client_ssh* cs = (struct client_ssh*)abstract[0];
+	struct client_ssh* cs = (struct client_ssh*)session_abstract[0];
 	lprintf( "Got data from channel %p %p %zd", channel, buffer, length );
 	LogBinary( (const uint8_t*)buffer, length );
 }
 
-
+/*
 static void moveBuffers( PDATALIST pdl ) {
 	struct data_buffer* buf;
 	INDEX idx;
@@ -109,7 +109,7 @@ static LIBSSH2_RECV_FUNC( RecvCallback ) {
 		, size_t length \
 		, int flags
 		, void** abstract)
-	*/
+	* /
 	struct client_ssh* cs = (struct client_ssh*)abstract[0];
 	while( !cs->buffers || !cs->buffers->Cnt ) {
 		IdleFor( 500 );
@@ -183,17 +183,17 @@ void readCallback( PCLIENT pc, POINTER buffer, size_t length ) {
 	ReadTCP( pc, new_db.buffer, 4096 );
 }
 
-
+*/
 
 
 SSH2_Object::SSH2_Object() {
-	this.client = NewArray( struct client_ssh, 1 );
-	LIBSSH2_SESSION* session = this.client->session = libssh2_session_init_ex( alloc_callback, free_callback, realloc_callback, this );
+	this->client = NewArray( struct client_ssh, 1 );
+	//struct ssh_session* session = this->client->session = libssh2_session_init_ex( alloc_callback, free_callback, realloc_callback, this );
 
-	libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_SEND, (libssh2_cb_generic*)SendCallback );
-	libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_RECV, (libssh2_cb_generic*)RecvCallback );
-	libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_CHANNEL_EOF, (libssh2_cb_generic*)EofCallback );
-	libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_CHANNEL_DATA, (libssh2_cb_generic*)DataCallback );
+	//libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_SEND, (libssh2_cb_generic*)SendCallback );
+	//libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_RECV, (libssh2_cb_generic*)RecvCallback );
+	//libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_CHANNEL_EOF, (libssh2_cb_generic*)EofCallback );
+	//libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_CHANNEL_DATA, (libssh2_cb_generic*)DataCallback );
 
 
 }
@@ -201,7 +201,7 @@ SSH2_Object::~SSH2_Object() {
 
 }
 
-static void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
+void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 	class constructorSet* c = getConstructors( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> sshTemplate;
@@ -234,12 +234,12 @@ static void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 
 }
 
-static void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
+void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( args.IsConstructCall() ) {
-		SSH_Object* obj;
-		obj = new SSH_Object( );
+		SSH2_Object* obj;
+		obj = new SSH2_Object( );
 		obj->Wrap( args.This() );
 
 		args.GetReturnValue().Set( args.This() );
@@ -247,7 +247,7 @@ static void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 		class constructorSet* c = getConstructors( isolate );
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Value> *argv = new Local<Value>[0];
-		Local<Function> cons = Local<Function>::New( isolate, constructor );
+		Local<Function> cons = Local<Function>::New( isolate, c->SSH_Object_constructor );
 		//MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 		//if( !mo.IsEmpty() )
 		//	args.GetReturnValue().Set( mo.ToLocalChecked() );
@@ -255,8 +255,9 @@ static void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 	}
 }
 
-static void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
+ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
 	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
 	struct optionStrings *strings = getStrings( isolate );
 
@@ -273,7 +274,7 @@ static void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  )
 	String::Utf8Value *privKey = NULL;
 
 	LOGICAL trace = FALSE;
-
+	Local<String> optName;
 	// requires opts
 	GET_STRING( address );
 	GET_STRING( user );
@@ -285,8 +286,8 @@ static void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  )
 			if( opts->Has( context, optName = strings->dataString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				if( GETV( opts, optName )->IsFunction() ) {
-					newTask->endCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
-					end = true;
+					//newTask->endCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+					//end = true;
 				}
 			}
 
@@ -295,14 +296,14 @@ static void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  )
 	 * banners, exchange keys, and setup crypto, compression, and MAC layers
      */
 	/* Enable all debugging when libssh2 was built with debugging enabled */
-	if( trace )
-		libssh2_trace( session, ~0 );
+	//if( trace )
+		//libssh2_trace( ssh->client->session, ~0 );
 
-
+	/*
 	PCLIENT pc = OpenTCPClientEx( address, 22, readCallback, closeCallback, NULL );
 	cs = (struct client_ssh*)GetNetworkLong( pc, 0 );
 
-	int rc = libssh2_session_handshake( session, 1/*sock*/ );
+	int rc = libssh2_session_handshake( session, 1/*sock* / );
 	if( rc ) {
 		lprintf( "Failure establishing SSH session: %d", rc );
 		return;// goto shutdown;
@@ -314,7 +315,7 @@ static void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  )
 	 * is check the hostkey's fingerprint against our known hosts Your app
 	 * may have it hard coded, may go to a file, may present it to the
 	 * user, that's your call
-	 */
+	 * /
 	CTEXTSTR fingerprint = libssh2_hostkey_hash( session, LIBSSH2_HOSTKEY_HASH_SHA1 );
 	fprintf( stderr, "Fingerprint: " );
 	for( int i = 0; i < 20; i++ ) {
@@ -347,7 +348,7 @@ if(0)
 
 
 
-	/* Request a session channel on which to run a shell */
+	/* Request a session channel on which to run a shell * /
 	LIBSSH2_CHANNEL* channel = libssh2_channel_open_session( session );
 	if( !channel ) {
 		fprintf( stderr, "Unable to open a session\n" );
@@ -356,20 +357,20 @@ if(0)
 
 	/* Some environment variables may be set,
 	 * It's up to the server which ones it'll allow though
-	 */
+	 * /
 	libssh2_channel_setenv( channel, "FOO", "bar" );
 
 
 	/* Request a terminal with 'vanilla' terminal emulation
 	 * See /etc/termcap for more options. This is useful when opening
 	 * an interactive shell.
-	 */
+	 * /
 	if( libssh2_channel_request_pty( channel, "vanilla" ) ) {
 		fprintf( stderr, "Failed requesting pty\n" );
 		return;// goto skip_shell;
 	}
 
-	/* Open a SHELL on that pty */
+	/* Open a SHELL on that pty * /
 	if( libssh2_channel_shell( channel ) ) {
 		fprintf( stderr, "Unable to request shell on allocated pty\n" );
 		return;// goto shutdown;
@@ -404,7 +405,66 @@ if(0)
 
 
 
+}
 
+
+static void handshook( uintptr_t psv, CTEXTSTR string ) {
+	struct client_ssh*cs = (struct client_ssh*)psv;
+	lprintf( "Handshake:%s", string );
+	LogBinary( string, strlen( string ) );
+	const char* username = "d3x0r";
+	const char* fn1 = "fn1";
+	const char* fn2 = "fn2";
+	const char* password = "P3ap0dm4n";
+	sack_auth_user_password( cs->session, username, password );
+
+}
+
+static void authDone( uintptr_t psv, LOGICAL success ) {
+	struct client_ssh*cs = (struct client_ssh*)psv;
+	lprintf( "Auth Success:%d", success );
+	/* Request a session channel on which to run a shell */
+	sack_ssh_channel_open( cs->session );
+}
+
+
+static void DataCallback( uintptr_t psv, struct ssh_channel* channel, int stream, const uint8_t* buffer, size_t length ) {
+	struct client_ssh*cs = (struct client_ssh*)psv;
+	lprintf( "Got data from channel %p %d %p %zd", channel, stream, buffer, length );
+	LogBinary( (const uint8_t*)buffer, length );
+}
+
+static void CloseCallback( uintptr_t psv, struct ssh_channel *channel ) {
+	struct client_ssh*cs = (struct client_ssh*)psv;
+	lprintf( "Channel %p closed", channel );
+}
+
+static void channelPty( uintptr_t psv, LOGICAL success ) {
+}
+
+static uintptr_t channelOpen( uintptr_t psv, struct ssh_channel* channel ) {
+	struct client_ssh*cs = (struct client_ssh*)psv;
+	sack_ssh_set_pty_open( channel, channelPty );
+	sack_ssh_set_channel_data( channel, DataCallback );
+	sack_ssh_set_channel_close( channel, CloseCallback );
+	/* Some environment variables may be set,
+	 * It's up to the server which ones it'll allow though
+	 */
+	sack_ssh_channel_setenv( channel, "FOO", "bar" );
+	/* Request a terminal with 'vanilla' terminal emulation
+	 * See /etc/termcap for more options. This is useful when opening
+	 * an interactive shell.
+	 */
+	sack_ssh_channel_request_pty( channel, "vanilla" );
+   /* Open a SHELL on that pty */
+	sack_ssh_channel_shell( channel );
+
+	//if(0)
+	//if( sack_ssh_channel_exec( channel, shell ) ) {
+	//	fprintf( stderr, "Unable to request command on channel\n" );
+//	}
+
+	return (uintptr_t)channel;
 }
 
 
@@ -412,58 +472,20 @@ void test( void ) {
 	const char* shell = "/bin/bash";
 	struct client_ssh* cs = NewArray( struct client_ssh, 1 );
 	NetworkStart();
-	PCLIENT pc = OpenTCPClient( "10.173.0.1", 22, readCallback );
-	cs = (struct client_ssh*)GetNetworkLong( pc, 0 );
-	LIBSSH2_SESSION* session = cs->session = libssh2_session_init_ex( alloc_callback, free_callback, realloc_callback, cs );
+
+	struct ssh_session* session = cs->session = sack_ssh_session_init( (uintptr_t)cs );
 	if( session == NULL ) {
 		lprintf( "Failed to initialize an ssh session" );
 	}
+	sack_ssh_set_handshake_complete( cs->session, handshook );
+	sack_ssh_set_auth_complete( cs->session, authDone );
+	sack_ssh_set_channel_open( cs->session, channelOpen );
+	sack_ssh_session_connect( cs->session, "sp.d3x0r.org", 0 );
 
-	libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_SEND, (libssh2_cb_generic*)SendCallback );
-	libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_RECV, (libssh2_cb_generic*)RecvCallback );
-	libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_CHANNEL_EOF, (libssh2_cb_generic*)EofCallback );
-	libssh2_session_callback_set2( session, LIBSSH2_CALLBACK_CHANNEL_DATA, (libssh2_cb_generic*)DataCallback );
-
-
-	/* Create a session instance and start it up. This will trade welcome
-	 * banners, exchange keys, and setup crypto, compression, and MAC layers
-     */
-	/* Enable all debugging when libssh2 was built with debugging enabled */
-	libssh2_trace( session, ~0 );
-
-	// assigns socket to session, but really we want to just use abstract
-	int rc = libssh2_session_handshake( session, 1/*sock*/ );
-	if( rc ) {
-		lprintf( "Failure establishing SSH session: %d", rc );
-		return;// goto shutdown;
-	}
-
-	rc = 1;
-
-	/* At this point we have not yet authenticated.  The first thing to do
-	 * is check the hostkey's fingerprint against our known hosts Your app
-	 * may have it hard coded, may go to a file, may present it to the
-	 * user, that's your call
-	 */
-	CTEXTSTR fingerprint = libssh2_hostkey_hash( session, LIBSSH2_HOSTKEY_HASH_SHA1 );
-	fprintf( stderr, "Fingerprint: " );
-	for( int i = 0; i < 20; i++ ) {
-		fprintf( stderr, "%02X ", (unsigned char)fingerprint[i] );
-	}
-	fprintf( stderr, "\n" );
-	const char* username = "d3x0r";
-	const char* fn1 = "fn1";
-	const char* fn2 = "fn2";
-	const char* password = "";
-	if( libssh2_userauth_password( session, username, password ) ) {
-		lprintf( "Authentication by public key failed." );
-
-	}
-	else {
-		lprintf( "Authentication by user pass succeeded." );
-	}
+	
+	/*
 if(0)
-	if( libssh2_userauth_publickey_fromfile( session, username,
+	if( sack_ssh_userauth_publickey_fromfile( session, username,
 		fn1, fn2,
 		password ) ) {
 		lprintf( "Authentication by public key failed." );
@@ -474,89 +496,18 @@ if(0)
 	else {
 		lprintf( "Authentication by public key succeeded." );
 	}
-
-
-
-	/* Request a session channel on which to run a shell */
-	LIBSSH2_CHANNEL* channel = libssh2_channel_open_session( session );
-	if( !channel ) {
-		fprintf( stderr, "Unable to open a session\n" );
-		return;// goto shutdown;
-	}
-
-	/* Some environment variables may be set,
-	 * It's up to the server which ones it'll allow though
-	 */
-	libssh2_channel_setenv( channel, "FOO", "bar" );
-
-
-	/* Request a terminal with 'vanilla' terminal emulation
-	 * See /etc/termcap for more options. This is useful when opening
-	 * an interactive shell.
-	 */
-	if( libssh2_channel_request_pty( channel, "vanilla" ) ) {
-		fprintf( stderr, "Failed requesting pty\n" );
-		return;// goto skip_shell;
-	}
-
-	/* Open a SHELL on that pty */
-	if( libssh2_channel_shell( channel ) ) {
-		fprintf( stderr, "Unable to request shell on allocated pty\n" );
-		return;// goto shutdown;
-	}
-	if(0)
-	if( libssh2_channel_exec( channel, shell ) ) {
-		fprintf( stderr, "Unable to request command on channel\n" );
-		return;// goto shutdown;
-	}
-
-        /* At this point the shell can be interacted with using
-         * libssh2_channel_read()
-         * libssh2_channel_read_stderr()
-         * libssh2_channel_write()
-         * libssh2_channel_write_stderr()
-		 *
-		 * Blocking mode may be (en|dis)abled with:
-		 *    libssh2_channel_set_blocking()
-		 * If the server send EOF, libssh2_channel_eof() will return non-0
-		 * To send EOF to the server use: libssh2_channel_send_eof()
-		 * A channel can be closed with: libssh2_channel_close()
-		 * A channel can be freed with: libssh2_channel_free()
-		 */
-
-		 /* Read and display all the data received on stdout (ignoring stderr)
-		  * until the channel closes. This will eventually block if the command
-		  * produces too much data on stderr; the loop must be rewritten to use
-		  * non-blocking mode and include interspersed calls to
-		  * libssh2_channel_read_stderr() to avoid this. See ssh2_echo.c for
-		  * an idea of how such a loop might look.
-		  */
-
-
-	while( !libssh2_channel_eof( channel ) ) {
-		char buf[1024];
-		ssize_t err = libssh2_channel_read( channel, buf, sizeof( buf ) );
-		if( err < 0 )
-			fprintf( stderr, "Unable to read response: %ld\n", (long)err );
-		else {
-			fwrite( buf, 1, (size_t)err, stdout );
-		}
-	}
-
-	libssh2_free( session, NULL );
+	*/
 }
 
+/*
 static uintptr_t startTest( PTHREAD thread ) {
 	test();
 	return 0;
 }
 
 PRELOAD( testinit ) {
-	//ssl_InitLibrary();
-	//ThreadTo( startTest, 0 );
+	ssl_InitLibrary();
+	ThreadTo( startTest, 0 );
 }
+*/
 
-void connect( void ) {
-	// PCLIENT = TCPClientLIstener();
-	// 
-}
