@@ -123,7 +123,7 @@ else()
 set(LIB_STATIC "${LIB_NAME}")
 set(LIB_SHARED "${LIB_NAME}")
 endif()
-
+message( "------------------- LIB:${LIB_STATIC} ${LIB_SHARED}" )
 # lib flavour selected for example and test programs.
 if(LIBSSH_BUILD_SHARED_LIBS)
   set(LIB_SELECTED ${LIB_SHARED})
