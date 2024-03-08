@@ -4,7 +4,7 @@ const ssh = sack.SSH();
 const ssh_alt = new sack.SSH();
 
 ssh.connect( { address:"10.173.0.1", port:22
-             , user:"d3x0r", password: "P3ap0dm4n!"
+             , user:"d3x0r", password: ""
              , privKey: null
              , pubKey:null  // pubKey can be gotten from the private key
              , trace: false
