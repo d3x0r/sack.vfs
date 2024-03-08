@@ -272,6 +272,7 @@ RenderObject::~RenderObject() {
 			obj->this_.Reset( isolate, args.This() );
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 			uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
+			//uv_unref( (uv_handle_t*)obj->async );
 			obj->isolate = isolate;
 			obj->eventThread = MakeThread();
 
@@ -372,7 +373,9 @@ void RenderObject::do_close( void ) {
 	if( !this->closed ) {
 		this->closed = TRUE;
 		lprintf( "Close async" );
-		uv_close( (uv_handle_t*)&this->async, NULL );
+		uv_unref( (uv_handle_t*)&this->async );
+
+		//uv_close( (uv_handle_t*)&this->async, NULL );
 	}
 }
 
