@@ -10,9 +10,16 @@
 
 #define DEF_STRING(name) Eternal<String> *name##String
 #define MK_STRING(name)  check->name##String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, #name ) );
-#define GET_STRING(name)  if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+#define GET_STRING(name)  	String::Utf8Value* name = NULL; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
 				if( GETV( opts, optName )->IsString() ) { \
 					name = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ); \
+				} \
+			}
+#define GET_NUMBER(name)  int name = 0;  \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsString() ) { \
+					name = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 ); \
 				} \
 			}
 #define GET_BOOL(name)  if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
@@ -26,11 +33,15 @@ struct optionStrings {
 	//Eternal<String> *String;
 	DEF_STRING( address );
 	DEF_STRING( user );
-	DEF_STRING( pass );
+	DEF_STRING( password );
 	DEF_STRING( privKey );
 	DEF_STRING( pubKey );
 	DEF_STRING( trace );
 	DEF_STRING( data );
+	DEF_STRING( windowSize );
+	DEF_STRING( packetSize );
+	DEF_STRING( type );
+	DEF_STRING( message );
 	DEF_STRING( close );
 	DEF_STRING( connect );
 };
@@ -49,7 +60,11 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->isolate = isolate;
 		MK_STRING( address );
 		MK_STRING( user );
-		MK_STRING( pass );
+		MK_STRING( type );
+		MK_STRING( windowSize );
+		MK_STRING( packetSize );
+		MK_STRING( message );
+		MK_STRING( password );
 		MK_STRING( privKey );
 		MK_STRING( pubKey );
 		MK_STRING( trace );
@@ -68,15 +83,68 @@ static void asyncmsg( uv_async_t* handle ) {
 	SSH2_Event* event;
 	while( event = (SSH2_Event*)DequeLink( &ssh->eventQueue ) ) {
 		switch( event->code ) {
+			default:
+				lprintf( "Unhandled event: %d", event->code );
+				break;	
 			case SSH2_EVENT_CLOSE:
 				uv_close( (uv_handle_t*)&ssh->async, NULL ); // have to hold onto the handle until it's freed.
 				break;
+			case SSH2_EVENT_HANDSHAKE:
+				break;
+			case SSH2_EVENT_ERROR:
+				if( ssh->activePromise ) {
+					Local<Object> error = Object::New( isolate );
+					error->Set( isolate->GetCurrentContext()
+								, String::NewFromUtf8Literal( isolate, "message" )
+						, String::NewFromUtf8( isolate, (const char*)event->data, NewStringType::kNormal, (int)event->length ).ToLocalChecked() );
+					error->Set( isolate->GetCurrentContext()
+						, String::NewFromUtf8Literal( isolate, "error" ), Number::New( isolate, event->iData ) );
+					if( ssh->activePromise == &ssh->connectPromise ) 
+						error->Set( isolate->GetCurrentContext()
+							, String::NewFromUtf8Literal( isolate, "options" ), ssh->connectOptions.Get( isolate ) );
+					Maybe<bool> rs = ssh->activePromise[0].Get( isolate )->Reject( isolate->GetCurrentContext(), error );
+					if( rs.IsNothing() ) {
+					}
+					ssh->activePromise[0].Reset();
+					ssh->activePromise = NULL;
+					//ssh->activeP
+				} else {
+					lprintf( "Error Event: %d %s", event->iData, event->data );
+				}
+				if( !event->waiter ) ReleaseEx( event->data DBG_SRC );
+				/*
+				{
+					Local<Value> argv[1];
+					argv[0] = String::NewFromUtf8( isolate, (const char*)event->data, NewStringType::kNormal, (int)event->length ).ToLocalChecked();
+					Local<Function> cb = Local<Function>::New( isolate, ssh->errorCallback );
+					cb->Call( isolate->GetCurrentContext(), ssh->jsObject.Get( isolate ), 1, argv );
+					event->done = true;
+					WakeThread( event->waiter );
+				}
+				*/
+				break;
 			case SSH2_EVENT_AUTHDONE:
-				if( event->success )
-					ssh->connectPromise.Get(isolate)->Resolve( isolate->GetCurrentContext(), Undefined(isolate) );
-				else
-					ssh->connectPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+				if( event->success ) {
+					Local<ArrayBuffer> ab;
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( isolate, bs );
+#else
+					ab =
+						ArrayBuffer::New( isolate,
+							(void*)eventMessage->buf,
+							eventMessage->buflen );
 
+					PARRAY_BUFFER_HOLDER holder = GetHolder();
+					holder->o.Reset( isolate, ab );
+					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+					holder->buffer = eventMessage->buf;
+#endif
+					ssh->connectPromise.Get( isolate )->Resolve( isolate->GetCurrentContext(), ab );
+				} else
+					ssh->connectPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+				ssh->activePromise = NULL;
+				ssh->connectPromise.Reset();
 				break;
 			case SSH2_EVENT_CHANNEL:
 				{
@@ -118,13 +186,22 @@ static void asyncmsg( uv_async_t* handle ) {
 					argv[1] = Number::New( isolate, event->iData );
 					Local<Function> cb = Local<Function>::New( isolate, channel->dataCallback );
 					cb->Call( isolate->GetCurrentContext(), channel->jsObject.Get( isolate ), 2, argv );
-					event->done = true;
-					WakeThread( event->waiter );
 				}
 				break;
 		}
+		if( event->waiter ) {
+			event->done = true;
+			WakeThread( event->waiter );
+		}
 		dropEvent( event );
 	}
+
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
+
 
 }
 
@@ -163,7 +240,7 @@ SSH2_Object::SSH2_Object( Isolate *isolate ) {
 
 
 	this->session = sack_ssh_session_init( (uintptr_t)this );
-
+	sack_ssh_set_session_error( this->session, SSH2_Object::Error );
 	sack_ssh_set_handshake_complete( this->session, SSH2_Object::handshook );
 	sack_ssh_set_auth_complete( this->session, SSH2_Object::authDone );
 	sack_ssh_set_channel_open( this->session, SSH2_Object::channelOpen );
@@ -173,6 +250,28 @@ SSH2_Object::SSH2_Object( Isolate *isolate ) {
 }
 SSH2_Object::~SSH2_Object() {
 
+}
+
+void SSH2_Object::Error( uintptr_t psv, int errcode, const char* string, int errlen ) {
+	SSH2_Object*ssh = (SSH2_Object*)psv;
+	INDEX idx;
+	PTHREAD test;
+	PTHREAD self = MakeThread();
+	LIST_FORALL( global.rootThreads, idx, PTHREAD, test ) if( test == self ) break;
+	if( test ) string = (const char*)StrDup( string );
+	makeEvent( event );
+	event->code = SSH2_EVENT_ERROR;
+	event->iData = errcode;
+	event->data = (void*)string;
+	event->length = errlen;
+	event->done = 0;
+	event->waiter = test?NULL:self;
+	EnqueLink( &ssh->eventQueue, event );
+	uv_async_send( &ssh->async );
+	if( event->waiter )
+		while( !event->done ) {
+			WakeableSleep( 1000 );
+		}
 }
 
 void SSH2_Object::authDone( uintptr_t psv, LOGICAL success ) {
@@ -187,14 +286,22 @@ void SSH2_Object::authDone( uintptr_t psv, LOGICAL success ) {
 void SSH2_Object::OpenChannel( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
-	if( args.Length() < 1 ) {
-		isolate->ThrowException( Exception::TypeError(
-			String::NewFromUtf8Literal( isolate, "OpenChannel requires option object" ) ) );
-		return;
-	}
+	
 	Local<Context> context = isolate->GetCurrentContext();
 	struct optionStrings *strings = getStrings( isolate );
-	Local<Object> opts = args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
+	Local<Object> opts = args.Length() > 0?args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() : Object::New( isolate );
+	Local<String> optName;
+
+	GET_STRING( type );
+	GET_STRING( message );
+	GET_NUMBER( windowSize );
+	GET_NUMBER( packetSize );
+
+	sack_ssh_channel_open_v2( ssh->session
+		, type?*type[0]:"session", type ? type->length() : 7
+		, windowSize, packetSize
+		, message ? *message[0] : NULL, message ? message->length() : 0
+		, NULL );
 
 
 	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
@@ -237,24 +344,30 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> sshTemplate;
 	Local<FunctionTemplate> channelTemplate;
-
+	AddLink( &global.rootThreads, MakeThread() );
 	ssl_InitLibrary();
 
-	sshTemplate = FunctionTemplate::New( isolate, New );
+	sshTemplate = FunctionTemplate::New( isolate, SSH2_Object::New );
 	sshTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.SSH2_Object" ) );
 	sshTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
+
+
+	// Prototype
+	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "connect", SSH2_Object::Connect );
+	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "Channel", SSH2_Object::OpenChannel );
+	sshTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "fingerprint" )
+		, FunctionTemplate::New( isolate, SSH2_Object::fingerprint )
+		, Local<FunctionTemplate>() );
 
 	Local<Function> sshConstructor = sshTemplate->GetFunction( context ).ToLocalChecked();
 	c->SSH_Object_constructor.Reset( isolate, sshConstructor );
 
-	// Prototype
-	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "connect", SSH2_Object::Connect );
-
-	channelTemplate = FunctionTemplate::New( isolate, New );
+	channelTemplate = FunctionTemplate::New( isolate, SSH2_Channel::New );
 	channelTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.SSH2_Channel" ) );
 	channelTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "read", SSH2_Channel::Read );
+	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "send", SSH2_Channel::Send );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "close", SSH2_Channel::Close );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "pty", SSH2_Channel::OpenPTY );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "setenv", SSH2_Channel::SetEnv );
@@ -263,7 +376,7 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 
 	c->SSH_Channel_constructor.Reset( isolate, channelTemplate->GetFunction( context ).ToLocalChecked() );
 
-	Local<Object> i = Object::New( isolate );
+	//Local<Object> i = Object::New( isolate );
 	SET( exports, "SSH", sshConstructor );
 
 }
@@ -278,6 +391,34 @@ void SSH2_Channel::Exec( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 void SSH2_Channel::SetEnv( const v8::FunctionCallbackInfo<Value>& args ) {
+}
+
+void SSH2_Channel::Send( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	if( args.Length() < 1 ) {
+		args.GetIsolate()->ThrowException( Exception::TypeError(
+			String::NewFromUtf8Literal( args.GetIsolate(), "Send requires data to send with optional stream" ) ) );
+		return;
+	}
+	int n = 0;
+	int stream = 0;
+	if( args[0]->IsNumber() ) {
+		n++;
+		stream = args[0]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
+	}
+
+	if( args[n]->IsString() ) {
+		String::Utf8Value data( args.GetIsolate(), args[n]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		sack_ssh_channel_write( channel->channel, stream, (const uint8_t*)*data, data.length() );
+	} else if( args[n]->IsArrayBuffer() ) {
+		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[n] );
+		std::shared_ptr<BackingStore> content = ab->GetBackingStore();
+		sack_ssh_channel_write( channel->channel, stream, (const uint8_t*)content->Data(), ab->ByteLength() );
+	} else {
+		args.GetIsolate()->ThrowException( Exception::TypeError(
+			String::NewFromUtf8Literal( args.GetIsolate(), "Send requires data to send with optional stream" ) ) );
+		return;
+	}
 }
 
 void SSH2_Channel::Read( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -322,14 +463,17 @@ void SSH2_Channel::New( const v8::FunctionCallbackInfo<Value>& args ) {
 void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
+	NetworkStart();
 	if( args.IsConstructCall() ) {
+		lprintf( "SSH2_Object::New" );
 		SSH2_Object* obj;
 		obj = new SSH2_Object( isolate );
 		obj->Wrap( args.This() );
 		obj->jsObject.Reset( isolate, args.This() );
 
-		args.GetReturnValue().Set( args.This() );
+		//args.GetReturnValue().Set( args.This() );
 	} else {
+		lprintf( "SSH2_Object::New(called)" );
 		class constructorSet* c = getConstructors( isolate );
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
 		Local<Value> *argv = new Local<Value>[0];
@@ -341,19 +485,49 @@ void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 	}
 }
 
+void SSH2_Object::fingerprint( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
+	Local<ArrayBuffer> ab;
+#if ( NODE_MAJOR_VERSION >= 14 )
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+	ab = ArrayBuffer::New( isolate, bs );
+#else
+	ab =
+		ArrayBuffer::New( isolate,
+			(void*)eventMessage->buf,
+			eventMessage->buflen );
+
+	PARRAY_BUFFER_HOLDER holder = GetHolder();
+	holder->o.Reset( isolate, ab );
+	holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+	holder->buffer = eventMessage->buf;
+#endif
+	args.GetReturnValue().Set( ab );
+}
+
 void SSH2_Object::handshook( uintptr_t psv, const uint8_t* string ) {
 	SSH2_Object*ssh= (SSH2_Object*)psv;
 	//lprintf( "Handshake:%s", string );
 	//LogBinary( string, strlen( string ) );
-
+	MemCpy( ssh->fingerprintData, string, 20 );
+	/*
 	for( int i = 0; i < 20; i++ ) {
 		fprintf( stderr, "%02X ", (unsigned char)string[i] );
 	}
+	*/
+	/*
 	makeEvent( event );
 	event->code = SSH2_EVENT_HANDSHAKE;
 	event->data = (void*)string;
+	event->done = 0;
+	event->waiter = MakeThread();
 	EnqueLink( &ssh->eventQueue, event );
 	uv_async_send( &ssh->async );
+	while( !event->done ) {
+		WakeableSleep( 1000 );
+	}
+	*/
 }
 
 void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
@@ -376,39 +550,36 @@ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 		return;
 	}
 	Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
-	String::Utf8Value *address = NULL;
-	String::Utf8Value *user = NULL;
-	String::Utf8Value *pass = NULL;
-	String::Utf8Value *pubKey = NULL;
-	String::Utf8Value *privKey = NULL;
 
 	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
 	ssh->connectPromise.Reset( isolate, pr );
-
+	ssh->activePromise = &ssh->connectPromise;
 	LOGICAL trace = FALSE;
 	Local<String> optName;
 	Local<Function> connect;
 	// requires opts
 	GET_STRING( address );
 	GET_STRING( user );
-	GET_STRING( pass );
+	GET_STRING( password );
 	GET_STRING( pubKey );
 	GET_STRING( privKey );
 	GET_BOOL( trace );
 
+	/*
 	if( opts->Has( context, optName = strings->connectString->Get( isolate ) ).ToChecked() ) {
 		Local<Value> val;
 		if( GETV( opts, optName )->IsFunction() ) {
 			connect = Local<Function>::Cast( GETV( opts, optName ) );
 		}
 	}
-
+	*/
+	ssh->connectOptions.Reset( isolate, opts );
 	sack_ssh_session_connect( ssh->session, *address[0], 22);
 	if( privKey ) {
-		//sack_ssh_userauth_publickey_fromfile( ssh->session, *user, *pubKey, *privKey, *pass );
-		sack_ssh_auth_user_cert( ssh->session, *user[0], *pubKey[0], *privKey[0], *pass[0]);
+		//sack_ssh_userauth_publickey_fromfile( ssh->session, *user, *pubKey, *privKey, *password );
+		sack_ssh_auth_user_cert( ssh->session, user?*user[0]:NULL, pubKey?*pubKey[0] : NULL, privKey?*privKey[0] : NULL, password?*password[0] : NULL );
 	}else
-		sack_ssh_auth_user_password( ssh->session, *user[0], *pass[0]);
+		sack_ssh_auth_user_password( ssh->session, user?*user[0]:NULL, password?*password[0]:NULL);
 
 	args.GetReturnValue().Set( pr->GetPromise() );
 
@@ -416,6 +587,7 @@ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 
 // - - - - - - Port Forward Test - - - - - - - - - - -
 
+#if 0
 static void relayReadCallback( PCLIENT pc, POINTER buffer, size_t length ) {
 	if( !buffer ) {
 		buffer = AllocateEx( 4096 DBG_SRC );
@@ -472,9 +644,7 @@ static void handshook( uintptr_t psv, const uint8_t *string ) {
 	struct client_ssh*cs = (struct client_ssh*)psv;
 	//lprintf( "Handshake:%s", string );
 	//LogBinary( string, strlen( string ) );
-	const char* username = "d3x0r";
-	const char* fn1 = "fn1";
-	const char* fn2 = "fn2";
+	const char* username = "";
 	const char* password = "";
 	sack_ssh_auth_user_password( cs->session, username, password );
 
@@ -588,3 +758,4 @@ PRELOAD( testinit ) {
 }
 */
 
+#endif

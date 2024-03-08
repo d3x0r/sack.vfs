@@ -2,6 +2,7 @@
 
 enum SSH2_EventCodes {
 	SSH2_EVENT_CLOSE,  // closes event handle
+	SSH2_EVENT_ERROR,  // error event
 	SSH2_EVENT_HANDSHAKE, // handshake complete
 	SSH2_EVENT_AUTHDONE, // authentication complete
 	SSH2_EVENT_CONNECTED, // connected to server
@@ -45,6 +46,10 @@ public:
 	*/
 	static void Read( const v8::FunctionCallbackInfo<Value>& args );
 	/*
+	* Send data to the channel
+	*/
+	static void Send( const v8::FunctionCallbackInfo<Value>& args );
+	/*
 	* Set Close Callback
 	*/
 	static void Close( const v8::FunctionCallbackInfo<Value>& args );
@@ -78,9 +83,12 @@ public:
 	struct ssh_session* session = NULL;
 	uv_async_t async = {}; // keep this instance around for as long as we might need to do the periodic callback
 	bool binary = 0;
+	uint8_t fingerprintData[20];
+	Persistent<Object> connectOptions;
 	Persistent<Promise::Resolver> connectPromise;
-
 	Persistent<Promise::Resolver> channelPromise;
+
+	Persistent<Promise::Resolver> *activePromise;
 
 
 public:
@@ -89,6 +97,10 @@ public:
 
 	static void Init( Isolate* isolate, Local<Object> exports );
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	/*
+	* Getter for connection fingerprint
+	*/
+	static void SSH2_Object::fingerprint( const v8::FunctionCallbackInfo<Value>& args );
 	/*
 	* Connect to a server
 	*/
@@ -102,6 +114,7 @@ public:
 	// utility callbacks for sack_ssh 
 	static void handshook( uintptr_t psv, const uint8_t* string );
 	static void authDone( uintptr_t psv, LOGICAL success );
+	static void Error( uintptr_t psv, int errcode, const char* string, int errlen );
 	/*
 	* Opens a channel - returns a promise that reolves to a channel object
 	*/
@@ -124,10 +137,11 @@ DeclareSet( SSH2_EVENT );
 
 struct SSH2_Global {
 	SSH2_EVENTSET* eventSet;
+	PLIST rootThreads;
 };
 
 static struct SSH2_Global global;
 
-#define getEvent() GetFromSet( SSH2_EVENT, global.eventSet )
+#define getEvent() GetFromSet( SSH2_EVENT, &global.eventSet )
 #define makeEvent(name) SSH2_EVENT* name = getEvent()
 #define dropEvent(evt) DeleteFromSet( SSH2_EVENT, global.eventSet, evt )
