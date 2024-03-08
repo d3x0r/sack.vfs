@@ -45,6 +45,7 @@ struct sql_object_state {
 	PLIST userFunctions;
 	PLINKQUEUE messages;
 	class SqlObject *sql;
+	int pending;
 };
 
 //#define optionInitialized  state->optionInitialized
@@ -1008,7 +1009,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		params->context = context;
 		params->sql = sql;
 		params->statement = statement;
-      params->pdlRecord = NULL;
+		params->pdlRecord = NULL;
 		params->pdlParams = pdlParams;
 		if (promised) {
 #ifdef DEBUG_EVENTS
@@ -1019,11 +1020,18 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 				//lprintf( "This should keep it open..." );
 				class constructorSet* c = getConstructors( isolate );
 				uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+				//lprintf( "init async..." );
 				sql->state->async.data = sql->state;
 			}
 			//lprintf( " making promise to return..." );
 			Local<Promise::Resolver> pr = Promise::Resolver::New( context ).ToLocalChecked();
 			params->promise.Reset( isolate, pr );
+			//lprintf( "Start new query thread for query..." );
+			if( !sql->state->pending ) {
+				//lprintf( "uv_ref on async..." );
+				uv_ref( (uv_handle_t*)&sql->state->async ); // keeps active, but doesn't keep loop open.
+			}
+			sql->state->pending++;
 			ThreadTo( queryThread, (uintptr_t)params );
 			args.GetReturnValue().Set( pr->GetPromise() );
 			//lprintf("Should return now?");
@@ -1121,6 +1129,7 @@ static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
 SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Local<Function> _openCallback )
 {
 	state = NewArray( struct sql_object_state, 1 );
+	state->pending = 0;
 	state->sql = this;
 	memset( &state->async, 0, sizeof( state->async ) );
 	state->messages = NULL;
@@ -1718,6 +1727,12 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 			//lprintf( "Releasing message..." );
 			Release( msg );
 			msg = NULL;
+			myself->pending--;
+			if( !myself->pending ) {
+				//lprintf( "uv_unref on async..." );
+				uv_unref( (uv_handle_t*)&myself->async ); // keeps active, but doesn't keep loop open.
+			}
+
 		} else if (msg->mode == UserMessageModes::OnOpen) {
 			Local<Function> cb = myself->sql->openCallback.Get( isolate );
 			Local<Value> args[1] = {myself->sql->_this.Get( isolate )};
@@ -1753,7 +1768,7 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 			if (msg->waiter)
 				WakeThread( msg->waiter );
 		}
-		if( msg->mode == UserMessageModes::OnDeallocate ) {
+		if( msg && msg->mode == UserMessageModes::OnDeallocate ) {
 			ReleaseEx( msg DBG_SRC );
 		}
 	}
@@ -1765,7 +1780,7 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
-		//lprintf( "called proc?" );
+		//lprintf( "called idleproc?" );
 	}
 }
 
