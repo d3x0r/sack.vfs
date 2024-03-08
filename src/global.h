@@ -193,6 +193,7 @@ class constructorSet {
 	v8::Persistent<v8::Function> MouseHidObject_constructor;
 	v8::Persistent<v8::Function> ConfigObject_constructor;
 	v8::Persistent<v8::Function> SSH_Object_constructor;
+	v8::Persistent<v8::Function> SSH_Channel_constructor;
 
 	//Persistent<Function> onCientPost;
 	uv_loop_t* loop;
