@@ -375,8 +375,6 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
-	InitWebSocket( isolate, exports );
-	InitUDPSocket( isolate, exports );
 	InitTask( isolate, exports );
 	ObjectStorageInit( isolate, exports );
 	fileMonitorInit( isolate, exports );
@@ -396,7 +394,10 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	KeyHidObjectInit( isolate, exports );
 	SoundInit( isolate, exports );
 #endif
+	InitWebSocket( isolate, exports );
+	InitUDPSocket( isolate, exports );
 	TLSObject::Init( isolate, exports );
+	SSH2_Object::Init( isolate, exports );
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
