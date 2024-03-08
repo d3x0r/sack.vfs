@@ -4,7 +4,7 @@ const ssh = sack.SSH();
 const ssh_alt = new sack.SSH();
 
 ssh.connect( { address:"10.173.0.1", port:22
-             , user:"d3x0r", password: ""
+             , user:"", password: ""
              , privKey: null
              , pubKey:null  // pubKey can be gotten from the private key
              , trace: false
@@ -32,13 +32,16 @@ ssh.connect( { address:"10.173.0.1", port:22
                 } );
              } );
              
-ssh_alt.connect( { address: "10.173.0.2" } ).catch( (err)=>{
+if( false ) {
+	// test various address connection errors to be thrown.
+	ssh_alt.connect( { address: "10.173.0.2" } ).catch( (err)=>{
 		console.log( "Addr error:", err );
-                ssh_alt.connect( {address:"10.173.0.1:23" } ).catch( (err)=>{
-                	console.log( "port error:", err );
-                        ssh_alt.connect( {address:"1000.1.2.3"} ).catch( (err)=>{	                	
-	                	console.log( "number error:", err );
-	                } )
-                } );
+      ssh_alt.connect( {address:"10.173.0.1:23" } ).catch( (err)=>{
+      	console.log( "port error:", err );
+              ssh_alt.connect( {address:"1000.1.2.3"} ).catch( (err)=>{	                	
+	      	console.log( "number error:", err );
+	      } )
+      } );
 	} );
+}
 
