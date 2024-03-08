@@ -55,7 +55,7 @@ if(NOT CLEAR_MEMORY)
 endif()
 
 if( LIBSSH2_BUILD_DEBUG )
-  list(APPEND libssh2_DEFINITIONS "LIBSSH2DEBUG"
+  list(APPEND libssh2_DEFINITIONS "LIBSSH2DEBUG" )
 endif( )
 
 option(ENABLE_ZLIB_COMPRESSION "Use zlib for compression" ON)

@@ -488,7 +488,7 @@ libssh2_session_init_ex(LIBSSH2_ALLOC_FUNC((*my_alloc)),
  * Returns the prior address
  */
 LIBSSH2_API libssh2_cb_generic *
-libssh2_session_callback_set2(LIBSSH2_SESSION *session, int cbtype,
+libssh2_session_callback_set2(LIBSSH2_SESSION *session, enum LIBSSH2_CALLBACKS cbtype,
                               libssh2_cb_generic *callback)
 {
     libssh2_cb_generic *oldcb;

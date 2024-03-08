@@ -231,10 +231,17 @@ packet_queue_listener(LIBSSH2_SESSION * session, unsigned char *data,
                     }
 
                     /* Link the channel into the end of the queue list */
-                    if(listen_state->channel) {
-                        _libssh2_list_add(&listn->queue,
-                                          &listen_state->channel->node);
-                        listn->queue_size++;
+                    if( listen_state->channel ) {
+                        if( listn->connect_cb ) {
+                            /* add channel to session's channel list */
+                            // with callback then channel_forward_accept() doesn't need to be called, so just do the work it did.
+                            _libssh2_list_add( &channel->session->channels, &channel->node );
+                            LIBSSH2_LISTENER_CONNECT( session, listn, channel );
+                        } else {
+                            _libssh2_list_add( &listn->queue,
+                                &listen_state->channel->node );
+                            listn->queue_size++;
+                        }
                     }
 
                     listen_state->state = libssh2_NB_state_idle;

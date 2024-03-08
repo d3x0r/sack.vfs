@@ -707,6 +707,21 @@ libssh2_channel_forward_listen_ex(LIBSSH2_SESSION *session, const char *host,
     return ptr;
 }
 
+LIBSSH2_API void** libssh2_listener_abstract( LIBSSH2_LISTENER* listener ) {
+    return &listener->abstract;
+}
+
+LIBSSH2_API libssh2_cb_generic* libssh2_listener_callback_set( LIBSSH2_LISTENER* listener, enum LIBSSH2_CALLBACKS callback, libssh2_cb_generic* f ) {
+    libssh2_cb_generic* oldFunc = NULL;
+    switch( callback ) {
+    case LIBSSH2_CALLBACK_LISTENER_ACCEPT:
+        oldFunc = (libssh2_cb_generic*)listener->connect_cb;
+        listener->connect_cb = ( LIBSSH2_LISTERNER_CONNECT_FUNC( ( * ) ) )f;
+        break;
+    }
+    return oldFunc;
+}
+
 /*
  * _libssh2_channel_forward_cancel
  *
@@ -3082,7 +3097,7 @@ void** libssh2_channel_abstract( LIBSSH2_CHANNEL* channel ) {
 
 libssh2_cb_generic*
 libssh2_channel_callback_set( LIBSSH2_CHANNEL *channel,
-                              int cbtype,
+                              enum LIBSSH2_CALLBACKS cbtype,
                               libssh2_cb_generic* callback)
 {
     libssh2_cb_generic* oldcb;

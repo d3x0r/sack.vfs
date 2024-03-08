@@ -265,6 +265,10 @@ struct iovec {
     ((channel->data_cb)?channel->data_cb((session), &(session)->abstract, \
                       (channel), &(channel)->abstract, stream, buffer, length):(void)0)
 
+#define LIBSSH2_LISTENER_CONNECT(session, listener, channel) \
+	((listener->connect_cb)?listener->connect_cb((session), &(session)->abstract, \
+					  (listener), &(listener)->abstract, (channel)):(void)0)
+
 #define LIBSSH2_SEND_FD(session, fd, buffer, length, flags) \
     (session->send)(fd, buffer, length, flags, &session->abstract)
 #define LIBSSH2_RECV_FD(session, fd, buffer, length, flags) \
@@ -577,6 +581,9 @@ struct _LIBSSH2_LISTENER
     libssh2_nonblocking_states chanFwdCncl_state;
     unsigned char *chanFwdCncl_data;
     size_t chanFwdCncl_data_len;
+
+    void* abstract;
+    LIBSSH2_LISTERNER_CONNECT_FUNC((*connect_cb));
 };
 
 typedef struct _libssh2_endpoint_data
