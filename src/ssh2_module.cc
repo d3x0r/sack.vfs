@@ -16,6 +16,21 @@
 					name = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ); \
 				} \
 			}
+
+#define GET_ARRAY_BUFFER(name)  	Local<ArrayBuffer> name##_ab; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsArrayBuffer() ) { \
+					name##_ab = Local<ArrayBuffer>::Cast( GETV( opts, optName ) ); \
+				} \
+			}
+
+#define GET_TYPED_ARRAY(name)  	Local<TypedArray> name##_ta; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsArrayBuffer() ) { \
+					name##_ta = Local<TypedArray>::Cast( GETV( opts, optName ) ); \
+				} \
+			}
+
 #define GET_NUMBER(name)  int name = 0;  \
 		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
 				if( GETV( opts, optName )->IsString() ) { \
@@ -80,6 +95,7 @@ static void asyncmsg( uv_async_t* handle ) {
 	Isolate* isolate = Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	SSH2_Object* ssh = (SSH2_Object*)handle->data;
+	//SSH2_Object* channel = (SSH2_Object*)handle->data; 
 	SSH2_Event* event;
 	while( event = (SSH2_Event*)DequeLink( &ssh->eventQueue ) ) {
 		switch( event->code ) {
@@ -123,6 +139,34 @@ static void asyncmsg( uv_async_t* handle ) {
 				}
 				*/
 				break;
+			case SSH2_EVENT_CHANNEL_ERROR:
+				{
+					SSH2_Channel* channel = (SSH2_Channel*)event->data2;
+					if( !IsQueueEmpty( &channel->activePromises ) ) {
+						Local<Object> error = Object::New( isolate );
+						error->Set( isolate->GetCurrentContext()
+							, String::NewFromUtf8Literal( isolate, "message" )
+							, String::NewFromUtf8( isolate, (const char*)event->data, NewStringType::kNormal, (int)event->length ).ToLocalChecked() );
+						error->Set( isolate->GetCurrentContext()
+							, String::NewFromUtf8Literal( isolate, "error" ), Number::New( isolate, event->iData ) );
+						Persistent<Promise::Resolver>* promise = ( Persistent<Promise::Resolver>* )DequeLink( &channel->activePromises );
+						//if( promise == &channel->connectPromise )
+						//	error->Set( isolate->GetCurrentContext()
+						//		, String::NewFromUtf8Literal( isolate, "options" ), ssh->connectOptions.Get( isolate ) );
+
+						Maybe<bool> rs = promise[0].Get(isolate)->Reject(isolate->GetCurrentContext(), error);
+						if( rs.IsNothing() ) {
+						}
+						//ssh->activePromise[0].Reset();
+						//ssh->activePromise = NULL;
+						//ssh->activeP
+					} else {
+						lprintf( "Channel Error Event: %d %s", event->iData, event->data );
+					}
+					// event->data is the message which is a dynamic string
+					if( !event->waiter ) ReleaseEx( event->data DBG_SRC );
+				}
+				break;
 			case SSH2_EVENT_AUTHDONE:
 				if( event->success ) {
 					Local<ArrayBuffer> ab;
@@ -155,12 +199,15 @@ static void asyncmsg( uv_async_t* handle ) {
 					MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 					Local<Object> obj = mo.ToLocalChecked();
 					SSH2_Channel* ch = SSH2_Channel::Unwrap<SSH2_Channel>(obj);
+					ch->ssh2 = ssh;
+					ch->channel = (ssh_channel*)event->data;
+					event->data = ch;
+					sack_ssh_set_channel_error( ch->channel, SSH2_Channel::Error );
 
 					ssh->channelPromise.Get( isolate )->Resolve( isolate->GetCurrentContext(), obj );
 				} else {
-
+					event->data = NULL;
 					ssh->channelPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
-
 				}
 				}
 				break;
@@ -188,12 +235,31 @@ static void asyncmsg( uv_async_t* handle ) {
 					cb->Call( isolate->GetCurrentContext(), channel->jsObject.Get( isolate ), 2, argv );
 				}
 				break;
+			case SSH2_EVENT_SETENV:
+			case SSH2_EVENT_PTY:
+			case SSH2_EVENT_SHELL:
+			case SSH2_EVENT_EXEC:
+				{
+					SSH2_Channel* channel = (SSH2_Channel*)event->data;
+					Persistent<Promise::Resolver>* promise = ( Persistent<Promise::Resolver>* )DequeLink( &channel->activePromises );
+					Local<Promise::Resolver> pr = promise[0].Get( isolate );
+					if( pr->GetPromise()->State() == Promise::PromiseState::kPending ) {
+						if( event->success ) {
+							pr->Resolve( isolate->GetCurrentContext(), True( isolate ) );
+						} else {
+							pr->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+						}
+					} // otherwise it would have already been fulfilled by error();
+					promise[0].Reset();
+				}
+				break;
 		}
 		if( event->waiter ) {
 			event->done = true;
+			// waiters need to drop the event - or it might not get 'done'
 			WakeThread( event->waiter );
-		}
-		dropEvent( event );
+		} else
+			dropEvent( event );
 	}
 
 	{
@@ -206,7 +272,7 @@ static void asyncmsg( uv_async_t* handle ) {
 }
 
 SSH2_Channel::SSH2_Channel() {
-
+	this->activePromises = CreateLinkQueue( );
 }
 SSH2_Channel::~SSH2_Channel() {
 	//sack_ssh_channel_free( channel );
@@ -220,11 +286,13 @@ void SSH2_Channel::DataCallback( uintptr_t psv, int stream, const uint8_t* data,
 	event->data = (void*)data;
 	event->length = length;
 	event->data2 = (void*)channel;
-	uv_async_send( &channel->ssh2->async );
+	event->done = 0;
 	event->waiter = MakeThread();
+	uv_async_send( &channel->ssh2->async );
 	while( !event->done ) {
 		WakeableSleep( 1000 );
 	}
+	dropEvent( event );
 }
 
 void SSH2_Channel::CloseCallback( uintptr_t psv ) {
@@ -268,11 +336,39 @@ void SSH2_Object::Error( uintptr_t psv, int errcode, const char* string, int err
 	event->waiter = test?NULL:self;
 	EnqueLink( &ssh->eventQueue, event );
 	uv_async_send( &ssh->async );
-	if( event->waiter )
+	if( event->waiter ) {
 		while( !event->done ) {
 			WakeableSleep( 1000 );
 		}
+		dropEvent( event );
+	}
 }
+
+void SSH2_Channel::Error( uintptr_t psv, int errcode, const char* string, int errlen ) {
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	INDEX idx;
+	PTHREAD test;
+	PTHREAD self = MakeThread();
+	LIST_FORALL( global.rootThreads, idx, PTHREAD, test ) if( test == self ) break;
+	if( test ) string = (const char*)StrDup( string );
+	makeEvent( event );
+	event->code = SSH2_EVENT_CHANNEL_ERROR;
+	event->iData = errcode;
+	event->data = (void*)string;
+	event->data2 = channel;
+	event->length = errlen;
+	event->done = 0;
+	event->waiter = test ? NULL : self;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+	uv_async_send( &channel->ssh2->async );
+	if( event->waiter ) {
+		while( !event->done ) {
+			WakeableSleep( 1000 );
+		}
+		dropEvent( event );
+	}
+}
+
 
 void SSH2_Object::authDone( uintptr_t psv, LOGICAL success ) {
 	SSH2_Object*ssh = (SSH2_Object*)psv;
@@ -313,19 +409,20 @@ void SSH2_Object::OpenChannel( const v8::FunctionCallbackInfo<Value>& args ) {
 uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel ) {
 	SSH2_Object*ssh = (SSH2_Object*)psv;
 
-	SSH2_Channel* ch = new SSH2_Channel();
-	ch->channel = channel;
-	ch->ssh2 = ssh;
-	//ch->Wrap( args.This() );
-	//ch->jsObject.Reset( isolate, args.This() );
-
 	makeEvent( event );
 	event->code = SSH2_EVENT_CHANNEL;
-	event->data = (void*)ch;
+	event->data = (void*)channel;
 	event->data2 = (void*)ssh;
+	event->waiter = MakeThread();
+	event->done = 0;
 	EnqueLink( &ssh->eventQueue, event );
 	uv_async_send( &ssh->async );
-	return (uintptr_t)ch;
+	while( !event->done ) {
+		WakeableSleep( 1000 );
+	}
+	uintptr_t result = (uintptr_t)event->data;
+	dropEvent( event );
+	return (uintptr_t)result;
 	/*
 	sack_ssh_set_pty_open( channel, channelPty );
 	sack_ssh_set_channel_data( channel, DataCallback );
@@ -381,16 +478,107 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 
 }
 
+
+void SSH2_Channel::PtyCallback( uintptr_t psv, LOGICAL success ) {
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	makeEvent( event );
+	event->code = SSH2_EVENT_PTY;
+	event->data = channel;
+	event->success = success;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+
+	uv_async_send( &channel->ssh2->async );\
+}
+
 void SSH2_Channel::OpenPTY( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value* term;
+	if( args.Length() > 0 ) {
+		term = new String::Utf8Value( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	} else term = NULL;
+	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
+	channel->ptyPromise.Reset( isolate, pr );
+	EnqueLink( &channel->activePromises, &channel->ptyPromise );
+	sack_ssh_channel_request_pty( channel->channel, (term?*term[0] : "vanilla"), SSH2_Channel::PtyCallback );
+	args.GetReturnValue().Set( pr->GetPromise() );
+
+}
+
+void SSH2_Channel::ShellCallback( uintptr_t psv, LOGICAL success ) {
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	makeEvent( event );
+	event->code = SSH2_EVENT_SHELL;
+	event->data = channel;
+	event->success = success;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+	uv_async_send( &channel->ssh2->async );
 }
 
 void SSH2_Channel::Shell( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	Isolate* isolate = args.GetIsolate();
+	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
+	channel->shellPromise.Reset( isolate, pr );
+	EnqueLink( &channel->activePromises, &channel->shellPromise );
+	//sack_ssh_set_shell_open( channel->channel, SSH2_Channel::ShellCallback );
+	sack_ssh_channel_shell( channel->channel, SSH2_Channel::ShellCallback );
+	args.GetReturnValue().Set( pr->GetPromise() );
 }
 
+void SSH2_Channel::ExecCallback( uintptr_t psv, LOGICAL success ) {
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	makeEvent( event );
+	event->code = SSH2_EVENT_EXEC;
+	event->data = channel;
+	event->success = success;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+	uv_async_send( &channel->ssh2->async );
+}
+
+
 void SSH2_Channel::Exec( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value* shell;
+	if( args.Length() > 0 ) {
+		shell = new String::Utf8Value( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	} else shell = NULL;
+	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
+	channel->execPromise.Reset( isolate, pr );
+	EnqueLink( &channel->activePromises, &channel->execPromise );
+	sack_ssh_channel_exec( channel->channel, shell?**shell:"/bin/sh", SSH2_Channel::ExecCallback );
+
+	args.GetReturnValue().Set( pr->GetPromise() );
+}
+
+void SSH2_Channel::SetEnvCallback( uintptr_t psv, LOGICAL success ) {
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	makeEvent( event );
+	event->code = SSH2_EVENT_SETENV;
+	event->data = channel;
+	event->success = success;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+	uv_async_send( &channel->ssh2->async );
 }
 
 void SSH2_Channel::SetEnv( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8Literal( args.GetIsolate(), "setenv requires key and value parameters." ) ) );
+
+	}
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
+	String::Utf8Value key( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value value( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	channel->setenvPromise.Reset( isolate, pr );
+	EnqueLink( &channel->activePromises, &channel->setenvPromise );
+	sack_ssh_channel_setenv( channel->channel, *key, *value, SSH2_Channel::SetEnvCallback );
+
+	args.GetReturnValue().Set( pr->GetPromise() );
+
 }
 
 void SSH2_Channel::Send( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -512,23 +700,38 @@ void SSH2_Object::handshook( uintptr_t psv, const uint8_t* string ) {
 	//LogBinary( string, strlen( string ) );
 	MemCpy( ssh->fingerprintData, string, 20 );
 	/*
-	for( int i = 0; i < 20; i++ ) {
-		fprintf( stderr, "%02X ", (unsigned char)string[i] );
-	}
-	*/
-	/*
 	makeEvent( event );
 	event->code = SSH2_EVENT_HANDSHAKE;
 	event->data = (void*)string;
-	event->done = 0;
-	event->waiter = MakeThread();
 	EnqueLink( &ssh->eventQueue, event );
 	uv_async_send( &ssh->async );
-	while( !event->done ) {
-		WakeableSleep( 1000 );
-	}
 	*/
 }
+
+
+/*
+ 		if( p[0] >= '0' && p[0] <= '9' ) {
+			if( !nibble ) byte = p[0] - '0';
+			else byte = byte << 4 | ( p[0] - '0' );
+			nibble = !nibble;
+		}
+		if( p[0] >= 'A' && p[0] <= 'F' ) {
+			if( !nibble ) byte = p[0] - 'A';
+			else byte = byte << 4 | ( p[0] - 'A' );
+			nibble = !nibble;
+		}
+		if( p[0] >= 'a' && p[0] <= 'f' ) {
+			if( !nibble ) byte = p[0] - 'a';
+			else byte = byte << 4 | (p[0] - 'a');
+			nibble = !nibble;
+		}
+		if( !nibble ) {
+			outp[0] = byte;
+		}
+		bytes++;
+
+*/
+
 
 void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 
@@ -563,7 +766,14 @@ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 	GET_STRING( password );
 	GET_STRING( pubKey );
 	GET_STRING( privKey );
+	GET_ARRAY_BUFFER( pubKey );
+	GET_ARRAY_BUFFER( privKey );
+	GET_TYPED_ARRAY( pubKey );
+	GET_TYPED_ARRAY( privKey );
 	GET_BOOL( trace );
+
+	if( trace )
+		sack_ssh_trace( ssh->session, ~0 );
 
 	/*
 	if( opts->Has( context, optName = strings->connectString->Get( isolate ) ).ToChecked() ) {
@@ -575,10 +785,39 @@ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 	*/
 	ssh->connectOptions.Reset( isolate, opts );
 	sack_ssh_session_connect( ssh->session, *address[0], 22);
+	size_t privkeylen = 0;
+	uint8_t* privKeyBuf;
+	size_t pubkeylen = 0;
+	uint8_t* pubKeyBuf;
+
+	
 	if( privKey ) {
-		//sack_ssh_userauth_publickey_fromfile( ssh->session, *user, *pubKey, *privKey, *password );
-		sack_ssh_auth_user_cert( ssh->session, user?*user[0]:NULL, pubKey?*pubKey[0] : NULL, privKey?*privKey[0] : NULL, password?*password[0] : NULL );
-	}else
+		privKeyBuf = (uint8_t*)*privKey[0];
+		privkeylen = privKey[0].length();
+	} else if( !privKey_ab.IsEmpty() ) {
+		privKeyBuf = (uint8_t*)privKey_ab->GetBackingStore()->Data();
+		privkeylen = privKey_ab->ByteLength();
+	} else if( !privKey_ta.IsEmpty() ) {
+		Local<ArrayBuffer> ab = privKey_ta->Buffer();
+		privKeyBuf = (uint8_t*)ab->GetBackingStore()->Data();
+		privkeylen = ab->ByteLength();
+	} else
+		privKeyBuf = NULL;
+	if( pubKey ) {
+		pubKeyBuf = (uint8_t*)*pubKey[0];
+		pubkeylen = pubKey[0].length();
+	} else if( !pubKey_ab.IsEmpty() ) {
+		pubKeyBuf = (uint8_t*)pubKey_ab->GetBackingStore()->Data();
+		pubkeylen = pubKey_ab->ByteLength();
+	} else if( !pubKey_ta.IsEmpty() ) {
+		Local<ArrayBuffer> ab = pubKey_ta->Buffer();
+		pubKeyBuf = (uint8_t*)ab->GetBackingStore()->Data();
+		pubkeylen = ab->ByteLength();
+	} else pubKeyBuf = NULL;
+
+	if( privKeyBuf )
+		sack_ssh_auth_user_cert( ssh->session, user?*user[0]:NULL, pubKeyBuf, pubkeylen, privKeyBuf, privkeylen, password?*password[0] : NULL );
+	else
 		sack_ssh_auth_user_password( ssh->session, user?*user[0]:NULL, password?*password[0]:NULL);
 
 	args.GetReturnValue().Set( pr->GetPromise() );

@@ -2,12 +2,19 @@
 
 enum SSH2_EventCodes {
 	SSH2_EVENT_CLOSE,  // closes event handle
-	SSH2_EVENT_ERROR,  // error event
+	SSH2_EVENT_ERROR,  // error event (is on a session operation)
+	SSH2_EVENT_CHANNEL_ERROR, // error is on a channel operation
 	SSH2_EVENT_HANDSHAKE, // handshake complete
 	SSH2_EVENT_AUTHDONE, // authentication complete
 	SSH2_EVENT_CONNECTED, // connected to server
 	SSH2_EVENT_CHANNEL, // channel opened
 	SSH2_EVENT_DATA, // data received
+	SSH2_EVENT_SETENV,
+	SSH2_EVENT_PTY,
+	SSH2_EVENT_SHELL,
+	SSH2_EVENT_EXEC,
+	SSH2_EVENT_FORWARD,
+	SSH2_EVENT_FORWARD_CONNECT,
 };
 
 struct SSH2_Event {
@@ -29,16 +36,29 @@ public:
 	Persistent<Object> jsObject;  // the object that represents this channel
 	Persistent<Function> dataCallback; // called when data is received
 	Persistent<Function> closeCallback; // called when the channel is closed
+	Persistent<Function> errorCallback; // called when the channel experiences an error outside of a promised result
+
+	Persistent<Promise::Resolver> ptyPromise;
+	Persistent<Promise::Resolver> shellPromise;
+	Persistent<Promise::Resolver> execPromise;
+	Persistent<Promise::Resolver> setenvPromise;
+
+	PLINKQUEUE activePromises;
 
 public:
 	SSH2_Channel();
 	~SSH2_Channel();
 
 
+	static void Error( uintptr_t psv, int errcode, const char* string, int errlen );
 	// interfaces with sack_ssh to call the data callback
 	static void DataCallback( uintptr_t psv, int stream, const uint8_t* data, size_t length ); 
 	// interfaces with sack_ssh to call the close callback
 	static void CloseCallback( uintptr_t psv ); 
+	static void PtyCallback( uintptr_t psv, LOGICAL success );
+	static void ShellCallback( uintptr_t psv, LOGICAL success );
+	static void ExecCallback( uintptr_t psv, LOGICAL success );
+	static void SetEnvCallback( uintptr_t psv, LOGICAL success );
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	/*
