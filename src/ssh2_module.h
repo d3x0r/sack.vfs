@@ -15,6 +15,8 @@ enum SSH2_EventCodes {
 	SSH2_EVENT_EXEC,
 	SSH2_EVENT_FORWARD,
 	SSH2_EVENT_FORWARD_CONNECT,
+	SSH2_EVENT_REVERSE_CHANNEL,
+	SSH2_EVENT_REVERSE_CONNECT,
 };
 
 struct SSH2_Event {
@@ -107,6 +109,7 @@ public:
 	Persistent<Object> connectOptions;
 	Persistent<Promise::Resolver> connectPromise;
 	Persistent<Promise::Resolver> channelPromise;
+	Persistent<Promise::Resolver> forwardPromise;
 
 	Persistent<Promise::Resolver> *activePromise;
 
@@ -125,6 +128,10 @@ public:
 	* Connect to a server
 	*/
 	static void Connect( const v8::FunctionCallbackInfo<Value>& args );
+	// forward socket connection to remote
+	static void Forward( const v8::FunctionCallbackInfo<Value>& args );
+	// reverse socket connectio from remote
+	static void Reverse( const v8::FunctionCallbackInfo<Value>& args );
 	/*
 	* opens a new channel - channelOpen callback is triggered on completion
 	* returns a promise that resolves to a channel object

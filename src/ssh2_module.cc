@@ -192,23 +192,44 @@ static void asyncmsg( uv_async_t* handle ) {
 				break;
 			case SSH2_EVENT_CHANNEL:
 				{
-				if( event->data ) {
-					constructorSet* c = getConstructors( isolate );
-					Local<Value>* argv = new Local<Value>[0];
-					Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
-					MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
-					Local<Object> obj = mo.ToLocalChecked();
-					SSH2_Channel* ch = SSH2_Channel::Unwrap<SSH2_Channel>(obj);
-					ch->ssh2 = ssh;
-					ch->channel = (ssh_channel*)event->data;
-					event->data = ch;
-					sack_ssh_set_channel_error( ch->channel, SSH2_Channel::Error );
+					if( event->data ) {
+						constructorSet* c = getConstructors( isolate );
+						Local<Value>* argv = new Local<Value>[0];
+						Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
+						MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
+						Local<Object> obj = mo.ToLocalChecked();
+						SSH2_Channel* ch = SSH2_Channel::Unwrap<SSH2_Channel>(obj);
+						ch->ssh2 = ssh;
+						ch->channel = (ssh_channel*)event->data;
+						event->data = ch;
+						sack_ssh_set_channel_error( ch->channel, SSH2_Channel::Error );
 
-					ssh->channelPromise.Get( isolate )->Resolve( isolate->GetCurrentContext(), obj );
-				} else {
-					event->data = NULL;
-					ssh->channelPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+						ssh->channelPromise.Get( isolate )->Resolve( isolate->GetCurrentContext(), obj );
+					} else {
+						event->data = NULL;
+						ssh->channelPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+					}
 				}
+				break;
+			case SSH2_EVENT_REVERSE_CHANNEL:
+				{
+					if( event->data ) {
+						constructorSet* c = getConstructors( isolate );
+						Local<Value>* argv = new Local<Value>[0];
+						Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
+						MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
+						Local<Object> obj = mo.ToLocalChecked();
+						SSH2_Channel* ch = SSH2_Channel::Unwrap<SSH2_Channel>(obj);
+						ch->ssh2 = ssh;
+						ch->channel = (ssh_channel*)event->data;
+						event->data = ch;
+						sack_ssh_set_channel_error( ch->channel, SSH2_Channel::Error );
+
+						ssh->channelPromise.Get( isolate )->Resolve( isolate->GetCurrentContext(), obj );
+					} else {
+						event->data = NULL;
+						ssh->channelPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+					}
 				}
 				break;
 			case SSH2_EVENT_DATA:
@@ -412,7 +433,6 @@ uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel )
 	makeEvent( event );
 	event->code = SSH2_EVENT_CHANNEL;
 	event->data = (void*)channel;
-	event->data2 = (void*)ssh;
 	event->waiter = MakeThread();
 	event->done = 0;
 	EnqueLink( &ssh->eventQueue, event );
@@ -423,16 +443,6 @@ uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel )
 	uintptr_t result = (uintptr_t)event->data;
 	dropEvent( event );
 	return (uintptr_t)result;
-	/*
-	sack_ssh_set_pty_open( channel, channelPty );
-	sack_ssh_set_channel_data( channel, DataCallback );
-	sack_ssh_set_channel_close( channel, CloseCallback );
-	sack_ssh_set_shell_open( channel, shellOpen );
-	sack_ssh_channel_setenv( channel, "FOO", "bar" );
-	sack_ssh_channel_request_pty( channel, "vanilla" );
-	sack_ssh_channel_shell( channel );
-
-	*/
 }
 
 
@@ -452,6 +462,9 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "connect", SSH2_Object::Connect );
 	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "Channel", SSH2_Object::OpenChannel );
+	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "forward", SSH2_Object::Forward );
+	// as confusing as this is , reverse is 'forward' from libssh2, forward is 'direct' which is also forward
+	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "reverse", SSH2_Object::Reverse ); 
 	sshTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "fingerprint" )
 		, FunctionTemplate::New( isolate, SSH2_Object::fingerprint )
 		, Local<FunctionTemplate>() );
@@ -708,29 +721,63 @@ void SSH2_Object::handshook( uintptr_t psv, const uint8_t* string ) {
 	*/
 }
 
+static uintptr_t ForwardCallback( uintptr_t session_psv, LOGICAL success ) {
+	// this is received after the local connection is setup to forward connections
+	return 0;
+}
 
-/*
- 		if( p[0] >= '0' && p[0] <= '9' ) {
-			if( !nibble ) byte = p[0] - '0';
-			else byte = byte << 4 | ( p[0] - '0' );
-			nibble = !nibble;
-		}
-		if( p[0] >= 'A' && p[0] <= 'F' ) {
-			if( !nibble ) byte = p[0] - 'A';
-			else byte = byte << 4 | ( p[0] - 'A' );
-			nibble = !nibble;
-		}
-		if( p[0] >= 'a' && p[0] <= 'f' ) {
-			if( !nibble ) byte = p[0] - 'a';
-			else byte = byte << 4 | (p[0] - 'a');
-			nibble = !nibble;
-		}
-		if( !nibble ) {
-			outp[0] = byte;
-		}
-		bytes++;
+void SSH2_Object::Forward( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
+	int localport = 0;
+	int remoteport = 0;
+	Isolate* isolate = args.GetIsolate();
+	
+	String::Utf8Value localHost( args.GetIsolate(), args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+	if( args.Length() > 1 )
+		localport = args[1]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
+	String::Utf8Value remoteHost( args.GetIsolate(), args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+	if( args.Length() > 1 )
+		remoteport = args[1]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
 
-*/
+	lprintf( " Forward is not implemented yet" );
+	//sack_ssh_direc
+	PCLIENT pcListener = sack_ssh_forward_connect( ssh->session, *localHost, localport, *remoteHost, remoteport, ForwardCallback );
+
+}
+
+static uintptr_t ReverseCallback( uintptr_t psv, struct ssh_listener* channel, int boundPort ) {
+	SSH2_Object* ssh = (SSH2_Object*)psv;
+	makeEvent( event );
+	event->code = SSH2_EVENT_REVERSE_CHANNEL;
+	event->data = (void*)channel;
+	event->waiter = MakeThread();
+	event->done = 0;
+	EnqueLink( &ssh->eventQueue, event );
+	uv_async_send( &ssh->async );
+	while( !event->done ) {
+		WakeableSleep( 1000 );
+	}
+	uintptr_t result = (uintptr_t)event->data;
+	dropEvent( event );
+	return (uintptr_t)result;
+
+}
+
+void SSH2_Object::Reverse( const v8::FunctionCallbackInfo<Value>&args ) {
+	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
+	int port = 0;
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value remoteHost( args.GetIsolate(), args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+	if( args.Length() > 1 )
+		port = args[1]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
+
+	sack_ssh_channel_forward_listen( ssh->session, *remoteHost, port, ReverseCallback );
+
+	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
+	ssh->connectPromise.Reset( isolate, pr );
+	ssh->activePromise = &ssh->forwardPromise;
+	args.GetReturnValue().Set( pr->GetPromise() );
+}
 
 
 void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {

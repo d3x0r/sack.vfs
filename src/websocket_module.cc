@@ -87,6 +87,7 @@ enum wsEvents {
 	WS_EVENT_ERROR_CLOSE, // illegal server connection
 	WS_EVENT_LOW_ERROR,
 	WS_EVENT_RELEASE_BUFFER,
+	WS_EVENT_ACCEPT_SSH, // a new websocket over SSH connection to create (uses wssi)
 };
 
 struct optionStrings {
@@ -166,6 +167,7 @@ struct wssOptions {
 	bool deflate_allow;
 	bool apply_masking;
 	PLIST hostList;
+	SSH2_Channel* channel;
 };
 
 struct wscOptions {
@@ -296,6 +298,7 @@ static struct local {
 	PLIST pendingWrites;
 } l;
 
+static void promoteSSH_to_Websocket( const v8::FunctionCallbackInfo<Value>& args );
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
 	INDEX idx;
@@ -1628,6 +1631,9 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		SET_READONLY( o, "Thread", threadObject );
 	}
 	{
+		SET_READONLY_METHOD( o, "ssh2ws", promoteSSH_to_Websocket );
+	}
+	{
 		Local<FunctionTemplate> wssTemplate;
 		wssTemplate = FunctionTemplate::New( isolate, wssObject::New );
 		wssTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.ws.server" ) );
@@ -2161,7 +2167,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			int result;
 			//lprintf( "ending http %p on %p, checking for more data", pHttpState, obj->pc );
 			EndHttp(pHttpState);
-			while ((result = ProcessHttp(obj->pc, pHttpState)))
+			while ((result = ProcessHttp(pHttpState, NULL, 0 )))
 			{
 				//lprintf("result = %d  %zd", result, HTTP_STATE_RESULT_CONTENT == result);
 				switch (result)
@@ -3815,8 +3821,6 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		}
 		httpRequest->resultObject.Reset();
 	}
-	
-
 }
 
 void httpRequestObject::get( const FunctionCallbackInfo<Value>& args ) {
@@ -3824,4 +3828,55 @@ void httpRequestObject::get( const FunctionCallbackInfo<Value>& args ) {
 }
 void httpRequestObject::gets( const FunctionCallbackInfo<Value>& args ) {
 	getRequest( args, true );
+}
+
+
+static void promoteSSH_to_Websocket( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	SSH2_Channel* channel = SSH2_Channel::Unwrap<SSH2_Channel>( args[0]->ToObject( context ).ToLocalChecked() );
+	//getstrings
+#if 0
+	class constructorSet* c = getConstructors( isolate );
+	Local<Value> argv[1] = { args[1] };
+	Local<Function> cons = Local<Function>::New( isolate, c->wssConstructor );
+	MaybeLocal<Object> result = cons->NewInstance( isolate->GetCurrentContext(), 1, argv );
+#endif
+
+//wssOpts.ssl = 0;
+#if 0
+	struct ssh_websocket* ws = sack_ssh_channel_serve_websocket( channel->channel, 
+	);
+
+	//wssObject* wss = (wssObject*)psv;
+	struct wssEvent* pevt = GetWssEvent();
+	//struct wssEvent evt;
+	( *pevt ).data.request.protocol = protocols;
+	( *pevt ).data.request.resource = resource;
+	if( !pc ) lprintf( "FATALITY - ACCEPT EVENT RECEVIED ON A NON SOCKET!?" );
+
+	( *pevt ).pc = (PCLIENT)ws;
+	( *pevt ).data.request.accepted = 0;
+	//lprintf( "Websocket accepted... (blocks until handled.)" );
+	( *pevt ).eventType = WS_EVENT_ACCEPT_SSH;
+	( *pevt ).done = FALSE;
+	( *pevt ).waiter = MakeThread();
+	( *pevt )._this = NULL;
+	HoldWssEvent( pevt );
+
+	EnqueLink( &wss->eventQueue, pevt );
+
+	wssAsyncMsg( &wss->async );
+
+	while( !( *pevt ).done )
+		Wait();
+	if( ( *pevt ).data.request.protocol != protocols )
+		( *pevt ).result->protocolResponse = ( *pevt ).data.request.protocol;
+	( *protocolReply ) = (char*)( *pevt ).data.request.protocol;
+	{
+		LOGICAL result = (LOGICAL)( *pevt ).data.request.accepted;
+		DropWssEvent( pevt );
+		return result;
+	}
+#endif
 }
