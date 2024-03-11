@@ -442,9 +442,10 @@ SET( C_SOURCES
    set( LIBSSH2_BUILD_SHARED_LIBS OFF )
    SET( LIBSSH2_SKIP_DOCS ON )
    SET( LIBSSH2_BUILD_DEBUG ON )
-   set( BUILD_EXAMPLES OFF )
-   set( BUILD_TESTING OFF ) 
+   set( LIBSSH2_BUILD_EXAMPLES OFF )
+   set( LIBSSH2_BUILD_TESTING OFF ) 
    SET( ENABLE_ZLIB_COMPRESSION ON )
+   
    SET( OPENSSL_ROOT_DIR ../libressl/3.8.0 )
    add_subdirectory( src/sack/libssh2 )
    include_directories( src/sack/libssh2/include )
