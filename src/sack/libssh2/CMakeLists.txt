@@ -108,8 +108,8 @@ else()
   endif()
 endif()
 
-option(LIBSSH2_BUILD_EXAMPLES "Build libssh2 examples" ON)
-option(LIBSSH2_BUILD_TESTING "Build libssh2 test suite" ON)
+#option(BUILD_EXAMPLES "Build libssh2 examples" ON)
+#option(BUILD_TESTING "Build libssh2 test suite" ON)
 
 if(NOT LIBSSH2_BUILD_STATIC_LIBS AND NOT LIBSSH2_BUILD_SHARED_LIBS)
   set(LIBSSH2_BUILD_STATIC_LIBS ON)
@@ -439,11 +439,11 @@ endfunction()
 
 add_subdirectory(src)
 
-if(LIBSSH2_BUILD_EXAMPLES)
+if(BUILD_EXAMPLES)
   add_subdirectory(example)
 endif()
 
-if(LIBSSH2_BUILD_TESTING)
+if(BUILD_TESTING)
   enable_testing()
   add_subdirectory(tests)
 endif()
