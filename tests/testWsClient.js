@@ -2,7 +2,7 @@
 
 var sack = require( ".." );
 
-var server = `ws://${process.argv[2]?process.argv[2]:"192.168.173.13"}:3000/`;
+var server = `ws://${process.argv[2]?process.argv[2]:"192.168.173.13"}/`;
 console.log( "connect to ", server );
 //var client = sack.WebSocket.Client( "ws://DESKTOP-EMFQ8QQ:8080/", ["a","b"], { perMessageDeflate: true } );
 
