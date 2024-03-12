@@ -12,20 +12,20 @@ async function test() {
         try {
 		// created an error
 	        const p = db.run( "select 1+1zz" );
-        	console.log( "Got promise, right?", p );
+	        	console.log( "Got promise, right? 1", p );
                 r = await p;
         } catch( err ) {
-        	console.log( "Got error, right?", err );
+        	console.log( "Got error, right? 1", err );
         }
 
         try {
 	        const p = db.run( "select 1+1" );
-        	console.log( "Got promise, right?", p );
-                r = await p;
+        		console.log( "Got promise, right? 2", p );
+            r = await p;
         } catch( err ) {
         	console.log( "err?", err );
         }
-        db.close();
+        //db.close();
         console.log( "result?", r );
 
 }
