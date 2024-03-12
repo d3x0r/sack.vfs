@@ -37,7 +37,8 @@
 					name = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 ); \
 				} \
 			}
-#define GET_BOOL(name)  if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+#define GET_BOOL(name)  bool name = false; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
 				if( GETV( opts, optName )->IsBoolean() ) { \
 					name = GETV( opts, optName )->TOBOOL( isolate ); \
 				} \
@@ -59,6 +60,7 @@ struct optionStrings {
 	DEF_STRING( message );
 	DEF_STRING( close );
 	DEF_STRING( connect );
+	DEF_STRING( skipLogin );
 };
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
@@ -85,6 +87,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		MK_STRING( trace );
 		MK_STRING( data );
 		MK_STRING( close );
+		MK_STRING( skipLogin );
 	}
 	return check;
 }
@@ -106,6 +109,33 @@ static void asyncmsg( uv_async_t* handle ) {
 				uv_close( (uv_handle_t*)&ssh->async, NULL ); // have to hold onto the handle until it's freed.
 				break;
 			case SSH2_EVENT_HANDSHAKE:
+				{
+					Local<Promise::Resolver> pr;
+					Local<Promise::Resolver> pr_login;
+					if( !ssh->connectPromise.IsEmpty() ) {
+						pr = ssh->connectPromise.Get( isolate );
+						ssh->connectPromise.Reset();
+					} 
+					if( !ssh->loginPromise.IsEmpty() ) {
+						pr_login = ssh->loginPromise.Get( isolate );
+						ssh->loginPromise.Reset();
+					}
+
+					if( event->success ) {
+						if( pr_login.IsEmpty() ) {
+							Local<ArrayBuffer> ab;
+#if ( NODE_MAJOR_VERSION >= 14 )
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+							ab = ArrayBuffer::New( isolate, bs );
+#else
+#error "Need to implement ArrayBuffer creation for node 14 and earlier (node 14 is End of life, consider upgrading)"
+#endif
+							pr->Resolve( isolate->GetCurrentContext(), ab );
+						} else
+							pr->Resolve( isolate->GetCurrentContext(), pr_login );
+					} else
+						pr->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+				}
 				break;
 			case SSH2_EVENT_ERROR:
 				if( ssh->activePromise ) {
@@ -168,27 +198,34 @@ static void asyncmsg( uv_async_t* handle ) {
 				}
 				break;
 			case SSH2_EVENT_AUTHDONE:
-				if( event->success ) {
-					Local<ArrayBuffer> ab;
+				{
+					Local<Promise::Resolver> pr_connect;
+					Local<Promise::Resolver> pr;
+					if( !ssh->connectPromise.IsEmpty() ) {
+						pr_connect = ssh->connectPromise.Get( isolate );
+						ssh->connectPromise.Reset();
+					} else if( !ssh->loginPromise.IsEmpty() ) {
+						pr = ssh->loginPromise.Get( isolate );
+						ssh->loginPromise.Reset();
+					}
+					ssh->connectOptions.Reset();
+					if( event->success ) {
+						if( pr_connect.IsEmpty() ) {
+							Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
-					ab = ArrayBuffer::New( isolate, bs );
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+							ab = ArrayBuffer::New( isolate, bs );
 #else
-					ab =
-						ArrayBuffer::New( isolate,
-							(void*)eventMessage->buf,
-							eventMessage->buflen );
-
-					PARRAY_BUFFER_HOLDER holder = GetHolder();
-					holder->o.Reset( isolate, ab );
-					holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-					holder->buffer = eventMessage->buf;
+#error "Need to implement ArrayBuffer creation for node 14 and earlier (node 14 is End of life, consider upgrading)"
 #endif
-					ssh->connectPromise.Get( isolate )->Resolve( isolate->GetCurrentContext(), ab );
-				} else
-					ssh->connectPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
-				ssh->activePromise = NULL;
-				ssh->connectPromise.Reset();
+							pr->Resolve( isolate->GetCurrentContext(), ab );
+						} else
+							pr->Resolve( isolate->GetCurrentContext(), Undefined( isolate ) );
+					} else
+						pr->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+					ssh->connectOptions.Reset();
+					ssh->loginPromise.Reset();
+				}
 				break;
 			case SSH2_EVENT_CHANNEL:
 				{
@@ -330,9 +367,6 @@ SSH2_Object::SSH2_Object( Isolate *isolate ) {
 
 	this->session = sack_ssh_session_init( (uintptr_t)this );
 	sack_ssh_set_session_error( this->session, SSH2_Object::Error );
-	sack_ssh_set_handshake_complete( this->session, SSH2_Object::handshook );
-	sack_ssh_set_auth_complete( this->session, SSH2_Object::authDone );
-	sack_ssh_set_channel_open( this->session, SSH2_Object::channelOpen );
 	//sack_ssh_set_listen( this->session, listenerSetup );
 
 
@@ -414,11 +448,13 @@ void SSH2_Object::OpenChannel( const v8::FunctionCallbackInfo<Value>& args ) {
 	GET_NUMBER( windowSize );
 	GET_NUMBER( packetSize );
 
+
+
 	sack_ssh_channel_open_v2( ssh->session
 		, type?*type[0]:"session", type ? type->length() : 7
 		, windowSize, packetSize
 		, message ? *message[0] : NULL, message ? message->length() : 0
-		, NULL );
+		, SSH2_Object::channelOpen );
 
 
 	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
@@ -451,6 +487,8 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> sshTemplate;
 	Local<FunctionTemplate> channelTemplate;
+	Local<FunctionTemplate> remoteListenTemplate;
+
 	AddLink( &global.rootThreads, MakeThread() );
 	ssl_InitLibrary();
 
@@ -461,9 +499,13 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "connect", SSH2_Object::Connect );
+	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "login", SSH2_Object::Login );
 	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "Channel", SSH2_Object::OpenChannel );
+	// forward is a connection from local to remote
 	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "forward", SSH2_Object::Forward );
 	// as confusing as this is , reverse is 'forward' from libssh2, forward is 'direct' which is also forward
+	// reverse is a connection from remote to local
+
 	NODE_SET_PROTOTYPE_METHOD( sshTemplate, "reverse", SSH2_Object::Reverse ); 
 	sshTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "fingerprint" )
 		, FunctionTemplate::New( isolate, SSH2_Object::fingerprint )
@@ -485,6 +527,16 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "exec", SSH2_Channel::Exec );
 
 	c->SSH_Channel_constructor.Reset( isolate, channelTemplate->GetFunction( context ).ToLocalChecked() );
+
+	remoteListenTemplate = FunctionTemplate::New( isolate, SSH2_RemoteListen::New );
+	remoteListenTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.SSH2_RemoteListener" ) );
+	remoteListenTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
+
+
+	// Prototype
+	NODE_SET_PROTOTYPE_METHOD( remoteListenTemplate, "close", SSH2_RemoteListen::Close );
+
+	c->SSH_RemoteListen_constructor.Reset( isolate, channelTemplate->GetFunction( context ).ToLocalChecked() );
 
 	//Local<Object> i = Object::New( isolate );
 	SET( exports, "SSH", sshConstructor );
@@ -771,12 +823,72 @@ void SSH2_Object::Reverse( const v8::FunctionCallbackInfo<Value>&args ) {
 	if( args.Length() > 1 )
 		port = args[1]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
 
-	sack_ssh_channel_forward_listen( ssh->session, *remoteHost, port, ReverseCallback );
+	sack_ssh_forward_listen( ssh->session, *remoteHost, port, ReverseCallback );
 
 	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
 	ssh->connectPromise.Reset( isolate, pr );
 	ssh->activePromise = &ssh->forwardPromise;
 	args.GetReturnValue().Set( pr->GetPromise() );
+}
+
+static Local<Promise::Resolver> doLogin( SSH2_Object *ssh, Isolate* isolate, Local<Context> context, Local<Object> opts ) {
+	size_t privkeylen = 0;
+	uint8_t* privKeyBuf;
+	size_t pubkeylen = 0;
+	uint8_t* pubKeyBuf;
+	Local<String> optName;
+	struct optionStrings* strings = getStrings( isolate );
+
+	GET_STRING( user );
+	GET_STRING( password );
+	GET_STRING( pubKey );
+	GET_STRING( privKey );
+	GET_ARRAY_BUFFER( pubKey );
+	GET_ARRAY_BUFFER( privKey );
+	GET_TYPED_ARRAY( pubKey );
+	GET_TYPED_ARRAY( privKey );
+
+	if( privKey ) {
+		privKeyBuf = (uint8_t*)*privKey[0];
+		privkeylen = privKey[0].length();
+	} else if( !privKey_ab.IsEmpty() ) {
+		privKeyBuf = (uint8_t*)privKey_ab->GetBackingStore()->Data();
+		privkeylen = privKey_ab->ByteLength();
+	} else if( !privKey_ta.IsEmpty() ) {
+		Local<ArrayBuffer> ab = privKey_ta->Buffer();
+		privKeyBuf = (uint8_t*)ab->GetBackingStore()->Data();
+		privkeylen = ab->ByteLength();
+	} else
+		privKeyBuf = NULL;
+	if( pubKey ) {
+		pubKeyBuf = (uint8_t*)*pubKey[0];
+		pubkeylen = pubKey[0].length();
+	} else if( !pubKey_ab.IsEmpty() ) {
+		pubKeyBuf = (uint8_t*)pubKey_ab->GetBackingStore()->Data();
+		pubkeylen = pubKey_ab->ByteLength();
+	} else if( !pubKey_ta.IsEmpty() ) {
+		Local<ArrayBuffer> ab = pubKey_ta->Buffer();
+		pubKeyBuf = (uint8_t*)ab->GetBackingStore()->Data();
+		pubkeylen = ab->ByteLength();
+	} else pubKeyBuf = NULL;
+
+	if( privKeyBuf )
+		sack_ssh_auth_user_cert( ssh->session, user ? *user[0] : NULL, pubKeyBuf, pubkeylen, privKeyBuf, privkeylen, password ? *password[0] : NULL, SSH2_Object::authDone );
+	else
+		sack_ssh_auth_user_password( ssh->session, user ? *user[0] : NULL, password ? *password[0] : NULL, SSH2_Object::authDone );
+
+	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
+	ssh->loginPromise.Reset( isolate, pr );
+	//ssh->activePromise = &ssh->connectPromise;
+	//args.GetReturnValue().Set( pr->GetPromise() );
+	return pr;
+}
+
+void SSH2_Object::Login( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	doLogin( ssh, isolate, context, ssh->connectOptions.Get( isolate ) );
 }
 
 
@@ -804,7 +916,6 @@ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
 	ssh->connectPromise.Reset( isolate, pr );
 	ssh->activePromise = &ssh->connectPromise;
-	LOGICAL trace = FALSE;
 	Local<String> optName;
 	Local<Function> connect;
 	// requires opts
@@ -817,58 +928,29 @@ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 	GET_ARRAY_BUFFER( privKey );
 	GET_TYPED_ARRAY( pubKey );
 	GET_TYPED_ARRAY( privKey );
+	GET_BOOL( skipLogin );
 	GET_BOOL( trace );
 
 	if( trace )
 		sack_ssh_trace( ssh->session, ~0 );
 
-	/*
-	if( opts->Has( context, optName = strings->connectString->Get( isolate ) ).ToChecked() ) {
-		Local<Value> val;
-		if( GETV( opts, optName )->IsFunction() ) {
-			connect = Local<Function>::Cast( GETV( opts, optName ) );
-		}
-	}
-	*/
 	ssh->connectOptions.Reset( isolate, opts );
-	sack_ssh_session_connect( ssh->session, *address[0], 22);
-	size_t privkeylen = 0;
-	uint8_t* privKeyBuf;
-	size_t pubkeylen = 0;
-	uint8_t* pubKeyBuf;
 
-	
-	if( privKey ) {
-		privKeyBuf = (uint8_t*)*privKey[0];
-		privkeylen = privKey[0].length();
-	} else if( !privKey_ab.IsEmpty() ) {
-		privKeyBuf = (uint8_t*)privKey_ab->GetBackingStore()->Data();
-		privkeylen = privKey_ab->ByteLength();
-	} else if( !privKey_ta.IsEmpty() ) {
-		Local<ArrayBuffer> ab = privKey_ta->Buffer();
-		privKeyBuf = (uint8_t*)ab->GetBackingStore()->Data();
-		privkeylen = ab->ByteLength();
-	} else
-		privKeyBuf = NULL;
-	if( pubKey ) {
-		pubKeyBuf = (uint8_t*)*pubKey[0];
-		pubkeylen = pubKey[0].length();
-	} else if( !pubKey_ab.IsEmpty() ) {
-		pubKeyBuf = (uint8_t*)pubKey_ab->GetBackingStore()->Data();
-		pubkeylen = pubKey_ab->ByteLength();
-	} else if( !pubKey_ta.IsEmpty() ) {
-		Local<ArrayBuffer> ab = pubKey_ta->Buffer();
-		pubKeyBuf = (uint8_t*)ab->GetBackingStore()->Data();
-		pubkeylen = ab->ByteLength();
-	} else pubKeyBuf = NULL;
+	sack_ssh_session_connect( ssh->session, *address[0], 22, SSH2_Object::handshook );
 
-	if( privKeyBuf )
-		sack_ssh_auth_user_cert( ssh->session, user?*user[0]:NULL, pubKeyBuf, pubkeylen, privKeyBuf, privkeylen, password?*password[0] : NULL );
-	else
-		sack_ssh_auth_user_password( ssh->session, user?*user[0]:NULL, password?*password[0]:NULL);
-
+	if( !skipLogin ) {
+		// can queue this immediately after starting a connect...
+		
+		( ssh, isolate, context, opts );
+	}
 	args.GetReturnValue().Set( pr->GetPromise() );
 
+}
+
+void SSH2_RemoteListen::New( const v8::FunctionCallbackInfo<Value>& args ) {
+}
+
+void SSH2_RemoteListen::Close( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 // - - - - - - Port Forward Test - - - - - - - - - - -

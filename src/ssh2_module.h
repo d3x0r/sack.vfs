@@ -108,6 +108,7 @@ public:
 	uint8_t fingerprintData[20];
 	Persistent<Object> connectOptions;
 	Persistent<Promise::Resolver> connectPromise;
+	Persistent<Promise::Resolver> loginPromise;
 	Persistent<Promise::Resolver> channelPromise;
 	Persistent<Promise::Resolver> forwardPromise;
 
@@ -128,6 +129,7 @@ public:
 	* Connect to a server
 	*/
 	static void Connect( const v8::FunctionCallbackInfo<Value>& args );
+	static void Login( const v8::FunctionCallbackInfo<Value>& args );
 	// forward socket connection to remote
 	static void Forward( const v8::FunctionCallbackInfo<Value>& args );
 	// reverse socket connectio from remote
@@ -157,6 +159,33 @@ public:
 };
 
 
+/*
+* This is a remote listener object that listens for connections on the remote system
+* and forwards them to the local system.
+* This is used to create a reverse tunnel.
+* Websocket module has ability to turn this into a websocket listener/server.
+* sack.Websocket.ssh2ws( listener );
+*/
+class SSH2_RemoteListen : public node::ObjectWrap {
+
+public:
+	SSH2_Object* ssh2;
+	struct ssh_listener* listener;
+	Persistent<Object> jsObject;  // the object that represents this channel
+
+public:
+	SSH2_RemoteListen();
+	~SSH2_RemoteListen();
+
+	// allocate a new JS object
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	// close the remote listener and listener object.
+	static void Close( const v8::FunctionCallbackInfo<Value>& args );
+
+	// Enable the remote listener to accept websocket and HTTP connections
+	//static void toWS( const v8::FunctionCallbackInfo<Value>& args );
+
+};
 
 typedef struct SSH2_Event SSH2_EVENT;
 #define MAXSSH2_EVENTSPERSET 32

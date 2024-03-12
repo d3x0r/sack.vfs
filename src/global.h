@@ -194,6 +194,8 @@ class constructorSet {
 	v8::Persistent<v8::Function> ConfigObject_constructor;
 	v8::Persistent<v8::Function> SSH_Object_constructor;
 	v8::Persistent<v8::Function> SSH_Channel_constructor;
+	v8::Persistent<v8::Function> SSH_RemoteListen_constructor;
+	//v8::Persistent<v8::Function> SSH_LocalListen_constructor;
 
 	//Persistent<Function> onCientPost;
 	uv_loop_t* loop;

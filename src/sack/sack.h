@@ -337,46 +337,46 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #    define MEM_LIBRARY_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define SYSLOG_SOURCE
+#    define SYSLOG_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define _TYPELIBRARY_SOURCE
+#    define _TYPELIBRARY_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define HTTP_SOURCE
+#    define HTTP_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define TIMER_SOURCE
+#    define TIMER_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define IDLE_SOURCE
+#    define IDLE_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define CLIENTMSG_SOURCE
+#    define CLIENTMSG_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define FRACTION_SOURCE
+#    define FRACTION_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define NETWORK_SOURCE
+#    define NETWORK_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define CONFIGURATION_LIBRARY_SOURCE
+#    define CONFIGURATION_LIBRARY_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define FILESYSTEM_LIBRARY_SOURCE
+#    define FILESYSTEM_LIBRARY_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define SYSTEM_SOURCE
+#    define SYSTEM_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define FILEMONITOR_SOURCE
+#    define FILEMONITOR_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define VECTOR_LIBRARY_SOURCE
+#    define VECTOR_LIBRARY_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
-#define SHA1_SOURCE
+#    define SHA1_SOURCE
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 #    define CONSTRUCT_SOURCE
@@ -395,7 +395,9 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
 	individual library module once upon a time.           */
 #      define JSOX_PARSER_SOURCE
-	/* Defined when SACK_BAG_EXPORTS is defined. This was an
+#      define HTML5_WEBSOCKET_SOURCE
+#      define SACK_WEBSOCKET_CLIENT_SOURCE
+/* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
 #    define SERVICE_SOURCE
 #    ifndef __NO_SQL__
@@ -8465,188 +8467,1906 @@ using namespace sack::network::udp;
 #define getsockopt ?
 #define heh yeah these have exact equivalents ....
 */
+/*
+ * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface
+ *
+ * Crafted by: Jim Buckeyne
+ *
+ * Purpose: Provide a well defined, concise structure to
+ *   provide websocket server support to C applications.
+ *
+ *
+ *
+ * (c)Freedom Collective, Jim Buckeyne 2012+; SACK Collection.
+ *
+ */
+#ifndef HTML5_WEBSOCKET_STUFF_DEFINED
+#define HTML5_WEBSOCKET_STUFF_DEFINED
+/*
+ * Create: James Buckeyne
+ *
+ * Purpose: Provide a general structure to register names of
+ *   routines and data structures which may be consulted
+ *   for runtime linking.  Aliases and other features make this
+ *   a useful library for tracking interface registration...
+ *
+ *  The namespace may be enumerated.
+ */
+#ifndef PROCEDURE_REGISTRY_LIBRARY_DEFINED
+#define PROCEDURE_REGISTRY_LIBRARY_DEFINED
+#ifndef DEADSTART_DEFINED
+#define DEADSTART_DEFINED
+#ifdef WIN32
+//#include <stdhdrs.h>
+#endif
+ // leach, assuming this will be compiled with this part at least.
+#define pastejunk_(a,b) a##b
+#define pastejunk(a,b) pastejunk_(a,b)
+#ifdef __cplusplus
+#  define USE_SACK_DEADSTART_NAMESPACE using namespace sack::app::deadstart;
+#  define SACK_DEADSTART_NAMESPACE  SACK_NAMESPACE namespace app { namespace deadstart {
+#  define SACK_DEADSTART_NAMESPACE_END  } } SACK_NAMESPACE_END
+SACK_NAMESPACE
+	namespace app{
+/* Application namespace. */
+/* These are compiler-platform abstractions to provide a method
+   of initialization that allows for creation of threads, and
+   transparent (easy to use) method of scheduling routines for
+   initialization.
+   Example
+   This schedules a routine to run at startup. Fill in the
+   routine with the code you want, and it will run at
+   DEFAULT_PRELOAD_PRIORITY which is the number 69.
+   <code lang="c++">
+   PRELOAD( MyCustomInit )
+   {
+       // do something here (do anything here,
+       // without limitations that are imposed by DllMain/LibMain.
+   }
+   </code>
+   If you wanted a routine which was guaranteed to run before
+   MyCustomInit you might use PRIORITY_PRELOAD whcih allows you
+   to specify a priority.
+   <code lang="c++">
+   PRIORITY_PRELOAD( MyOtherInit, DEFAULT_PRELOAD_PRIORITY-10 )
+   {
+      // this will run before other things.
+   }
+   </code>
+   Priorities are listed in deadstart.h and exit_priorities.h. The
+   priorities are treated backwards, so low number startup
+   priorities go first, and higher number shutdown priorities go
+   first.
+   Remarks
+   In some compilers and compile modes this is also fairly easy
+   to do. A lot of compilers do not offer priority, and are
+   impossible to maintain an order in. Some compilers only
+   provide startup priority for C++ mode. This system works as
+   \long as there is a way to run a single function at some
+   point before main() and after C runtime initializes.
+   In Windows, you might think you have this ability with
+   DllMain, but there are severe limitations that you would have
+   to get around; primary is the inability to create a thread,
+   well, you can create it, but it will remain suspended until
+   you leave DllMains and all DllMains finish. There is also no
+   way to consistantly provide initialization order, like memory
+   needs to be initialized before anything else.
+                                                                   */
+		namespace deadstart {
+		}
+        }
+SACK_NAMESPACE_END
+#else
+#define USE_SACK_DEADSTART_NAMESPACE
+#define SACK_DEADSTART_NAMESPACE
+#define SACK_DEADSTART_NAMESPACE_END
+#endif
+#ifdef TYPELIB_SOURCE
+#define DEADSTART_SOURCE
+#endif
+SACK_DEADSTART_NAMESPACE
+/* A macro to specify the call type of schedule routines. This
+   can be changed in most projects without affect, it comes into
+   play if plugins built by different compilers are used,
+   __cdecl is most standard.                                     */
+#define DEADSTART_CALLTYPE CPROC
+#  if defined( _TYPELIBRARY_SOURCE_STEAL )
+#    define DEADSTART_PROC extern
+#  elif defined( _TYPELIBRARY_SOURCE )
+#    define DEADSTART_PROC EXPORT_METHOD
+#  else
+/* A definition for how to declare these functions. if the
+   source itself is comipling these are _export, otherwise
+   external things linking here are _import.               */
+#    define DEADSTART_PROC IMPORT_METHOD
+#  endif
+     // 28 (thread ID for critical sections used to allocate memory)
+#define TIMER_MODULE_PRELOAD_PRIORITY  (CONFIG_SCRIPT_PRELOAD_PRIORITY-3)
+     // 30 specify where to load external resources from... like the option database
+#define VIRTUAL_FILESYSTEM_PRELOAD_PRIORITY (CONFIG_SCRIPT_PRELOAD_PRIORITY-1)
+   /* this is just a global space initializer (shared, named
+      region, allows static link plugins to share information)
+      Allocates its shared memory global region, so if this library
+      is built statically and referenced in multiple plugins
+      ConfigScript can share the same symbol tables. This also
+		provides sharing between C++ and C.                           */
+         // 31
+#define CONFIG_SCRIPT_PRELOAD_PRIORITY    (SQL_PRELOAD_PRIORITY-3)
+			// this is just a global space initializer (shared, named region, allows static link plugins to share information)
+         // 34
+#define SQL_PRELOAD_PRIORITY    (SYSLOG_PRELOAD_PRIORITY-1)
+/* Level at which logging is initialized. Nothing under this
+   should be doing logging, if it does, the behavior is not as
+   well defined.                                               */
+#define SYSLOG_PRELOAD_PRIORITY 35
+   // global_init_preload_priority-1 is used by sharemem.. memory needs init before it can register itself
+#define GLOBAL_INIT_PRELOAD_PRIORITY 37
+ // OS A[bstraction] L[ayer] O[n] T[op] - system lib
+#define OSALOT_PRELOAD_PRIORITY (CONFIG_SCRIPT_PRELOAD_PRIORITY-1)
+/* Level which names initializes. Names is the process
+   registration code. It has a common shared global registered.
+   <link sack::app::registry, procreg; aka names.c>             */
+#define NAMESPACE_PRELOAD_PRIORITY 39
+/* image_preload MUST be after Namespce preload (anything that
+   uses RegisterAndCreateGlobal) should init this before vidlib
+   (which needs image?)                                         */
+#define IMAGE_PRELOAD_PRIORITY  45
+/* Level at which the video render library performs its
+   initialization; RegisterClass() level code.          */
+#define VIDLIB_PRELOAD_PRIORITY 46
+/* Initialization level where PSI registers its builtin
+   controls.                                            */
+#define PSI_PRELOAD_PRIORITY    47
+// need to open the queues and threads before the service server can begin...
+#define MESSAGE_CLIENT_PRELOAD_PRIORITY 65
+/* Level which message core service initializes. During startup
+   message services can register themselves also; but not before
+   this priority level.                                          */
+#define MESSAGE_SERVICE_PRELOAD_PRIORITY 66
+/* Routines are scheduled at this priority when the PRELOAD
+   function is used.                                        */
+#define DEFAULT_PRELOAD_PRIORITY (DEADSTART_PRELOAD_PRIORITY-1)
+/* Not sure where this is referenced, this the core routine
+   itself is scheduled with this symbol to the compiler if
+   appropriate.                                             */
+#define DEADSTART_PRELOAD_PRIORITY 70
+#define PRIORITY_UNLOAD(proc,priority) PRIORITY_ATEXIT( proc##_unload, priority )
+/* Used by PRELOAD and PRIORITY_PRELOAD macros to register a
+   startup routine at a specific priority. Lower number
+   priorities are scheduled to run before higher number
+   priorities*backwards from ATEXIT priorities*. Using this
+   scheduling mechanisms, routines which create threads under
+   windows are guaranteed to run before main, and are guaranteed
+   able to create threads. (They are outside of the loader lock)
+   Parameters
+   function :  pointer to a function to call at startup.
+   name :      text name of the function
+   priority :  priority at which to call the function.
+   unused :    this is an unused parameter. The macros fill it
+               with &amp;ThisRegisteringRoutine, so that the
+               routine itself is referenced by code, and helps
+               the compile not optimize out this code. The
+               functions which perform the registration are prone
+               to be optimized because it's hard for the compiler
+               to identify that they are refernced by other names
+               indirectly.
+   file\ :     usually DBG_PASS of the code doing this
+               registration.
+   line :      usually DBG_PASS of the code doing this
+               registration.                                      */
+DEADSTART_PROC  void DEADSTART_CALLTYPE  RegisterPriorityStartupProc( void(CPROC*)(void), CTEXTSTR,int,void* unused DBG_PASS);
+/* Used by ATEXIT and PRIORITY_ATEXIT macros to register a
+   shutdown routine at a specific priority. Higher number
+   priorities are scheduled to run before lower number
+   priorities. *backwards from PRELOAD priorities* This
+   registers functions which are run while the program exits if
+   it is at all able to run when exiting. calling exit() or
+   BAG_Exit() will invoke these.
+   Parameters
+   function :  pointer to a function to call at shutdown.
+   name :      text name of the function
+   priority :  priority at which to call the function.
+   unused :    this is an unused parameter. The macros fill it
+               with &amp;ThisRegisteringRoutine, so that the
+               routine itself is referenced by code, and helps
+               the compile not optimize out this code. The
+               functions which perform the registration are prone
+               to be optimized because it's hard for the compiler
+               to identify that they are refernced by other names
+               indirectly.
+   file\ :     usually DBG_PASS of the code doing this
+               registration.
+   line :      usually DBG_PASS of the code doing this
+               registration.                                      */
+DEADSTART_PROC  void DEADSTART_CALLTYPE  RegisterPriorityShutdownProc( void(CPROC*)(void), CTEXTSTR,int,void* unused DBG_PASS);
+/* This routine is used internally when LoadFunction is called.
+   After MarkDeadstartComplete is called, any call to a
+   RegisterPriorityStartupProc will call the startup routine
+   immediately instead of waiting. This function disables the
+   auto-running of this function, and instead enques the startup
+   to the list of startups. When completed, at some later point,
+   call ResumeDeadstart() to dispatched all scheduled routines,
+   and release the suspend; however, if initial deastart was not
+   dispatched, then ResumeDeadstart does not do the invoke, it
+   only releases the suspend.                                    */
+DEADSTART_PROC  void DEADSTART_CALLTYPE  SuspendDeadstart ( void );
+/* Resumes a suspended deadstart. If root deadstart is
+   completed, then ResumeDeadstart will call InvokeDeadstarts
+   after resuming deadstart.                                  */
+DEADSTART_PROC  void DEADSTART_CALLTYPE  ResumeDeadstart ( void );
+/* Not usually used by user code, but this invokes all the
+   routines which have been scheduled to run for startup. If
+   your compiler doesn't have a method of handling deadstart
+   code, this can be manually called. It can also be called if
+   you loaded a library yourself without using the LoadFunction
+   interface, to invoke startups scheduled in the loaded
+   library.                                                     */
+DEADSTART_PROC  void DEADSTART_CALLTYPE  InvokeDeadstart (void);
+/* This just calls the list of shutdown procedures. This should
+   not be used usually from user code, since internally this is
+   handled by catching atexit() or with a static destructor.    */
+DEADSTART_PROC  void DEADSTART_CALLTYPE  InvokeExits (void);
+/* This is typically called after the first InvokeDeadstarts
+   completes. The code that runs this is usually a routine just
+   before main(). So once code in main begins to run, all prior
+   initialization has been performed.                           */
+DEADSTART_PROC  void DEADSTART_CALLTYPE  MarkRootDeadstartComplete ( void );
+/* \returns whether InvokeDeadstarts has been called. */
+DEADSTART_PROC  LOGICAL DEADSTART_CALLTYPE  IsRootDeadstartStarted ( void );
+/* \returns whether MarkRootDeadstartComplete has been called. */
+DEADSTART_PROC  LOGICAL DEADSTART_CALLTYPE  IsRootDeadstartComplete ( void );
+/*
+   Setup flags to ignore control C Events on windows.  use 1 << (ControlType) or'd together to set ignore.
+   Use 0 to clear ignore.
+*/
+DEADSTART_PROC void DEADSTART_CALLTYPE IgnoreBreakHandler( int ignore );
+#if defined( __LINUX__ )
+// call this after a fork().  Otherwise, it will falsely invoke shutdown when it exits.
+DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
+#endif
+#ifdef DOC_O_MAT
+// call this after a fork().  Otherwise, it will falsely invoke shutdown when it exits.
+DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
+#endif
+#ifdef __cplusplus
+/* Defines some code to run at program inialization time. Allows
+   specification of a priority. Lower priorities run first. (default
+   is 69).
+   Example
+   <code>
+   PRIORITY_PRELOAD( MyOtherInit, 153 )
+   {
+      // run some code probably after most all other initializtion is done.
+   }
+   </code>
+   See Also
+   <link sack::app::deadstart, deadstart Namespace>                         */
+#define PRIORITY_PRELOAD(name,priority) static void CPROC name(void);	 namespace { static class pastejunk(schedule_,name) {        public:pastejunk(schedule_,name)() {	    RegisterPriorityStartupProc( name,TOSTR(name),priority,(void*)this DBG_SRC);	  }	  } pastejunk(do_schedule_,name);   }	  static void name(void)
+/* This is used once in deadstart_prog.c which is used to invoke
+   startups when the program finishes loading.                   */
+#define MAGIC_PRIORITY_PRELOAD(name,priority) static void CPROC name(void);	 namespace { static class pastejunk(schedule_,name) {	     public:pastejunk(schedule_,name)() {	  name();	    }	  } pastejunk(do_schedul_,name);   }	  static void name(void)
+/*
+  Internal macro used to trigger InvokeExits() which runs scheduled exits.
+                                                                     */
+#define ATEXIT_INVOKE_INTERNAL(name) static void CPROC name(void);    static class pastejunk(schedule_,name) {        public:pastejunk(~schedule_,name)() {			    name();	  }	  } pastejunk(do_schedule_,name);	     static void name(void)
+/* Defines some code to run at program shutdown time. Allows
+   specification of a priority. Higher priorities are run first.
+   Example
+   <code>
+   PRIORITY_ATEXIT( MyOtherShutdown, 153 )
+   {
+      // run some code probably before most library code dissolves.
+      // last to load, first to unload.
+   }
+   </code>
+   See Also
+   <link sack::app::deadstart, deadstart Namespace>                 */
+	/*name(); / * call on destructor of static object.*/
+#define PRIORITY_ATEXIT(name,priority) static void CPROC name(void);    static class pastejunk(shutdown_,name) {	   public:pastejunk(shutdown_,name)() {       RegisterPriorityShutdownProc( name,TOSTR(name),priority,(void*)this DBG_SRC );	   }	  } do_shutdown_##name;	     void name(void)
+/* This is the most basic way to define some code to run
+   initialization before main.
+   Example
+   <code lang="c++">
+   PRELOAD( MyInitCode )
+   {
+      // some code here
+   }
+   </code>
+   See Also
+   <link sack::app::deadstart, deadstart Namespace>      */
+#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
+/* Basic way to register a routine to run when the program exits
+   gracefully.
+   Example
+   \    <code>
+   ATEXIT( MyExitRoutine )
+   {
+       // this will be run sometime during program shutdown
+   }
+   </code>                                                       */
+#define ATEXIT(name)      PRIORITY_ATEXIT(name,ATEXIT_PRIORITY_DEFAULT)
+/* This is the core atexit. It dispatches all other exit
+   routines. This is defined for internal use only...    */
+#define ROOT_ATEXIT(name) ATEXIT_INVOKE_INTERNAL(name)
+//------------------------------------------------------------------------------------
+// Win32 Watcom
+//------------------------------------------------------------------------------------
+#elif defined( __WATCOMC__ )
+#pragma off (check_stack)
+/* code taken from openwatcom/bld/watcom/h/rtinit.h */
+typedef unsigned char   __type_rtp;
+typedef unsigned short  __type_pad;
+typedef void(*__type_rtn ) ( void );
+#ifdef __cplusplus
+#pragma pack(1)
+#else
+#pragma pack(1)
+#endif
+ // structure placed in XI/YI segment
+struct rt_init
+{
+#define DEADSTART_RT_LIST_START 0xFF
+ // - near=0/far=1 routine indication
+    __type_rtp  rtn_type;
+                          //   also used when walking table to flag
+                          //   completed entries
+ // - priority (0-highest 255-lowest)
+    __type_rtp  priority;
+      // - routine
+    __type_rtn  rtn;
+};
+#pragma pack()
+/* end code taken from openwatcom/bld/watcom/h/rtinit.h */
+//------------------------------------------------------------------------------------
+// watcom
+//------------------------------------------------------------------------------------
+//void RegisterStartupProc( void (*proc)(void) );
+#define PRIORITY_PRELOAD(name,priority) static void pastejunk(schedule_,name)(void); static void CPROC name(void);	 static struct rt_init __based(__segname("XI")) pastejunk(name,_ctor_label)={0,(DEADSTART_PRELOAD_PRIORITY-1),pastejunk(schedule_,name)};	 static void pastejunk(schedule_,name)(void) {	                 RegisterPriorityStartupProc( name,TOSTR(name),priority,&pastejunk(name,_ctor_label) DBG_SRC );	}	                                       void name(void)
+#define ATEXIT_PRIORITY(name,priority) static void pastejunk(schedule_exit_,name)(void); static void CPROC name(void);	 static struct rt_init __based(__segname("XI")) pastejunk(name,_dtor_label)={0,69,pastejunk(schedule_exit_,name)};	 static void pastejunk(schedule_exit_,name)(void) {	                                              RegisterPriorityShutdownProc( name,TOSTR(name),priority,&name##_dtor_label DBG_SRC );	}	                                       void name(void)
+// syslog runs preload at priority 65
+// message service runs preload priority 66
+// deadstart itself tries to run at priority 70 (after all others have registered)
+#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
+// this is a special case macro used in client.c
+// perhaps all PRIORITY_ATEXIT routines should use this
+// this enables cleaning up things that require threads to be
+// active under windows... (message disconnect)
+// however this routine is only triggered in windows by calling
+// BAG_Exit(nn) which is aliased to replace exit(n) automatically
+#define PRIORITY_ATEXIT(name,priority) ATEXIT_PRIORITY( name,priority)
+/*
+static void name(void); static void name##_x_(void);	static struct rt_init __based(__segname("YI")) name##_dtor_label={0,priority,name##_x_};	 static void name##_x_(void) { char myname[256];myname[0]=*(CTEXTSTR)&name##_dtor_label;GetModuleFileName(NULL,myname,sizeof(myname));name(); }	 static void name(void)
+  */
+#define ROOT_ATEXIT(name) ATEXIT_PRIORITY(name,ATEXIT_PRIORITY_ROOT)
+#define ATEXIT(name)      PRIORITY_ATEXIT(name,ATEXIT_PRIORITY_DEFAULT)
+// if priority_atexit is used with priority 0 - the proc is scheduled into
+// atexit, and exit() is then invoked.
+//#define PRIORITY_ATEXIT(name,priority) ATEXIT_PRIORITY(name,priority )
+//------------------------------------------------------------------------------------
+// Linux
+//------------------------------------------------------------------------------------
+#elif defined( __GNUC__ )
+/* code taken from openwatcom/bld/watcom/h/rtinit.h */
+typedef unsigned char   __type_rtp;
+typedef void(*__type_rtn ) ( void );
+ // structure placed in XI/YI segment
+struct rt_init
+{
+#define DEADSTART_RT_LIST_START 0xFF
+ // - near=0/far=1 routine indication
+    __type_rtp  rtn_type;
+                          //   also used when walking table to flag
+                          //   completed entries
+ // has this been scheduled? (0 if no)
+    __type_rtp  scheduled;
+ // - priority (0-highest 255-lowest)
+    __type_rtp  priority;
+#if defined( __64__ ) ||defined( __arm__ )||defined( __GNUC__ )
+#define INIT_PADDING ,{0}
+ // need this otherwise it's 23 bytes and that'll be bad.
+	 char padding[1];
+#else
+#define INIT_PADDING
+#endif
+ // 32 bits in 64 bits....
+	 int line;
+// this ends up being nicely aligned for 64 bit platforms
+// specially with the packed attributes
+      // - routine (rtn)
+	 __type_rtn  routine;
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+	 CTEXTSTR file;
+#endif
+	 CTEXTSTR funcname;
+	 struct rt_init *junk;
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+#if defined( __GNUC__ ) && defined( __64__)
+    // this provides padding - inter-object segments are packed
+    // to 32 bytes...
+	 struct rt_init *junk2[3];
+#endif
+#endif
+} __attribute__((packed));
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+#  if defined( __GNUC__ ) && defined( __64__)
+#    define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
+#  else
+#    define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#  endif
+#else
+#  define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#endif
+#define RTINIT_STATIC static
+#define ATEXIT_PRIORITY PRIORITY_ATEXIT
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
+#  define PASS_FILENAME ,WIDE__FILE__
+#else
+#  define PASS_FILENAME
+#endif
+#ifdef __MAC__
+#  define DEADSTART_SECTION "TEXT,deadstart_list"
+#else
+#  define DEADSTART_SECTION "deadstart_list"
+#endif
+#ifdef __MANUAL_PRELOAD__
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)		__attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 =	 {0,0,pr INIT_PADDING, __LINE__, name PASS_FILENAME	, TOSTR(name) JUNKINIT(name)} ;	 void name(void);	 void pastejunk(registerStartup,name)(void) __attribute__((constructor));	 void pastejunk(registerStartup,name)(void) {	 RegisterPriorityStartupProc(name,TOSTR(name),pr,NULL DBG_SRC); }	 void name(void)
+#else
+#if defined( _WIN32 ) || defined( __GNUC__ )
+#  define HIDDEN_VISIBILITY
+#else
+#  define HIDDEN_VISIBILITY  __attribute__((visibility("hidden")))
+#endif
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	         RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	         __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	  ={0,0,pr INIT_PADDING	                                           ,__LINE__,name	                                                 PASS_FILENAME	                                                 ,TOSTR(name)	                                                   JUNKINIT(name)};	                                               static void name(void) __attribute__((used));	 void name(void)
+#endif
+typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
+#define PRIORITY_ATEXIT(name,priority) static void name(void);           static void pastejunk(atexit,name)(void) __attribute__((constructor));   void pastejunk(atexit,name)(void)                                        {	                                                                        RegisterPriorityShutdownProc(name,TOSTR(name),priority,NULL DBG_SRC); }                                                                        void name(void)
+#define ATEXIT(name) PRIORITY_ATEXIT( name,ATEXIT_PRIORITY_DEFAULT )
+#define ROOT_ATEXIT(name) static void name(void) __attribute__((destructor));    static void name(void)
+#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
+//------------------------------------------------------------------------------------
+// CYGWIN (-mno-cygwin)
+//------------------------------------------------------------------------------------
+#elif defined( __CYGWIN__ )
+/* code taken from openwatcom/bld/watcom/h/rtinit.h */
+typedef unsigned char   __type_rtp;
+typedef void(*__type_rtn ) ( void );
+ // structure placed in XI/YI segment
+struct rt_init
+{
+#ifdef __cplusplus
+	//rt_init( int _rtn_type ) { rt_init::rtn_type = _rtn_type; }
+	/*rt_init( int _priority, CTEXTSTR name, __type_rtn rtn, CTEXTSTR _file, int _line )
+	{
+		rtn_type = 0;
+		scheduled = 0;
+		priority = priority;
+		file = _file;
+		line = _line;
+      routine = rtn;
+		}
+      */
+#endif
+#define DEADSTART_RT_LIST_START 0xFF
+ // - near=0/far=1 routine indication
+    __type_rtp  rtn_type;
+                          //   also used when walking table to flag
+                          //   completed entries
+ // has this been scheduled? (0 if no)
+    __type_rtp  scheduled;
+ // - priority (0-highest 255-lowest)
+    __type_rtp  priority;
+#if defined( __GNUC__ ) || defined( __64__ ) || defined( __arm__ ) || defined( __CYGWIN__ )
+#define INIT_PADDING ,{0}
+ // need this otherwise it's 23 bytes and that'll be bad.
+	 char padding[1];
+#else
+#define INIT_PADDING
+#endif
+ // 32 bits in 64 bits....
+	 int line;
+// this ends up being nicely aligned for 64 bit platforms
+// specially with the packed attributes
+      // - routine (rtn)
+	 __type_rtn  routine;
+	 CTEXTSTR file;
+	 CTEXTSTR funcname;
+	 struct rt_init *junk;
+#if defined( __GNUC__ ) && defined( __64__ )
+    // this provides padding - inter-object segments are packed
+    // to 32 bytes...
+	 struct rt_init *junk2[3];
+#endif
+} __attribute__((packed));
+#define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
+#ifdef __cplusplus
+#define RTINIT_STATIC
+#else
+#define RTINIT_STATIC static
+#endif
+typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
+#define ATEXIT_PRIORITY(name,priority) static void name(void); static void atexit##name(void) __attribute__((constructor));	  void atexit_failed##name(void(*f)(void),int i,CTEXTSTR s1,CTEXTSTR s2,int n) { lprintf( "Failed to load atexit_priority registerar from core program." );} void atexit##name(void)                                                  {	                                                                        static char myname[256];HMODULE mod;if(myname[0])return;myname[0]='a';GetModuleFileName( NULL, myname, sizeof( myname ) );	mod=LoadLibrary(myname);if(mod){   typedef void (*x)(void);void(*rsp)( x,const CTEXTSTR,int,const CTEXTSTR,int);	 if((rsp=((void(*)(void(*)(void),const CTEXTSTR,int,const CTEXTSTR,int))(GetProcAddress( mod, "RegisterPriorityShutdownProc")))))	 {rsp( name,TOSTR(name),priority DBG_SRC);}	 else atexit_failed##name(name,priority,TOSTR(name) DBG_SRC);	        }     FreeLibrary( mod);	 }             void name( void)
+#ifdef _DEBUG
+#  define PASS_FILENAME ,WIDE__FILE__
+#else
+#  define PASS_FILENAME
+#endif
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct pastejunk(rt_init name,_ctor_label)	   __attribute__((section("deadstart_list")))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 static void name(void)
+#define ATEXIT(name)      ATEXIT_PRIORITY(name,ATEXIT_PRIORITY_DEFAULT)
+#define PRIORITY_ATEXIT ATEXIT_PRIORITY
+#define ROOT_ATEXIT(name) static void name(void) __attribute__((destructor));    static void name(void)
+#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
+//------------------------------------------------------------------------------------
+// WIN32 MSVC
+//------------------------------------------------------------------------------------
+#elif defined( _MSC_VER ) && defined( _WIN32 )
+//#define PRELOAD(name) __declspec(allocate(".CRT$XCAA")) void CPROC name(void)
+//#pragma section(".CRT$XCA",long,read)
+//#pragma section(".CRT$XCZ",long,read)
+// put init in both C startup and C++ startup list...
+// looks like only one or the other is invoked, not both?
+/////// also the variables to be put into these segments
+#if defined( __cplusplus_cli )
+#define LOG_ERROR(n) System::Console::WriteLine( gcnew System::String(n) + gcnew System::String( myname) ) )
+#else
+#define LOG_ERROR(n) SystemLog( n )
+// since we get linked first, then the runtime is added, we have to link against the last indicator of section,
+// so we get put between start to end.
+#define _STARTSEG_ ".CRT$XIM"
+#define _STARTSEG2_ ".CRT$XCY"
+#define _ENDSEG_ ".CRT$XTM"
+//#pragma data_seg(".CRT$XIA")
+#pragma data_seg(".CRT$XIM")
+#pragma section(".CRT$XIM",long,read)
+#pragma data_seg(".CRT$XCY")
+#pragma section(".CRT$XCY",long,read)
+//#pragma data_seg(".CRT$XIZ")
+//#pragma data_seg(".CRT$YCZ")
+#pragma data_seg(".CRT$XTM")
+#pragma section(".CRT$XTM",long,read)
+#pragma data_seg()
+	                                       /*static __declspec(allocate(_STARTSEG_)) void (CPROC*pointer_##name)(void) = pastejunk(schedule_,name);*/
+#define PRIORITY_PRELOAD(name,priority) static void CPROC name(void);    static int CPROC pastejunk(schedule_,name)(void);	   __declspec(allocate(_STARTSEG_)) int (CPROC*pastejunk(TARGET_LABEL,pastejunk( pastejunk(x_,name),__LINE__)))(void) = pastejunk(schedule_,name);	 int CPROC pastejunk(schedule_,name)(void) {	                 RegisterPriorityStartupProc( name,TOSTR(name),priority,pastejunk(TARGET_LABEL,pastejunk( pastejunk(x_,name),__LINE__)) DBG_SRC );	return 0;	 }	 static void CPROC name(void)
+#define ROOT_ATEXIT(name) static void name(void);	 __declspec(allocate(_ENDSEG_)) static void (*f##name)(void)=name;    static void name(void)
+#define ATEXIT(name) PRIORITY_ATEXIT(name,ATEXIT_PRIORITY_DEFAULT)
+typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
+#define PRIORITY_ATEXIT(name,priority) static void CPROC name(void);    static int schedule_atexit_##name(void);	   __declspec(allocate(_STARTSEG_)) void (CPROC*pastejunk(TARGET_LABEL,pastejunk( x_##name,__LINE__)))(void) = (void(CPROC*)(void))schedule_atexit_##name;	 static int schedule_atexit_##name(void) {	                 RegisterPriorityShutdownProc( name,TOSTR(name),priority,pastejunk(TARGET_LABEL,pastejunk( x_##name,__LINE__)) DBG_SRC );	return 0;	 }	                                       static void CPROC name(void)
+#define ATEXIT_PRIORITY(name,priority) PRIORITY_ATEXIT(name,priority)
+#endif
+#ifdef __cplusplus_cli
+#define InvokeDeadstart() do {	                                              TEXTCHAR myname[256];HMODULE mod;	 mod=LoadLibrary("sack_bag.dll");if(mod){           void(*rsp)(void);	 if((rsp=((void(*)(void))(GetProcAddress( mod, "RunDeadstart"))))){rsp();}else{lprintf( "Hey failed to get proc %d", GetLastError() );}	FreeLibrary( mod); }} while(0)
+#else
+#endif
+#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
+//extern uint32_t deadstart_complete;
+//#define DEADSTART_LINK uint32_t *deadstart_link_couple = &deadstart_complete; // make sure we reference this symbol
+//#pragma data_seg(".CRT$XCAA")
+//extern void __cdecl __security_init_cookie(void);
+//static _CRTALLOC(".CRT$XCAA") _PVFV init_cookie = __security_init_cookie;
+//#pragma data_seg()
+//------------------------------------------------------------------------------------
+// UNDEFINED
+//------------------------------------------------------------------------------------
+#else
+#error "there's nothing I can do to wrap PRELOAD() or ATEXIT()!"
+/* This is the most basic way to define some startup code that
+   runs at some point before the program starts. This code is
+   declared as static, so the same preload initialization name
+   can be used in multiple files.
+   <link sack::app::deadstart, See Also.>                      */
+#define PRELOAD(name)
+#endif
+// the higher the number the earlier it is run
+#define ATEXIT_PRIORITY_SHAREMEM  1
+#define ATEXIT_PRIORITY_THREAD_SEMS ATEXIT_PRIORITY_SYSLOG-1
+#define ATEXIT_PRIORITY_SYSLOG    35
+#define ATEXIT_PRIORITY_MSGCLIENT 85
+#define ATEXIT_PRIORITY_DEFAULT   90
+#define ATEXIT_PRIORITY_TIMERS   (ATEXIT_PRIORITY_DEFAULT+1)
+// this is the first exit to be run.
+// under linux it is __attribute__((destructor))
+// under all it is registered during preload as atexit()
+// only the runexits in deadstart should use ROOT_ATEXIT
+#ifdef __WATCOMC__
+#define ATEXIT_PRIORITY_ROOT 255
+#else
+#define ATEXIT_PRIORITY_ROOT 101
+#endif
+SACK_DEADSTART_NAMESPACE_END
+USE_SACK_DEADSTART_NAMESPACE
+#endif
+#ifdef PROCREG_SOURCE
+#define PROCREG_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define PROCREG_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#ifdef __cplusplus
+#ifdef __cplusplus_cli
+//using namespace System;
+#endif
+#   define _INTERFACE_NAMESPACE namespace Interface {
+#   define _INTERFACE_NAMESPACE_END }
+#define PROCREG_NAMESPACE namespace sack { namespace app { namespace registry {
+#define _PROCREG_NAMESPACE namespace registry {
+#define _APP_NAMESPACE namespace app {
+#define PROCREG_NAMESPACE_END }}}
+//extern "C"  {
+#else
+#   define _INTERFACE_NAMESPACE
+#   define _INTERFACE_NAMESPACE_END
+#define _PROCREG_NAMESPACE
+#define _APP_NAMESPACE
+#define PROCREG_NAMESPACE
+#define PROCREG_NAMESPACE_END
+#endif
+SACK_NAMESPACE
+/* Deadstart is support which differs per compiler, but allows
+   applications access a C++ feature - static classes with
+   constructors that initialize at loadtime, but, have the
+   feature that you can create threads. Deadstart code is run
+   after the DLL load lock under windows that prevents creation
+   of threads; however, deadstart is run before main. Deadstart
+   routines can have a priority. Certain features require others
+   to be present always. This allows explicit control of
+   priority unlink using classes with static constructors, which
+   requires ordering of objects to provide linking order. Also
+   provides a similar registration mechanism for atexit, but
+   extending with priority. Deadstop registrations are done
+   sometime during normal C atexit() handling, but may be
+   triggered first by calling BAG_Exit.
+   Registry offers support to register functions, and data under
+   a hierarchy of names. Names are kept in a string cache, which
+   applications can take benefit of. Strings will exist only a
+   single time. This table could be saved, and a look-aside
+   table for language translation purposes. Registry is the
+   support that the latest PSI relies on for registering event
+   callbacks for controls. The registry was always used, but,
+   the access to it was encapsulated by DoRegisterControl
+   registering the appropriate methods.                          */
+	_APP_NAMESPACE
+   /* Contains methods dealing with registering routines and values
+      in memory. Provisions are available to save the configuration
+      state, but the best that can be offered here would be a
+      translation tool for text strings. The namespace is savable,
+      but most of the content of the registration space are short
+      term pointers. Namespace containing registry namespace.
+      old notes - very discongruant probably should delete them.
+      Process name registry
+      it's a tree of names.
+      there are paths, and entries
+      paths are represented as class_name
+      PCLASSROOT is also a suitable class name
+      PCLASSROOT is defined as a valid CTEXTSTR.
+      there is (apparently) a name that is not valid as a path name
+      that is TREE
+      guess.
+      POINTER in these two are equal to (void(*)(void)) but -
+      that's rarely the most useful thing... so
+      name class is a tree of keys... /\<...\>
+      psi/control/## might contain procs Init Destroy Move
+      RegAlias( "psi/control/3", "psi/control/button"
+      ); psi/control/button and psi/control/3 might reference the
+      same routines
+      psi/frame Init Destroy Move memlib Alloc Free
+      network/tcp
+      I guess name class trees are somewhat shallow at the moment
+      not going beyond 1-3 layers
+      names may eventually be registered and reference out of body
+      services, even out of box...
+      the values passed as returntype and parms/args need not be
+      real genuine types, but do need to be consistant between the
+      registrant and the requestor... this provides for full name
+      dressing, return type and paramter type may both cause
+      overridden functions to occur...                              */
+_PROCREG_NAMESPACE
+#ifndef REGISTRY_STRUCTURE_DEFINED
+	// make these a CTEXTSTR to be compatible with name_class...
+#ifdef __cplusplus
+	// because of name mangling and stronger type casting
+	// it becomes difficult to pass a tree_def_tag * as a CTEXTSTR classname
+	// as valid as this is.
+	typedef struct tree_def_tag const * PCLASSROOT;
+#else
+	typedef CTEXTSTR PCLASSROOT;
+#endif
+	typedef void (CPROC *PROCEDURE)(void);
+#ifdef __cplusplus_cli
+	typedef void (__stdcall *STDPROCEDURE)(array<System::Object^>^);
+#endif
+#else
+	typedef struct tree_def_tag const * PCLASSROOT;
+	typedef void (CPROC *PROCEDURE)(void);
+#ifdef __cplusplus_cli
+	typedef void (__stdcall *STDPROCEDURE)(array<System::Object^>^);
+#endif
+#endif
+/* CheckClassRoot reads for a path of names, but does not create
+   it if it does not exist.                                      */
+PROCREG_PROC( PCLASSROOT, CheckClassRoot )( CTEXTSTR class_name );
+/* \Returns a PCLASSROOT of a specified path. The path may be
+   either a PCLASSROOT or a text string indicating the path. the
+   Ex versions allow passing a base PCLASSROOT path and an
+   additional subpath to get. GetClassRoot will always create
+   the path if it did not exist before, and will always result
+   with a root.
+   Remarks
+   a CTEXTSTR (plain text string, probably wide character if
+   compiled unicode) and a PCLASSROOT are always
+   interchangeable. Though you may need a forced type cast, I
+   have defined both CTEXTSTR and PCLASSROOT function overloads
+   for c++ compiled code, and C isn't so unkind about the
+   conversion. I think problem might lie that CTEXTSTR has a
+   const qualifier and PCLASSROOT doesn't (but should).
+   Example
+   <code lang="c++">
+   PCLASSROOT root = GetClassRoot( "psi/resource" );
+   // returns the root of all resource names.
+   </code>
+   <code>
+   PCLASSROOT root2 = GetClassRootEx( "psi/resource", "buttons" );
+   </code>                                                         */
+PROCREG_PROC( PCLASSROOT, GetClassRoot )( CTEXTSTR class_name );
+/* <combine sack::app::registry::GetClassRoot@CTEXTSTR>
+   \ \                                                  */
+PROCREG_PROC( PCLASSROOT, GetClassRootEx )( PCLASSROOT root, CTEXTSTR name_class );
+#ifdef __cplusplus
+/* <combine sack::app::registry::GetClassRoot@CTEXTSTR>
+   \ \                                                  */
+PROCREG_PROC( PCLASSROOT, GetClassRoot )( PCLASSROOT class_name );
+/* <combine sack::app::registry::GetClassRoot@CTEXTSTR>
+   \ \                                                  */
+PROCREG_PROC( PCLASSROOT, GetClassRootEx )( PCLASSROOT root, PCLASSROOT name_class );
+#endif
+/* Fills a string with the path name to the specified node */
+PROCREG_PROC( int, GetClassPath )( TEXTSTR out, size_t len, PCLASSROOT root );
+PROCREG_PROC( void, SetInterfaceConfigFile )( TEXTCHAR *filename );
+/* Get[First/Next]RegisteredName( "classname", &amp;data );
+   these operations are not threadsafe and multiple thread
+   accesses will cause mis-stepping
+   These functions as passed the address of a POINTER. this
+   POINTER is for the use of the browse routines and should is
+   meaningless to he calling application.
+   Parameters
+   root :       The root to search from
+   classname :  A sub\-path from the root to search from
+   data :       the address of a pointer that keeps track of
+                information about the search. (opaque to user)
+   Example
+   Usage:
+   <code lang="c++">
+   CTEXTSTR result;
+   POINTER data = NULL;
+   for( result = GetFirstRegisteredName( "some/class/path", &amp;data );
+        \result;
+        \result = GetNextRegisteredName( &amp;data ) )
+   {
+        // result is a string name of the current node.
+        // can use that name and GetRegistered____ (function/int/value)
+        if( NameHasBranches( &amp;data ) ) // for consitancy in syntax
+        {
+            // consider recursing through tree, name becomes a valid classname for GetFirstRegisteredName()
+        }
+   }
+   </code>                                                                                                  */
+PROCREG_PROC( CTEXTSTR, GetFirstRegisteredNameEx )( PCLASSROOT root, CTEXTSTR classname, PCLASSROOT *data );
+#ifdef __cplusplus
+/* <combine sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *>
+   \ \                                                                                      */
+	PROCREG_PROC( CTEXTSTR, GetFirstRegisteredName )( PCLASSROOT classname, PCLASSROOT *data );
+#endif
+/* <combine sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *>
+   \ \                                                                                      */
+PROCREG_PROC( CTEXTSTR, GetFirstRegisteredName )( CTEXTSTR classname, PCLASSROOT *data );
+/* Steps to the next registered name being browsed. Is passed
+   only the pointer to data. See GetFirstRegisteredName for
+   usage.
+   See Also
+   <link sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *, sack::app::registry::GetFirstRegisteredNameEx Function> */
+PROCREG_PROC( CTEXTSTR, GetNextRegisteredName )( PCLASSROOT *data );
+/* When using GetFirstRegisteredName and GetNextRegisteredName
+   to browse through names, this function is able to get the
+   current PCLASSROOT of the current node, usually you end up
+   with just the content of that registered name.
+   \result with the current node ( useful for pulling registered
+   subvalues like description, or file and line )
+                                                                 */
+PROCREG_PROC( PCLASSROOT, GetCurrentRegisteredTree )( PCLASSROOT *data );
+#ifdef __cplusplus
+//PROCREG_PROC( CTEXTSTR, GetFirstRegisteredName )( CTEXTSTR classname, POINTER *data );
+//PROCREG_PROC( CTEXTSTR, GetNextRegisteredName )( POINTER *data );
+#endif
+// while doing a scan for registered procedures, allow applications to check for branches
+//PROCREG_PROC( int, NameHasBranches )( POINTER *data );
+PROCREG_PROC( int, NameHasBranches )( PCLASSROOT *data );
+// while doing a scan for registered procedures, allow applications to ignore aliases...
+PROCREG_PROC( int, NameIsAlias )( PCLASSROOT *data );
+/*
+ * RegisterProcedureExx(
+ *
+ */
+ // root name or PCLASSROOT of base path
+PROCREG_PROC( int, RegisterProcedureExx )( PCLASSROOT root
+ // an additional path on root
+													  , CTEXTSTR name_class
+ // the name of the value entry saved in the tree
+													  , CTEXTSTR public_name
+ // the text return type of this function - may be checked to validate during GetRegisteredProcedure
+													  , CTEXTSTR returntype
+ // name of the library this symbol is in - may be checked to validate during GetRegisteredProcedure
+													  , CTEXTSTR library
+ // actual C function name in library - may be checked to validate during GetRegisteredProcedure
+													  , CTEXTSTR name
+ // preferably the raw argument string of types and no variable references "([type][,type]...)"
+													  , CTEXTSTR args
+ // file and line of the calling application.  May be no parameter in release mode.
+													  DBG_PASS
+													  );
+/*
+ * RegisterProcedureEx( root       // root path
+ *                    , name_class // additional name
+ *                    , nice_name  // nice name
+ *                    , return type not in quotes  'void'
+ *                    , function_name in quotes '"Function"'
+ *                    , args not in quotes '(int,char,float,UserType*)'
+ */
+#define RegisterProcedureEx(root,nc,n,rtype,proc,args)  RegisterProcedureExx( (root),(nc),(n),#rtype,TARGETNAME,(proc), #args DBG_SRC)
+/*
+ * RegisterProcedure( name_class // additional name
+ *                    , nice_name  // nice name
+ *                    , return type not in quotes  'void'
+ *                    , function_name in quotes '"Function"'
+ *                    , args not in quotes '(int,char,float,UserType*)'
+ */
+#define RegisterProcedure(nc,n,rtype,proc,args)  RegisterProcedureExx( NULL, (nc),(n),#rtype,TARGETNAME,(proc), #args DBG_SRC)
+/*
+ * Branches on the tree may be aliased together to form a single branch
+ *
+ */
+				// RegisterClassAlias( "psi/control/button", "psi/control/3" );
+				// then the same set of values can be referenced both ways with
+				// really only a single modified value.
+/* parameters to RegisterClassAliasEx are the original name, and the new alias name for the origianl branch*/
+PROCREG_PROC( PCLASSROOT, RegisterClassAliasEx )( PCLASSROOT root, CTEXTSTR original, CTEXTSTR alias );
+/* <combine sack::app::registry::RegisterClassAliasEx@PCLASSROOT@CTEXTSTR@CTEXTSTR>
+   \ \                                                                              */
+PROCREG_PROC( PCLASSROOT, RegisterClassAlias )( CTEXTSTR original, CTEXTSTR newalias );
+// root, return, public, args, address
+PROCREG_PROC( PROCEDURE, ReadRegisteredProcedureEx )( PCLASSROOT root
+                                                    , CTEXTSTR returntype
+																	 , CTEXTSTR parms
+																  );
+#define ReadRegisteredProcedure( root,rt,a) ((rt(CPROC*)a)ReadRegisteredProcedureEx(root,#rt,#a))
+/* Gets a function that has been registered. */
+PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( PCLASSROOT root
+																	 , PCLASSROOT name_class
+                                                    , CTEXTSTR returntype
+																	 , CTEXTSTR name
+																	 , CTEXTSTR parms
+																	 );
+#define GetRegisteredProcedureExx(root,nc,rt,n,a) ((rt (CPROC*)a)GetRegisteredProcedureExxx(root,nc,#rt,n,#a))
+#define GetRegisteredProcedure2(nc,rtype,name,args) (rtype (CPROC*)args)GetRegisteredProcedureEx((nc),#rtype, name, #args )
+#define GetRegisteredProcedureNonCPROC(nc,rtype,name,args) (rtype (*)args)GetRegisteredProcedureEx((nc),#rtype, name, #args )
+/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
+   \ \                                                                                                        */
+PROCREG_PROC( PROCEDURE, GetRegisteredProcedureEx )( PCLASSROOT name_class
+																	, CTEXTSTR returntype
+																	, CTEXTSTR name
+																	, CTEXTSTR parms
+																	);
+PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
+													, PCLASSROOT name_class
+													, CTEXTSTR public_name
+													, CTEXTSTR returntype
+													, PROCEDURE proc
+													 , CTEXTSTR args
+													 , CTEXTSTR library
+													 , CTEXTSTR real_name
+													  DBG_PASS
+														  );
+#ifdef __cplusplus
+/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
+   \ \                                                                                                        */
+PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( CTEXTSTR root
+																	 , CTEXTSTR name_class
+                                                    , CTEXTSTR returntype
+																	 , CTEXTSTR name
+																	 , CTEXTSTR parms
+																	 );
+/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
+   \ \                                                                                                        */
+PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( CTEXTSTR root
+																	 , PCLASSROOT name_class
+                                                    , CTEXTSTR returntype
+																	 , CTEXTSTR name
+																	 , CTEXTSTR parms
+																	 );
+/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
+   \ \                                                                                                        */
+PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( PCLASSROOT root
+																	 , CTEXTSTR name_class
+                                                    , CTEXTSTR returntype
+																	 , CTEXTSTR name
+																	 , CTEXTSTR parms
+																	 );
+/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
+   \ \                                                                                                        */
+PROCREG_PROC( PROCEDURE, GetRegisteredProcedureEx )( CTEXTSTR name_class
+																	, CTEXTSTR returntype
+																	, CTEXTSTR name
+																	, CTEXTSTR parms
+																	);
+PROCREG_PROC( LOGICAL, RegisterFunctionExx )( CTEXTSTR root
+													, CTEXTSTR name_class
+													, CTEXTSTR public_name
+													, CTEXTSTR returntype
+                                       , PROCEDURE proc
+													 , CTEXTSTR args
+													 , CTEXTSTR library
+													 , CTEXTSTR real_name
+													  DBG_PASS
+														  );
+#endif
+//#define RegisterFunctionExx( r,nc,p,rt,proc,ar ) RegisterFunctionExx( r,nc,p,rt,proc,ar,TARGETNAME,NULL DBG_SRC )
+//#define RegisterFunctionEx(r,nc,pn,rt,proc,args,lib,rn) RegisterFunctionExx(r,nc,pn,rt,proc,args,lib,rn DBG_SRC)
+#define RegisterFunctionEx( root,proc,rt,pn,a) RegisterFunctionExx( root,NULL,pn,rt,(PROCEDURE)(proc),a,NULL,NULL DBG_SRC )
+#define RegisterFunction( nc,proc,rt,pn,a) RegisterFunctionExx( (PCLASSROOT)NULL,nc,pn,rt,(PROCEDURE)(proc),a,TARGETNAME,NULL DBG_SRC )
+#define SimpleRegisterMethod(r,proc,rt,name,args) RegisterFunctionExx(r,NULL,name,rt,(PROCEDURE)proc,args,NULL,NULL DBG_SRC )
+#define GetRegisteredProcedure(nc,rtype,name,args) (rtype (CPROC*)args)GetRegisteredProcedureEx((nc),#rtype, #name, #args )
+PROCREG_PROC( int, RegisterIntValueEx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name, uintptr_t value );
+PROCREG_PROC( int, RegisterIntValue )( CTEXTSTR name_class, CTEXTSTR name, uintptr_t value );
+PROCREG_PROC( int, RegisterValueExx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name, int bIntVal, CTEXTSTR value );
+PROCREG_PROC( int, RegisterValueEx )( CTEXTSTR name_class, CTEXTSTR name, int bIntVal, CTEXTSTR value );
+PROCREG_PROC( int, RegisterValue )( CTEXTSTR name_class, CTEXTSTR name, CTEXTSTR value );
+/* \ \
+   Parameters
+   root :        Root class to start searching from
+   name_class :  An additional sub\-path to get the name from
+   name :        the name within the path specified
+   bIntVal :     a true/false whether to get the string or
+                 integer value from the specified node.
+   Returns
+   A pointer to a string if bIntVal is not set. (NULL if there
+   was no string).
+   Otherwise will be an int shorter than or equal to the size of
+   a pointer, which should be cast to an int if bIntVal is set,
+   and there is a value registered there. Probably 0 if no
+   value, so registered 0 value and no value is
+   indistinguisable.                                             */
+PROCREG_PROC( CTEXTSTR, GetRegisteredValueExx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name, int bIntVal );
+/* <combine sack::app::registry::GetRegisteredValueExx@PCLASSROOT@CTEXTSTR@CTEXTSTR@int>
+   \ \                                                                                   */
+PROCREG_PROC( CTEXTSTR, GetRegisteredValueEx )( CTEXTSTR name_class, CTEXTSTR name, int bIntVal );
+/* <combine sack::app::registry::GetRegisteredValueExx@PCLASSROOT@CTEXTSTR@CTEXTSTR@int>
+   \ \                                                                                   */
+PROCREG_PROC( CTEXTSTR, GetRegisteredValue )( CTEXTSTR name_class, CTEXTSTR name );
+#ifdef __cplusplus
+/* <combine sack::app::registry::GetRegisteredValueExx@PCLASSROOT@CTEXTSTR@CTEXTSTR@int>
+   \ \                                                                                   */
+PROCREG_PROC( CTEXTSTR, GetRegisteredValueExx )( CTEXTSTR root, CTEXTSTR name_class, CTEXTSTR name, int bIntVal );
+PROCREG_PROC( int, RegisterIntValueEx )( CTEXTSTR root, CTEXTSTR name_class, CTEXTSTR name, uintptr_t value );
+#endif
+/* This is like GetRegisteredValue, but takes the address of the
+   type to return into instead of having to cast the final
+   \result.
+   if bIntValue, result should be passed as an (&amp;int)        */
+PROCREG_PROC( int, GetRegisteredStaticValue )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name
+															, CTEXTSTR *result
+															, int bIntVal );
+#define GetRegisteredStaticIntValue(r,nc,name,result) GetRegisteredStaticValue(r,nc,name,(CTEXTSTR*)result,TRUE )
+/* <combine sack::app::registry::GetRegisteredValueExx@PCLASSROOT@CTEXTSTR@CTEXTSTR@int>
+   \ \                                                                                   */
+PROCREG_PROC( int, GetRegisteredIntValueEx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name );
+/* <combine sack::app::registry::GetRegisteredIntValueEx@PCLASSROOT@CTEXTSTR@CTEXTSTR>
+   \ \                                                                                 */
+PROCREG_PROC( int, GetRegisteredIntValue )( CTEXTSTR name_class, CTEXTSTR name );
+#ifdef __cplusplus
+/* <combine sack::app::registry::GetRegisteredIntValueEx@PCLASSROOT@CTEXTSTR@CTEXTSTR>
+   \ \                                                                                 */
+PROCREG_PROC( int, GetRegisteredIntValue )( PCLASSROOT name_class, CTEXTSTR name );
+#endif
+typedef void (CPROC*OpenCloseNotification)( POINTER, uintptr_t );
+#define PUBLIC_DATA( public, struct, open, close )	    PRELOAD( Data_##open##_##close ) {	 RegisterDataType( "system/data/structs"	        , public, sizeof(struct)	    , (OpenCloseNotification)open, (OpenCloseNotification)close ); }
+#define PUBLIC_DATA_EX( public, struct, open, update, close )	    PRELOAD( Data_##open##_##close ) {	 RegisterDataTypeEx( "system/data/structs"	        , public, sizeof(struct)	    , (OpenCloseNotification)open, (OpenCloseNotification)update, (OpenCloseNotification)close ); }
+#define GET_PUBLIC_DATA( public, type, instname )    (type*)CreateRegisteredDataType( "system/data/structs", public, instname )
+PROCREG_PROC( uintptr_t, RegisterDataType )( CTEXTSTR classname
+												 , CTEXTSTR name
+												 , uintptr_t size
+												 , OpenCloseNotification open
+												 , OpenCloseNotification close );
+/* Registers a structure as creatable in shared memory by name.
+   So a single name of the structure can be used to retrieve a
+   pointer to one created.
+   Example
+   \ \
+   <code lang="c++">
+   POINTER p = CreateRegisteredDataType( "My types", "my_registered_type", "my instance" );
+   // p will result to a region of type 'my_registered_type' called 'my_instance'
+   // if it did not exist, it will be created, otherwise the one existing is returned.
+   </code>
+   Parameters
+   root :          optional root name (ex version uses this)
+   classname :     path to the type
+   name :          name of the type to create an instance of
+   instancename :  a name for the instance created.                                         */
+PROCREG_PROC( uintptr_t, CreateRegisteredDataType)( CTEXTSTR classname
+																 , CTEXTSTR name
+																 , CTEXTSTR instancename );
+PROCREG_PROC( uintptr_t, RegisterDataTypeEx )( PCLASSROOT root
+													, CTEXTSTR classname
+													, CTEXTSTR name
+													, uintptr_t size
+													, OpenCloseNotification Open
+													, OpenCloseNotification Close );
+/* <combine sack::app::registry::CreateRegisteredDataType@CTEXTSTR@CTEXTSTR@CTEXTSTR>
+   \ \                                                                                */
+PROCREG_PROC( uintptr_t, CreateRegisteredDataTypeEx)( PCLASSROOT root
+																	, CTEXTSTR classname
+																	, CTEXTSTR name
+																	, CTEXTSTR instancename );
+/* Outputs through syslog a tree dump of all names registered. */
+PROCREG_PROC( void, DumpRegisteredNames )( void );
+/* Dumps through syslog all names registered from the specified
+   root point. (instead of dumping the whole tree)              */
+PROCREG_PROC( void, DumpRegisteredNamesFrom )( PCLASSROOT root );
+PROCREG_PROC( int, SaveTree )( void );
+PROCREG_PROC( int, LoadTree )( void );
+#define METHOD_PTR(type,name) type (CPROC *_##name)
+#define DMETHOD_PTR(type,name) type (CPROC **_##name)
+#define METHOD_ALIAS(i,name) ((i)->_##name)
+#define PDMETHOD_ALIAS(i,name) (*(i)->_##name)
+/* Releases an interface. When interfaces are registered, they
+   register with a OnGetInterface and an OnDropInterface
+   callback so that it may do additional work to cleanup from
+   giving you a copy of the interface.
+   Example
+   <code lang="c++">
+   POINTER p = GetInterface( "image" );
+   DropInterface( p );
+   </code>                                                     */
+PROCREG_PROC( void, DropInterface )( CTEXTSTR pServiceName, POINTER interface_x );
+PROCREG_PROC( POINTER, GetInterface_v4 )( CTEXTSTR pServiceName, LOGICAL ReadConfig, int quietFail DBG_PASS );
+#define GetInterfaceV4( a, b )  GetInterface_v4( a, FALSE, b DBG_SRC )
+/* \Returns the pointer to a registered interface. This is
+   typically a structure that contains pointer to functions. Takes
+   a text string to an interface. Interfaces are registered at a
+   known location in the registry tree.                            */
+PROCREG_PROC( POINTER, GetInterfaceDbg )( CTEXTSTR pServiceName DBG_PASS );
+#define GetInterface(n) GetInterfaceDbg( n DBG_SRC )
+#define GetRegisteredInterface(name) GetInterface(name)
+PROCREG_PROC( LOGICAL, RegisterInterfaceEx )( CTEXTSTR name, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER) DBG_PASS );
+//PROCREG_PROC( LOGICAL, RegisterInterface )(CTEXTSTR name, POINTER( CPROC*load )(void), void(CPROC*unload)(POINTER));
+#define RegisterInterface(n,l,u) RegisterInterfaceEx( n,l,u DBG_SRC )
+// unregister a function, should be smart and do full return type
+// and parameters..... but for now this only references name, this indicates
+// that this has not been properly(fully) extended, and should be layered
+// in such a way as to allow this function work in it's minimal form.
+PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
+													, CTEXTSTR name_class
+													, CTEXTSTR public_name
+													  );
+#define ReleaseRegisteredFunction(nc,pn) ReleaseRegisteredFunctionEx(NULL,nc,pn)
+/* This is a macro used to paste two symbols together. */
+#define paste_(a,b) a##b
+#define paste(a,b) paste_(a,b)
+#define preproc_symbol(a)  a
+#ifdef __cplusplus
+#define EXTRA_PRELOAD_SYMBOL _
+#else
+#define EXTRA_PRELOAD_SYMBOL
+#endif
+#define DefineRegistryMethod2_i(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),preproc_symbol(EXTRA_PRELOAD_SYMBOL)),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task "/" classtype, paste(name,line)	  , #returntype, methodname, #argtypes );    RegisterValue( task "/" classtype "/" methodname, "Description", desc ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   DefineRegistryMethod2_i(task,name,classtype,methodname,desc,returntype,argtypes,line)
+/* Dekware uses this macro.
+     passes preload priority override.
+	 so it can register new internal commands before initial macros are run.
+*/
+#define DefineRegistryMethod2P_i(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),preproc_symbol(EXTRA_PRELOAD_SYMBOL)),line), priority ) {	  SimpleRegisterMethod( task "/" classtype, paste(name,line)	  , #returntype, methodname, #argtypes );    RegisterValue( task "/" classtype "/" methodname, "Description", desc ); }	                                                                          static returntype CPROC paste(name,line)
+/* This macro indirection is to resolve inner macros like "" around text.  */
+#define DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   DefineRegistryMethod2P_i(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)
+/*
+    This method is used by PSI/Intershell.
+	no description
+*/
+#define DefineRegistryMethod_i(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(paste(Register##name##Button,preproc_symbol(EXTRA_PRELOAD_SYMBOL)),line) ) {	  SimpleRegisterMethod( task "/" classtype "/" classbase, paste(name,line)	  , #returntype, methodname, #argtypes ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   DefineRegistryMethod_i(task,name,classtype,classbase,methodname,returntype,argtypes,line)
+/*
+#define _0_DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   static returntype _1__DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes)	  _1__DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
+*/
+// this macro is used for ___DefineRegistryMethodP. Because this is used with complex names
+// an extra define wrapper of priority_preload must be used to fully resolve paramters.
+/*
+#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(paset(Register##name##Button,preproc_symbol(EXTRA_PRELOAD_SYMBOL),line), priority ) {	  SimpleRegisterMethod( task "/" classtype "/" classbase, paste(name,line)	  , #returntype, methodname, #argtypes ); }	                                                                          static returntype CPROC paste(name,line)
+*/
+/* <combine sack::app::registry::SimpleRegisterMethod>
+   General form to build a registered procedure. Used by simple
+   macros to create PRELOAD'ed registered functions. This flavor
+   requires the user to provide 'static' and a return type that
+   matches the return type specified in the macro. This makes
+   usage most C-like, and convenient to know what the return
+   value of a function should be (if any).
+   Parameters
+   priority :    The preload priority to load at.
+   task :        process level name registry. This would be
+                 "Intershell" or "psi" or some other base prefix.
+                 The prefix can contain a path longer than 1
+                 level.
+   name :        This is the function name to build. (Can be used
+                 for link debugging sometimes)
+   classtype :   class of the name being registered
+   methodname :  name of the routine to register
+   returntype :  the literal type of the return type of this
+                 function (void, int, PStruct* )
+   argtypes :    Argument signature of the routine in parenthesis
+   line :        this is usually filled with __LINE__ so that the
+                 same function name (name) will be different in
+                 different files (even in the same file)
+   Remarks
+   This registers a routine at the specified preload priority.
+   Registers under [task]/[classname]/methodname. The name of
+   the registered routine from a C perspective is [name][line]. This
+   function is not called directly, but will only be referenced
+   from the registered name.
+   Example
+   See <link sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *, GetFirstRegisteredNameEx> */
+/*
+#define _1__DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   _2___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define _0_DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   _1__DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
+#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes)	  _0_DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
+*/
+#define DefineRegistrySubMethod_i(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(paste(Register##name##Button,preproc_symbol(EXTRA_PRELOAD_SYMBOL)),line) ) {	  SimpleRegisterMethod( task "/" classtype "/" classbase "/" methodname, paste(name,line)	  , #returntype, subname, #argtypes ); }	                                                                          static returntype CPROC paste(name,line)
+#define DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes)	  DefineRegistrySubMethod_i(task,name,classtype,classbase,methodname,subname,returntype,argtypes,__LINE__)
+/* attempts to use dynamic linking functions to resolve passed
+   global name if that fails, then a type is registered for this
+   global, and an instance created, so that that instance may be
+   reloaded again, otherwise the data in the main application is
+   used... actually we should deprecate the dynamic loading
+   part, and just register the type.
+   SimpleRegisterAndCreateGlobal Simply registers the type as a
+   global variable type. Allows creation of the global space
+   later.
+   Parameters
+   name :         name of the pointer to global type to create.<p />text
+                  string to register this created global as.
+   ppGlobal :     address of the pointer to global memory.
+   global_size :  size of the global area to create
+   Example
+   <code lang="c++">
+   typedef struct {
+      int data;
+   } my_global;
+   my_global *global;
+   PRELOAD( Init )
+   {
+       SimpleRegisterAndCreateGlobal( global );
+   }
+   </code>                                                               */
+PROCREG_PROC( void, RegisterAndCreateGlobal )( POINTER *ppGlobal, uintptr_t global_size, CTEXTSTR name );
+/* <combine sack::app::registry::RegisterAndCreateGlobal@POINTER *@uintptr_t@CTEXTSTR>
+   \ \                                                                                   */
+#define SimpleRegisterAndCreateGlobal( name )	 RegisterAndCreateGlobal( (POINTER*)&name, sizeof( *name ), #name )
+/* Init routine is called, otherwise a 0 filled space is
+   returned. Init routine is passed the pointer to the global
+   and the size of the global block the global data block is
+   zero initialized.
+   Parameters
+   ppGlobal :     Address of the pointer to the global region
+   global_size :  size of the global region to create
+   name :         name of the global region to register (so
+                  future users get back the same data area)
+   Init :         function to call to initialize the region when
+                  created. (doesn't have to be a global. Could be
+                  used to implement types that have class
+                  constructors \- or not, since there's only one
+                  instance of a global \- this is more for
+                  singletons).
+   Example
+   <code>
+   typedef struct {
+      int data;
+   } my_global;
+   my_global *global;
+   </code>
+   <code lang="c++">
+   void __cdecl InitRegion( POINTER region, uintptr_t region_size )
+   {
+       // do something to initialize 'region'
+   }
+   PRELOAD( InitGlobal )
+   {
+       SimpleRegisterAndCreateGlobalWithInit( global, InitRegion );
+   }
+   </code>                                                          */
+PROCREG_PROC( void, RegisterAndCreateGlobalWithInit )( POINTER *ppGlobal, uintptr_t global_size, CTEXTSTR name, void (CPROC*Init)(POINTER,uintptr_t) );
+/* <combine sack::app::registry::RegisterAndCreateGlobalWithInit@POINTER *@uintptr_t@CTEXTSTR@void __cdecl*InitPOINTER\,uintptr_t>
+   \ \                                                                                                                              */
+#define SimpleRegisterAndCreateGlobalWithInit( name,init )	 RegisterAndCreateGlobalWithInit( (POINTER*)&name, sizeof( *name ), #name, init )
+/* a tree dump will result with dictionary names that may translate automatically. */
+/* This has been exported as a courtesy for StrDup.
+ * this routine MAY result with a translated string.
+ * this routine MAY result with the same pointer.
+ * this routine MAY need to be improved if MANY more strdups are replaced
+ * Add a binary tree search index when large.
+ * Add a transaltion tree index at the same time.
+ */
+PROCREG_PROC( CTEXTSTR, SaveNameConcatN )( CTEXTSTR name1, ... );
+// no space stripping, saves literal text
+PROCREG_PROC( CTEXTSTR, SaveText )( CTEXTSTR text );
+PROCREG_NAMESPACE_END
+#ifdef __cplusplus
+	using namespace sack::app::registry;
+#endif
+#endif
+//#include <controls.h>
+// should consider merging these headers(?)
+#ifndef HTML5_WEBSOCKET_CLIENT_INCLUDED
+#define HTML5_WEBSOCKET_CLIENT_INCLUDED
+/*****************************************************
+so... what does the client provide?
+websocket protocol is itself wrapped in a frame, so messages are described with exact
+length, and what is received will be exactly like the block that was sent.
+*****************************************************/
+/* Generalized HTTP Processing. All POST, GET, RESPONSE packets
+   all fit within this structure.
+                                                                */
+#ifndef HTTP_PROCESSING_INCLUDED
+/* Multiple inclusion protection symbol */
+#define HTTP_PROCESSING_INCLUDED
+#ifdef HTTP_SOURCE
+#define HTTP_EXPORT EXPORT_METHOD
+#else
+/* Defines how external functions are referenced
+   (dllimport/export/extern)                     */
+#define HTTP_EXPORT IMPORT_METHOD
+#endif
+/* The API type of HTTP functions - default to CPROC. */
+#define HTTPAPI CPROC
+#ifdef __cplusplus
+/* A symbol to define the sub-namespace of HTTP_NAMESPACE  */
+#define _HTTP_NAMESPACE namespace http {
+/* A macro to end just the HTTP sub namespace. */
+#define _HTTP_NAMESPACE_END }
+#else
+#define _HTTP_NAMESPACE
+#define _HTTP_NAMESPACE_END
+#endif
+/* HTTP full namespace  */
+#define HTTP_NAMESPACE TEXT_NAMESPACE _HTTP_NAMESPACE
+/* Macro to use to define where http utility namespace ends. */
+#define HTTP_NAMESPACE_END _HTTP_NAMESPACE_END TEXT_NAMESPACE_END
+SACK_CONTAINER_NAMESPACE
+/* Text library functions. PTEXT is kept as a linked list of
+   segments of text. Each text segment has a size and the data,
+   and additional format flags. PTEXT may also be indirect
+   segments (that is this segment points at another list of
+   segments that are the actualy content for this place.
+                                                                */
+_TEXT_NAMESPACE
+	/* Simple HTTP Packet processing state. Its only intelligence is
+	   that there are fields of http header, and that one of those
+	   fields might be content-length; so it can seperate individual
+	   fields name-value pairs and the packet content.               */
+	_HTTP_NAMESPACE
+struct HttpField {
+	PTEXT name;
+	PTEXT value;
+};
+struct HTTPRequestHeader {
+	char* field;
+	char* value;
+};
+struct HTTPRequestOptions {
+  // deafult GET
+	const char* method;
+     // path part of the request
+	PTEXT url;
+ // address part of request (ip:port)
+	PTEXT address;
+ // list of TEXTCAHR*
+	PLIST headers;
+  // content to send with request, if any
+	CPOINTER content;
+// lengt of content to send with request
+	size_t contentLen;
+ // set to true to request over SSL;
+	LOGICAL ssl;
+ // HTTP Version ("1.0" default)
+	const char *httpVersion;
+ // defaults to 3 seconds if set to 0.
+	int timeout;
+ // defaults to 3 retries if set to 0.
+	int retries;
+ //optionally this can be used to specify the certain, if not set, uses parameter, which will otherwise be NULL.
+	const char* certChain;
+	LOGICAL rejectUnauthorized;
+	// specify the agent field, default to SACK(System)
+	const char* agent;
+	// if set, will be called when content buffer has been sent.
+	void ( *writeComplete )( uintptr_t userData );
+	uintptr_t userData;
+};
+typedef struct HttpState *HTTPState;
+enum ProcessHttpResult{
+	HTTP_STATE_RESULT_NOTHING = 0,
+	HTTP_STATE_RESULT_CONTENT = 200,
+    HTTP_STATE_RESULT_CONTINUE = 100,
+	HTTP_STATE_INTERNAL_SERVER_ERROR=500,
+	HTTP_STATE_RESOURCE_NOT_FOUND=404,
+   HTTP_STATE_BAD_REQUEST=400,
+};
+/* Creates an empty http state, the next operation should be
+   AddHttpData.                                              */
+HTTP_EXPORT HTTPState  HTTPAPI CreateHttpState( PCLIENT *pc );
+/*Get the http state associated with a network client */
+HTTP_EXPORT HTTPState HTTPAPI GetHttpState( PCLIENT pc );
+/* Destroys a http state, releasing all resources associated
+   with it.                                                  */
+HTTP_EXPORT void HTTPAPI DestroyHttpState( HTTPState pHttpState );
+HTTP_EXPORT
+ /* Add another bit of data to the block. After adding data,
+   ProcessHttp should be called to see if the data has completed
+   a packet.
+   Parameters
+   pHttpState :  state to add data to
+   buffer :      pointer to some data bytes
+   size :        length of data bytes
+   Returns: TRUE if content is added... if collecting chunked encoding may return FALSE.
+   */
+LOGICAL HTTPAPI AddHttpData( HTTPState pHttpState, CPOINTER buffer, size_t size );
+/* \returns TRUE if completed until content-length if
+   content-length is not specified, data is still collected, but
+   the status never results TRUE.
+	Parameters
+	pc : Occasionally the http processor needs to send data on the
+	     socket without application being aware it did.
+   pHttpState :  Http State to process (after having added data to
+                 it)
+   Return Value List
+   TRUE :   A completed HTTP packet has been gathered \- according
+            to 'content\-length' meta tag.
+   FALSE :  Still collecting full packet                           */
+//HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState );
+HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState, int (*send)(uintptr_t psv, CPOINTER buf, size_t len), uintptr_t psv );
+HTTP_EXPORT
+ /* Gets the specific result code at the header of the packet -
+   http 2.0 OK sort of thing.                                  */
+PTEXT HTTPAPI GetHttpResponse( HTTPState pHttpState );
+/* Get the method of the request in ht e http state.
+*/
+HTTP_EXPORT PTEXT HTTPAPI GetHttpMethod( struct HttpState *pHttpState );
+/*Get the value of a HTTP header field, by name
+   Parameters
+	pHttpState: the state to get the header field from.
+	name: name of the field to get (checked case insensitive)
+*/
+HTTP_EXPORT PTEXT HTTPAPI GetHTTPField( HTTPState pHttpState, CTEXTSTR name );
+/* Gets the specific request code at the header of the packet -
+   http 2.0 OK sort of thing.                                  */
+HTTP_EXPORT PTEXT HTTPAPI GetHttpRequest( HTTPState pHttpState );
+/* \Returns the body of the HTTP packet (the part of data
+   specified by content-length or by termination of the
+   connection(? think I didn't implement that right)      */
+HTTP_EXPORT PTEXT HTTPAPI GetHttpContent( HTTPState pHttpState );
+/* \Returns the resource path/name of the HTTP packet (the part of data
+   specified by content-length or by termination of the
+   connection(? think I didn't implement that right)      */
+HTTP_EXPORT PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
+/* Returns a list of fields that were included in a request header.
+   members of the list are of type struct HttpField.
+   see also: ProcessHttpFields and ProcessCGIFields
+*/
+HTTP_EXPORT PLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
+HTTP_EXPORT int HTTPAPI GetHttpVersion( HTTPState pHttpState );
+HTTP_EXPORT
+ /* Enumerates the various http header fields by passing them
+   each sequentially to the specified callback.
+   Parameters
+   pHttpState :  _nt_
+   _nt_ :        _nt_
+   psv :         _nt_                                        */
+void HTTPAPI ProcessCGIFields( HTTPState pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv );
+HTTP_EXPORT
+ /* Enumerates the various http header fields by passing them
+   each sequentially to the specified callback.
+   Parameters
+   pHttpState :  _nt_
+   _nt_ :        _nt_
+   psv :         _nt_                                        */
+void HTTPAPI ProcessHttpFields( HTTPState pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv );
+HTTP_EXPORT
+ /* Resets a processing state, so it can start collecting the
+   next state. After a ProcessHttp results with true, this
+   should be called after processing the packet content.
+   Parameters
+   pHttpState :  state to reset for next read...             */
+void HTTPAPI EndHttp( HTTPState pHttpState );
+HTTP_EXPORT
+/* reply message - 200/OK with this body, sent as Content-Type that was requested */
+void HTTPAPI SendHttpMessage( HTTPState pHttpState, PCLIENT pc, PTEXT body );
+HTTP_EXPORT
+/* generate response message, specifies the numeric (200), the text (OK), the content type field value, and the body to send */
+void HTTPAPI SendHttpResponse ( HTTPState pHttpState, PCLIENT pc, int numeric, CTEXTSTR text, CTEXTSTR content_type, PTEXT body );
+/* Callback type used when creating an http server.
+ If there is no registered handler match, then this is called.
+ This should return FALSE if there was no content, allowing a 404 status result.
+ Additional ways of dispatching need to be implemented (like handlers for paths, wildcards...)
+ */
+typedef LOGICAL (CPROC *ProcessHttpRequest)( uintptr_t psv
+												 , HTTPState pHttpState );
+HTTP_EXPORT
+/* Intended to create a generic http service, which you can
+   attach URL handlers to. Incomplete
+   Works mostly?  OnGet has been known to get called....
+   */
+struct HttpServer *CreateHttpServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv );
+HTTP_EXPORT
+/* Intended to create a generic http service, which you can
+   attach URL handlers to. Incomplete
+   Works mostly?  OnGet has been known to get called....
+   */
+struct HttpServer *CreateHttpsServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv );
+/* results with just the content of the message; no access to other information avaialble */
+HTTP_EXPORT PTEXT HTTPAPI PostHttp( PTEXT site, PTEXT resource, PTEXT content );
+/* results with just the content of the message; no access to other information avaialble */
+HTTP_EXPORT PTEXT HTTPAPI GetHttp( PTEXT site, PTEXT resource, LOGICAL secure );
+/* results with just the content of the message; no access to other information avaialble */
+HTTP_EXPORT PTEXT HTTPAPI GetHttps( PTEXT address, PTEXT url, const char *certChain );
+/* results with the http state of the message response; Allows getting other detailed information about the result */
+HTTP_EXPORT HTTPState HTTPAPI GetHttpsQueryEx( PTEXT address, PTEXT url, const char* certChain, struct HTTPRequestOptions* options );
+/* results with the http state of the message response; Allows getting other detailed information about the result */
+HTTP_EXPORT HTTPState  HTTPAPI PostHttpQuery( PTEXT site, PTEXT resource, PTEXT content );
+/* results with the http state of the message response; Allows getting other detailed information about the result */
+HTTP_EXPORT HTTPState  HTTPAPI GetHttpQuery( PTEXT site, PTEXT resource );
+/* results with the http state of the message response; Allows getting other detailed information about the result */
+HTTP_EXPORT HTTPState HTTPAPI GetHttpsQuery( PTEXT site, PTEXT resource, const char *certChain );
+/* return the numeric response code of a http reply. */
+HTTP_EXPORT int HTTPAPI GetHttpResponseCode( HTTPState pHttpState );
+/* return the text response code of an http reply */
+HTTP_EXPORT const char* HTTPAPI GetHttpResponseStatus( HTTPState pHttpState );
+#define CreateHttpServer(interface_address,site,psv) CreateHttpServerEx( interface_address,NULL,site,NULL,psv )
+#define CreateHttpServer2(interface_address,site,default_handler,psv) CreateHttpServerEx( interface_address,NULL,site,default_handler,psv )
+// receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
+// Return TRUE if processed, otherwise will attempt to match other Get Handlers
+#define OnHttpGet( site, resource )	 DefineRegistryMethod("SACK/Http/Methods",OnHttpGet,site,resource,"Get",LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+// receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
+// Return TRUE if processed, otherwise will attempt to match other Get Handlers
+#define OnHttpPost( site, resource )	 DefineRegistryMethod("SACK/Http/Methods",OnHttpPost,site,resource,"Post",LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+// define a specific handler for a specific resource name on a host
+#define OnHttpRequest( site, resource )	 DefineRegistryMethod("SACK/Http/Methods",OnHttpRequest,"something",site "/" resource,"Get",void,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
+//--------------------------------------------------------------
+//  URL.c  (url parsing utility)
+struct url_cgi_data
+{
+	CTEXTSTR name;
+	CTEXTSTR value;
+};
+struct url_data
+{
+	CTEXTSTR protocol;
+	CTEXTSTR user;
+	CTEXTSTR password;
+	CTEXTSTR host;
+	int default_port;
+  // encoding RFC3986 http://tools.ietf.org/html/rfc3986  specifies port characters are in the set of digits.
+	int port;
+	//CTEXTSTR port_data;  // during collection, the password may be in the place of 'port'
+	CTEXTSTR resource_path;
+	CTEXTSTR resource_file;
+	CTEXTSTR resource_extension;
+	CTEXTSTR resource_anchor;
+   // list of struct url_cgi_data *
+	PLIST cgi_parameters;
+};
+HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( const char *url );
+HTTP_EXPORT char *HTTPAPI SACK_BuildURL( struct url_data *data );
+HTTP_EXPORT void HTTPAPI SACK_ReleaseURL( struct url_data *data );
+	_HTTP_NAMESPACE_END
+TEXT_NAMESPACE_END
+#ifdef __cplusplus
+using namespace sack::containers::text::http;
+#endif
+#endif
+#ifdef __cplusplus
+#else
+#endif
+#ifdef SACK_WEBSOCKET_CLIENT_SOURCE
+#define WEBSOCKET_EXPORT EXPORT_METHOD
+#else
+#define WEBSOCKET_EXPORT IMPORT_METHOD
+#endif
+// the result returned from the web_socket_opened event will
+// become the new value used for future uintptr_t parameters to other events.
+typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
+typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv, int code, const char *reason );
+typedef void( *web_socket_http_close )(PCLIENT pc, uintptr_t psv);
+typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
+typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
+// protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
+typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
+typedef void (*web_socket_completion)( PCLIENT pc, uintptr_t psv, int binary, int bytesRead );
+ // passed psv used in server create; since it is sort of an open, return a psv for next states(if any)
+typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
+// these should be a combination of bit flags
+// options used for WebSocketOpen
+enum WebSocketOptions {
+	WS_DELAY_OPEN = 1,
+};
+//enum WebSockClientOptions {
+//   WebSockClientOption_Protocols
+//};
+// create a websocket connection.
+//  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
+//  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
+//  the application, and the application does not need to setup an  initial read.
+//  if protocols is NULL none are specified, otherwise the list of
+//  available protocols is sent to the server.
+WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
+                                      , enum WebSocketOptions options
+                                      , web_socket_opened
+                                      , web_socket_event
+                                      , web_socket_closed
+                                      , web_socket_error
+                                      , uintptr_t psv
+                                      , const char *protocols );
+// if WS_DELAY_OPEN is used, WebSocketOpen does not do immediate connect.
+// calling this begins the connection sequence.
+WEBSOCKET_EXPORT int WebSocketConnect( PCLIENT );
+// end a websocket connection nicely.
+// code must be 1000, or 3000-4999, and reason must be less than 123 characters (125 bytes with code)
+WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
+// there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, const char *, size_t );
+ // UTF8 RFC3629
+WEBSOCKET_EXPORT void WebSocketPipeBeginSendText( struct html5_web_socket*, const char *, size_t );
+// literal binary sending; this may happen to be base64 encoded too
+WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, const uint8_t *, size_t );
+WEBSOCKET_EXPORT void WebSocketPipeBeginSendBinary( struct html5_web_socket*, const uint8_t *, size_t );
+// there is a control bit for whether the content is text or binary or a continuation
+ // UTF8 RFC3629
+WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, const char *, size_t );
+ // UTF8 RFC3629
+WEBSOCKET_EXPORT void WebSocketPipeSendText( struct html5_web_socket*, const char *, size_t );
+// literal binary sending; this may happen to be base64 encoded too
+WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, const uint8_t *, size_t );
+WEBSOCKET_EXPORT void WebSocketPipeSendBinary( struct html5_web_socket*, const uint8_t *, size_t );
+WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
+WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
+WEBSOCKET_EXPORT void WebSocketPipePing( struct html5_web_socket* ws, uint32_t timeout );
+WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback );
+WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
+WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
+WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
+WEBSOCKET_EXPORT void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback );
+WEBSOCKET_EXPORT void SetWebSocketHttpCloseCallback( PCLIENT pc, web_socket_http_close callback );
+WEBSOCKET_EXPORT void SetWebSocketPipeErrorCallback( struct html5_web_socket* ws, web_socket_error callback );
+WEBSOCKET_EXPORT void SetWebSocketPipeHttpCallback( struct html5_web_socket* ws, web_socket_http_request callback );
+WEBSOCKET_EXPORT void SetWebSocketPipeHttpCloseCallback( struct html5_web_socket* ws, web_socket_http_close callback );
+// if set in server accept callback, this will return without extension set
+// on client socket (default), does not request permessage-deflate
+#define WEBSOCK_DEFLATE_DISABLE 0
+// if set in server accept callback (or if not set, default); accept client request to deflate per message
+// if set on client socket, sends request for permessage-deflate to server.
+#define WEBSOCK_DEFLATE_ENABLE 1
+// if set in server accept callback; accept client request to deflate per message, but do not deflate outbound messages
+// if set on client socket, sends request for permessage-deflate to server, but does not deflate outbound messages(?)
+#define WEBSOCK_DEFLATE_ALLOW 2
+// set permessage-deflate option for client requests.
+// allow server side to disable this when responding to a client.
+WEBSOCKET_EXPORT void SetWebSocketDeflate( PCLIENT pc, int enable_flags );
+WEBSOCKET_EXPORT void SetWebSocketPipeDeflate( struct html5_web_socket* ws, int enable_flags );
+// default is client masks, server does not
+// this can be used to disable masking on client or enable on server
+// (masked output from server to client is not supported by browsers)
+WEBSOCKET_EXPORT void SetWebSocketMasking( PCLIENT pc, int enable );
+WEBSOCKET_EXPORT void SetWebSocketPipeMasking( struct html5_web_socket* ws, int enable );
+// Set callback to get completed fragment size (total packet size collected so far)
+WEBSOCKET_EXPORT void SetWebSocketDataCompletion( PCLIENT pc, web_socket_completion callback );
+WEBSOCKET_EXPORT void SetWebSocketPipeDataCompletion( struct html5_web_socket* ws, web_socket_completion callback );
+#endif
+#ifdef __cplusplus
+#define _HTML5_WEBSOCKET_NAMESPACE namespace Html5WebSocket {
+#define HTML5_WEBSOCKET_NAMESPACE SACK_NAMESPACE _NETWORK_NAMESPACE _HTML5_WEBSOCKET_NAMESPACE
+#define HTML5_WEBSOCKET_NAMESPACE_END } _NETWORK_NAMESPACE_END SACK_NAMESPACE_END
+#define USE_HTML5_WEBSOCKET_NAMESPACE using namespace sack::network::Html5WebSocket;
+#else
+#define _HTML5_WEBSOCKET_NAMESPACE
+#define HTML5_WEBSOCKET_NAMESPACE
+#define HTML5_WEBSOCKET_NAMESPACE_END
+#define USE_HTML5_WEBSOCKET_NAMESPACE
+#endif
+HTML5_WEBSOCKET_NAMESPACE
+#ifdef HTML5_WEBSOCKET_SOURCE
+#define HTML5_WEBSOCKET_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define HTML5_WEBSOCKET_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+// need some sort of other methods to work with an HTML5WebSocket...
+// server side.
+HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate_v2 )(CTEXTSTR hosturl
+	, web_socket_opened on_open
+	, web_socket_event on_event
+	, web_socket_closed on_closed
+	, web_socket_error on_error
+	, uintptr_t psv
+	, int webSocketOptions
+);
+/*
+* Creates a server side websocket/http request socket for an accepted network connection.
+*
+*/
+HTML5_WEBSOCKET_PROC( struct html5_web_socket*, WebSocketCreateServerPipe )( int (*sender)(uintptr_t p, CPOINTER data, size_t length )
+                                        , uintptr_t psv_send
+                                        , web_socket_opened on_open
+                                        , web_socket_event on_event
+                                        , web_socket_closed on_closed
+                                        , web_socket_error on_error
+                                        , web_socket_http_request ws_http
+                                        , web_socket_http_close ws_http_close
+                                        , web_socket_completion ws_completion
+                                        , uintptr_t psv
+);
+// Option Wait
+#define WEBSOCK_SERVER_OPTION_WAIT 1
+HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate )( CTEXTSTR server_url
+																	, web_socket_opened on_open
+																	, web_socket_event on_event
+																	, web_socket_closed on_closed
+																	, web_socket_error on_error
+																	, uintptr_t psv
+																	);
+/*
+* Write new data to a html5_web_socket pipe connection. (should be accepted socket, not the listener/server socket);
+*/
+HTML5_WEBSOCKET_PROC( void, WebSocketWrite )( struct html5_web_socket* socket, CPOINTER buffer, size_t length );
+/*
+* A new pipe connection has been accepted, this performs the same operation
+* as accepting a socket internally
+*/
+HTML5_WEBSOCKET_PROC( struct html5_web_socket*, WebSocketPipeConnect )( struct html5_web_socket* pipe, uintptr_t psvNew );
+// during open, server may need to switch behavior based on protocols
+// this can be used to return the protocols requested by the client.
+HTML5_WEBSOCKET_PROC( const char *, WebSocketGetProtocols )( PCLIENT pc );
+HTML5_WEBSOCKET_PROC( const char *, WebSocketPipeGetProtocols )( struct html5_web_socket* );
+// after examining protocols, this is a reply to the client which protocol has been accepted.
+HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketSetProtocols )( PCLIENT pc, const char *protocols );
+/* define a callback which uses a HTML5WebSocket collector to build javascipt to render the control.
+ * example:
+ *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
+ */
+//#define OnDrawToHTML(name)  //	__DefineRegistryMethodP(PRELOAD_PRIORITY,ROOT_REGISTRY,_OnDrawCommon,"control",name "/rtti","draw_to_canvas",int,(CONTROL, HTML5WebSocket ), __LINE__)
+/* a server side utility to get the request headers that came in.
+this is for going through proxy agents mostly where the header might have x-forwarded-for
+*/
+HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
+/* for server side sockets, get the requested resource path from the client request.
+*/
+HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
+HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketHttpState )( PCLIENT pc );
+HTML5_WEBSOCKET_PROC( void, ResetWebsocketRequestHandler )( PCLIENT pc_client );
+HTML5_WEBSOCKET_PROC( uintptr_t, WebSocketGetServerData )( PCLIENT pc );
+HTML5_WEBSOCKET_NAMESPACE_END
+USE_HTML5_WEBSOCKET_NAMESPACE
+#endif
 SACK_NETWORK_NAMESPACE
 #ifdef __cplusplus
 namespace ssh {
 #endif
-	// ----------------- SESSIONS ---------------------
-	/*
-	* Initialize a session
-	*/
-	NETWORK_PROC( struct ssh_session*, sack_ssh_session_init )( uintptr_t psv );
-	/*
-	* connect a session
-	* if port is 0, the default port is used (22)
-	* if the host string includes a port, it will be used instead of the port parameter
-	*/
-	NETWORK_PROC( void, sack_ssh_session_connect )( struct ssh_session* session, CTEXTSTR host, int port );
-	/*
-	* enable debugging on a session
-	*/
-	NETWORK_PROC( void, sack_ssh_trace )( struct ssh_session* session, int bitmask );
-	/*
-	* get the error code and message from a session
-	*/
-	NETWORK_PROC( void, sack_ssh_get_error )( struct ssh_session* session, int* err, CTEXTSTR* errmsg );
-	/*
-	* close a session
-	*/
-	NETWORK_PROC( void, sack_ssh_session_close )( struct ssh_session* session );
-	//----------------- CALLBACKS ---------------------
-	/*
-	* set a callback for when a session is connected (or fails to connect)
-	*/
-	typedef void ( *ssh_connect_callback )( uintptr_t psv, LOGICAL success );
-	NETWORK_PROC( ssh_connect_callback, sack_ssh_set_connect )( struct ssh_session* session, ssh_connect_callback );
-	/*
-	* set a callback when a listener is set up
-	* returns the previous callback
-	*
-	* This is called when a listener is set up, and the callback should return a pointer to a structure that will be used as the psv for the listener
-	*/
-	typedef uintptr_t( *ssh_listen_cb )( uintptr_t psv, struct ssh_listener*, int bound_port );
-	NETWORK_PROC( ssh_listen_cb, sack_ssh_set_listen )( struct ssh_session* session, ssh_listen_cb );
-	/*
-	* set a callback for when a listener gets a connection
-	* returns the previous callback
-	*
-	* This is called when a listener gets a connection, and the callback should return a pointer to a structure that will be used as the psv for the channel
-	*/
-	typedef uintptr_t( *ssh_listen_connect_cb )( uintptr_t psv, struct ssh_channel* );
-	NETWORK_PROC( ssh_listen_connect_cb, sack_ssh_set_listen_connect )( struct ssh_listener* listener, ssh_listen_connect_cb );
-	/*
-	* set a callback for when a session negotiates initial keys
-	* returns the previous callback
-	*
-	* fingerprint is 20 bytes long
-	*/
-	typedef void ( *ssh_handshake_cb )( uintptr_t psv, const uint8_t *fingerprint );
-	NETWORK_PROC( ssh_handshake_cb, sack_ssh_set_handshake_complete )( struct ssh_session* session, ssh_handshake_cb );
-	/*
-	* set a callback for when a session is authenticated
-	* returns the previous callback
-	*/
-	typedef void ( *ssh_auth_cb )( uintptr_t psv, LOGICAL success );
-	NETWORK_PROC( ssh_auth_cb, sack_ssh_set_auth_complete )( struct ssh_session* session, ssh_auth_cb );
-	/*
-	* set a callback for when a password change is requested
-	* returns the previous callback
-	*/
-	typedef void ( *pw_change_cb )( uintptr_t, char** newpw, int* newpw_len );
-	NETWORK_PROC( pw_change_cb, sack_ssh_set_password_change_callback )( struct ssh_session* session, pw_change_cb );
-	/*
-	* set a callback for when a channel is opened
-	* returns the previous callback
-	*
-	* This is called when a channel is opened, and the callback should return a pointer to a structure that will be used as the psv for the channel
-	*/
-	typedef uintptr_t( *ssh_open_cb )( uintptr_t psv, struct ssh_channel* channel );
-	NETWORK_PROC( ssh_open_cb, sack_ssh_set_channel_open )( struct ssh_session* session, ssh_open_cb );
-	/*
-	* set a callback for when a pty is opened
-	* returns the previous callback
-	*/
-	typedef void( *ssh_pty_cb )( uintptr_t psv, LOGICAL success );
-	NETWORK_PROC( ssh_pty_cb, sack_ssh_set_pty_open )( struct ssh_channel* channel, ssh_pty_cb );
-	/*
-	* set a callback for when a pty is opened
-	* returns the previous callback
-	*/
-	typedef void( *ssh_shell_cb )( uintptr_t psv, LOGICAL success );
-	NETWORK_PROC( ssh_shell_cb, sack_ssh_set_shell_open )( struct ssh_channel* channel, ssh_shell_cb );
-	/*
-	* set a callback for when a command is executed
-	* returns the previous callback
-	*/
-	typedef void( *ssh_exec_cb )( uintptr_t psv, LOGICAL success );
-	NETWORK_PROC( ssh_exec_cb, sack_ssh_set_exec_done )( struct ssh_channel* channel, ssh_exec_cb );
-	/*
-	* set a callback for when data is received on a channel
-	* returns the previous callback
-	*/
-	typedef void( *ssh_channel_data_cb )( uintptr_t psv, int stream, const uint8_t* data, size_t len );
-	NETWORK_PROC( ssh_channel_data_cb, sack_ssh_set_channel_data )( struct ssh_channel* channel, ssh_channel_data_cb );
-	/*
-	* set a callback for when a channel is eof (end of file)
-	* returns the previous callback
-	*/
-	typedef void( *ssh_channel_eof_cb )( uintptr_t psv );
-	NETWORK_PROC( ssh_channel_eof_cb, sack_ssh_set_channel_eof )( struct ssh_channel* channel, ssh_channel_eof_cb );
-	/*
-	* set a callback for when a channel is closed
-	* returns the previous callback
-	*/
-	typedef void( *ssh_channel_close_cb )( uintptr_t psv );
-	NETWORK_PROC( ssh_channel_close_cb, sack_ssh_set_channel_close )( struct ssh_channel* channel, ssh_channel_close_cb );
-	/*
-	* set a callback for when a sftp session is opened
-	*/
-	typedef uintptr_t( *ssh_sftp_open_cb )( uintptr_t psv, struct ssh_sftp* channel );
-	NETWORK_PROC( ssh_sftp_open_cb, sack_ssh_set_sftp_open )( struct ssh_session* session, ssh_sftp_open_cb );
-	/*
-	* authenticate a user with a password
-	*/
-	NETWORK_PROC( void, sack_ssh_auth_user_password )( struct ssh_session* session, const char* user, const char* password );
-	/*
-	* authenticate a user with a public key
-	*/
-	NETWORK_PROC( void, sack_ssh_auth_user_cert )( struct ssh_session* session, CTEXTSTR user
-		, CTEXTSTR pubkey
-		, CTEXTSTR privkey
-		, CTEXTSTR pass );
-	//------------------ CHANNELS ---------------------
-	/*
-	* open a channel on the session
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_open )( struct ssh_session* session );
-	/*
-	* free a channel; closes channel if still open
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_free )( struct ssh_channel* channel );
-	/*
-	* open a channel on the session with extra parameters.
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_open_v2 )( struct ssh_session* session, CTEXTSTR type, size_t type_len, uint32_t window_size, uint32_t packet_size,
-		CTEXTSTR message, size_t message_len );
-	/*
-	* set an environment variable on the channel
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_setenv )( struct ssh_channel* channel, CTEXTSTR key, CTEXTSTR value );
-	/*
-	* request a pty on the channel
-	* pty comes back in a callback set by sack_ssh_set_pty_open
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_request_pty )( struct ssh_channel* channel, CTEXTSTR term );
-	/*
-	* open a shell on the channel
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_shell )( struct ssh_channel* channel );
-	/*
-	* exec a command on channel
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_exec )( struct ssh_channel* channel, CTEXTSTR shell );
-	/*
-	* Send data on a channel
-	* stream is 0 for stdin, 1 for stderr
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_write )( struct ssh_channel* channel, int stream, const uint8_t* buffer, size_t length );
-	NETWORK_PROC( void, sack_ssh_channel_close )( struct ssh_channel* channel );
-	/*
-	LIBSSH2_API int libssh2_channel_send_eof(LIBSSH2_CHANNEL *channel);
-	LIBSSH2_API int libssh2_channel_eof(LIBSSH2_CHANNEL *channel);
-	LIBSSH2_API int libssh2_channel_wait_eof(LIBSSH2_CHANNEL *channel);
-	LIBSSH2_API int libssh2_channel_close(LIBSSH2_CHANNEL *channel);
-	LIBSSH2_API int libssh2_channel_wait_closed(LIBSSH2_CHANNEL *channel);
-	LIBSSH2_API int libssh2_channel_free(LIBSSH2_CHANNEL *channel);
-	*/
-	//----------------- Port Forwarding ---------------------
-	/*
-	* request a port forward
-	*/
-	NETWORK_PROC( void, sack_ssh_channel_forward_listen )( struct ssh_session* session, CTEXTSTR remotehost, uint16_t remoteport, ssh_listen_connect_cb cb );
-	//----------------- SFTP ---------------------
-	NETWORK_PROC( void, sack_ssh_sftp_init )( struct ssh_session* session );
-	NETWORK_PROC( void, sack_ssh_sftp_shutdown )( struct ssh_sftp* session );
+typedef void ( *ssh_handshake_cb )( uintptr_t psv, const uint8_t* fingerprint );
+// ----------------- SESSIONS ---------------------
+/*
+* Initialize a session
+*/
+NETWORK_PROC( struct ssh_session*, sack_ssh_session_init )( uintptr_t psv );
+/*
+* connect a session
+* if port is 0, the default port is used (22)
+* if the host string includes a port, it will be used instead of the port parameter
+*/
+NETWORK_PROC( void, sack_ssh_session_connect )( struct ssh_session* session, CTEXTSTR host, int port, ssh_handshake_cb cb );
+/*
+* enable debugging on a session
+*/
+NETWORK_PROC( void, sack_ssh_trace )( struct ssh_session* session, int bitmask );
+/*
+* get the error code and message from a session
+*/
+NETWORK_PROC( void, sack_ssh_get_error )( struct ssh_session* session, int* err, CTEXTSTR* errmsg );
+/*
+* close a session
+*/
+NETWORK_PROC( void, sack_ssh_session_close )( struct ssh_session* session );
+//----------------- CALLBACKS ---------------------
+typedef void (*ssh_session_error_cb)( uintptr_t psv, int err, CTEXTSTR errmsg, int errmsglen );
+NETWORK_PROC( ssh_session_error_cb, sack_ssh_set_session_error )( struct ssh_session* session, ssh_session_error_cb );
+typedef void (*ssh_channel_error_cb)( uintptr_t psv, int err, CTEXTSTR errmsg, int errmsglen );
+NETWORK_PROC( ssh_channel_error_cb, sack_ssh_set_channel_error )( struct ssh_channel* channel, ssh_channel_error_cb );
+typedef void ( *ssh_listen_error_cb )( uintptr_t psv, int err, CTEXTSTR errmsg, int errmsglen );
+NETWORK_PROC( ssh_listen_error_cb, sack_ssh_set_listener_error )( struct ssh_listener* listener, ssh_listen_error_cb );
+typedef void ( *ssh_setenv_cb )( uintptr_t psv, LOGICAL success );
+NETWORK_PROC( ssh_setenv_cb, sack_ssh_set_setenv )( struct ssh_listener* listener, ssh_setenv_cb );
+typedef uintptr_t( *ssh_forward_connect_cb )( uintptr_t psv, LOGICAL success );
+NETWORK_PROC( ssh_forward_connect_cb, sack_ssh_set_forward_connect )( struct ssh_session* session, ssh_forward_connect_cb );
+/*
+* set a callback for when a session is connected (or fails to connect)
+*/
+typedef void ( *ssh_connect_callback )( uintptr_t psv, LOGICAL success );
+NETWORK_PROC( ssh_connect_callback, sack_ssh_set_connect )( struct ssh_session* session, ssh_connect_callback );
+/*
+* set a callback when a listener is set up
+* returns the previous callback
+*
+* This is called when a listener is set up, and the callback should return a pointer to a structure that will be used as the psv for the listener
+*/
+typedef uintptr_t( *ssh_forward_listen_cb )( uintptr_t psv, struct ssh_listener*, int bound_port );
+NETWORK_PROC( ssh_forward_listen_cb, sack_ssh_set_forward_listen )( struct ssh_session* session, ssh_forward_listen_cb );
+/*
+* set a callback for when a listener gets a connection
+* returns the previous callback
+*
+* This is called when a listener gets a connection, and the callback should return a pointer to a structure that will be used as the psv for the channel
+*/
+typedef uintptr_t( *ssh_forward_listen_accept_cb ) ( uintptr_t psv, struct ssh_channel* channel );
+NETWORK_PROC( ssh_forward_listen_accept_cb, sack_ssh_set_forward_listen_accept )( struct ssh_listener* listen, ssh_forward_listen_accept_cb );
+/*
+* set a callback for when a session negotiates initial keys
+* returns the previous callback
+*
+* fingerprint is 20 bytes long
+*/
+NETWORK_PROC( ssh_handshake_cb, sack_ssh_set_handshake_complete )( struct ssh_session* session, ssh_handshake_cb );
+/*
+* set a callback for when a session is authenticated
+* returns the previous callback
+*/
+typedef void ( *ssh_auth_cb )( uintptr_t psv, LOGICAL success );
+NETWORK_PROC( ssh_auth_cb, sack_ssh_set_auth_complete )( struct ssh_session* session, ssh_auth_cb );
+/*
+* set a callback for when a password change is requested
+* returns the previous callback
+*/
+typedef void ( *pw_change_cb )( uintptr_t, char** newpw, int* newpw_len );
+NETWORK_PROC( pw_change_cb, sack_ssh_set_password_change_callback )( struct ssh_session* session, pw_change_cb );
+/*
+* set a callback for when a channel is opened
+* returns the previous callback
+*
+* This is called when a channel is opened, and the callback should return a pointer to a structure that will be used as the psv for the channel
+*/
+typedef uintptr_t( *ssh_open_cb )( uintptr_t psv, struct ssh_channel* channel );
+NETWORK_PROC( ssh_open_cb, sack_ssh_set_channel_open )( struct ssh_session* session, ssh_open_cb );
+/*
+* set a callback for when a pty is opened
+* returns the previous callback
+*/
+typedef void( *ssh_pty_cb )( uintptr_t psv, LOGICAL success );
+NETWORK_PROC( ssh_pty_cb, sack_ssh_set_pty_open )( struct ssh_channel* channel, ssh_pty_cb );
+/*
+* set a callback for when a pty is opened
+* returns the previous callback
+*/
+typedef void( *ssh_shell_cb )( uintptr_t psv, LOGICAL success );
+NETWORK_PROC( ssh_shell_cb, sack_ssh_set_shell_open )( struct ssh_channel* channel, ssh_shell_cb );
+/*
+* set a callback for when a command is executed
+* returns the previous callback
+*/
+typedef void( *ssh_exec_cb )( uintptr_t psv, LOGICAL success );
+NETWORK_PROC( ssh_exec_cb, sack_ssh_set_exec_done )( struct ssh_channel* channel, ssh_exec_cb );
+/*
+* set a callback for when data is received on a channel
+* returns the previous callback
+*/
+typedef void( *ssh_channel_data_cb )( uintptr_t psv, int stream, const uint8_t* data, size_t len );
+NETWORK_PROC( ssh_channel_data_cb, sack_ssh_set_channel_data )( struct ssh_channel* channel, ssh_channel_data_cb );
+/*
+* set a callback for when a channel is eof (end of file)
+* returns the previous callback
+*/
+typedef void( *ssh_channel_eof_cb )( uintptr_t psv );
+NETWORK_PROC( ssh_channel_eof_cb, sack_ssh_set_channel_eof )( struct ssh_channel* channel, ssh_channel_eof_cb );
+/*
+* set a callback for when a channel is closed
+* returns the previous callback
+*/
+typedef void( *ssh_channel_close_cb )( uintptr_t psv );
+NETWORK_PROC( ssh_channel_close_cb, sack_ssh_set_channel_close )( struct ssh_channel* channel, ssh_channel_close_cb );
+/*
+* set a callback for when a sftp session is opened
+*/
+typedef uintptr_t( *ssh_sftp_open_cb )( uintptr_t psv, struct ssh_sftp* channel );
+NETWORK_PROC( ssh_sftp_open_cb, sack_ssh_set_sftp_open )( struct ssh_session* session, ssh_sftp_open_cb );
+/*
+* authenticate a user with a password
+*/
+NETWORK_PROC( void, sack_ssh_auth_user_password )( struct ssh_session* session, const char* user, const char* password, ssh_auth_cb cb );
+/*
+* authenticate a user with a public key
+*/
+NETWORK_PROC( void, sack_ssh_auth_user_cert )( struct ssh_session* session, CTEXTSTR user
+	, uint8_t* pubkey, size_t pubkeylen
+	, uint8_t* privkey, size_t privkeylen
+	, CTEXTSTR pass, ssh_auth_cb cb );
+//----------------- Port Forwarding ---------------------
+//------------------------ More Session Interface; requires callback def --------------------
+/*
+* setup a local socket to accept connections, which gets
+* forwarded to a remote connetion.  if remotePort == -1 remoteAddress
+* specifies a unix socket name.
+*
+* cb is called when a new connection is made, and is treated like a channel open callback
+*/
+NETWORK_PROC( PCLIENT, sack_ssh_forward_connect )( struct ssh_session* session
+	, CTEXTSTR localAddress, int localPort
+	, CTEXTSTR remoteAddress, int remotePort
+	, ssh_forward_connect_cb cb );
+/*
+* request a port forward
+*/
+NETWORK_PROC( void, sack_ssh_forward_listen )( struct ssh_session* session, CTEXTSTR remotehost, uint16_t remoteport, ssh_forward_listen_cb cb );
+//------------------ CHANNELS ---------------------
+/*
+* open a channel on the session
+*/
+NETWORK_PROC( void, sack_ssh_channel_open )( struct ssh_session* session );
+/*
+* free a channel; closes channel if still open
+*/
+NETWORK_PROC( void, sack_ssh_channel_free )( struct ssh_channel* channel );
+/*
+* open a channel on the session with extra parameters.
+*/
+NETWORK_PROC( void, sack_ssh_channel_open_v2 )( struct ssh_session* session, CTEXTSTR type, size_t type_len, uint32_t window_size, uint32_t packet_size,
+	CTEXTSTR message, size_t message_len, ssh_open_cb cb );
+/*
+* set an environment variable on the channel
+*/
+NETWORK_PROC( void, sack_ssh_channel_setenv )( struct ssh_channel* channel, CTEXTSTR key, CTEXTSTR value, ssh_setenv_cb cb );
+/*
+* request a pty on the channel
+* pty comes back in a callback set by sack_ssh_set_pty_open
+*/
+NETWORK_PROC( void, sack_ssh_channel_request_pty )( struct ssh_channel* channel, CTEXTSTR term, ssh_pty_cb cb );
+/*
+* open a shell on the channel
+*/
+NETWORK_PROC( void, sack_ssh_channel_shell )( struct ssh_channel* channel, ssh_shell_cb );
+/*
+* exec a command on channel
+*/
+NETWORK_PROC( void, sack_ssh_channel_exec )( struct ssh_channel* channel, CTEXTSTR shell, ssh_exec_cb );
+/*
+* Send data on a channel
+* stream is 0 for stdin, 1 for stderr
+*/
+NETWORK_PROC( void, sack_ssh_channel_write )( struct ssh_channel* channel, int stream, const uint8_t* buffer, size_t length );
+NETWORK_PROC( void, sack_ssh_channel_close )( struct ssh_channel* channel );
+/*
+LIBSSH2_API int libssh2_channel_send_eof(LIBSSH2_CHANNEL *channel);
+LIBSSH2_API int libssh2_channel_eof(LIBSSH2_CHANNEL *channel);
+LIBSSH2_API int libssh2_channel_wait_eof(LIBSSH2_CHANNEL *channel);
+LIBSSH2_API int libssh2_channel_close(LIBSSH2_CHANNEL *channel);
+LIBSSH2_API int libssh2_channel_wait_closed(LIBSSH2_CHANNEL *channel);
+LIBSSH2_API int libssh2_channel_free(LIBSSH2_CHANNEL *channel);
+*/
+//----------------- SFTP ---------------------
+NETWORK_PROC( void, sack_ssh_sftp_init )( struct ssh_session* session );
+NETWORK_PROC( void, sack_ssh_sftp_shutdown )( struct ssh_sftp* session );
+//----------------- Websocket ---------------------
+/*
+* serve websocket on an accepting channel.
+* the channel has to be opening from a forwarded listener
+* (before any data from the remote is processed)
+*/
+NETWORK_PROC( struct ssh_websocket*, sack_ssh_channel_serve_websocket )( struct ssh_channel* channel,
+	web_socket_opened ws_open,
+	web_socket_event ws_event,
+	web_socket_closed ws_close,
+	web_socket_error ws_error,
+	web_socket_http_request ws_http,
+	web_socket_http_close ws_http_close,
+	web_socket_completion ws_completion,
+	uintptr_t psv
+	);
 #ifdef __cplusplus
 }
 #endif
@@ -10197,1220 +11917,6 @@ SQL_NAMESPACE_END
 // these headers should really be collapsed.
 #ifndef SQL_GET_OPTION_DEFINED
 #define SQL_GET_OPTION_DEFINED
-/*
- * Create: James Buckeyne
- *
- * Purpose: Provide a general structure to register names of
- *   routines and data structures which may be consulted
- *   for runtime linking.  Aliases and other features make this
- *   a useful library for tracking interface registration...
- *
- *  The namespace may be enumerated.
- */
-#ifndef PROCEDURE_REGISTRY_LIBRARY_DEFINED
-#define PROCEDURE_REGISTRY_LIBRARY_DEFINED
-#ifndef DEADSTART_DEFINED
-#define DEADSTART_DEFINED
-#ifdef WIN32
-//#include <stdhdrs.h>
-#endif
- // leach, assuming this will be compiled with this part at least.
-#define pastejunk_(a,b) a##b
-#define pastejunk(a,b) pastejunk_(a,b)
-#ifdef __cplusplus
-#  define USE_SACK_DEADSTART_NAMESPACE using namespace sack::app::deadstart;
-#  define SACK_DEADSTART_NAMESPACE  SACK_NAMESPACE namespace app { namespace deadstart {
-#  define SACK_DEADSTART_NAMESPACE_END  } } SACK_NAMESPACE_END
-SACK_NAMESPACE
-	namespace app{
-/* Application namespace. */
-/* These are compiler-platform abstractions to provide a method
-   of initialization that allows for creation of threads, and
-   transparent (easy to use) method of scheduling routines for
-   initialization.
-   Example
-   This schedules a routine to run at startup. Fill in the
-   routine with the code you want, and it will run at
-   DEFAULT_PRELOAD_PRIORITY which is the number 69.
-   <code lang="c++">
-   PRELOAD( MyCustomInit )
-   {
-       // do something here (do anything here,
-       // without limitations that are imposed by DllMain/LibMain.
-   }
-   </code>
-   If you wanted a routine which was guaranteed to run before
-   MyCustomInit you might use PRIORITY_PRELOAD whcih allows you
-   to specify a priority.
-   <code lang="c++">
-   PRIORITY_PRELOAD( MyOtherInit, DEFAULT_PRELOAD_PRIORITY-10 )
-   {
-      // this will run before other things.
-   }
-   </code>
-   Priorities are listed in deadstart.h and exit_priorities.h. The
-   priorities are treated backwards, so low number startup
-   priorities go first, and higher number shutdown priorities go
-   first.
-   Remarks
-   In some compilers and compile modes this is also fairly easy
-   to do. A lot of compilers do not offer priority, and are
-   impossible to maintain an order in. Some compilers only
-   provide startup priority for C++ mode. This system works as
-   \long as there is a way to run a single function at some
-   point before main() and after C runtime initializes.
-   In Windows, you might think you have this ability with
-   DllMain, but there are severe limitations that you would have
-   to get around; primary is the inability to create a thread,
-   well, you can create it, but it will remain suspended until
-   you leave DllMains and all DllMains finish. There is also no
-   way to consistantly provide initialization order, like memory
-   needs to be initialized before anything else.
-                                                                   */
-		namespace deadstart {
-		}
-        }
-SACK_NAMESPACE_END
-#else
-#define USE_SACK_DEADSTART_NAMESPACE
-#define SACK_DEADSTART_NAMESPACE
-#define SACK_DEADSTART_NAMESPACE_END
-#endif
-#ifdef TYPELIB_SOURCE
-#define DEADSTART_SOURCE
-#endif
-SACK_DEADSTART_NAMESPACE
-/* A macro to specify the call type of schedule routines. This
-   can be changed in most projects without affect, it comes into
-   play if plugins built by different compilers are used,
-   __cdecl is most standard.                                     */
-#define DEADSTART_CALLTYPE CPROC
-#  if defined( _TYPELIBRARY_SOURCE_STEAL )
-#    define DEADSTART_PROC extern
-#  elif defined( _TYPELIBRARY_SOURCE )
-#    define DEADSTART_PROC EXPORT_METHOD
-#  else
-/* A definition for how to declare these functions. if the
-   source itself is comipling these are _export, otherwise
-   external things linking here are _import.               */
-#    define DEADSTART_PROC IMPORT_METHOD
-#  endif
-     // 28 (thread ID for critical sections used to allocate memory)
-#define TIMER_MODULE_PRELOAD_PRIORITY  (CONFIG_SCRIPT_PRELOAD_PRIORITY-3)
-     // 30 specify where to load external resources from... like the option database
-#define VIRTUAL_FILESYSTEM_PRELOAD_PRIORITY (CONFIG_SCRIPT_PRELOAD_PRIORITY-1)
-   /* this is just a global space initializer (shared, named
-      region, allows static link plugins to share information)
-      Allocates its shared memory global region, so if this library
-      is built statically and referenced in multiple plugins
-      ConfigScript can share the same symbol tables. This also
-		provides sharing between C++ and C.                           */
-         // 31
-#define CONFIG_SCRIPT_PRELOAD_PRIORITY    (SQL_PRELOAD_PRIORITY-3)
-			// this is just a global space initializer (shared, named region, allows static link plugins to share information)
-         // 34
-#define SQL_PRELOAD_PRIORITY    (SYSLOG_PRELOAD_PRIORITY-1)
-/* Level at which logging is initialized. Nothing under this
-   should be doing logging, if it does, the behavior is not as
-   well defined.                                               */
-#define SYSLOG_PRELOAD_PRIORITY 35
-   // global_init_preload_priority-1 is used by sharemem.. memory needs init before it can register itself
-#define GLOBAL_INIT_PRELOAD_PRIORITY 37
- // OS A[bstraction] L[ayer] O[n] T[op] - system lib
-#define OSALOT_PRELOAD_PRIORITY (CONFIG_SCRIPT_PRELOAD_PRIORITY-1)
-/* Level which names initializes. Names is the process
-   registration code. It has a common shared global registered.
-   <link sack::app::registry, procreg; aka names.c>             */
-#define NAMESPACE_PRELOAD_PRIORITY 39
-/* image_preload MUST be after Namespce preload (anything that
-   uses RegisterAndCreateGlobal) should init this before vidlib
-   (which needs image?)                                         */
-#define IMAGE_PRELOAD_PRIORITY  45
-/* Level at which the video render library performs its
-   initialization; RegisterClass() level code.          */
-#define VIDLIB_PRELOAD_PRIORITY 46
-/* Initialization level where PSI registers its builtin
-   controls.                                            */
-#define PSI_PRELOAD_PRIORITY    47
-// need to open the queues and threads before the service server can begin...
-#define MESSAGE_CLIENT_PRELOAD_PRIORITY 65
-/* Level which message core service initializes. During startup
-   message services can register themselves also; but not before
-   this priority level.                                          */
-#define MESSAGE_SERVICE_PRELOAD_PRIORITY 66
-/* Routines are scheduled at this priority when the PRELOAD
-   function is used.                                        */
-#define DEFAULT_PRELOAD_PRIORITY (DEADSTART_PRELOAD_PRIORITY-1)
-/* Not sure where this is referenced, this the core routine
-   itself is scheduled with this symbol to the compiler if
-   appropriate.                                             */
-#define DEADSTART_PRELOAD_PRIORITY 70
-#define PRIORITY_UNLOAD(proc,priority) PRIORITY_ATEXIT( proc##_unload, priority )
-/* Used by PRELOAD and PRIORITY_PRELOAD macros to register a
-   startup routine at a specific priority. Lower number
-   priorities are scheduled to run before higher number
-   priorities*backwards from ATEXIT priorities*. Using this
-   scheduling mechanisms, routines which create threads under
-   windows are guaranteed to run before main, and are guaranteed
-   able to create threads. (They are outside of the loader lock)
-   Parameters
-   function :  pointer to a function to call at startup.
-   name :      text name of the function
-   priority :  priority at which to call the function.
-   unused :    this is an unused parameter. The macros fill it
-               with &amp;ThisRegisteringRoutine, so that the
-               routine itself is referenced by code, and helps
-               the compile not optimize out this code. The
-               functions which perform the registration are prone
-               to be optimized because it's hard for the compiler
-               to identify that they are refernced by other names
-               indirectly.
-   file\ :     usually DBG_PASS of the code doing this
-               registration.
-   line :      usually DBG_PASS of the code doing this
-               registration.                                      */
-DEADSTART_PROC  void DEADSTART_CALLTYPE  RegisterPriorityStartupProc( void(CPROC*)(void), CTEXTSTR,int,void* unused DBG_PASS);
-/* Used by ATEXIT and PRIORITY_ATEXIT macros to register a
-   shutdown routine at a specific priority. Higher number
-   priorities are scheduled to run before lower number
-   priorities. *backwards from PRELOAD priorities* This
-   registers functions which are run while the program exits if
-   it is at all able to run when exiting. calling exit() or
-   BAG_Exit() will invoke these.
-   Parameters
-   function :  pointer to a function to call at shutdown.
-   name :      text name of the function
-   priority :  priority at which to call the function.
-   unused :    this is an unused parameter. The macros fill it
-               with &amp;ThisRegisteringRoutine, so that the
-               routine itself is referenced by code, and helps
-               the compile not optimize out this code. The
-               functions which perform the registration are prone
-               to be optimized because it's hard for the compiler
-               to identify that they are refernced by other names
-               indirectly.
-   file\ :     usually DBG_PASS of the code doing this
-               registration.
-   line :      usually DBG_PASS of the code doing this
-               registration.                                      */
-DEADSTART_PROC  void DEADSTART_CALLTYPE  RegisterPriorityShutdownProc( void(CPROC*)(void), CTEXTSTR,int,void* unused DBG_PASS);
-/* This routine is used internally when LoadFunction is called.
-   After MarkDeadstartComplete is called, any call to a
-   RegisterPriorityStartupProc will call the startup routine
-   immediately instead of waiting. This function disables the
-   auto-running of this function, and instead enques the startup
-   to the list of startups. When completed, at some later point,
-   call ResumeDeadstart() to dispatched all scheduled routines,
-   and release the suspend; however, if initial deastart was not
-   dispatched, then ResumeDeadstart does not do the invoke, it
-   only releases the suspend.                                    */
-DEADSTART_PROC  void DEADSTART_CALLTYPE  SuspendDeadstart ( void );
-/* Resumes a suspended deadstart. If root deadstart is
-   completed, then ResumeDeadstart will call InvokeDeadstarts
-   after resuming deadstart.                                  */
-DEADSTART_PROC  void DEADSTART_CALLTYPE  ResumeDeadstart ( void );
-/* Not usually used by user code, but this invokes all the
-   routines which have been scheduled to run for startup. If
-   your compiler doesn't have a method of handling deadstart
-   code, this can be manually called. It can also be called if
-   you loaded a library yourself without using the LoadFunction
-   interface, to invoke startups scheduled in the loaded
-   library.                                                     */
-DEADSTART_PROC  void DEADSTART_CALLTYPE  InvokeDeadstart (void);
-/* This just calls the list of shutdown procedures. This should
-   not be used usually from user code, since internally this is
-   handled by catching atexit() or with a static destructor.    */
-DEADSTART_PROC  void DEADSTART_CALLTYPE  InvokeExits (void);
-/* This is typically called after the first InvokeDeadstarts
-   completes. The code that runs this is usually a routine just
-   before main(). So once code in main begins to run, all prior
-   initialization has been performed.                           */
-DEADSTART_PROC  void DEADSTART_CALLTYPE  MarkRootDeadstartComplete ( void );
-/* \returns whether InvokeDeadstarts has been called. */
-DEADSTART_PROC  LOGICAL DEADSTART_CALLTYPE  IsRootDeadstartStarted ( void );
-/* \returns whether MarkRootDeadstartComplete has been called. */
-DEADSTART_PROC  LOGICAL DEADSTART_CALLTYPE  IsRootDeadstartComplete ( void );
-/*
-   Setup flags to ignore control C Events on windows.  use 1 << (ControlType) or'd together to set ignore.
-   Use 0 to clear ignore.
-*/
-DEADSTART_PROC void DEADSTART_CALLTYPE IgnoreBreakHandler( int ignore );
-#if defined( __LINUX__ )
-// call this after a fork().  Otherwise, it will falsely invoke shutdown when it exits.
-DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
-#endif
-#ifdef DOC_O_MAT
-// call this after a fork().  Otherwise, it will falsely invoke shutdown when it exits.
-DEADSTART_PROC  void DEADSTART_CALLTYPE  DispelDeadstart ( void );
-#endif
-#ifdef __cplusplus
-/* Defines some code to run at program inialization time. Allows
-   specification of a priority. Lower priorities run first. (default
-   is 69).
-   Example
-   <code>
-   PRIORITY_PRELOAD( MyOtherInit, 153 )
-   {
-      // run some code probably after most all other initializtion is done.
-   }
-   </code>
-   See Also
-   <link sack::app::deadstart, deadstart Namespace>                         */
-#define PRIORITY_PRELOAD(name,priority) static void CPROC name(void);	 namespace { static class pastejunk(schedule_,name) {        public:pastejunk(schedule_,name)() {	    RegisterPriorityStartupProc( name,TOSTR(name),priority,(void*)this DBG_SRC);	  }	  } pastejunk(do_schedule_,name);   }	  static void name(void)
-/* This is used once in deadstart_prog.c which is used to invoke
-   startups when the program finishes loading.                   */
-#define MAGIC_PRIORITY_PRELOAD(name,priority) static void CPROC name(void);	 namespace { static class pastejunk(schedule_,name) {	     public:pastejunk(schedule_,name)() {	  name();	    }	  } pastejunk(do_schedul_,name);   }	  static void name(void)
-/*
-  Internal macro used to trigger InvokeExits() which runs scheduled exits.
-                                                                     */
-#define ATEXIT_INVOKE_INTERNAL(name) static void CPROC name(void);    static class pastejunk(schedule_,name) {        public:pastejunk(~schedule_,name)() {			    name();	  }	  } pastejunk(do_schedule_,name);	     static void name(void)
-/* Defines some code to run at program shutdown time. Allows
-   specification of a priority. Higher priorities are run first.
-   Example
-   <code>
-   PRIORITY_ATEXIT( MyOtherShutdown, 153 )
-   {
-      // run some code probably before most library code dissolves.
-      // last to load, first to unload.
-   }
-   </code>
-   See Also
-   <link sack::app::deadstart, deadstart Namespace>                 */
-	/*name(); / * call on destructor of static object.*/
-#define PRIORITY_ATEXIT(name,priority) static void CPROC name(void);    static class pastejunk(shutdown_,name) {	   public:pastejunk(shutdown_,name)() {       RegisterPriorityShutdownProc( name,TOSTR(name),priority,(void*)this DBG_SRC );	   }	  } do_shutdown_##name;	     void name(void)
-/* This is the most basic way to define some code to run
-   initialization before main.
-   Example
-   <code lang="c++">
-   PRELOAD( MyInitCode )
-   {
-      // some code here
-   }
-   </code>
-   See Also
-   <link sack::app::deadstart, deadstart Namespace>      */
-#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
-/* Basic way to register a routine to run when the program exits
-   gracefully.
-   Example
-   \    <code>
-   ATEXIT( MyExitRoutine )
-   {
-       // this will be run sometime during program shutdown
-   }
-   </code>                                                       */
-#define ATEXIT(name)      PRIORITY_ATEXIT(name,ATEXIT_PRIORITY_DEFAULT)
-/* This is the core atexit. It dispatches all other exit
-   routines. This is defined for internal use only...    */
-#define ROOT_ATEXIT(name) ATEXIT_INVOKE_INTERNAL(name)
-//------------------------------------------------------------------------------------
-// Win32 Watcom
-//------------------------------------------------------------------------------------
-#elif defined( __WATCOMC__ )
-#pragma off (check_stack)
-/* code taken from openwatcom/bld/watcom/h/rtinit.h */
-typedef unsigned char   __type_rtp;
-typedef unsigned short  __type_pad;
-typedef void(*__type_rtn ) ( void );
-#ifdef __cplusplus
-#pragma pack(1)
-#else
-#pragma pack(1)
-#endif
- // structure placed in XI/YI segment
-struct rt_init
-{
-#define DEADSTART_RT_LIST_START 0xFF
- // - near=0/far=1 routine indication
-    __type_rtp  rtn_type;
-                          //   also used when walking table to flag
-                          //   completed entries
- // - priority (0-highest 255-lowest)
-    __type_rtp  priority;
-      // - routine
-    __type_rtn  rtn;
-};
-#pragma pack()
-/* end code taken from openwatcom/bld/watcom/h/rtinit.h */
-//------------------------------------------------------------------------------------
-// watcom
-//------------------------------------------------------------------------------------
-//void RegisterStartupProc( void (*proc)(void) );
-#define PRIORITY_PRELOAD(name,priority) static void pastejunk(schedule_,name)(void); static void CPROC name(void);	 static struct rt_init __based(__segname("XI")) pastejunk(name,_ctor_label)={0,(DEADSTART_PRELOAD_PRIORITY-1),pastejunk(schedule_,name)};	 static void pastejunk(schedule_,name)(void) {	                 RegisterPriorityStartupProc( name,TOSTR(name),priority,&pastejunk(name,_ctor_label) DBG_SRC );	}	                                       void name(void)
-#define ATEXIT_PRIORITY(name,priority) static void pastejunk(schedule_exit_,name)(void); static void CPROC name(void);	 static struct rt_init __based(__segname("XI")) pastejunk(name,_dtor_label)={0,69,pastejunk(schedule_exit_,name)};	 static void pastejunk(schedule_exit_,name)(void) {	                                              RegisterPriorityShutdownProc( name,TOSTR(name),priority,&name##_dtor_label DBG_SRC );	}	                                       void name(void)
-// syslog runs preload at priority 65
-// message service runs preload priority 66
-// deadstart itself tries to run at priority 70 (after all others have registered)
-#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
-// this is a special case macro used in client.c
-// perhaps all PRIORITY_ATEXIT routines should use this
-// this enables cleaning up things that require threads to be
-// active under windows... (message disconnect)
-// however this routine is only triggered in windows by calling
-// BAG_Exit(nn) which is aliased to replace exit(n) automatically
-#define PRIORITY_ATEXIT(name,priority) ATEXIT_PRIORITY( name,priority)
-/*
-static void name(void); static void name##_x_(void);	static struct rt_init __based(__segname("YI")) name##_dtor_label={0,priority,name##_x_};	 static void name##_x_(void) { char myname[256];myname[0]=*(CTEXTSTR)&name##_dtor_label;GetModuleFileName(NULL,myname,sizeof(myname));name(); }	 static void name(void)
-  */
-#define ROOT_ATEXIT(name) ATEXIT_PRIORITY(name,ATEXIT_PRIORITY_ROOT)
-#define ATEXIT(name)      PRIORITY_ATEXIT(name,ATEXIT_PRIORITY_DEFAULT)
-// if priority_atexit is used with priority 0 - the proc is scheduled into
-// atexit, and exit() is then invoked.
-//#define PRIORITY_ATEXIT(name,priority) ATEXIT_PRIORITY(name,priority )
-//------------------------------------------------------------------------------------
-// Linux
-//------------------------------------------------------------------------------------
-#elif defined( __GNUC__ )
-/* code taken from openwatcom/bld/watcom/h/rtinit.h */
-typedef unsigned char   __type_rtp;
-typedef void(*__type_rtn ) ( void );
- // structure placed in XI/YI segment
-struct rt_init
-{
-#define DEADSTART_RT_LIST_START 0xFF
- // - near=0/far=1 routine indication
-    __type_rtp  rtn_type;
-                          //   also used when walking table to flag
-                          //   completed entries
- // has this been scheduled? (0 if no)
-    __type_rtp  scheduled;
- // - priority (0-highest 255-lowest)
-    __type_rtp  priority;
-#if defined( __64__ ) ||defined( __arm__ )||defined( __GNUC__ )
-#define INIT_PADDING ,{0}
- // need this otherwise it's 23 bytes and that'll be bad.
-	 char padding[1];
-#else
-#define INIT_PADDING
-#endif
- // 32 bits in 64 bits....
-	 int line;
-// this ends up being nicely aligned for 64 bit platforms
-// specially with the packed attributes
-      // - routine (rtn)
-	 __type_rtn  routine;
-#if defined( _DEBUG ) || defined( _DEBUG_INFO )
-	 CTEXTSTR file;
-#endif
-	 CTEXTSTR funcname;
-	 struct rt_init *junk;
-#if defined( _DEBUG ) || defined( _DEBUG_INFO )
-#if defined( __GNUC__ ) && defined( __64__)
-    // this provides padding - inter-object segments are packed
-    // to 32 bytes...
-	 struct rt_init *junk2[3];
-#endif
-#endif
-} __attribute__((packed));
-#if defined( _DEBUG ) || defined( _DEBUG_INFO )
-#  if defined( __GNUC__ ) && defined( __64__)
-#    define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
-#  else
-#    define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
-#  endif
-#else
-#  define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
-#endif
-#define RTINIT_STATIC static
-#define ATEXIT_PRIORITY PRIORITY_ATEXIT
-#if defined( _DEBUG ) || defined( _DEBUG_INFO )
-#  define PASS_FILENAME ,WIDE__FILE__
-#else
-#  define PASS_FILENAME
-#endif
-#ifdef __MAC__
-#  define DEADSTART_SECTION "TEXT,deadstart_list"
-#else
-#  define DEADSTART_SECTION "deadstart_list"
-#endif
-#ifdef __MANUAL_PRELOAD__
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)		__attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 =	 {0,0,pr INIT_PADDING, __LINE__, name PASS_FILENAME	, TOSTR(name) JUNKINIT(name)} ;	 void name(void);	 void pastejunk(registerStartup,name)(void) __attribute__((constructor));	 void pastejunk(registerStartup,name)(void) {	 RegisterPriorityStartupProc(name,TOSTR(name),pr,NULL DBG_SRC); }	 void name(void)
-#else
-#if defined( _WIN32 ) || defined( __GNUC__ )
-#  define HIDDEN_VISIBILITY
-#else
-#  define HIDDEN_VISIBILITY  __attribute__((visibility("hidden")))
-#endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	         RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	         __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	  ={0,0,pr INIT_PADDING	                                           ,__LINE__,name	                                                 PASS_FILENAME	                                                 ,TOSTR(name)	                                                   JUNKINIT(name)};	                                               static void name(void) __attribute__((used));	 void name(void)
-#endif
-typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
-#define PRIORITY_ATEXIT(name,priority) static void name(void);           static void pastejunk(atexit,name)(void) __attribute__((constructor));   void pastejunk(atexit,name)(void)                                        {	                                                                        RegisterPriorityShutdownProc(name,TOSTR(name),priority,NULL DBG_SRC); }                                                                        void name(void)
-#define ATEXIT(name) PRIORITY_ATEXIT( name,ATEXIT_PRIORITY_DEFAULT )
-#define ROOT_ATEXIT(name) static void name(void) __attribute__((destructor));    static void name(void)
-#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
-//------------------------------------------------------------------------------------
-// CYGWIN (-mno-cygwin)
-//------------------------------------------------------------------------------------
-#elif defined( __CYGWIN__ )
-/* code taken from openwatcom/bld/watcom/h/rtinit.h */
-typedef unsigned char   __type_rtp;
-typedef void(*__type_rtn ) ( void );
- // structure placed in XI/YI segment
-struct rt_init
-{
-#ifdef __cplusplus
-	//rt_init( int _rtn_type ) { rt_init::rtn_type = _rtn_type; }
-	/*rt_init( int _priority, CTEXTSTR name, __type_rtn rtn, CTEXTSTR _file, int _line )
-	{
-		rtn_type = 0;
-		scheduled = 0;
-		priority = priority;
-		file = _file;
-		line = _line;
-      routine = rtn;
-		}
-      */
-#endif
-#define DEADSTART_RT_LIST_START 0xFF
- // - near=0/far=1 routine indication
-    __type_rtp  rtn_type;
-                          //   also used when walking table to flag
-                          //   completed entries
- // has this been scheduled? (0 if no)
-    __type_rtp  scheduled;
- // - priority (0-highest 255-lowest)
-    __type_rtp  priority;
-#if defined( __GNUC__ ) || defined( __64__ ) || defined( __arm__ ) || defined( __CYGWIN__ )
-#define INIT_PADDING ,{0}
- // need this otherwise it's 23 bytes and that'll be bad.
-	 char padding[1];
-#else
-#define INIT_PADDING
-#endif
- // 32 bits in 64 bits....
-	 int line;
-// this ends up being nicely aligned for 64 bit platforms
-// specially with the packed attributes
-      // - routine (rtn)
-	 __type_rtn  routine;
-	 CTEXTSTR file;
-	 CTEXTSTR funcname;
-	 struct rt_init *junk;
-#if defined( __GNUC__ ) && defined( __64__ )
-    // this provides padding - inter-object segments are packed
-    // to 32 bytes...
-	 struct rt_init *junk2[3];
-#endif
-} __attribute__((packed));
-#define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
-#ifdef __cplusplus
-#define RTINIT_STATIC
-#else
-#define RTINIT_STATIC static
-#endif
-typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
-#define ATEXIT_PRIORITY(name,priority) static void name(void); static void atexit##name(void) __attribute__((constructor));	  void atexit_failed##name(void(*f)(void),int i,CTEXTSTR s1,CTEXTSTR s2,int n) { lprintf( "Failed to load atexit_priority registerar from core program." );} void atexit##name(void)                                                  {	                                                                        static char myname[256];HMODULE mod;if(myname[0])return;myname[0]='a';GetModuleFileName( NULL, myname, sizeof( myname ) );	mod=LoadLibrary(myname);if(mod){   typedef void (*x)(void);void(*rsp)( x,const CTEXTSTR,int,const CTEXTSTR,int);	 if((rsp=((void(*)(void(*)(void),const CTEXTSTR,int,const CTEXTSTR,int))(GetProcAddress( mod, "RegisterPriorityShutdownProc")))))	 {rsp( name,TOSTR(name),priority DBG_SRC);}	 else atexit_failed##name(name,priority,TOSTR(name) DBG_SRC);	        }     FreeLibrary( mod);	 }             void name( void)
-#ifdef _DEBUG
-#  define PASS_FILENAME ,WIDE__FILE__
-#else
-#  define PASS_FILENAME
-#endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct pastejunk(rt_init name,_ctor_label)	   __attribute__((section("deadstart_list")))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 static void name(void)
-#define ATEXIT(name)      ATEXIT_PRIORITY(name,ATEXIT_PRIORITY_DEFAULT)
-#define PRIORITY_ATEXIT ATEXIT_PRIORITY
-#define ROOT_ATEXIT(name) static void name(void) __attribute__((destructor));    static void name(void)
-#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
-//------------------------------------------------------------------------------------
-// WIN32 MSVC
-//------------------------------------------------------------------------------------
-#elif defined( _MSC_VER ) && defined( _WIN32 )
-//#define PRELOAD(name) __declspec(allocate(".CRT$XCAA")) void CPROC name(void)
-//#pragma section(".CRT$XCA",long,read)
-//#pragma section(".CRT$XCZ",long,read)
-// put init in both C startup and C++ startup list...
-// looks like only one or the other is invoked, not both?
-/////// also the variables to be put into these segments
-#if defined( __cplusplus_cli )
-#define LOG_ERROR(n) System::Console::WriteLine( gcnew System::String(n) + gcnew System::String( myname) ) )
-#else
-#define LOG_ERROR(n) SystemLog( n )
-// since we get linked first, then the runtime is added, we have to link against the last indicator of section,
-// so we get put between start to end.
-#define _STARTSEG_ ".CRT$XIM"
-#define _STARTSEG2_ ".CRT$XCY"
-#define _ENDSEG_ ".CRT$XTM"
-//#pragma data_seg(".CRT$XIA")
-#pragma data_seg(".CRT$XIM")
-#pragma section(".CRT$XIM",long,read)
-#pragma data_seg(".CRT$XCY")
-#pragma section(".CRT$XCY",long,read)
-//#pragma data_seg(".CRT$XIZ")
-//#pragma data_seg(".CRT$YCZ")
-#pragma data_seg(".CRT$XTM")
-#pragma section(".CRT$XTM",long,read)
-#pragma data_seg()
-	                                       /*static __declspec(allocate(_STARTSEG_)) void (CPROC*pointer_##name)(void) = pastejunk(schedule_,name);*/
-#define PRIORITY_PRELOAD(name,priority) static void CPROC name(void);    static int CPROC pastejunk(schedule_,name)(void);	   __declspec(allocate(_STARTSEG_)) int (CPROC*pastejunk(TARGET_LABEL,pastejunk( pastejunk(x_,name),__LINE__)))(void) = pastejunk(schedule_,name);	 int CPROC pastejunk(schedule_,name)(void) {	                 RegisterPriorityStartupProc( name,TOSTR(name),priority,pastejunk(TARGET_LABEL,pastejunk( pastejunk(x_,name),__LINE__)) DBG_SRC );	return 0;	 }	 static void CPROC name(void)
-#define ROOT_ATEXIT(name) static void name(void);	 __declspec(allocate(_ENDSEG_)) static void (*f##name)(void)=name;    static void name(void)
-#define ATEXIT(name) PRIORITY_ATEXIT(name,ATEXIT_PRIORITY_DEFAULT)
-typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
-#define PRIORITY_ATEXIT(name,priority) static void CPROC name(void);    static int schedule_atexit_##name(void);	   __declspec(allocate(_STARTSEG_)) void (CPROC*pastejunk(TARGET_LABEL,pastejunk( x_##name,__LINE__)))(void) = (void(CPROC*)(void))schedule_atexit_##name;	 static int schedule_atexit_##name(void) {	                 RegisterPriorityShutdownProc( name,TOSTR(name),priority,pastejunk(TARGET_LABEL,pastejunk( x_##name,__LINE__)) DBG_SRC );	return 0;	 }	                                       static void CPROC name(void)
-#define ATEXIT_PRIORITY(name,priority) PRIORITY_ATEXIT(name,priority)
-#endif
-#ifdef __cplusplus_cli
-#define InvokeDeadstart() do {	                                              TEXTCHAR myname[256];HMODULE mod;	 mod=LoadLibrary("sack_bag.dll");if(mod){           void(*rsp)(void);	 if((rsp=((void(*)(void))(GetProcAddress( mod, "RunDeadstart"))))){rsp();}else{lprintf( "Hey failed to get proc %d", GetLastError() );}	FreeLibrary( mod); }} while(0)
-#else
-#endif
-#define PRELOAD(name) PRIORITY_PRELOAD(name,DEFAULT_PRELOAD_PRIORITY)
-//extern uint32_t deadstart_complete;
-//#define DEADSTART_LINK uint32_t *deadstart_link_couple = &deadstart_complete; // make sure we reference this symbol
-//#pragma data_seg(".CRT$XCAA")
-//extern void __cdecl __security_init_cookie(void);
-//static _CRTALLOC(".CRT$XCAA") _PVFV init_cookie = __security_init_cookie;
-//#pragma data_seg()
-//------------------------------------------------------------------------------------
-// UNDEFINED
-//------------------------------------------------------------------------------------
-#else
-#error "there's nothing I can do to wrap PRELOAD() or ATEXIT()!"
-/* This is the most basic way to define some startup code that
-   runs at some point before the program starts. This code is
-   declared as static, so the same preload initialization name
-   can be used in multiple files.
-   <link sack::app::deadstart, See Also.>                      */
-#define PRELOAD(name)
-#endif
-// the higher the number the earlier it is run
-#define ATEXIT_PRIORITY_SHAREMEM  1
-#define ATEXIT_PRIORITY_THREAD_SEMS ATEXIT_PRIORITY_SYSLOG-1
-#define ATEXIT_PRIORITY_SYSLOG    35
-#define ATEXIT_PRIORITY_MSGCLIENT 85
-#define ATEXIT_PRIORITY_DEFAULT   90
-#define ATEXIT_PRIORITY_TIMERS   (ATEXIT_PRIORITY_DEFAULT+1)
-// this is the first exit to be run.
-// under linux it is __attribute__((destructor))
-// under all it is registered during preload as atexit()
-// only the runexits in deadstart should use ROOT_ATEXIT
-#ifdef __WATCOMC__
-#define ATEXIT_PRIORITY_ROOT 255
-#else
-#define ATEXIT_PRIORITY_ROOT 101
-#endif
-SACK_DEADSTART_NAMESPACE_END
-USE_SACK_DEADSTART_NAMESPACE
-#endif
-#ifdef PROCREG_SOURCE
-#define PROCREG_PROC(type,name) EXPORT_METHOD type CPROC name
-#else
-#define PROCREG_PROC(type,name) IMPORT_METHOD type CPROC name
-#endif
-#ifdef __cplusplus
-#ifdef __cplusplus_cli
-//using namespace System;
-#endif
-#   define _INTERFACE_NAMESPACE namespace Interface {
-#   define _INTERFACE_NAMESPACE_END }
-#define PROCREG_NAMESPACE namespace sack { namespace app { namespace registry {
-#define _PROCREG_NAMESPACE namespace registry {
-#define _APP_NAMESPACE namespace app {
-#define PROCREG_NAMESPACE_END }}}
-//extern "C"  {
-#else
-#   define _INTERFACE_NAMESPACE
-#   define _INTERFACE_NAMESPACE_END
-#define _PROCREG_NAMESPACE
-#define _APP_NAMESPACE
-#define PROCREG_NAMESPACE
-#define PROCREG_NAMESPACE_END
-#endif
-SACK_NAMESPACE
-/* Deadstart is support which differs per compiler, but allows
-   applications access a C++ feature - static classes with
-   constructors that initialize at loadtime, but, have the
-   feature that you can create threads. Deadstart code is run
-   after the DLL load lock under windows that prevents creation
-   of threads; however, deadstart is run before main. Deadstart
-   routines can have a priority. Certain features require others
-   to be present always. This allows explicit control of
-   priority unlink using classes with static constructors, which
-   requires ordering of objects to provide linking order. Also
-   provides a similar registration mechanism for atexit, but
-   extending with priority. Deadstop registrations are done
-   sometime during normal C atexit() handling, but may be
-   triggered first by calling BAG_Exit.
-   Registry offers support to register functions, and data under
-   a hierarchy of names. Names are kept in a string cache, which
-   applications can take benefit of. Strings will exist only a
-   single time. This table could be saved, and a look-aside
-   table for language translation purposes. Registry is the
-   support that the latest PSI relies on for registering event
-   callbacks for controls. The registry was always used, but,
-   the access to it was encapsulated by DoRegisterControl
-   registering the appropriate methods.                          */
-	_APP_NAMESPACE
-   /* Contains methods dealing with registering routines and values
-      in memory. Provisions are available to save the configuration
-      state, but the best that can be offered here would be a
-      translation tool for text strings. The namespace is savable,
-      but most of the content of the registration space are short
-      term pointers. Namespace containing registry namespace.
-      old notes - very discongruant probably should delete them.
-      Process name registry
-      it's a tree of names.
-      there are paths, and entries
-      paths are represented as class_name
-      PCLASSROOT is also a suitable class name
-      PCLASSROOT is defined as a valid CTEXTSTR.
-      there is (apparently) a name that is not valid as a path name
-      that is TREE
-      guess.
-      POINTER in these two are equal to (void(*)(void)) but -
-      that's rarely the most useful thing... so
-      name class is a tree of keys... /\<...\>
-      psi/control/## might contain procs Init Destroy Move
-      RegAlias( "psi/control/3", "psi/control/button"
-      ); psi/control/button and psi/control/3 might reference the
-      same routines
-      psi/frame Init Destroy Move memlib Alloc Free
-      network/tcp
-      I guess name class trees are somewhat shallow at the moment
-      not going beyond 1-3 layers
-      names may eventually be registered and reference out of body
-      services, even out of box...
-      the values passed as returntype and parms/args need not be
-      real genuine types, but do need to be consistant between the
-      registrant and the requestor... this provides for full name
-      dressing, return type and paramter type may both cause
-      overridden functions to occur...                              */
-_PROCREG_NAMESPACE
-#ifndef REGISTRY_STRUCTURE_DEFINED
-	// make these a CTEXTSTR to be compatible with name_class...
-#ifdef __cplusplus
-	// because of name mangling and stronger type casting
-	// it becomes difficult to pass a tree_def_tag * as a CTEXTSTR classname
-	// as valid as this is.
-	typedef struct tree_def_tag const * PCLASSROOT;
-#else
-	typedef CTEXTSTR PCLASSROOT;
-#endif
-	typedef void (CPROC *PROCEDURE)(void);
-#ifdef __cplusplus_cli
-	typedef void (__stdcall *STDPROCEDURE)(array<System::Object^>^);
-#endif
-#else
-	typedef struct tree_def_tag const * PCLASSROOT;
-	typedef void (CPROC *PROCEDURE)(void);
-#ifdef __cplusplus_cli
-	typedef void (__stdcall *STDPROCEDURE)(array<System::Object^>^);
-#endif
-#endif
-/* CheckClassRoot reads for a path of names, but does not create
-   it if it does not exist.                                      */
-PROCREG_PROC( PCLASSROOT, CheckClassRoot )( CTEXTSTR class_name );
-/* \Returns a PCLASSROOT of a specified path. The path may be
-   either a PCLASSROOT or a text string indicating the path. the
-   Ex versions allow passing a base PCLASSROOT path and an
-   additional subpath to get. GetClassRoot will always create
-   the path if it did not exist before, and will always result
-   with a root.
-   Remarks
-   a CTEXTSTR (plain text string, probably wide character if
-   compiled unicode) and a PCLASSROOT are always
-   interchangeable. Though you may need a forced type cast, I
-   have defined both CTEXTSTR and PCLASSROOT function overloads
-   for c++ compiled code, and C isn't so unkind about the
-   conversion. I think problem might lie that CTEXTSTR has a
-   const qualifier and PCLASSROOT doesn't (but should).
-   Example
-   <code lang="c++">
-   PCLASSROOT root = GetClassRoot( "psi/resource" );
-   // returns the root of all resource names.
-   </code>
-   <code>
-   PCLASSROOT root2 = GetClassRootEx( "psi/resource", "buttons" );
-   </code>                                                         */
-PROCREG_PROC( PCLASSROOT, GetClassRoot )( CTEXTSTR class_name );
-/* <combine sack::app::registry::GetClassRoot@CTEXTSTR>
-   \ \                                                  */
-PROCREG_PROC( PCLASSROOT, GetClassRootEx )( PCLASSROOT root, CTEXTSTR name_class );
-#ifdef __cplusplus
-/* <combine sack::app::registry::GetClassRoot@CTEXTSTR>
-   \ \                                                  */
-PROCREG_PROC( PCLASSROOT, GetClassRoot )( PCLASSROOT class_name );
-/* <combine sack::app::registry::GetClassRoot@CTEXTSTR>
-   \ \                                                  */
-PROCREG_PROC( PCLASSROOT, GetClassRootEx )( PCLASSROOT root, PCLASSROOT name_class );
-#endif
-/* Fills a string with the path name to the specified node */
-PROCREG_PROC( int, GetClassPath )( TEXTSTR out, size_t len, PCLASSROOT root );
-PROCREG_PROC( void, SetInterfaceConfigFile )( TEXTCHAR *filename );
-/* Get[First/Next]RegisteredName( "classname", &amp;data );
-   these operations are not threadsafe and multiple thread
-   accesses will cause mis-stepping
-   These functions as passed the address of a POINTER. this
-   POINTER is for the use of the browse routines and should is
-   meaningless to he calling application.
-   Parameters
-   root :       The root to search from
-   classname :  A sub\-path from the root to search from
-   data :       the address of a pointer that keeps track of
-                information about the search. (opaque to user)
-   Example
-   Usage:
-   <code lang="c++">
-   CTEXTSTR result;
-   POINTER data = NULL;
-   for( result = GetFirstRegisteredName( "some/class/path", &amp;data );
-        \result;
-        \result = GetNextRegisteredName( &amp;data ) )
-   {
-        // result is a string name of the current node.
-        // can use that name and GetRegistered____ (function/int/value)
-        if( NameHasBranches( &amp;data ) ) // for consitancy in syntax
-        {
-            // consider recursing through tree, name becomes a valid classname for GetFirstRegisteredName()
-        }
-   }
-   </code>                                                                                                  */
-PROCREG_PROC( CTEXTSTR, GetFirstRegisteredNameEx )( PCLASSROOT root, CTEXTSTR classname, PCLASSROOT *data );
-#ifdef __cplusplus
-/* <combine sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *>
-   \ \                                                                                      */
-	PROCREG_PROC( CTEXTSTR, GetFirstRegisteredName )( PCLASSROOT classname, PCLASSROOT *data );
-#endif
-/* <combine sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *>
-   \ \                                                                                      */
-PROCREG_PROC( CTEXTSTR, GetFirstRegisteredName )( CTEXTSTR classname, PCLASSROOT *data );
-/* Steps to the next registered name being browsed. Is passed
-   only the pointer to data. See GetFirstRegisteredName for
-   usage.
-   See Also
-   <link sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *, sack::app::registry::GetFirstRegisteredNameEx Function> */
-PROCREG_PROC( CTEXTSTR, GetNextRegisteredName )( PCLASSROOT *data );
-/* When using GetFirstRegisteredName and GetNextRegisteredName
-   to browse through names, this function is able to get the
-   current PCLASSROOT of the current node, usually you end up
-   with just the content of that registered name.
-   \result with the current node ( useful for pulling registered
-   subvalues like description, or file and line )
-                                                                 */
-PROCREG_PROC( PCLASSROOT, GetCurrentRegisteredTree )( PCLASSROOT *data );
-#ifdef __cplusplus
-//PROCREG_PROC( CTEXTSTR, GetFirstRegisteredName )( CTEXTSTR classname, POINTER *data );
-//PROCREG_PROC( CTEXTSTR, GetNextRegisteredName )( POINTER *data );
-#endif
-// while doing a scan for registered procedures, allow applications to check for branches
-//PROCREG_PROC( int, NameHasBranches )( POINTER *data );
-PROCREG_PROC( int, NameHasBranches )( PCLASSROOT *data );
-// while doing a scan for registered procedures, allow applications to ignore aliases...
-PROCREG_PROC( int, NameIsAlias )( PCLASSROOT *data );
-/*
- * RegisterProcedureExx(
- *
- */
- // root name or PCLASSROOT of base path
-PROCREG_PROC( int, RegisterProcedureExx )( PCLASSROOT root
- // an additional path on root
-													  , CTEXTSTR name_class
- // the name of the value entry saved in the tree
-													  , CTEXTSTR public_name
- // the text return type of this function - may be checked to validate during GetRegisteredProcedure
-													  , CTEXTSTR returntype
- // name of the library this symbol is in - may be checked to validate during GetRegisteredProcedure
-													  , CTEXTSTR library
- // actual C function name in library - may be checked to validate during GetRegisteredProcedure
-													  , CTEXTSTR name
- // preferably the raw argument string of types and no variable references "([type][,type]...)"
-													  , CTEXTSTR args
- // file and line of the calling application.  May be no parameter in release mode.
-													  DBG_PASS
-													  );
-/*
- * RegisterProcedureEx( root       // root path
- *                    , name_class // additional name
- *                    , nice_name  // nice name
- *                    , return type not in quotes  'void'
- *                    , function_name in quotes '"Function"'
- *                    , args not in quotes '(int,char,float,UserType*)'
- */
-#define RegisterProcedureEx(root,nc,n,rtype,proc,args)  RegisterProcedureExx( (root),(nc),(n),#rtype,TARGETNAME,(proc), #args DBG_SRC)
-/*
- * RegisterProcedure( name_class // additional name
- *                    , nice_name  // nice name
- *                    , return type not in quotes  'void'
- *                    , function_name in quotes '"Function"'
- *                    , args not in quotes '(int,char,float,UserType*)'
- */
-#define RegisterProcedure(nc,n,rtype,proc,args)  RegisterProcedureExx( NULL, (nc),(n),#rtype,TARGETNAME,(proc), #args DBG_SRC)
-/*
- * Branches on the tree may be aliased together to form a single branch
- *
- */
-				// RegisterClassAlias( "psi/control/button", "psi/control/3" );
-				// then the same set of values can be referenced both ways with
-				// really only a single modified value.
-/* parameters to RegisterClassAliasEx are the original name, and the new alias name for the origianl branch*/
-PROCREG_PROC( PCLASSROOT, RegisterClassAliasEx )( PCLASSROOT root, CTEXTSTR original, CTEXTSTR alias );
-/* <combine sack::app::registry::RegisterClassAliasEx@PCLASSROOT@CTEXTSTR@CTEXTSTR>
-   \ \                                                                              */
-PROCREG_PROC( PCLASSROOT, RegisterClassAlias )( CTEXTSTR original, CTEXTSTR newalias );
-// root, return, public, args, address
-PROCREG_PROC( PROCEDURE, ReadRegisteredProcedureEx )( PCLASSROOT root
-                                                    , CTEXTSTR returntype
-																	 , CTEXTSTR parms
-																  );
-#define ReadRegisteredProcedure( root,rt,a) ((rt(CPROC*)a)ReadRegisteredProcedureEx(root,#rt,#a))
-/* Gets a function that has been registered. */
-PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( PCLASSROOT root
-																	 , PCLASSROOT name_class
-                                                    , CTEXTSTR returntype
-																	 , CTEXTSTR name
-																	 , CTEXTSTR parms
-																	 );
-#define GetRegisteredProcedureExx(root,nc,rt,n,a) ((rt (CPROC*)a)GetRegisteredProcedureExxx(root,nc,#rt,n,#a))
-#define GetRegisteredProcedure2(nc,rtype,name,args) (rtype (CPROC*)args)GetRegisteredProcedureEx((nc),#rtype, name, #args )
-#define GetRegisteredProcedureNonCPROC(nc,rtype,name,args) (rtype (*)args)GetRegisteredProcedureEx((nc),#rtype, name, #args )
-/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
-   \ \                                                                                                        */
-PROCREG_PROC( PROCEDURE, GetRegisteredProcedureEx )( PCLASSROOT name_class
-																	, CTEXTSTR returntype
-																	, CTEXTSTR name
-																	, CTEXTSTR parms
-																	);
-PROCREG_PROC( LOGICAL, RegisterFunctionExx )( PCLASSROOT root
-													, PCLASSROOT name_class
-													, CTEXTSTR public_name
-													, CTEXTSTR returntype
-													, PROCEDURE proc
-													 , CTEXTSTR args
-													 , CTEXTSTR library
-													 , CTEXTSTR real_name
-													  DBG_PASS
-														  );
-#ifdef __cplusplus
-/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
-   \ \                                                                                                        */
-PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( CTEXTSTR root
-																	 , CTEXTSTR name_class
-                                                    , CTEXTSTR returntype
-																	 , CTEXTSTR name
-																	 , CTEXTSTR parms
-																	 );
-/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
-   \ \                                                                                                        */
-PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( CTEXTSTR root
-																	 , PCLASSROOT name_class
-                                                    , CTEXTSTR returntype
-																	 , CTEXTSTR name
-																	 , CTEXTSTR parms
-																	 );
-/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
-   \ \                                                                                                        */
-PROCREG_PROC( PROCEDURE, GetRegisteredProcedureExxx )( PCLASSROOT root
-																	 , CTEXTSTR name_class
-                                                    , CTEXTSTR returntype
-																	 , CTEXTSTR name
-																	 , CTEXTSTR parms
-																	 );
-/* <combine sack::app::registry::GetRegisteredProcedureExxx@PCLASSROOT@PCLASSROOT@CTEXTSTR@CTEXTSTR@CTEXTSTR>
-   \ \                                                                                                        */
-PROCREG_PROC( PROCEDURE, GetRegisteredProcedureEx )( CTEXTSTR name_class
-																	, CTEXTSTR returntype
-																	, CTEXTSTR name
-																	, CTEXTSTR parms
-																	);
-PROCREG_PROC( LOGICAL, RegisterFunctionExx )( CTEXTSTR root
-													, CTEXTSTR name_class
-													, CTEXTSTR public_name
-													, CTEXTSTR returntype
-                                       , PROCEDURE proc
-													 , CTEXTSTR args
-													 , CTEXTSTR library
-													 , CTEXTSTR real_name
-													  DBG_PASS
-														  );
-#endif
-//#define RegisterFunctionExx( r,nc,p,rt,proc,ar ) RegisterFunctionExx( r,nc,p,rt,proc,ar,TARGETNAME,NULL DBG_SRC )
-//#define RegisterFunctionEx(r,nc,pn,rt,proc,args,lib,rn) RegisterFunctionExx(r,nc,pn,rt,proc,args,lib,rn DBG_SRC)
-#define RegisterFunctionEx( root,proc,rt,pn,a) RegisterFunctionExx( root,NULL,pn,rt,(PROCEDURE)(proc),a,NULL,NULL DBG_SRC )
-#define RegisterFunction( nc,proc,rt,pn,a) RegisterFunctionExx( (PCLASSROOT)NULL,nc,pn,rt,(PROCEDURE)(proc),a,TARGETNAME,NULL DBG_SRC )
-#define SimpleRegisterMethod(r,proc,rt,name,args) RegisterFunctionExx(r,NULL,name,rt,(PROCEDURE)proc,args,NULL,NULL DBG_SRC )
-#define GetRegisteredProcedure(nc,rtype,name,args) (rtype (CPROC*)args)GetRegisteredProcedureEx((nc),#rtype, #name, #args )
-PROCREG_PROC( int, RegisterIntValueEx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name, uintptr_t value );
-PROCREG_PROC( int, RegisterIntValue )( CTEXTSTR name_class, CTEXTSTR name, uintptr_t value );
-PROCREG_PROC( int, RegisterValueExx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name, int bIntVal, CTEXTSTR value );
-PROCREG_PROC( int, RegisterValueEx )( CTEXTSTR name_class, CTEXTSTR name, int bIntVal, CTEXTSTR value );
-PROCREG_PROC( int, RegisterValue )( CTEXTSTR name_class, CTEXTSTR name, CTEXTSTR value );
-/* \ \
-   Parameters
-   root :        Root class to start searching from
-   name_class :  An additional sub\-path to get the name from
-   name :        the name within the path specified
-   bIntVal :     a true/false whether to get the string or
-                 integer value from the specified node.
-   Returns
-   A pointer to a string if bIntVal is not set. (NULL if there
-   was no string).
-   Otherwise will be an int shorter than or equal to the size of
-   a pointer, which should be cast to an int if bIntVal is set,
-   and there is a value registered there. Probably 0 if no
-   value, so registered 0 value and no value is
-   indistinguisable.                                             */
-PROCREG_PROC( CTEXTSTR, GetRegisteredValueExx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name, int bIntVal );
-/* <combine sack::app::registry::GetRegisteredValueExx@PCLASSROOT@CTEXTSTR@CTEXTSTR@int>
-   \ \                                                                                   */
-PROCREG_PROC( CTEXTSTR, GetRegisteredValueEx )( CTEXTSTR name_class, CTEXTSTR name, int bIntVal );
-/* <combine sack::app::registry::GetRegisteredValueExx@PCLASSROOT@CTEXTSTR@CTEXTSTR@int>
-   \ \                                                                                   */
-PROCREG_PROC( CTEXTSTR, GetRegisteredValue )( CTEXTSTR name_class, CTEXTSTR name );
-#ifdef __cplusplus
-/* <combine sack::app::registry::GetRegisteredValueExx@PCLASSROOT@CTEXTSTR@CTEXTSTR@int>
-   \ \                                                                                   */
-PROCREG_PROC( CTEXTSTR, GetRegisteredValueExx )( CTEXTSTR root, CTEXTSTR name_class, CTEXTSTR name, int bIntVal );
-PROCREG_PROC( int, RegisterIntValueEx )( CTEXTSTR root, CTEXTSTR name_class, CTEXTSTR name, uintptr_t value );
-#endif
-/* This is like GetRegisteredValue, but takes the address of the
-   type to return into instead of having to cast the final
-   \result.
-   if bIntValue, result should be passed as an (&amp;int)        */
-PROCREG_PROC( int, GetRegisteredStaticValue )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name
-															, CTEXTSTR *result
-															, int bIntVal );
-#define GetRegisteredStaticIntValue(r,nc,name,result) GetRegisteredStaticValue(r,nc,name,(CTEXTSTR*)result,TRUE )
-/* <combine sack::app::registry::GetRegisteredValueExx@PCLASSROOT@CTEXTSTR@CTEXTSTR@int>
-   \ \                                                                                   */
-PROCREG_PROC( int, GetRegisteredIntValueEx )( PCLASSROOT root, CTEXTSTR name_class, CTEXTSTR name );
-/* <combine sack::app::registry::GetRegisteredIntValueEx@PCLASSROOT@CTEXTSTR@CTEXTSTR>
-   \ \                                                                                 */
-PROCREG_PROC( int, GetRegisteredIntValue )( CTEXTSTR name_class, CTEXTSTR name );
-#ifdef __cplusplus
-/* <combine sack::app::registry::GetRegisteredIntValueEx@PCLASSROOT@CTEXTSTR@CTEXTSTR>
-   \ \                                                                                 */
-PROCREG_PROC( int, GetRegisteredIntValue )( PCLASSROOT name_class, CTEXTSTR name );
-#endif
-typedef void (CPROC*OpenCloseNotification)( POINTER, uintptr_t );
-#define PUBLIC_DATA( public, struct, open, close )	    PRELOAD( Data_##open##_##close ) {	 RegisterDataType( "system/data/structs"	        , public, sizeof(struct)	    , (OpenCloseNotification)open, (OpenCloseNotification)close ); }
-#define PUBLIC_DATA_EX( public, struct, open, update, close )	    PRELOAD( Data_##open##_##close ) {	 RegisterDataTypeEx( "system/data/structs"	        , public, sizeof(struct)	    , (OpenCloseNotification)open, (OpenCloseNotification)update, (OpenCloseNotification)close ); }
-#define GET_PUBLIC_DATA( public, type, instname )    (type*)CreateRegisteredDataType( "system/data/structs", public, instname )
-PROCREG_PROC( uintptr_t, RegisterDataType )( CTEXTSTR classname
-												 , CTEXTSTR name
-												 , uintptr_t size
-												 , OpenCloseNotification open
-												 , OpenCloseNotification close );
-/* Registers a structure as creatable in shared memory by name.
-   So a single name of the structure can be used to retrieve a
-   pointer to one created.
-   Example
-   \ \
-   <code lang="c++">
-   POINTER p = CreateRegisteredDataType( "My types", "my_registered_type", "my instance" );
-   // p will result to a region of type 'my_registered_type' called 'my_instance'
-   // if it did not exist, it will be created, otherwise the one existing is returned.
-   </code>
-   Parameters
-   root :          optional root name (ex version uses this)
-   classname :     path to the type
-   name :          name of the type to create an instance of
-   instancename :  a name for the instance created.                                         */
-PROCREG_PROC( uintptr_t, CreateRegisteredDataType)( CTEXTSTR classname
-																 , CTEXTSTR name
-																 , CTEXTSTR instancename );
-PROCREG_PROC( uintptr_t, RegisterDataTypeEx )( PCLASSROOT root
-													, CTEXTSTR classname
-													, CTEXTSTR name
-													, uintptr_t size
-													, OpenCloseNotification Open
-													, OpenCloseNotification Close );
-/* <combine sack::app::registry::CreateRegisteredDataType@CTEXTSTR@CTEXTSTR@CTEXTSTR>
-   \ \                                                                                */
-PROCREG_PROC( uintptr_t, CreateRegisteredDataTypeEx)( PCLASSROOT root
-																	, CTEXTSTR classname
-																	, CTEXTSTR name
-																	, CTEXTSTR instancename );
-/* Outputs through syslog a tree dump of all names registered. */
-PROCREG_PROC( void, DumpRegisteredNames )( void );
-/* Dumps through syslog all names registered from the specified
-   root point. (instead of dumping the whole tree)              */
-PROCREG_PROC( void, DumpRegisteredNamesFrom )( PCLASSROOT root );
-PROCREG_PROC( int, SaveTree )( void );
-PROCREG_PROC( int, LoadTree )( void );
-#define METHOD_PTR(type,name) type (CPROC *_##name)
-#define DMETHOD_PTR(type,name) type (CPROC **_##name)
-#define METHOD_ALIAS(i,name) ((i)->_##name)
-#define PDMETHOD_ALIAS(i,name) (*(i)->_##name)
-/* Releases an interface. When interfaces are registered, they
-   register with a OnGetInterface and an OnDropInterface
-   callback so that it may do additional work to cleanup from
-   giving you a copy of the interface.
-   Example
-   <code lang="c++">
-   POINTER p = GetInterface( "image" );
-   DropInterface( p );
-   </code>                                                     */
-PROCREG_PROC( void, DropInterface )( CTEXTSTR pServiceName, POINTER interface_x );
-PROCREG_PROC( POINTER, GetInterface_v4 )( CTEXTSTR pServiceName, LOGICAL ReadConfig, int quietFail DBG_PASS );
-#define GetInterfaceV4( a, b )  GetInterface_v4( a, FALSE, b DBG_SRC )
-/* \Returns the pointer to a registered interface. This is
-   typically a structure that contains pointer to functions. Takes
-   a text string to an interface. Interfaces are registered at a
-   known location in the registry tree.                            */
-PROCREG_PROC( POINTER, GetInterfaceDbg )( CTEXTSTR pServiceName DBG_PASS );
-#define GetInterface(n) GetInterfaceDbg( n DBG_SRC )
-#define GetRegisteredInterface(name) GetInterface(name)
-PROCREG_PROC( LOGICAL, RegisterInterfaceEx )( CTEXTSTR name, POINTER(CPROC*load)(void), void(CPROC*unload)(POINTER) DBG_PASS );
-//PROCREG_PROC( LOGICAL, RegisterInterface )(CTEXTSTR name, POINTER( CPROC*load )(void), void(CPROC*unload)(POINTER));
-#define RegisterInterface(n,l,u) RegisterInterfaceEx( n,l,u DBG_SRC )
-// unregister a function, should be smart and do full return type
-// and parameters..... but for now this only references name, this indicates
-// that this has not been properly(fully) extended, and should be layered
-// in such a way as to allow this function work in it's minimal form.
-PROCREG_PROC( int, ReleaseRegisteredFunctionEx )( PCLASSROOT root
-													, CTEXTSTR name_class
-													, CTEXTSTR public_name
-													  );
-#define ReleaseRegisteredFunction(nc,pn) ReleaseRegisteredFunctionEx(NULL,nc,pn)
-/* This is a macro used to paste two symbols together. */
-#define paste_(a,b) a##b
-#define paste(a,b) paste_(a,b)
-#define preproc_symbol(a)  a
-#ifdef __cplusplus
-#define EXTRA_PRELOAD_SYMBOL _
-#else
-#define EXTRA_PRELOAD_SYMBOL
-#endif
-#define DefineRegistryMethod2_i(task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),preproc_symbol(EXTRA_PRELOAD_SYMBOL)),line), SQL_PRELOAD_PRIORITY ) {	  SimpleRegisterMethod( task "/" classtype, paste(name,line)	  , #returntype, methodname, #argtypes );    RegisterValue( task "/" classtype "/" methodname, "Description", desc ); }	                                                                          static returntype CPROC paste(name,line)
-#define DefineRegistryMethod2(task,name,classtype,methodname,desc,returntype,argtypes,line)	   DefineRegistryMethod2_i(task,name,classtype,methodname,desc,returntype,argtypes,line)
-/* Dekware uses this macro.
-     passes preload priority override.
-	 so it can register new internal commands before initial macros are run.
-*/
-#define DefineRegistryMethod2P_i(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIORITY_PRELOAD( paste(paste(paste(paste(Register,name),Method),preproc_symbol(EXTRA_PRELOAD_SYMBOL)),line), priority ) {	  SimpleRegisterMethod( task "/" classtype, paste(name,line)	  , #returntype, methodname, #argtypes );    RegisterValue( task "/" classtype "/" methodname, "Description", desc ); }	                                                                          static returntype CPROC paste(name,line)
-/* This macro indirection is to resolve inner macros like "" around text.  */
-#define DefineRegistryMethod2P(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)	   DefineRegistryMethod2P_i(priority,task,name,classtype,methodname,desc,returntype,argtypes,line)
-/*
-    This method is used by PSI/Intershell.
-	no description
-*/
-#define DefineRegistryMethod_i(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(paste(Register##name##Button,preproc_symbol(EXTRA_PRELOAD_SYMBOL)),line) ) {	  SimpleRegisterMethod( task "/" classtype "/" classbase, paste(name,line)	  , #returntype, methodname, #argtypes ); }	                                                                          static returntype CPROC paste(name,line)
-#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   DefineRegistryMethod_i(task,name,classtype,classbase,methodname,returntype,argtypes,line)
-/*
-#define _0_DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)	   static returntype _1__DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes)	  _1__DefineRegistryMethod(task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
-*/
-// this macro is used for ___DefineRegistryMethodP. Because this is used with complex names
-// an extra define wrapper of priority_preload must be used to fully resolve paramters.
-/*
-#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRIOR_PRELOAD( paste(paset(Register##name##Button,preproc_symbol(EXTRA_PRELOAD_SYMBOL),line), priority ) {	  SimpleRegisterMethod( task "/" classtype "/" classbase, paste(name,line)	  , #returntype, methodname, #argtypes ); }	                                                                          static returntype CPROC paste(name,line)
-*/
-/* <combine sack::app::registry::SimpleRegisterMethod>
-   General form to build a registered procedure. Used by simple
-   macros to create PRELOAD'ed registered functions. This flavor
-   requires the user to provide 'static' and a return type that
-   matches the return type specified in the macro. This makes
-   usage most C-like, and convenient to know what the return
-   value of a function should be (if any).
-   Parameters
-   priority :    The preload priority to load at.
-   task :        process level name registry. This would be
-                 "Intershell" or "psi" or some other base prefix.
-                 The prefix can contain a path longer than 1
-                 level.
-   name :        This is the function name to build. (Can be used
-                 for link debugging sometimes)
-   classtype :   class of the name being registered
-   methodname :  name of the routine to register
-   returntype :  the literal type of the return type of this
-                 function (void, int, PStruct* )
-   argtypes :    Argument signature of the routine in parenthesis
-   line :        this is usually filled with __LINE__ so that the
-                 same function name (name) will be different in
-                 different files (even in the same file)
-   Remarks
-   This registers a routine at the specified preload priority.
-   Registers under [task]/[classname]/methodname. The name of
-   the registered routine from a C perspective is [name][line]. This
-   function is not called directly, but will only be referenced
-   from the registered name.
-   Example
-   See <link sack::app::registry::GetFirstRegisteredNameEx@PCLASSROOT@CTEXTSTR@PCLASSROOT *, GetFirstRegisteredNameEx> */
-/*
-#define _1__DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   _2___DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define _0_DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)	   _1__DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,line)
-#define DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes)	  _0_DefineRegistryMethodP(priority,task,name,classtype,classbase,methodname,returntype,argtypes,__LINE__)
-*/
-#define DefineRegistrySubMethod_i(task,name,classtype,classbase,methodname,subname,returntype,argtypes,line)	   CPROC paste(name,line)argtypes;	       PRELOAD( paste(paste(Register##name##Button,preproc_symbol(EXTRA_PRELOAD_SYMBOL)),line) ) {	  SimpleRegisterMethod( task "/" classtype "/" classbase "/" methodname, paste(name,line)	  , #returntype, subname, #argtypes ); }	                                                                          static returntype CPROC paste(name,line)
-#define DefineRegistrySubMethod(task,name,classtype,classbase,methodname,subname,returntype,argtypes)	  DefineRegistrySubMethod_i(task,name,classtype,classbase,methodname,subname,returntype,argtypes,__LINE__)
-/* attempts to use dynamic linking functions to resolve passed
-   global name if that fails, then a type is registered for this
-   global, and an instance created, so that that instance may be
-   reloaded again, otherwise the data in the main application is
-   used... actually we should deprecate the dynamic loading
-   part, and just register the type.
-   SimpleRegisterAndCreateGlobal Simply registers the type as a
-   global variable type. Allows creation of the global space
-   later.
-   Parameters
-   name :         name of the pointer to global type to create.<p />text
-                  string to register this created global as.
-   ppGlobal :     address of the pointer to global memory.
-   global_size :  size of the global area to create
-   Example
-   <code lang="c++">
-   typedef struct {
-      int data;
-   } my_global;
-   my_global *global;
-   PRELOAD( Init )
-   {
-       SimpleRegisterAndCreateGlobal( global );
-   }
-   </code>                                                               */
-PROCREG_PROC( void, RegisterAndCreateGlobal )( POINTER *ppGlobal, uintptr_t global_size, CTEXTSTR name );
-/* <combine sack::app::registry::RegisterAndCreateGlobal@POINTER *@uintptr_t@CTEXTSTR>
-   \ \                                                                                   */
-#define SimpleRegisterAndCreateGlobal( name )	 RegisterAndCreateGlobal( (POINTER*)&name, sizeof( *name ), #name )
-/* Init routine is called, otherwise a 0 filled space is
-   returned. Init routine is passed the pointer to the global
-   and the size of the global block the global data block is
-   zero initialized.
-   Parameters
-   ppGlobal :     Address of the pointer to the global region
-   global_size :  size of the global region to create
-   name :         name of the global region to register (so
-                  future users get back the same data area)
-   Init :         function to call to initialize the region when
-                  created. (doesn't have to be a global. Could be
-                  used to implement types that have class
-                  constructors \- or not, since there's only one
-                  instance of a global \- this is more for
-                  singletons).
-   Example
-   <code>
-   typedef struct {
-      int data;
-   } my_global;
-   my_global *global;
-   </code>
-   <code lang="c++">
-   void __cdecl InitRegion( POINTER region, uintptr_t region_size )
-   {
-       // do something to initialize 'region'
-   }
-   PRELOAD( InitGlobal )
-   {
-       SimpleRegisterAndCreateGlobalWithInit( global, InitRegion );
-   }
-   </code>                                                          */
-PROCREG_PROC( void, RegisterAndCreateGlobalWithInit )( POINTER *ppGlobal, uintptr_t global_size, CTEXTSTR name, void (CPROC*Init)(POINTER,uintptr_t) );
-/* <combine sack::app::registry::RegisterAndCreateGlobalWithInit@POINTER *@uintptr_t@CTEXTSTR@void __cdecl*InitPOINTER\,uintptr_t>
-   \ \                                                                                                                              */
-#define SimpleRegisterAndCreateGlobalWithInit( name,init )	 RegisterAndCreateGlobalWithInit( (POINTER*)&name, sizeof( *name ), #name, init )
-/* a tree dump will result with dictionary names that may translate automatically. */
-/* This has been exported as a courtesy for StrDup.
- * this routine MAY result with a translated string.
- * this routine MAY result with the same pointer.
- * this routine MAY need to be improved if MANY more strdups are replaced
- * Add a binary tree search index when large.
- * Add a transaltion tree index at the same time.
- */
-PROCREG_PROC( CTEXTSTR, SaveNameConcatN )( CTEXTSTR name1, ... );
-// no space stripping, saves literal text
-PROCREG_PROC( CTEXTSTR, SaveText )( CTEXTSTR text );
-PROCREG_NAMESPACE_END
-#ifdef __cplusplus
-	using namespace sack::app::registry;
-#endif
-#endif
 #ifdef __cplusplus
 #define _OPTION_NAMESPACE namespace options {
 #define _OPTION_NAMESPACE_END }
@@ -13410,433 +13916,6 @@ JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_array_value )(s
 } } SACK_NAMESPACE_END
 using namespace sack::network::jsox;
 #endif
-#endif
-#ifndef HTML5_WEBSOCKET_CLIENT_INCLUDED
-#define HTML5_WEBSOCKET_CLIENT_INCLUDED
-/*****************************************************
-so... what does the client provide?
-websocket protocol is itself wrapped in a frame, so messages are described with exact
-length, and what is received will be exactly like the block that was sent.
-*****************************************************/
-/* Generalized HTTP Processing. All POST, GET, RESPONSE packets
-   all fit within this structure.
-                                                                */
-#ifndef HTTP_PROCESSING_INCLUDED
-/* Multiple inclusion protection symbol */
-#define HTTP_PROCESSING_INCLUDED
-#ifdef HTTP_SOURCE
-#define HTTP_EXPORT EXPORT_METHOD
-#else
-/* Defines how external functions are referenced
-   (dllimport/export/extern)                     */
-#define HTTP_EXPORT IMPORT_METHOD
-#endif
-/* The API type of HTTP functions - default to CPROC. */
-#define HTTPAPI CPROC
-#ifdef __cplusplus
-/* A symbol to define the sub-namespace of HTTP_NAMESPACE  */
-#define _HTTP_NAMESPACE namespace http {
-/* A macro to end just the HTTP sub namespace. */
-#define _HTTP_NAMESPACE_END }
-#else
-#define _HTTP_NAMESPACE
-#define _HTTP_NAMESPACE_END
-#endif
-/* HTTP full namespace  */
-#define HTTP_NAMESPACE TEXT_NAMESPACE _HTTP_NAMESPACE
-/* Macro to use to define where http utility namespace ends. */
-#define HTTP_NAMESPACE_END _HTTP_NAMESPACE_END TEXT_NAMESPACE_END
-SACK_CONTAINER_NAMESPACE
-/* Text library functions. PTEXT is kept as a linked list of
-   segments of text. Each text segment has a size and the data,
-   and additional format flags. PTEXT may also be indirect
-   segments (that is this segment points at another list of
-   segments that are the actualy content for this place.
-                                                                */
-_TEXT_NAMESPACE
-	/* Simple HTTP Packet processing state. Its only intelligence is
-	   that there are fields of http header, and that one of those
-	   fields might be content-length; so it can seperate individual
-	   fields name-value pairs and the packet content.               */
-	_HTTP_NAMESPACE
-struct HttpField {
-	PTEXT name;
-	PTEXT value;
-};
-struct HTTPRequestHeader {
-	char* field;
-	char* value;
-};
-struct HTTPRequestOptions {
-  // deafult GET
-	const char* method;
-     // path part of the request
-	PTEXT url;
- // address part of request (ip:port)
-	PTEXT address;
- // list of TEXTCAHR*
-	PLIST headers;
-  // content to send with request, if any
-	CPOINTER content;
-// lengt of content to send with request
-	size_t contentLen;
- // set to true to request over SSL;
-	LOGICAL ssl;
- // HTTP Version ("1.0" default)
-	const char *httpVersion;
- // defaults to 3 seconds if set to 0.
-	int timeout;
- // defaults to 3 retries if set to 0.
-	int retries;
- //optionally this can be used to specify the certain, if not set, uses parameter, which will otherwise be NULL.
-	const char* certChain;
-	LOGICAL rejectUnauthorized;
-	// specify the agent field, default to SACK(System)
-	const char* agent;
-	// if set, will be called when content buffer has been sent.
-	void ( *writeComplete )( uintptr_t userData );
-	uintptr_t userData;
-};
-typedef struct HttpState *HTTPState;
-enum ProcessHttpResult{
-	HTTP_STATE_RESULT_NOTHING = 0,
-	HTTP_STATE_RESULT_CONTENT = 200,
-    HTTP_STATE_RESULT_CONTINUE = 100,
-	HTTP_STATE_INTERNAL_SERVER_ERROR=500,
-	HTTP_STATE_RESOURCE_NOT_FOUND=404,
-   HTTP_STATE_BAD_REQUEST=400,
-};
-/* Creates an empty http state, the next operation should be
-   AddHttpData.                                              */
-HTTP_EXPORT HTTPState  HTTPAPI CreateHttpState( PCLIENT *pc );
-/*Get the http state associated with a network client */
-HTTP_EXPORT HTTPState HTTPAPI GetHttpState( PCLIENT pc );
-/* Destroys a http state, releasing all resources associated
-   with it.                                                  */
-HTTP_EXPORT void HTTPAPI DestroyHttpState( HTTPState pHttpState );
-HTTP_EXPORT
- /* Add another bit of data to the block. After adding data,
-   ProcessHttp should be called to see if the data has completed
-   a packet.
-   Parameters
-   pHttpState :  state to add data to
-   buffer :      pointer to some data bytes
-   size :        length of data bytes
-   Returns: TRUE if content is added... if collecting chunked encoding may return FALSE.
-   */
-LOGICAL HTTPAPI AddHttpData( HTTPState pHttpState, POINTER buffer, size_t size );
-/* \returns TRUE if completed until content-length if
-   content-length is not specified, data is still collected, but
-   the status never results TRUE.
-	Parameters
-	pc : Occasionally the http processor needs to send data on the
-	     socket without application being aware it did.
-   pHttpState :  Http State to process (after having added data to
-                 it)
-   Return Value List
-   TRUE :   A completed HTTP packet has been gathered \- according
-            to 'content\-length' meta tag.
-   FALSE :  Still collecting full packet                           */
-//HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState );
-HTTP_EXPORT int HTTPAPI ProcessHttp( PCLIENT pc, HTTPState pHttpState );
-HTTP_EXPORT
- /* Gets the specific result code at the header of the packet -
-   http 2.0 OK sort of thing.                                  */
-PTEXT HTTPAPI GetHttpResponse( HTTPState pHttpState );
-/* Get the method of the request in ht e http state.
-*/
-HTTP_EXPORT PTEXT HTTPAPI GetHttpMethod( struct HttpState *pHttpState );
-/*Get the value of a HTTP header field, by name
-   Parameters
-	pHttpState: the state to get the header field from.
-	name: name of the field to get (checked case insensitive)
-*/
-HTTP_EXPORT PTEXT HTTPAPI GetHTTPField( HTTPState pHttpState, CTEXTSTR name );
-/* Gets the specific request code at the header of the packet -
-   http 2.0 OK sort of thing.                                  */
-HTTP_EXPORT PTEXT HTTPAPI GetHttpRequest( HTTPState pHttpState );
-/* \Returns the body of the HTTP packet (the part of data
-   specified by content-length or by termination of the
-   connection(? think I didn't implement that right)      */
-HTTP_EXPORT PTEXT HTTPAPI GetHttpContent( HTTPState pHttpState );
-/* \Returns the resource path/name of the HTTP packet (the part of data
-   specified by content-length or by termination of the
-   connection(? think I didn't implement that right)      */
-HTTP_EXPORT PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
-/* Returns a list of fields that were included in a request header.
-   members of the list are of type struct HttpField.
-   see also: ProcessHttpFields and ProcessCGIFields
-*/
-HTTP_EXPORT PLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
-HTTP_EXPORT int HTTPAPI GetHttpVersion( HTTPState pHttpState );
-HTTP_EXPORT
- /* Enumerates the various http header fields by passing them
-   each sequentially to the specified callback.
-   Parameters
-   pHttpState :  _nt_
-   _nt_ :        _nt_
-   psv :         _nt_                                        */
-void HTTPAPI ProcessCGIFields( HTTPState pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv );
-HTTP_EXPORT
- /* Enumerates the various http header fields by passing them
-   each sequentially to the specified callback.
-   Parameters
-   pHttpState :  _nt_
-   _nt_ :        _nt_
-   psv :         _nt_                                        */
-void HTTPAPI ProcessHttpFields( HTTPState pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv );
-HTTP_EXPORT
- /* Resets a processing state, so it can start collecting the
-   next state. After a ProcessHttp results with true, this
-   should be called after processing the packet content.
-   Parameters
-   pHttpState :  state to reset for next read...             */
-void HTTPAPI EndHttp( HTTPState pHttpState );
-HTTP_EXPORT
-/* reply message - 200/OK with this body, sent as Content-Type that was requested */
-void HTTPAPI SendHttpMessage( HTTPState pHttpState, PCLIENT pc, PTEXT body );
-HTTP_EXPORT
-/* generate response message, specifies the numeric (200), the text (OK), the content type field value, and the body to send */
-void HTTPAPI SendHttpResponse ( HTTPState pHttpState, PCLIENT pc, int numeric, CTEXTSTR text, CTEXTSTR content_type, PTEXT body );
-/* Callback type used when creating an http server.
- If there is no registered handler match, then this is called.
- This should return FALSE if there was no content, allowing a 404 status result.
- Additional ways of dispatching need to be implemented (like handlers for paths, wildcards...)
- */
-typedef LOGICAL (CPROC *ProcessHttpRequest)( uintptr_t psv
-												 , HTTPState pHttpState );
-HTTP_EXPORT
-/* Intended to create a generic http service, which you can
-   attach URL handlers to. Incomplete
-   Works mostly?  OnGet has been known to get called....
-   */
-struct HttpServer *CreateHttpServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv );
-HTTP_EXPORT
-/* Intended to create a generic http service, which you can
-   attach URL handlers to. Incomplete
-   Works mostly?  OnGet has been known to get called....
-   */
-struct HttpServer *CreateHttpsServerEx( CTEXTSTR interface_address, CTEXTSTR TargetName, CTEXTSTR site, ProcessHttpRequest handle_request, uintptr_t psv );
-/* results with just the content of the message; no access to other information avaialble */
-HTTP_EXPORT PTEXT HTTPAPI PostHttp( PTEXT site, PTEXT resource, PTEXT content );
-/* results with just the content of the message; no access to other information avaialble */
-HTTP_EXPORT PTEXT HTTPAPI GetHttp( PTEXT site, PTEXT resource, LOGICAL secure );
-/* results with just the content of the message; no access to other information avaialble */
-HTTP_EXPORT PTEXT HTTPAPI GetHttps( PTEXT address, PTEXT url, const char *certChain );
-/* results with the http state of the message response; Allows getting other detailed information about the result */
-HTTP_EXPORT HTTPState HTTPAPI GetHttpsQueryEx( PTEXT address, PTEXT url, const char* certChain, struct HTTPRequestOptions* options );
-/* results with the http state of the message response; Allows getting other detailed information about the result */
-HTTP_EXPORT HTTPState  HTTPAPI PostHttpQuery( PTEXT site, PTEXT resource, PTEXT content );
-/* results with the http state of the message response; Allows getting other detailed information about the result */
-HTTP_EXPORT HTTPState  HTTPAPI GetHttpQuery( PTEXT site, PTEXT resource );
-/* results with the http state of the message response; Allows getting other detailed information about the result */
-HTTP_EXPORT HTTPState HTTPAPI GetHttpsQuery( PTEXT site, PTEXT resource, const char *certChain );
-/* return the numeric response code of a http reply. */
-HTTP_EXPORT int HTTPAPI GetHttpResponseCode( HTTPState pHttpState );
-/* return the text response code of an http reply */
-HTTP_EXPORT const char* HTTPAPI GetHttpResponseStatus( HTTPState pHttpState );
-#define CreateHttpServer(interface_address,site,psv) CreateHttpServerEx( interface_address,NULL,site,NULL,psv )
-#define CreateHttpServer2(interface_address,site,default_handler,psv) CreateHttpServerEx( interface_address,NULL,site,default_handler,psv )
-// receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
-// Return TRUE if processed, otherwise will attempt to match other Get Handlers
-#define OnHttpGet( site, resource )	 DefineRegistryMethod("SACK/Http/Methods",OnHttpGet,site,resource,"Get",LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
-// receives events for either GET if aspecific OnHttpRequest has not been defined for the specific resource
-// Return TRUE if processed, otherwise will attempt to match other Get Handlers
-#define OnHttpPost( site, resource )	 DefineRegistryMethod("SACK/Http/Methods",OnHttpPost,site,resource,"Post",LOGICAL,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
-// define a specific handler for a specific resource name on a host
-#define OnHttpRequest( site, resource )	 DefineRegistryMethod("SACK/Http/Methods",OnHttpRequest,"something",site "/" resource,"Get",void,(uintptr_t,PCLIENT,struct HttpState *,PTEXT),__LINE__)
-//--------------------------------------------------------------
-//  URL.c  (url parsing utility)
-struct url_cgi_data
-{
-	CTEXTSTR name;
-	CTEXTSTR value;
-};
-struct url_data
-{
-	CTEXTSTR protocol;
-	CTEXTSTR user;
-	CTEXTSTR password;
-	CTEXTSTR host;
-	int default_port;
-  // encoding RFC3986 http://tools.ietf.org/html/rfc3986  specifies port characters are in the set of digits.
-	int port;
-	//CTEXTSTR port_data;  // during collection, the password may be in the place of 'port'
-	CTEXTSTR resource_path;
-	CTEXTSTR resource_file;
-	CTEXTSTR resource_extension;
-	CTEXTSTR resource_anchor;
-   // list of struct url_cgi_data *
-	PLIST cgi_parameters;
-};
-HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( const char *url );
-HTTP_EXPORT char *HTTPAPI SACK_BuildURL( struct url_data *data );
-HTTP_EXPORT void HTTPAPI SACK_ReleaseURL( struct url_data *data );
-	_HTTP_NAMESPACE_END
-TEXT_NAMESPACE_END
-#ifdef __cplusplus
-using namespace sack::containers::text::http;
-#endif
-#endif
-#ifdef __cplusplus
-#else
-#endif
-#ifdef SACK_WEBSOCKET_CLIENT_SOURCE
-#define WEBSOCKET_EXPORT EXPORT_METHOD
-#else
-#define WEBSOCKET_EXPORT IMPORT_METHOD
-#endif
-// the result returned from the web_socket_opened event will
-// become the new value used for future uintptr_t parameters to other events.
-typedef uintptr_t (*web_socket_opened)( PCLIENT pc, uintptr_t psv );
-typedef void (*web_socket_closed)( PCLIENT pc, uintptr_t psv, int code, const char *reason );
-typedef void( *web_socket_http_close )(PCLIENT pc, uintptr_t psv);
-typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
-typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
-// protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
-typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
-typedef void (*web_socket_completion)( PCLIENT pc, uintptr_t psv, int binary, int bytesRead );
- // passed psv used in server create; since it is sort of an open, return a psv for next states(if any)
-typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
-// these should be a combination of bit flags
-// options used for WebSocketOpen
-enum WebSocketOptions {
-	WS_DELAY_OPEN = 1,
-};
-//enum WebSockClientOptions {
-//   WebSockClientOption_Protocols
-//};
-// create a websocket connection.
-//  If web_socket_opened is passed as NULL, this function will wait until the negotiation has passed.
-//  since these packets are collected at a lower layer, buffers passed to receive event are allocated for
-//  the application, and the application does not need to setup an  initial read.
-//  if protocols is NULL none are specified, otherwise the list of
-//  available protocols is sent to the server.
-WEBSOCKET_EXPORT PCLIENT WebSocketOpen( CTEXTSTR address
-                                      , enum WebSocketOptions options
-                                      , web_socket_opened
-                                      , web_socket_event
-                                      , web_socket_closed
-                                      , web_socket_error
-                                      , uintptr_t psv
-                                      , const char *protocols );
-// if WS_DELAY_OPEN is used, WebSocketOpen does not do immediate connect.
-// calling this begins the connection sequence.
-WEBSOCKET_EXPORT int WebSocketConnect( PCLIENT );
-// end a websocket connection nicely.
-// code must be 1000, or 3000-4999, and reason must be less than 123 characters (125 bytes with code)
-WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
-// there is a control bit for whether the content is text or binary or a continuation
- // UTF8 RFC3629
-WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, const char *, size_t );
-// literal binary sending; this may happen to be base64 encoded too
-WEBSOCKET_EXPORT void WebSocketBeginSendBinary( PCLIENT, const uint8_t *, size_t );
-// there is a control bit for whether the content is text or binary or a continuation
- // UTF8 RFC3629
-WEBSOCKET_EXPORT void WebSocketSendText( PCLIENT, const char *, size_t );
-// literal binary sending; this may happen to be base64 encoded too
-WEBSOCKET_EXPORT void WebSocketSendBinary( PCLIENT, const uint8_t *, size_t );
-WEBSOCKET_EXPORT void WebSocketEnableAutoPing( PCLIENT websock, uint32_t delay );
-WEBSOCKET_EXPORT void WebSocketPing( PCLIENT websock, uint32_t timeout );
-WEBSOCKET_EXPORT void SetWebSocketAcceptCallback( PCLIENT pc, web_socket_accept callback );
-WEBSOCKET_EXPORT void SetWebSocketReadCallback( PCLIENT pc, web_socket_event callback );
-WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed callback );
-WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
-WEBSOCKET_EXPORT void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback );
-WEBSOCKET_EXPORT void SetWebSocketHttpCloseCallback( PCLIENT pc, web_socket_http_close callback );
-// if set in server accept callback, this will return without extension set
-// on client socket (default), does not request permessage-deflate
-#define WEBSOCK_DEFLATE_DISABLE 0
-// if set in server accept callback (or if not set, default); accept client request to deflate per message
-// if set on client socket, sends request for permessage-deflate to server.
-#define WEBSOCK_DEFLATE_ENABLE 1
-// if set in server accept callback; accept client request to deflate per message, but do not deflate outbound messages
-// if set on client socket, sends request for permessage-deflate to server, but does not deflate outbound messages(?)
-#define WEBSOCK_DEFLATE_ALLOW 2
-// set permessage-deflate option for client requests.
-// allow server side to disable this when responding to a client.
-WEBSOCKET_EXPORT void SetWebSocketDeflate( PCLIENT pc, int enable_flags );
-// default is client masks, server does not
-// this can be used to disable masking on client or enable on server
-// (masked output from server to client is not supported by browsers)
-WEBSOCKET_EXPORT void SetWebSocketMasking( PCLIENT pc, int enable );
-// Set callback to get completed fragment size (total packet size collected so far)
-WEBSOCKET_EXPORT void SetWebSocketDataCompletion( PCLIENT pc, web_socket_completion callback );
-#endif
-/*
- * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface
- *
- * Crafted by: Jim Buckeyne
- *
- * Purpose: Provide a well defined, concise structure to
- *   provide websocket server support to C applications.
- *
- *
- *
- * (c)Freedom Collective, Jim Buckeyne 2012+; SACK Collection.
- *
- */
-#ifndef HTML5_WEBSOCKET_STUFF_DEFINED
-#define HTML5_WEBSOCKET_STUFF_DEFINED
-//#include <controls.h>
-// should consider merging these headers(?)
-#ifdef __cplusplus
-#define _HTML5_WEBSOCKET_NAMESPACE namespace Html5WebSocket {
-#define HTML5_WEBSOCKET_NAMESPACE SACK_NAMESPACE _NETWORK_NAMESPACE _HTML5_WEBSOCKET_NAMESPACE
-#define HTML5_WEBSOCKET_NAMESPACE_END } _NETWORK_NAMESPACE_END SACK_NAMESPACE_END
-#define USE_HTML5_WEBSOCKET_NAMESPACE using namespace sack::network::Html5WebSocket;
-#else
-#define _HTML5_WEBSOCKET_NAMESPACE
-#define HTML5_WEBSOCKET_NAMESPACE
-#define HTML5_WEBSOCKET_NAMESPACE_END
-#define USE_HTML5_WEBSOCKET_NAMESPACE
-#endif
-HTML5_WEBSOCKET_NAMESPACE
-#ifdef HTML5_WEBSOCKET_SOURCE
-#define HTML5_WEBSOCKET_PROC(type,name) EXPORT_METHOD type CPROC name
-#else
-#define HTML5_WEBSOCKET_PROC(type,name) IMPORT_METHOD type CPROC name
-#endif
-// need some sort of other methods to work with an HTML5WebSocket...
-// server side.
-HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate_v2 )(CTEXTSTR hosturl
-	, web_socket_opened on_open
-	, web_socket_event on_event
-	, web_socket_closed on_closed
-	, web_socket_error on_error
-	, uintptr_t psv
-	, int webSocketOptions
-);
-#define WEBSOCK_SERVER_OPTION_WAIT 1
-	HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate )( CTEXTSTR server_url
-																	, web_socket_opened on_open
-																	, web_socket_event on_event
-																	, web_socket_closed on_closed
-																	, web_socket_error on_error
-																	, uintptr_t psv
-																	);
-// during open, server may need to switch behavior based on protocols
-// this can be used to return the protocols requested by the client.
-HTML5_WEBSOCKET_PROC( const char *, WebSocketGetProtocols )( PCLIENT pc );
-// after examining protocols, this is a reply to the client which protocol has been accepted.
-HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketSetProtocols )( PCLIENT pc, const char *protocols );
-/* define a callback which uses a HTML5WebSocket collector to build javascipt to render the control.
- * example:
- *       static int OnDrawToHTML("Control Name")(CONTROL, HTML5WebSocket ){ }
- */
-//#define OnDrawToHTML(name)  //	__DefineRegistryMethodP(PRELOAD_PRIORITY,ROOT_REGISTRY,_OnDrawCommon,"control",name "/rtti","draw_to_canvas",int,(CONTROL, HTML5WebSocket ), __LINE__)
-/* a server side utility to get the request headers that came in.
-this is for going through proxy agents mostly where the header might have x-forwarded-for
-*/
-HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
-/* for server side sockets, get the requested resource path from the client request.
-*/
-HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
-HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketHttpState )( PCLIENT pc );
-HTML5_WEBSOCKET_PROC( void, ResetWebsocketRequestHandler )( PCLIENT pc_client );
-HTML5_WEBSOCKET_PROC( uintptr_t, WebSocketGetServerData )( PCLIENT pc );
-HTML5_WEBSOCKET_NAMESPACE_END
-USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
 /*
  *  Creator: Jim Buckeyne
