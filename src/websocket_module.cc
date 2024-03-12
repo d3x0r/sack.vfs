@@ -104,6 +104,9 @@ struct optionStrings {
 	Eternal<String> *addressString;
 	Eternal<String> *localAddrString;
 	Eternal<String> *remoteAddrString;
+	Eternal<String>* localNameString;
+	Eternal<String>* remoteNameString;
+
 	Eternal<String> *localMacString;
 	Eternal<String> *remoteMacString;
 	Eternal<String> *headerString;
@@ -115,6 +118,8 @@ struct optionStrings {
 	Eternal<String> *passString;
 	Eternal<String> *deflateString;
 	Eternal<String> *deflateAllowString;
+	Eternal<String>* resolveString;
+	Eternal<String>* getMacString;
 	Eternal<String> *caString;
 	Eternal<String> *vUString;
 	Eternal<String> *connectionString;
@@ -168,6 +173,8 @@ struct wssOptions {
 	bool apply_masking;
 	PLIST hostList;
 	SSH2_Channel* channel;
+	bool resolveName;
+	bool getMAC;
 };
 
 struct wscOptions {
@@ -183,6 +190,8 @@ struct wscOptions {
 	bool deflate_allow;
 	bool apply_masking;
 	bool keep_alive;
+	bool resolveName;
+	bool getMAC;
 };
 
 struct pendingSend {
@@ -319,6 +328,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->addressString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "address" ) );
 		check->localAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localAddress" ) );
 		check->remoteAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remoteAddress" ) );
+		check->localNameString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localName" ) );
+		check->remoteNameString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remoteName" ) );
 		check->localMacString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localMAC" ) );
 		check->remoteMacString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "remoteMAC" ) );
 		check->localFamilyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "localFamily" ) );
@@ -330,6 +341,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
 		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pem" ) );
 		check->passString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "passphrase" ) );
+		check->resolveString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "resolveNames" ) );
+		check->getMacString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "getMAC" ) );
 		check->deflateString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "perMessageDeflate" ) );
 		check->deflateAllowString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "perMessageDeflateAllow" ) );
 		check->caString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ca" ) );
@@ -365,6 +378,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 class wssObject : public node::ObjectWrap {
 	LOGICAL closed;
 public:
+	bool resolveAddr;
+	bool resolveMac;
 	PCLIENT pc;
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
@@ -387,6 +402,7 @@ public:
 	enum wsReadyStates readyState;
 	bool immediateEvent;
 	Isolate *isolate;
+	wssOptions *opts;
 public:
 
 	wssObject( struct wssOptions *opts );
@@ -493,6 +509,8 @@ class wscObject : public node::ObjectWrap {
 
 public:
 	PCLIENT pc;
+	bool resolveAddr;
+	bool resolveMac;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
@@ -547,6 +565,8 @@ public:
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
 	PCLIENT pc;
+	bool resolveAddr;
+	bool resolveMac;
 	LOGICAL closed;
 	const char *protocolResponse;
 	enum wsReadyStates readyState;
@@ -702,7 +722,7 @@ static void cgiParamSave(uintptr_t psv, PTEXT name, PTEXT value){
 		SETT( cgi->cgi, name, Null( cgi->isolate ) );
 }
 
-static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
+static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc, wssObject *wss, wscObject *wsc, wssiObject* wssi ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	PLIST headers = GetWebSocketHeaders( pc );
 	PTEXT resource = GetWebSocketResource( pc );
@@ -716,22 +736,6 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	uint8_t macRemote[12];
 	TEXTCHAR macRemoteText[36];
 	size_t macRemoteLen = 12;
-	if( !GetMacAddress( pc, mac, &maclen, macRemote, &macRemoteLen ) ) {
-		strcpy( macText, "00:00:00:00:00:00" );
-		strcpy( macRemoteText, "00:00:00:00:00:00" );
-	}
-	else {
-		if( !maclen )
-			snprintf( macText, 36, "00:00:00:00:00:00" );
-		else
-			snprintf( macText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5] );
-		if( !macRemoteLen )
-			snprintf( macRemoteText, 36, "00:00:00:00:00:00" );
-		else
-			snprintf( macRemoteText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", macRemote[0], macRemote[1], macRemote[2], macRemote[3], macRemote[4], macRemote[5] );
-	}
-	Local<String> localMac = String::NewFromUtf8( isolate, macText, v8::NewStringType::kNormal ).ToLocalChecked();
-	Local<String> remoteMac = String::NewFromUtf8( isolate, macRemoteText, v8::NewStringType::kNormal ).ToLocalChecked();
 
 	//lprintf( "Mac AAddress of socket:" );
 	//LogBinary( mac, maclen );
@@ -761,7 +765,6 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 		);
 	SETV( result, strings->remoteAddrString->Get( isolate ), remote );
 	SETV( result, strings->remotePortString->Get( isolate ), Integer::New( isolate, (int32_t)GetNetworkLong( pc, GNL_PORT ) ) );
-	SETV( result, strings->remoteMacString->Get( isolate ), remoteMac );
 	if( localAddress )
 		SETV( result, strings->localFamilyString->Get( isolate )
 			, (localAddress->sa_family == AF_INET)?strings->v4String->Get(isolate):
@@ -769,7 +772,34 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 		);
 	SETV( result, strings->localAddrString->Get( isolate ), local );
 	SETV( result, strings->localPortString->Get( isolate ), Integer::New( isolate, (int32_t)GetNetworkLong( pc, GNL_MYPORT ) ) );
-	SETV( result, strings->localMacString->Get( isolate ), localMac );
+
+	if( ( wss && wss->resolveAddr ) || ( wsc && wsc->resolveAddr ) || ( wssi && wssi->resolveAddr ) ) {
+		char tmp[NI_MAXHOST+1];
+		#define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
+		getnameinfo( remoteAddress, SOCKADDR_LENGTH( remoteAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
+		SETV( result, strings->localNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+		getnameinfo( localAddress, SOCKADDR_LENGTH( localAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD );
+		SETV( result, strings->remoteNameString->Get( isolate ), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+	}
+
+	if( ( wss && wss->resolveMac ) || ( wsc && wsc->resolveMac ) || ( wssi && wssi->resolveMac ) ) {
+		if( !GetMacAddress( pc, mac, &maclen, macRemote, &macRemoteLen ) ) {
+			strcpy( macText, "00:00:00:00:00:00" );
+			strcpy( macRemoteText, "00:00:00:00:00:00" );
+		} else {
+			if( !maclen )
+				snprintf( macText, 36, "00:00:00:00:00:00" );
+			else
+				snprintf( macText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5] );
+				if( !macRemoteLen )
+					snprintf( macRemoteText, 36, "00:00:00:00:00:00" );
+				else
+					snprintf( macRemoteText, 36, "%02x:%02x:%02x:%02x:%02x:%02x", macRemote[0], macRemote[1], macRemote[2], macRemote[3], macRemote[4], macRemote[5] );
+		}
+
+		SETV( result, strings->remoteMacString->Get( isolate ), String::NewFromUtf8( isolate, macRemoteText, v8::NewStringType::kNormal ).ToLocalChecked() );
+		SETV( result, strings->localMacString->Get( isolate ), String::NewFromUtf8( isolate, macText, v8::NewStringType::kNormal ).ToLocalChecked() );
+	}
 
 
 //	SETV( result, strings->localMacString->Get( isolate ), localMac );
@@ -777,7 +807,7 @@ static Local<Object> makeSocket( Isolate *isolate, PCLIENT pc ) {
 	return result;
 }
 
-static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings, PCLIENT pc, int sslRedirect ) {
+static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings, PCLIENT pc, int sslRedirect, wssObject *wss ) {
 	// .url
 	// .socket
 	Local<Context> context = isolate->GetCurrentContext();
@@ -807,7 +837,7 @@ static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings
 					, GetText(GetHttpRequest(pHttpState)),v8::NewStringType::kNormal).ToLocalChecked());
 		//ResetHttpContent(pc, pHttpState);
 	}
-	SETV( req, strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc ) );
+	SETV( req, strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc, wss, NULL, NULL ) );
 	SETV( req, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
 	return req;
 }
@@ -1071,7 +1101,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 			if( eventMessage->eventType == WS_EVENT_LOW_ERROR ) {
 				if( !myself->errorLowCallback.IsEmpty() ) {
 					argv[0] = Integer::New( isolate, eventMessage->data.error.error );
-					argv[1] = makeSocket( isolate, eventMessage->pc );
+					argv[1] = makeSocket( isolate, eventMessage->pc, myself, NULL, NULL );
 					if( eventMessage->data.error.buffer ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
 						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
@@ -1101,7 +1131,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					}
 					Local<Object> http = _http.ToLocalChecked();
 					struct optionStrings *strings = getStrings( isolate );
-					SETV( http, strings->connectionString->Get( isolate ), makeSocket( isolate, eventMessage->pc ) );
+					SETV( http, strings->connectionString->Get( isolate ), makeSocket( isolate, eventMessage->pc, myself, NULL, NULL ) );
 
 					httpObject *httpInternal = httpObject::Unwrap<httpObject>( http );
 					httpInternal->wss = myself;
@@ -1113,7 +1143,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					//	DebugBreak();
 					//lprintf( "requests %p is %d", myself->requests, myself->requests->Cnt );
 					//lprintf( "New request..." );
-					argv[0] = makeRequest( isolate, strings, eventMessage->pc, sslRedirect );
+					argv[0] = makeRequest( isolate, strings, eventMessage->pc, sslRedirect, myself );
 					if( !argv[0]->IsNull() ) {
 						argv[1] = http;
 						Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
@@ -1145,12 +1175,14 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				wssiObject *wssiInternal = wssiObject::Unwrap<wssiObject>( wssi );
 				if( !eventMessage->pc )
 					lprintf( "FATALITY - ACCEPT EVENT IS SETTING SOCKET TO NULL." );
+				wssiInternal->resolveAddr = myself->resolveAddr;
+				wssiInternal->resolveMac = myself->resolveMac;
 				wssiInternal->pc = eventMessage->pc;
 				wssiInternal->server = myself;
 				AddLink( &myself->opening, wssiInternal );
 				eventMessage->result = wssiInternal;
 
-				SETV( wssi, strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc ) );
+				SETV( wssi, strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc, NULL, NULL, wssiInternal ) );
 				SETV( wssi, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
 
 				{
@@ -1230,7 +1262,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				else
 					eventMessage->data.request.accepted = 1;
 			} else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
-				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc );
+				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc, myself, NULL, NULL );
 				if( !myself->errorCloseCallback.IsEmpty() ) {
 					Local<Function> cb = myself->errorCloseCallback.Get( isolate );
 					argv[0] = closingSock;
@@ -1294,7 +1326,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 				{
 					struct optionStrings *strings;
 					strings = getStrings( isolate );
-					SETV( wsc->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, wsc->pc ) );
+					SETV( wsc->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, wsc->pc, NULL, wsc, NULL ) );
 
 					INDEX idx;
 					callbackFunction* callback;
@@ -1522,7 +1554,7 @@ static void handlePostedClient( uv_async_t* async ) {
 		struct optionStrings *strings;
 		strings = getStrings( isolate );
 		Local<Object> socket;
-		SETV( newThreadSocket, strings->connectionString->Get(isolate), socket = makeSocket( isolate, obj->pc ) );
+		SETV( newThreadSocket, strings->connectionString->Get(isolate), socket = makeSocket( isolate, obj->pc, NULL, NULL, trans->wssi ) );
 		SETV( newThreadSocket, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
 		SETV( newThreadSocket, strings->urlString->Get( isolate )
 			, String::NewFromUtf8( isolate
@@ -1906,7 +1938,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 				Wait();
 		} else {
 			Isolate *isolate = Isolate::GetCurrent();
-			Local<Object> closingSock = makeSocket( isolate, pc );
+			Local<Object> closingSock = makeSocket( isolate, pc, wss, NULL, NULL );
 			if( !wss->errorCloseCallback.IsEmpty() ) {
 				Local<Function> cb = wss->errorCloseCallback.Get( isolate );
 				Local<Value> argv[1];
@@ -2347,6 +2379,8 @@ static uintptr_t catchLostEvents( PTHREAD thread ) {
 wssObject::wssObject( struct wssOptions *opts ) {
 	char tmp[256];
 	int clearUrl = 0;
+	this->resolveMac = opts->getMAC;
+	this->resolveAddr = opts->resolveName;
 	last_count_handled = 0;
 	closing = 0;
 	readyState = INITIALIZING;
@@ -2542,11 +2576,22 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	else
 		wssOpts->ssl = 0;
 
-	if( !opts->Has( context, optName = strings->deflateString->Get( isolate ) ).ToChecked() ) {
-		wssOpts->deflate = false;
+	if( !opts->Has( context, optName = strings->resolveString->Get( isolate ) ).ToChecked() ) {
+		wssOpts->resolveName = false;
 	}
 	else
-		wssOpts->deflate = (GETV( opts, optName )->TOBOOL( isolate ));
+		wssOpts->resolveName = (GETV( opts, optName )->TOBOOL( isolate ));
+
+	if( !opts->Has( context, optName = strings->getMacString->Get( isolate ) ).ToChecked() ) {
+		wssOpts->getMAC = false;
+	} else
+		wssOpts->getMAC = ( GETV( opts, optName )->TOBOOL( isolate ) );
+
+	if( !opts->Has( context, optName = strings->deflateString->Get( isolate ) ).ToChecked() ) {
+		wssOpts->deflate = false;
+	} else
+		wssOpts->deflate = ( GETV( opts, optName )->TOBOOL( isolate ) );
+
 	if( !opts->Has( context, optName = strings->deflateAllowString->Get( isolate ) ).ToChecked() ) {
 		wssOpts->deflate_allow = false;
 	}
@@ -3080,6 +3125,8 @@ wscObject::wscObject( wscOptions *opts ) {
 	eventQueue = CreateLinkQueue();
 	readyState = INITIALIZING;
 	closed = 0;
+	this->resolveMac = opts->getMAC;
+	this->resolveAddr = opts->resolveName;
 	//lprintf( "Init async handle. (wsc) %p", &async );
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
 
@@ -3153,6 +3200,16 @@ void parseWscOptions( struct wscOptions *wscOpts, Isolate *isolate, Local<Object
 		wscOpts->pass = StrDup( *rootCa );
 				wscOpts->pass_len = rootCa.length();
 	}
+
+	if( !opts->Has( context, optName = strings->resolveString->Get( isolate ) ).ToChecked() ) {
+		wscOpts->resolveName = false;
+	} else
+		wscOpts->resolveName = ( GETV( opts, optName )->TOBOOL( isolate ) );
+
+	if( !opts->Has( context, optName = strings->getMacString->Get( isolate ) ).ToChecked() ) {
+		wscOpts->getMAC = false;
+	} else
+		wscOpts->getMAC = ( GETV( opts, optName )->TOBOOL( isolate ) );
 
 	if( opts->Has( context, optName = strings->deflateString->Get( isolate ) ).ToChecked() ) {
 		wscOpts->deflate = GETV( opts, optName )->ToBoolean( isolate )->Value();
