@@ -50,6 +50,7 @@ Server events
   | key  | &lt;string&gt;; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
   | passphrase | &lt;string&gt;; uses passphrase for key provided |
   | hosts | &lt;array of hosts&gt;; (Server Host Option below) |
+  | pipe | bool - (reserved)internal use | 
   
   | Server Host Option |  |
   |----|----|

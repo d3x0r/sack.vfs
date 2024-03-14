@@ -1,9 +1,8 @@
 import {sack} from "sack.vfs"
 
-const enc = new TextDecoder("utf-8")
+const enc = new TextDecoder("utf-8"); // convert arraybuffer to string
 const priv = enc.decode( sack.Volume.mapFile( "rsa" ) );
-console.log( "Priv?", priv );
-const pub = enc.decode( sack.Volume.mapFile( "rsa.pub" ) );
+//console.log( "Priv?", priv );
 
 const ssh = sack.SSH();
 const ssh_alt = new sack.SSH();
@@ -13,11 +12,8 @@ ssh.connect( { address:"localhost:2222", port:22, trace:true
              , privKey: priv
              , pubKey:null  // pubKey can be gotten from the private key
              , trace: false
-             , connect() {
-             	// connect callback?
              }
-             }
-             ).then( (fingerprint)=>{
+           ).then( (fingerprint)=>{
 					console.log( "Connect worked forssh",  fingerprint );
 					console.log( "Make channel1:" );
              	ssh.Channel( { type:"session", windowSize: 4096, packetSize: 4096 } ).then( (channel)=>{
@@ -29,6 +25,7 @@ ssh.connect( { address:"localhost:2222", port:22, trace:true
                 	channel.read( (buf)=>{
                         	console.log( "Channel data:", buf );
                         } );
+						channel.readBinary = true;
                 	channel.pty().then( async ()=>{
 								console.log( "Pty done" );
                         await channel.setenv( "FOO", "bar" ).then( ()=>{
@@ -37,7 +34,8 @@ ssh.connect( { address:"localhost:2222", port:22, trace:true
 								} ).catch( (err)=>{ console.log( "Environment error:", err ) } );
                         channel.shell().then( ()=>{
 									console.log( "Shell started..." );
-                        	channel.send( "ls\n" );
+									channel.send( "cd /\nls\n" );
+									//setTimeout( ()=>{ channel.send( "cd /\nls\n" );}, 100 );
                         } );
 
 							} );

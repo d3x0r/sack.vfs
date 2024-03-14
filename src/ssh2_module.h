@@ -1,4 +1,7 @@
+#ifndef SSH2_MODULE_H
+#define SSH2_MODULE_H
 
+class WssObject;
 
 enum SSH2_EventCodes {
 	SSH2_EVENT_CLOSE,  // closes event handle
@@ -17,6 +20,7 @@ enum SSH2_EventCodes {
 	SSH2_EVENT_FORWARD_CONNECT,
 	SSH2_EVENT_REVERSE_CHANNEL,
 	SSH2_EVENT_REVERSE_CONNECT,
+	SSH2_EVENT_LISTEN_ERROR,
 };
 
 struct SSH2_Event {
@@ -46,6 +50,9 @@ public:
 	Persistent<Promise::Resolver> setenvPromise;
 
 	PLINKQUEUE activePromises;
+	bool binary = 0;
+	class SSH2_RemoteListen* remoteListen;
+	struct html5_web_socket* wsPipe;
 
 public:
 	SSH2_Channel();
@@ -67,6 +74,8 @@ public:
 	* Set Read Callback
 	*/
 	static void Read( const v8::FunctionCallbackInfo<Value>& args );
+	static void setBinaryRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void getBinaryRead( const v8::FunctionCallbackInfo<Value>& args );
 	/*
 	* Send data to the channel
 	*/
@@ -172,18 +181,23 @@ public:
 	SSH2_Object* ssh2;
 	struct ssh_listener* listener;
 	Persistent<Object> jsObject;  // the object that represents this channel
+	//struct html5_web_socket* ws;
+	class wssObject* wss;
 
 public:
 	SSH2_RemoteListen();
 	~SSH2_RemoteListen();
 
+	static void listenChannelOpen( uintptr_t psv, ssh_channel* channel );
 	// allocate a new JS object
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	// close the remote listener and listener object.
 	static void Close( const v8::FunctionCallbackInfo<Value>& args );
 
 	// Enable the remote listener to accept websocket and HTTP connections
-	//static void toWS( const v8::FunctionCallbackInfo<Value>& args );
+	static void toWS( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void Error( uintptr_t psv, int errcode, const char* string, int errlen );
 
 };
 
@@ -201,3 +215,5 @@ static struct SSH2_Global global;
 #define getEvent() GetFromSet( SSH2_EVENT, &global.eventSet )
 #define makeEvent(name) SSH2_EVENT* name = getEvent()
 #define dropEvent(evt) DeleteFromSet( SSH2_EVENT, global.eventSet, evt )
+
+#endif

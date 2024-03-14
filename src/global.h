@@ -109,6 +109,45 @@ using namespace v8;
 #define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
 
 
+// --------- String Utilities for option objects ------------
+#define DEF_STRING(name) Eternal<String> *name##String
+#define MK_STRING(name)  check->name##String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, #name ) );
+#define GET_STRING(name)  	String::Utf8Value* name = NULL; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsString() ) { \
+					name = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ); \
+				} \
+			}
+
+#define GET_ARRAY_BUFFER(name)  	Local<ArrayBuffer> name##_ab; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsArrayBuffer() ) { \
+					name##_ab = Local<ArrayBuffer>::Cast( GETV( opts, optName ) ); \
+				} \
+			}
+
+#define GET_TYPED_ARRAY(name)  	Local<TypedArray> name##_ta; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsArrayBuffer() ) { \
+					name##_ta = Local<TypedArray>::Cast( GETV( opts, optName ) ); \
+				} \
+			}
+
+#define GET_NUMBER(name)  int name = 0;  \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsString() ) { \
+					name = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 ); \
+				} \
+			}
+#define GET_BOOL(name)  bool name = false; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsBoolean() ) { \
+					name = GETV( opts, optName )->TOBOOL( isolate ); \
+				} \
+			}
+
+//------------------ end of string utilities ----------------
+
 #if ( NODE_MAJOR_VERSION <= 13 )
 #define NewFromUtf8Literal(a,b,...)  NewFromUtf8(a,b, v8::NewStringType::kNormal ).ToLocalChecked()
 #endif

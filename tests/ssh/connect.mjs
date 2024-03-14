@@ -3,16 +3,13 @@ import {sack} from "sack.vfs"
 const ssh = sack.SSH();
 const ssh_alt = new sack.SSH();
 
-ssh.connect( { address:"10.173.0.1", port:22
-             , user:"", password: ""
+ssh.connect( { address:"localhost:2222", port:22
+             , user:"root", password: "password"
              , privKey: null
              , pubKey:null  // pubKey can be gotten from the private key
              , trace: false
-             , connect() {
-             	// connect callback?
              }
-             }
-             ).then( (fingerprint)=>{
+           ).then( (fingerprint)=>{
 					console.log( "Connect worked forssh",  fingerprint );
 					console.log( "Make channel1:" );
              	ssh.Channel( { type:"session", message: "pre-message", windowSize: 4096, packetSize: 4096 } ).then( (channel)=>{
