@@ -149,6 +149,10 @@ if(HIDE_SYMBOLS)
   endif()
 endif()
 
+if( UNIX ) 
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+endif()
+
 # Options
 
 # Enable debugging logging by default if the user configured a debug build
