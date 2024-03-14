@@ -2,6 +2,16 @@
 #ifndef WEBSOCKET_MODULE_H
 #define WEBSOCKET_MODULE_H
 
+enum wsReadyStates {
+	CONNECTING = 0,
+	OPEN = 1,
+	CLOSING = 2,
+	CLOSED = 3,
+	INITIALIZING = -1,
+	LISTENING = 4,
+};
+
+
 /*
 * web sock server Object
 * Is also an accepted client at the socket level, 

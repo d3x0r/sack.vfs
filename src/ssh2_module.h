@@ -133,7 +133,7 @@ public:
 	/*
 	* Getter for connection fingerprint
 	*/
-	static void SSH2_Object::fingerprint( const v8::FunctionCallbackInfo<Value>& args );
+	static void fingerprint( const v8::FunctionCallbackInfo<Value>& args );
 	/*
 	* Connect to a server
 	*/

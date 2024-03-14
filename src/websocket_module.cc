@@ -70,14 +70,6 @@ void send(ArrayBufferView data);
 
 */
 
-enum wsReadyStates {
-	CONNECTING = 0,
-	OPEN = 1,
-	CLOSING = 2,
-	CLOSED = 3,
-	INITIALIZING = -1,
-	LISTENING = 4,
-};
 
 enum wsEvents {
 	WS_EVENT_OPEN,   // onaccept/onopen callback (wss(passes wssi),wsc)
