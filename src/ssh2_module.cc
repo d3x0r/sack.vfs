@@ -562,6 +562,7 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( remoteListenTemplate, "close", SSH2_RemoteListen::Close );
+	//NODE_SET_PROTOTYPE_METHOD( remoteListenTemplate, "onaccept", SSH2_RemoteListen::SetOnAccept );
 
 	c->SSH_RemoteListen_constructor.Reset( isolate, remoteListenTemplate->GetFunction( context ).ToLocalChecked() );
 

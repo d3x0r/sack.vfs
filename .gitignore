@@ -17,3 +17,6 @@ tests/tmpCert.pem
 tests/sql/Test.db
 tests/sql/sql.log
 zz
+src/sack/libssh2/configure.ac
+src/sack/libssh2/maketgz
+src/sack/libssh2/Makefile.am

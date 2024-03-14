@@ -53,7 +53,13 @@ const loginPromise = connectPromise.then( (fingerprint) =>{
 })
 ```
 
+### sack.SSH() Object methods.
 
+- connect( options) - connects SSH to a remote and does handshake.  Options may skip login, and the fingerprint can be examined before login completes.
+- login() - finishes a connection if skip login option was enabled.
+- Channel() - returns a new channel to the remote.  Returns a promise that resolves with the new channel; may reject on error.
+- forward(localAddrress, localPort, remoteAddress, remotePort) - forwards a connection to the remote from a locally hosted listener.  `sshd` you are connected to will probably open a remote socket to the specied remote address.  Addresses are strings and Ports are 16 bit unsigned numbers.
+- reverse(addr,port) - has the `sshd` this connects to open a port on the remote side to accept listeners. Returns a promise that resolves with a listener; or rejects on error.  Connections to that listener are fowarded as channel 
 
 ## Channel creation
 
@@ -137,7 +143,11 @@ const some_value = ssh.reverse( "::0", 8022 ).then( (listener)=>{
 } );
 ```
 
-- `reverse()` returns a promise that resolves with a listener object. It may reject with an error. It's equivalent to the socket it is listening for on the remote address and port specified.  It rec
+- `reverse()` returns a promise that resolves with a listener object. It may reject with an error. It's equivalent to the socket it is listening for on the remote address and port specified. 
+
+the Listener object has 'close' as a operation.
+It should also have an accept() to register a callback that receives new socket connections
+And that should be passed to the handler as a channel, and use channel 'send' and 'read'.
 
 
 
