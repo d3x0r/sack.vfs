@@ -719,7 +719,7 @@ static void getName( const v8::FunctionCallbackInfo<Value>& args ) {
 		return;
 	}
 	String::Utf8Value addr( USE_ISOLATE( isolate ) args[0] );
-	PSOCKADDR sockaddr = CreateSockAddress( *addr, 0 );
+	SOCKADDR* sockaddr = CreateSockAddress( *addr, 0 );
 	char domain_name[256];
 	//char service_name[32];
 	int rc =  getnameinfo( (const SOCKADDR*)sockaddr,SOCKADDR_LENGTH(sockaddr), domain_name, 256, NULL, 0, 0 );
@@ -739,7 +739,7 @@ struct pingState {
 	volatile int done;
 	volatile int handled;
 	struct {
-		PSOCKADDR addr;
+		SOCKADDR* addr;
 		CTEXTSTR name;
 		int min;
 		int max;
@@ -789,7 +789,7 @@ static void pingAsync( uv_async_t* async ) {
 	}
 }
 
-static void pingResult( uintptr_t psv, PSOCKADDR dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops ) {
+static void pingResult( uintptr_t psv, SOCKADDR* dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops ) {
 	struct pingState* state = (struct pingState*)psv;
 	state->result.addr = dwIP;
 	state->result.name = StrDup( name );
