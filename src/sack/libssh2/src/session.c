@@ -573,7 +573,7 @@ libssh2_session_callback_set2(LIBSSH2_SESSION *session, enum LIBSSH2_CALLBACKS c
 #endif
 LIBSSH2_API void *
 libssh2_session_callback_set(LIBSSH2_SESSION * session,
-                             int cbtype, void *callback)
+                             enum LIBSSH2_CALLBACKS cbtype, void *callback)
 {
     return (void *)libssh2_session_callback_set2(session, cbtype,
                                                (libssh2_cb_generic *)callback);
