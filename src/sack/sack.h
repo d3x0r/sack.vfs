@@ -8152,14 +8152,14 @@ NETWORK_PROC( LOGICAL, DoPing )( CTEXTSTR pstrHost,
              int nCount,
              PVARTEXT pResult,
              LOGICAL bRDNS,
-             void (*ResultCallback)( PSOCKADDR dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops ) );
+             void (*ResultCallback)( SOCKADDR* dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops ) );
 NETWORK_PROC( LOGICAL, DoPingEx )( CTEXTSTR pstrHost,
              int maxTTL,
              uint32_t dwTime,
              int nCount,
              PVARTEXT pResult,
              LOGICAL bRDNS,
-											 void (*ResultCallback)( uintptr_t psv, PSOCKADDR dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops )
+											 void (*ResultCallback)( uintptr_t psv, SOCKADDR* dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops )
 											, uintptr_t psv );
 //----- WHOIS.C -----
 NETWORK_PROC( LOGICAL, DoWhois )( CTEXTSTR pHost, CTEXTSTR pServer, PVARTEXT pvtResult );
