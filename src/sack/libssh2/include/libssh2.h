@@ -672,7 +672,7 @@ LIBSSH2_API void **libssh2_session_abstract(LIBSSH2_SESSION *session);
 typedef void (libssh2_cb_generic)(void);
 
 LIBSSH2_API libssh2_cb_generic *
-libssh2_session_callback_set2(LIBSSH2_SESSION *session, int cbtype,
+libssh2_session_callback_set2(LIBSSH2_SESSION *session, enum LIBSSH2_CALLBACKS cbtype,
                               libssh2_cb_generic *callback);
 
 LIBSSH2_DEPRECATED(1.11.1, "Use libssh2_session_callback_set2()")
