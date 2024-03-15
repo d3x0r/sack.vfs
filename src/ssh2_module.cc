@@ -249,8 +249,9 @@ static void asyncmsg( uv_async_t* handle ) {
 					}
 				}
 				break;
-			case SSH2_EVENT_REVERSE_CONNECT:
+			case SSH2_EVENT_WS_REVERSE_CONNECT:
 				{
+					lprintf( "Reverse connection at listener; this creates a new SSH_Channel with the specified new channel" );
 					constructorSet* c = getConstructors( isolate );
 					Local<Value>* argv = new Local<Value>[0];
 					Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
@@ -259,15 +260,17 @@ static void asyncmsg( uv_async_t* handle ) {
 					SSH2_Channel* ch = SSH2_Channel::Unwrap<SSH2_Channel>( obj );
 					ch->ssh2 = ssh;
 					ch->channel = (ssh_channel*)event->data;
+					ch->wsPipe = (struct html5_web_socket*)event->data2;
+					WebSocketPipeSetConnectPSV( ch->wsPipe, (uintptr_t )ch);
 
-					ch->wsPipe = WebSocketPipeConnect( (struct html5_web_socket*)event->data2, (uintptr_t)ch );
-
+					lprintf( " new pipe: %p", ch->wsPipe );
 					event->data = ch;
 				}
 				break;
-			case SSH2_EVENT_REVERSE_CHANNEL:
+			case SSH2_EVENT_WS_REVERSE_CHANNEL:
 				{
 					if( event->data ) {
+						//lprintf( "Build reverse channel SSH_RemoteListen_constructor" );
 						constructorSet* c = getConstructors( isolate );
 						Local<Value>* argv = new Local<Value>[0];
 						Local<Function> cons = Local<Function>::New( isolate, c->SSH_RemoteListen_constructor );
@@ -348,6 +351,8 @@ static void asyncmsg( uv_async_t* handle ) {
 
 SSH2_Channel::SSH2_Channel() {
 	this->activePromises = CreateLinkQueue( );
+	internal_eofCallback = NULL;
+	internal_closeCallback = NULL;
 }
 SSH2_Channel::~SSH2_Channel() {
 	//sack_ssh_channel_free( channel );
@@ -377,6 +382,8 @@ void SSH2_Channel::DataCallback( uintptr_t psv, int stream, const uint8_t* data,
 
 void SSH2_Channel::CloseCallback( uintptr_t psv ) {
 	struct ssh_channel* channel = (struct ssh_channel*)psv;
+	//if( this.internal_closeCallback )
+	//	this.internal_closeCallback( psv );
 	lprintf( "Channel %p closed", channel );
 }
 
@@ -485,6 +492,13 @@ void SSH2_Object::OpenChannel( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
+void eofCallback( uintptr_t psv ) {
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	if( channel->internal_eofCallback )
+		channel->internal_eofCallback( channel, channel->wsPipe );
+
+}
+
 uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel ) {
 	SSH2_Object*ssh = (SSH2_Object*)psv;
 
@@ -492,6 +506,8 @@ uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel )
 	//sack_ssh_set_channel_data( channel, SSH2_Channel::DataCallback );
 	event->code = SSH2_EVENT_CHANNEL;
 	event->data = (void*)channel;
+	sack_ssh_set_channel_eof( channel, eofCallback );
+	sack_ssh_set_channel_close( channel, SSH2_Channel::CloseCallback );
 	event->waiter = MakeThread();
 	event->done = 0;
 	EnqueLink( &ssh->eventQueue, event );
@@ -503,6 +519,8 @@ uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel )
 	dropEvent( event );
 	return (uintptr_t)result;
 }
+
+
 
 
 void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
@@ -837,32 +855,54 @@ void SSH2_Object::Forward( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
-static void ReverseChannelData( uintptr_t psv, int stream, const uint8_t* data, size_t length ) {
-	SSH2_Channel* channel = (SSH2_Channel*)psv;
+// ---------  Network transparent interface       -----------
+//    but then why use this script?
+//     
+
+static void NET_ReverseChannelData( uintptr_t psv, int stream, const uint8_t* data, size_t length ) {
+	PCLIENT pc= (PCLIENT)psv;
 	lprintf( "ReverseChannelData" );
 	LogBinary( data, length );
-	WebSocketWrite( (struct html5_web_socket*)channel->remoteListen->wss->wsPipe, data, length );
+	sack_ssh_channel_write( (ssh_channel*)psv, stream, data, length );
 }
 
-static int ReverseChannelSend( uintptr_t psv, CPOINTER data, size_t length ) {
+static int NET_ReverseChannelSend( uintptr_t psv, CPOINTER data, size_t length ) {
 	SSH2_Channel* channel = (SSH2_Channel*)psv;
-	lprintf( "ReverseChannelSend" );
-	LogBinary( data, length );
-	sack_ssh_channel_write( channel->channel, 0, (const uint8_t*)data, length );
+	channel->DataCallback( psv, 0, (const uint8_t*)data, length );
 	return length;
 }
 
-static void ReverseChannelClose( uintptr_t psv ) {
-	SSH2_Channel* channel = (SSH2_Channel*)psv;
-	lprintf( "ReverseChannelClose" );
-	sack_ssh_channel_close( channel->channel );
+static void NET_ReverseChannelClose( SSH2_Channel* channel, struct html5_web_socket* wsPipe ) {
+	lprintf( "ReverseChannelClose(should generate a SSH event)" );
+	if( channel->internal_closeCallback ) {
+		channel->internal_closeCallback( channel, wsPipe );
+	} else
+		sack_ssh_channel_close( channel->channel );
 }
 
-static uintptr_t ReverseConnectCallback( uintptr_t psv, struct ssh_channel* channel ) {
+static void NET_ReverseChannelEOF( SSH2_Channel* channel, struct html5_web_socket* wsPipe ) {
+	// if I got an EOF, I won't get any more data, I won't get the close code back.
+	// this should term-close the callback...
+	lprintf( "ReverseChannelEOF (should generate a SSH event)" );
+	//sack_ssh_channel_send_eof( channel->channel );
+	if( channel->internal_eofCallback ) {
+		channel->internal_eofCallback( channel, wsPipe );
+	} else
+		sack_ssh_channel_eof( channel->channel );
+}
+
+// this is called when a Reverse() is setup to handle network.  This would be
+// that we need to connect a socket somewhere else.
+static uintptr_t NET_ReverseConnectCallback( uintptr_t psv, struct ssh_listener*listen, struct ssh_channel* channel ) {
 	struct SSH2_RemoteListen* listener = (struct SSH2_RemoteListen*)psv;
-	sack_ssh_set_channel_data( channel, ReverseChannelData );
+	sack_ssh_set_channel_data( channel, NET_ReverseChannelData );
+	//sack_ssh_set_channel_close( channel, ReverseChannelClose );
+	//sack_ssh_set_channel_eof( channel, ReverseChannelEOF );
+	// 
+	// there are parameters to this... 
+	//PCLIENT pc_socket = OpenTCPClient( "localhost", 8080 );
 	makeEvent( event );
-	event->code = SSH2_EVENT_REVERSE_CONNECT;
+	event->code = SSH2_EVENT_NET_REVERSE_CONNECT;
 	event->data = (void*)channel;
 	event->data2 = listener->wss->wsPipe;
 	event->waiter = MakeThread();
@@ -873,20 +913,22 @@ static uintptr_t ReverseConnectCallback( uintptr_t psv, struct ssh_channel* chan
 		WakeableSleep( 1000 );
 	}
 	SSH2_Channel* newChannel = (SSH2_Channel*)event->data;
+	newChannel->internal_closeCallback = NET_ReverseChannelClose;
+	newChannel->internal_eofCallback = NET_ReverseChannelEOF;
 	newChannel->remoteListen = listener;
-	WebSocketPipeSetSend( listener->wss->wsPipe, ReverseChannelSend, (uintptr_t)newChannel );
-	WebSocketPipeSetClose( listener->wss->wsPipe, ReverseChannelClose, (uintptr_t)newChannel );
-	uintptr_t result = (uintptr_t)event->data;
+	WebSocketPipeSetSend( listener->wss->wsPipe, NET_ReverseChannelSend, (uintptr_t)newChannel );
+	//WebSocketPipeSetClose( listener->wss->wsPipe, ReverseChannelClose, (uintptr_t)newChannel );
+	//WebSocketPipeSetEof( listener->wss->wsPipe, ReverseChannelEOF, (uintptr_t)newChannel );
+
 	dropEvent( event );
-	return result;
+	return (uintptr_t)newChannel;
 }
 
-
-static uintptr_t ReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort ) {
+static uintptr_t NET_ReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort ) {
 	SSH2_Object* ssh = (SSH2_Object*)psv;
 	makeEvent( event );
-	sack_ssh_set_forward_listen_accept( listener, ReverseConnectCallback );
-	event->code = SSH2_EVENT_REVERSE_CHANNEL;
+	sack_ssh_set_forward_listen_accept( listener, NET_ReverseConnectCallback );
+	event->code = SSH2_EVENT_NET_REVERSE_CHANNEL;
 	event->data = (void*)listener;
 	event->waiter = MakeThread();
 	event->done = 0;
@@ -901,6 +943,18 @@ static uintptr_t ReverseCallback( uintptr_t psv, struct ssh_listener* listener, 
 
 }
 
+
+// ---------  websocket interface to this... should really be in websocket module -----------
+//--------------------------- end WS interface ----------------------------
+
+
+/**
+* Reverse a listener to a remote connection serving (address [, port] [,options?])
+* @param {string} address - address to listen on
+* @param {number} port - port to listen on
+* 
+* at this time only does reverse for websocket connections
+*/
 void SSH2_Object::Reverse( const v8::FunctionCallbackInfo<Value>&args ) {
 	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
 	int port = 0;
@@ -908,8 +962,17 @@ void SSH2_Object::Reverse( const v8::FunctionCallbackInfo<Value>&args ) {
 	String::Utf8Value remoteHost( args.GetIsolate(), args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 	if( args.Length() > 1 )
 		port = args[1]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
+	if( args.Length() > 2 ) {
+		// this is probably an option object
+		// 
+		//Local<Object> obj = args[1].Cast<Object>();
+	}
+	// options to reverse for oh this has to be 
+	// NetworkSocket  (like TCP object)
+	// just transparent forward
+	//sack_ssh_forward_listen( ssh->session, *remoteHost, port, SSH_Channel2::something? );
 
-	sack_ssh_forward_listen( ssh->session, *remoteHost, port, ReverseCallback );
+	sack_ssh_forward_listen( ssh->session, *remoteHost, port, WSReverseCallback );
 
 	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
 	ssh->connectPromise.Reset( isolate, pr );

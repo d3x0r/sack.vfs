@@ -2529,8 +2529,6 @@ static int channel_send_eof(LIBSSH2_CHANNEL *channel)
                               "Unable to send EOF on channel");
     }
     channel->local.eof = 1;
-    if( channel->eof_cb )
-        LIBSSH2_CHANNEL_EOF( session, channel );
 
     return 0;
 }

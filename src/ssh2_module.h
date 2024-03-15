@@ -18,8 +18,10 @@ enum SSH2_EventCodes {
 	SSH2_EVENT_EXEC,
 	SSH2_EVENT_FORWARD,
 	SSH2_EVENT_FORWARD_CONNECT,
-	SSH2_EVENT_REVERSE_CHANNEL,
-	SSH2_EVENT_REVERSE_CONNECT,
+	SSH2_EVENT_WS_REVERSE_CHANNEL,
+	SSH2_EVENT_WS_REVERSE_CONNECT,
+	SSH2_EVENT_NET_REVERSE_CHANNEL,
+	SSH2_EVENT_NET_REVERSE_CONNECT,
 	SSH2_EVENT_LISTEN_ERROR,
 };
 
@@ -53,7 +55,15 @@ public:
 	bool binary = 0;
 	class SSH2_RemoteListen* remoteListen;
 	struct html5_web_socket* wsPipe;
-
+	/*
+	/*
+	* eof Event handler
+	*/
+	void( *internal_eofCallback )( SSH2_Channel*, struct html5_web_socket* wsPipe );
+	/*
+	* close Event handler
+	*/
+	void( *internal_closeCallback )( SSH2_Channel*, struct html5_web_socket* wsPipe );
 public:
 	SSH2_Channel();
 	~SSH2_Channel();

@@ -11,6 +11,7 @@ enum wsReadyStates {
 	LISTENING = 4,
 };
 
+uintptr_t WSReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort );
 
 /*
 * web sock server Object
