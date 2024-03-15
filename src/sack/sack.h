@@ -10013,6 +10013,9 @@ WEBSOCKET_EXPORT int WebSocketConnect( PCLIENT );
 // end a websocket connection nicely.
 // code must be 1000, or 3000-4999, and reason must be less than 123 characters (125 bytes with code)
 WEBSOCKET_EXPORT void WebSocketClose( PCLIENT, int code, const char *reason );
+// end a websocket connection nicely.
+// used for client and server connections - specifically pipes.
+WEBSOCKET_EXPORT void WebSocketPipeClose( struct html5_web_socket*, int code, const char* reason );
 // there is a control bit for whether the content is text or binary or a continuation
  // UTF8 RFC3629
 WEBSOCKET_EXPORT void WebSocketBeginSendText( PCLIENT, const char *, size_t );
@@ -10118,17 +10121,34 @@ HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketCreate )( CTEXTSTR server_url
 */
 HTML5_WEBSOCKET_PROC( void, WebSocketWrite )( struct html5_web_socket* socket, CPOINTER buffer, size_t length );
 /*
-* Set the send callback for a pipe connection.
+* Set the send callback for a pipe connection.  SSH layer wants to send data to this socket.
 */
 HTML5_WEBSOCKET_PROC( void, WebSocketPipeSetSend )( struct html5_web_socket* pipe, int ( *on_send )( uintptr_t psv, CPOINTER buffer, size_t length ), uintptr_t psv_send );
+/*
+* An EOF has happened from the other side of the channel this pipe is associated with.
+*/
+HTML5_WEBSOCKET_PROC( void, WebSocketPipeSetEof )( struct html5_web_socket* pipe, void ( *do_eof )( uintptr_t psv ), uintptr_t psv_eof );
+/*
+* A close has been requested from the other side of the channel this pipe is associated with.
+*/
 HTML5_WEBSOCKET_PROC( void, WebSocketPipeSetClose )( struct html5_web_socket* pipe, void ( *do_close )( uintptr_t psv ), uintptr_t psv_close );
+/*
+* Send data to the pipe connection.  This is the same as WebSocketWrite, but is used for the pipe connection.
+*/
 HTML5_WEBSOCKET_PROC( void, WebSocketPipeSend )( struct html5_web_socket* socket, CPOINTER buffer, size_t length );
-HTML5_WEBSOCKET_PROC( void, WebSocketPipeClose )( struct html5_web_socket* socket );
+/*
+* The underlaying socket connection has been closed. (for SSH that the channel is closed)
+*/
+HTML5_WEBSOCKET_PROC( void, WebSocketPipeSocketClose )( struct html5_web_socket* socket );
 /*
 * A new pipe connection has been accepted, this performs the same operation
 * as accepting a socket internally
 */
 HTML5_WEBSOCKET_PROC( struct html5_web_socket*, WebSocketPipeConnect )( struct html5_web_socket* pipe, uintptr_t psvNew );
+/*
+* allows changing the user data associated with the callback
+*/
+HTML5_WEBSOCKET_PROC( void, WebSocketPipeSetConnectPSV)( struct html5_web_socket* pipe, uintptr_t psvNew );
 // during open, server may need to switch behavior based on protocols
 // this can be used to return the protocols requested by the client.
 HTML5_WEBSOCKET_PROC( const char *, WebSocketGetProtocols )( PCLIENT pc );
@@ -10214,7 +10234,7 @@ NETWORK_PROC( ssh_forward_listen_cb, sack_ssh_set_forward_listen )( struct ssh_s
 *
 * This is called when a listener gets a connection, and the callback should return a pointer to a structure that will be used as the psv for the channel
 */
-typedef uintptr_t( *ssh_forward_listen_accept_cb ) ( uintptr_t psv, struct ssh_channel* channel );
+typedef uintptr_t( *ssh_forward_listen_accept_cb ) ( uintptr_t psv, struct ssh_listener*listener, struct ssh_channel* channel );
 NETWORK_PROC( ssh_forward_listen_accept_cb, sack_ssh_set_forward_listen_accept )( struct ssh_listener* listen, ssh_forward_listen_accept_cb );
 /*
 * set a callback for when a session negotiates initial keys
@@ -10348,7 +10368,10 @@ NETWORK_PROC( void, sack_ssh_channel_exec )( struct ssh_channel* channel, CTEXTS
 * stream is 0 for stdin, 1 for stderr
 */
 NETWORK_PROC( void, sack_ssh_channel_write )( struct ssh_channel* channel, int stream, const uint8_t* buffer, size_t length );
+  // send Close on channel (which also sends EOF on channel)
 NETWORK_PROC( void, sack_ssh_channel_close )( struct ssh_channel* channel );
+ // send EOF on channel
+NETWORK_PROC( void, sack_ssh_channel_eof )( struct ssh_channel* channel );
 /*
 LIBSSH2_API int libssh2_channel_send_eof(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_eof(LIBSSH2_CHANNEL *channel);
@@ -10366,6 +10389,7 @@ NETWORK_PROC( void, sack_ssh_sftp_shutdown )( struct ssh_sftp* session );
 * the channel has to be opening from a forwarded listener
 * (before any data from the remote is processed)
 */
+// a lot of this client work side is done in the websocket client library (sack.vfs)
 NETWORK_PROC( struct ssh_websocket*, sack_ssh_channel_serve_websocket )( struct ssh_channel* channel,
 	web_socket_opened ws_open,
 	web_socket_event ws_event,
