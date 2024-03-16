@@ -4,7 +4,6 @@ const enc = new TextDecoder("utf-8"); // convert arraybuffer to string
 const priv = enc.decode( sack.Volume.mapFile( "rsa" ) );
 
 const ssh = sack.SSH();
-const ssh_alt = new sack.SSH();
 
 ssh.connect( { address:"[::1]:2222", port:22, trace:true
              , user:"root", password: ""
