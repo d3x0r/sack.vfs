@@ -1,3 +1,6 @@
+This is only the tail - the most recent changes are at the tail of [README.md](README.md#changelog).
+
+
 - 1.1.817
     - Aliased `Sqlite` to `ODBC` and `DB` also; since it is not specifically Sqlite.
     - Added `run()` function in SQL module; this returns a promise and runs the query in a background thread.
