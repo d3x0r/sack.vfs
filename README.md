@@ -253,6 +253,12 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ## Changelog
 - 1.1.822(in progress)
     - Add client SSH module; using libssh2 for support.
+    - Add ability to open remote listen channels.
+    - Added hook between a channel and the SACK Websocket/HTTP server to a remote connection.
+    - fixed some issues with async SQL queries done in a quick batch.
+    - improved name lookup from address.
+    - Added uv_unref() to async SQL event; allows application to close when code is done.
+    - Added ability to resolve names; the websocket is initialized with options on whether to get MAC and or resolve IP to name.
     - Added local and remote MAC addresses to websocket connection for clients and accepted server sockets.
     - Applied some minor fixes to build under termux on android.
     - Added isRunning() method to tasks to return if a task is still running.
