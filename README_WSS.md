@@ -107,6 +107,8 @@ specified target thread.  The handoff takes a unique string which should identif
 a pool of threads all using the same identifier may each receive one socket.  Once the accept event is fired,
 it is cleared, and the thread will have to re-post a listener to accept another socket.
 
+The return of onaccept may be a promise which will wait until it is resolved before accepting the socket.
+
 ``` js
 // rough example, not sure about the onaccept interface
 
