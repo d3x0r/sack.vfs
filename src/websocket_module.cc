@@ -678,11 +678,14 @@ static void cgiParamSave(uintptr_t psv, PTEXT name, PTEXT value){
 static Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket* pipe, wssObject* wss, wscObject* wsc, wssiObject* wssi ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	//wssi
-	if( wss || wsc || wssi ) pc = NULL;
-	PLIST headers = pc?GetWebSocketHeaders( pc ):wss?GetWebSocketPipeHeaders( wss->wsPipe ) : wssi ? GetWebSocketPipeHeaders( wssi->wsPipe ) : NULL;
-	PTEXT resource = pc?GetWebSocketResource( pc ):wss?GetWebSocketPipeResource( wss->wsPipe ) : wssi ? GetWebSocketPipeResource( wssi->wsPipe ) : NULL;
-	SOCKADDR *remoteAddress = pc?(SOCKADDR *)GetNetworkLong( pc, GNL_REMOTE_ADDRESS ) : NULL;
-	SOCKADDR *localAddress = pc ? (SOCKADDR *)GetNetworkLong( pc, GNL_LOCAL_ADDRESS ): NULL;
+	if( wss || wsc || wssi ) {
+		if( wssi && wssi->wsPipe )
+			pc = NULL;
+	}
+	PLIST headers = (pc)?GetWebSocketHeaders( pc ):wss?GetWebSocketPipeHeaders( wss->wsPipe ) : wssi ? GetWebSocketPipeHeaders( wssi->wsPipe ) : NULL;
+	PTEXT resource = ( pc ) ?GetWebSocketResource( pc ):wss?GetWebSocketPipeResource( wss->wsPipe ) : wssi ? GetWebSocketPipeResource( wssi->wsPipe ) : NULL;
+	SOCKADDR *remoteAddress = ( pc ) ?(SOCKADDR *)GetNetworkLong( pc, GNL_REMOTE_ADDRESS ) : NULL;
+	SOCKADDR *localAddress = ( pc ) ? (SOCKADDR *)GetNetworkLong( pc, GNL_LOCAL_ADDRESS ): NULL;
 	Local<String> remote = String::NewFromUtf8( isolate, remoteAddress?GetAddrName( remoteAddress ):"0.0.0.0", v8::NewStringType::kNormal ).ToLocalChecked();
 	Local<String> local = String::NewFromUtf8( isolate, localAddress?GetAddrName( localAddress ):"0.0.0.0", v8::NewStringType::kNormal ).ToLocalChecked();
 	uint8_t mac[12];
@@ -3873,6 +3876,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		httpRequest->agent = StrDup( *value );
 	}
 
+	// make sure we have at least 2 words?
 	NetworkWait( NULL, 256, 2 );
 
 	if (!httpRequest->resultCallback.IsEmpty()) {
