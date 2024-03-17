@@ -36,7 +36,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-cmake_minimum_required(VERSION 3.13)
+#cmake_minimum_required(VERSION 3.13)
+# ubuntu 18 limits this to 3.10; 3.13 had a good option change.
+cmake_minimum_required(VERSION 3.10)
 message(STATUS "Using CMake version ${CMAKE_VERSION}")
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
@@ -443,14 +445,14 @@ endfunction()
 
 add_subdirectory(src)
 
-if(BUILD_EXAMPLES)
-  add_subdirectory(example)
-endif()
+#if(LIBSSH2_BUILD_EXAMPLES)
+#  add_subdirectory(example)
+#endif()
 
-if(BUILD_TESTING)
-  enable_testing()
-  add_subdirectory(tests)
-endif()
+#if(LIBSSH2_BUILD_TESTING)
+#  enable_testing()
+#  add_subdirectory(tests)
+#endif()
 
 option(LINT "Check style while building" OFF)
 if(LINT)
