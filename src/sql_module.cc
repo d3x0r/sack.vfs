@@ -922,7 +922,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 	PTEXT statement = NULL;
 	PDATALIST pdlParams = NULL;
 
-	if (args.Length() == 1) {
+	if (args.Length() > 0) {
 		String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
 		statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
 	}
@@ -934,9 +934,37 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		PVARTEXT pvtStmt = VarTextCreate();
 		struct jsox_value_container val;
 		memset( &val, 0, sizeof( val ) );
-		if (StrChr( *sqlStmt, ':' )
+		int escape = 0;
+		int inquote = 0;
+		bool hasDollar = false;
+		bool hasColon = false;
+		for( int n = 0; n < statement->data.size; n++ ) {
+			if( statement->data.data[n] == '\'' || statement->data.data[n] == '\"' || statement->data.data[n] == '\`' ) {
+				if( inquote && escape ) escape = 0;
+				else if( inquote == statement->data.data[n] ) inquote = 0;
+				else inquote = statement->data.data[n];
+			} else if( statement->data.data[n] == '\\' ) {
+				escape = !escape;
+			} else {
+				if( inquote ) continue;
+				if( escape ) {
+					// it was escaped, whatever it was?
+					escape = 0;
+					continue;
+				}
+				if( statement->data.data[n] == ':' && !inquote ) {
+					hasColon = true;
+					break;
+				}
+				if( statement->data.data[n] == '$' && !inquote ) {
+					hasDollar = true;
+					break;
+				}
+			}
+		}
+		if (hasColon
 			|| StrChr( *sqlStmt, '@' )
-			|| StrChr( *sqlStmt, '$' )) {
+			|| hasDollar) {
 			if (args[1]->IsObject()) {
 				arg = 2;
 				pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
