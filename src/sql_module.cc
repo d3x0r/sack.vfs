@@ -939,7 +939,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		bool hasDollar = false;
 		bool hasColon = false;
 		for( int n = 0; n < statement->data.size; n++ ) {
-			if( statement->data.data[n] == '\'' || statement->data.data[n] == '\"' || statement->data.data[n] == '\`' ) {
+			if( statement->data.data[n] == '\'' || statement->data.data[n] == '"' || statement->data.data[n] == '`' ) {
 				if( inquote && escape ) escape = 0;
 				else if( inquote == statement->data.data[n] ) inquote = 0;
 				else inquote = statement->data.data[n];
