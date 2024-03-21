@@ -7942,6 +7942,23 @@ NETWORK_PROC( LOGICAL, ssl_BeginServer_v2 )( PCLIENT pc, CPOINTER cert, size_t c
 	, CPOINTER keypair, size_t keylen
 	, CPOINTER keypass, size_t keypasslen
 	, char* hosts );
+/*
+* Get the SSL session for a client
+*/
+NETWORK_PROC( struct ssl_session*, ssl_GetSession )( PCLIENT pc );
+/*
+* add data to the SSL session ( this is new data from a network source)
+* results with standard read/write callbacks (original set in the socket, but now?)
+*/
+NETWORK_PROC( void, ssl_WriteData )( struct ssl_session* session, POINTER buffer, size_t length );
+/*
+* Send data out ssl connection
+*/
+NETWORK_PROC( LOGICAL, ssl_SendPipe )( struct ssl_session* ses, CPOINTER buffer, size_t length );
+/*
+* set the send and receive work functions for an SSL connection
+*/
+NETWORK_PROC( void, ssl_SetSendRecvCallbacks )( struct ssl_session* session, void ( *send )( uintptr_t, CPOINTER, size_t ), void ( *recv )( uintptr_t, POINTER, size_t ), uintptr_t psvSendRecv );
 NETWORK_PROC( LOGICAL, ssl_GetPrivateKey )(PCLIENT pc, POINTER *keydata, size_t *keysize);
 NETWORK_PROC( LOGICAL, ssl_IsClientSecure )(PCLIENT pc);
 NETWORK_PROC( void, ssl_SetIgnoreVerification )(PCLIENT pc);
