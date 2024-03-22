@@ -699,7 +699,7 @@ sack.JSOX.stringifier = function() {
 				var protoConverter = (value !== undefined && value !== null)
 					&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) )
 					|| toProtoTypes.get( Object.getPrototypeOf( value ) )
-									|| toProtoTypesByName.get( Object.getPrototypeOf( value ).constructor.name )
+									|| ( Object.getPrototypeOf(value) && toProtoTypesByName.get( Object.getPrototypeOf( value ).constructor.name ))
 					|| null )
 				var objectConverter = !protoConverter && (value !== undefined && value !== null)
 					&& ( localToObjectTypes.get( Object.keys( value ).toString() )
