@@ -3571,7 +3571,7 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 						return;
 					}
 					if( obj->pc ) {
-						WebSocketClose( obj->pc, 1000, NULL );
+						WebSocketClose( obj->pc, code, *reason);
 					}
 				}
 			}
