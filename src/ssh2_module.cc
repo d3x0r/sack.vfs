@@ -358,10 +358,6 @@ SSH2_Channel::~SSH2_Channel() {
 	//sack_ssh_channel_free( channel );
 }
 
-ATEXIT(asdf   ) {
-	DebugBreak();
-}
-
 void SSH2_Channel::DataCallback( uintptr_t psv, int stream, const uint8_t* data, size_t length ) {
 	SSH2_Channel* channel = (SSH2_Channel*)psv;
 	makeEvent( event );
