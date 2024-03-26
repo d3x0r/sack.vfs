@@ -68,6 +68,7 @@ export function getRequestHandler( serverOpts ) {
 			extname = path.extname(path.basename(filePath,extname));
 		}
 
+		if( disk.isDir( filePath ) ) filePath += "/index.html";
 
 		const contentType = extMap[extname] || "text/plain";
 		//console.log( ":", extname, filePath )
