@@ -72,7 +72,40 @@ export class Protocol extends Events {
 	static #dispatchMessage(protocol, ws, msg ) {
 		protocol.on( msg.op, [ws, msg] ); 
 	}
+	addFileMessages( ) {
+		this.on( "get", (myWS,msg)=>{
+			let response = {
+				headers:null,
+				content:null,
+				status : 0,
+				statusText : "Ok",
+			}
+			// this gets passed to 
+			this.server.handleEvent ( {url:msg.url,
+						connection: {
+							headers:{}, remoteAddress:"myRemote" }
+				}, {
+				set statusText(val) {
+					response.statusText = val;
+				},
+				get statusText() {
+					return response.statusText;
+				},
+				writeHead(A,B) {
+					response.status = A;
+					response.headers = B;
+				},
+				end( content ) {
+					response.content = content;
+					myWS.send( { op:"got", response } );
+				},
+			} );
+		} );
+	}
 }
+
+
+
 
 class WS{
 	ws = null;

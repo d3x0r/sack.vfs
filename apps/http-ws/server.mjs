@@ -141,7 +141,9 @@ export function openServer( opts, cbAccept, cbConnect )
 	//console.log( "with:", disk.dir() );
 
 	const reqHandler = getRequestHandler( opts );
-	server.onrequest = (req,res)=>{
+	server.onrequest = handleEvent;
+
+	function handleEvent(req,res) {
 		for( let handler of handlers ) {
 			if( handler( req, res, serverOpts ) ) {
 				//console.log( "handler accepted request..." );
@@ -182,6 +184,9 @@ export function openServer( opts, cbAccept, cbConnect )
 	};
 
 	const serverResult = {
+		handleEvent( req, res ) {
+			hendleEvent( req, res );
+		}
 		setResourcePath( path ) {
 			resourcePath = path;	
 		},
