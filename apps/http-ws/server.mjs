@@ -163,7 +163,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	}
 
 	server.onaccept = function ( ws ) {
-			console.log( "send accept?", cbAccept );
+		//console.log( "send accept?", cbAccept );
 		if( cbAccept ) return cbAccept.call(this,ws);
 		if( process.env.DEFAULT_REJECT_WEBSOCKET == "1" )
 			this.reject();
@@ -186,7 +186,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	const serverResult = {
 		handleEvent( req, res ) {
 			hendleEvent( req, res );
-		}
+		},
 		setResourcePath( path ) {
 			resourcePath = path;	
 		},
