@@ -252,6 +252,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.1.822(in progress)
+    - Fix rare JSOX parsing ref follow where part of path is used and then forks to previous data.
     - Add client SSH module; using libssh2 for support.
     - Add ability to open remote listen channels.
     - Added hook between a channel and the SACK Websocket/HTTP server to a remote connection.
