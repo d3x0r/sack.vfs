@@ -734,10 +734,14 @@ static Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_
 	if( pc && ( ( wss && wss->resolveAddr ) || ( wsc && wsc->resolveAddr ) || ( wssi && wssi->resolveAddr ) ) ) {
 		char tmp[NI_MAXHOST+1];
 		#define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
-		getnameinfo( remoteAddress, SOCKADDR_LENGTH( remoteAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
-		SETV( result, strings->localNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
-		getnameinfo( localAddress, SOCKADDR_LENGTH( localAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD );
-		SETV( result, strings->remoteNameString->Get( isolate ), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+		if( remoteAddress ) {
+			getnameinfo( remoteAddress, SOCKADDR_LENGTH( remoteAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
+			SETV( result, strings->localNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+		}
+		if( localAddress ) {
+			getnameinfo( localAddress, SOCKADDR_LENGTH( localAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD );
+			SETV( result, strings->remoteNameString->Get( isolate ), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+		}
 	}
 
 	if( pc && ( ( wss && wss->resolveMac ) || ( wsc && wsc->resolveMac ) || ( wssi && wssi->resolveMac ) ) ) {
