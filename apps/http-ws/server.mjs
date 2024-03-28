@@ -131,6 +131,7 @@ app.get( /.*\.jsox/, (req,res)=>{
 }
 
 //exports.open = openServer;
+let eventHandler = null;
 export function openServer( opts, cbAccept, cbConnect )
 {
 	let handlers = [];
@@ -142,6 +143,7 @@ export function openServer( opts, cbAccept, cbConnect )
 
 	const reqHandler = getRequestHandler( opts );
 	server.onrequest = handleEvent;
+	eventHandler = handleEvent;
 
 	function handleEvent(req,res) {
 		for( let handler of handlers ) {
@@ -185,7 +187,7 @@ export function openServer( opts, cbAccept, cbConnect )
 
 	const serverResult = {
 		handleEvent( req, res ) {
-			hendleEvent( req, res );
+			return eventHandler( req, res );
 		},
 		setResourcePath( path ) {
 			resourcePath = path;	
