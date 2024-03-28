@@ -586,13 +586,15 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				{
 					struct jsox_value_container *pathVal;
 					INDEX idx;
+					LOGICAL off_stack = TRUE;
 					Local<Object> refObj = revive->rootObject;
 					DATA_FORALL( val->contains, idx, struct jsox_value_container *, pathVal ) {
 						if( revive->failed ) return Undefined( revive->isolate );
 #ifdef DEBUG_REFERENCE_FOLLOW
-						lprintf( "get reference:%d  %s", idx, pathVal->string );
+						lprintf( "get reference:%d %s %d %s %u", idx, off_stack?"OFF":"ON", pathVal->value_type, pathVal->string, (uint32_t)pathVal->result_n );
 #endif
 						LogObject( refObj );
+						
 						if( pathVal->value_type == JSOX_VALUE_NUMBER ) {
 							MaybeLocal<Value> mbArrayMember = refObj->Get( revive->context, (uint32_t)pathVal->result_n );
 							if( !mbArrayMember.IsEmpty() ) {
@@ -601,6 +603,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								MaybeLocal<String> mbString = arraymember->ToString(revive->context);
 								if( !mbString.IsEmpty() ) {
 									String::Utf8Value tmp( USE_ISOLATE( revive->isolate ) mbString.ToLocalChecked() );
+									//if( StrCmp( *tmp, "[object Object]" ) == 0 )DebugBreak();
 									lprintf( "Array member is : %s", *tmp );
 								}
 #endif
@@ -609,10 +612,14 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									{
 
 										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
-										if( member->index == (uint32_t)pathVal->result_n ) {
+										if( !member ) {
+											lprintf( "Stack is %d at %d get %d", revive->reviveStack->Top, idx, revive->reviveStack->Top - idx - 1 );
+										}
+										if( member && member->index == (uint32_t)pathVal->result_n ) {
 											LogObject( member->object );
 											if( member->object->IsObject() ) {
 												refObj = member->object.As<Object>();
+												off_stack = FALSE;
 												//lprintf( "Saving replacement, maybe we can re-apply a fixup?" );
 												struct reviveMemberReplacement rep;
 												rep.object = revive->refObject;
@@ -630,6 +637,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									//	refObj = maybeRefObj.ToLocalChecked();
 								} else {
 									LogObject( arraymember );
+									off_stack = TRUE;
 									refObj = arraymember.As<Object>();
 								}
 							}
@@ -641,6 +649,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								Local<Function> mapGetter = refObj->Get( revive->context, localStringExternal( revive->isolate, "get" ) ).ToLocalChecked().As<Function>();
 								Local<Value> args[] = { localStringExternal( revive->isolate, pathVal->string, (int)pathVal->stringLen ) };
 								val_temp = mapGetter->Call( revive->context, refObj, 1, args ).ToLocalChecked();
+								off_stack = TRUE;
 								LogObject( val_temp );
 							}
 							else {
@@ -651,32 +660,42 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								//lprintf( "path is:%s", pathVal->string);
 								{
 									// if it's in the stack, prefer that value which is more current.
-									if( idx >= revive->reviveStack->Top ) {
+									struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
+
+									if( idx >= revive->reviveStack->Top || (off_stack) || ( member->object != refObj ) ) {
 										if( refObj->Has( revive->context, pathval ).ToChecked() ) {
+#ifdef DEBUG_REFERENCE_FOLLOW
+											lprintf ( "object already has path, use that." );
+#endif
 											val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
+											off_stack = TRUE;
 										} else {
-											//lprintf( "This fell off the stack, am assuming it's the current reference object..." );
+#ifdef DEBUG_REFERENCE_FOLLOW
+											lprintf( "This fell off the stack, am assuming it's the current reference object..." );
+#endif
 											val_temp = revive->refObject;
+											off_stack = FALSE;
 										}
 									} else {
-										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
 #ifdef DEBUG_REFERENCE_FOLLOW
 										lprintf( "Looking at reviveStack...  %d  %.*s %p"
 												, member->nameLen
 												, member->nameLen
 												, member->name, member->name );
 #endif
-										if( ( member->nameLen == pathVal->stringLen )
+										if( !off_stack && ( member->nameLen == pathVal->stringLen )
 											&& ( StrCmpEx( pathVal->string, member->name, pathVal->stringLen ) == 0 )
 											) {
 											val_temp = member->object;
 											//lprintf( "Saving replacement(2), maybe we can re-apply a fixup?" );
 											struct reviveMemberReplacement rep;
+											off_stack = FALSE;
 											rep.object = revive->refObject;
 											rep.fieldName = revive->fieldName;
 											AddDataItem( &member->pdlSubsts, &rep );
 										} else {
 											if( refObj->Has( revive->context, pathval ).ToChecked() ) {
+												off_stack = TRUE; // probably was offstack too
 												val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
 											} else {
 
@@ -695,6 +714,20 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 							LogObject( val_temp );
 							if( val_temp->IsObject() ) {
 								refObj = val_temp.As<Object>();
+#ifdef DEBUG_REFERENCE_FOLLOW
+								{
+									MaybeLocal<String> mbString = refObj->ToString( revive->context );
+									String::Utf8Value tmp( USE_ISOLATE( revive->isolate ) mbString.ToLocalChecked() );
+									const char* tmp2 = *tmp;
+									if( tmp2[0] == 0 ) DebugBreak();
+									lprintf( "Changed to new object: %s", *tmp );
+									if( !mbString.IsEmpty() ) {
+										String::Utf8Value tmp( USE_ISOLATE( revive->isolate ) mbString.ToLocalChecked() );
+										//if( StrCmp( *tmp, "[object Object]" ) == 0 )DebugBreak();
+										lprintf( "Array member is : %s", *tmp );
+									}
+								}
+#endif
 							}  else {
 								revive->isolate->ThrowException( Exception::TypeError(
 									String::NewFromUtf8( revive->isolate, TranslateText( "Expected an object reference but path lookup failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
