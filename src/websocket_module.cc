@@ -4022,7 +4022,7 @@ static int WSReverseChannelSend( uintptr_t psv, CPOINTER data, size_t length ) {
 	//lprintf( "ReverseChannelSend" );
 	//LogBinary( data, length );
 	sack_ssh_channel_write( channel->channel, 0, (const uint8_t*)data, length );
-	return length;
+	return (int)length&0x7FFFFFF;
 }
 
 static void WSReverseChannelClose( SSH2_Channel* channel, struct html5_web_socket* wsPipe ) {
@@ -4055,7 +4055,7 @@ static void WSPipeClosed( uintptr_t psv ) {
 // it's the low level socket type connection.
 static uintptr_t WSReverseConnectCallback( uintptr_t psv, struct ssh_listener* ssh_listener, struct ssh_channel* channel ) {
 	EnterCriticalSec( &l.csConnect );
-	struct SSH2_RemoteListen* listener = (struct SSH2_RemoteListen*)psv;
+	class SSH2_RemoteListen* listener = (class SSH2_RemoteListen*)psv;
 	sack_ssh_set_channel_data( channel, WSReverseChannelData );
 
 
