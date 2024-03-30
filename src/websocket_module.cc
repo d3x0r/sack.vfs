@@ -1611,6 +1611,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	SET_READONLY( wsWebStatesObject, "LISTENING", Integer::New( isolate, wsReadyStates::LISTENING ) );
 	SET_READONLY( o, "readyStates", wsWebStatesObject );
 
+	SET_READONLY( exports, "WSBanana", o );
 	SET_READONLY( exports, "WebSocket", o );
 	class constructorSet *c = getConstructors( isolate );
 	{

@@ -75,6 +75,8 @@
 #endif
 
 
+
+
 #if NODE_MAJOR_VERSION >= 10
 #  define USE_ISOLATE(i)   (i),
 #  define USE_ISOLATE_VOID(i)   (i)
@@ -167,6 +169,7 @@ void fileMonitorInit( Isolate* isolate, Local<Object> exports );
 void textObjectInit( Isolate *isolate, Local<Object> _exports );
 PTEXT isTextObject( Isolate *isolate, Local<Value> object );
 void SystemInit( Isolate* isolate, Local<Object> exports );
+void InitSystray( Isolate * isolate, Local<Object> _exports );
 
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
