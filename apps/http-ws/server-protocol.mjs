@@ -3,6 +3,7 @@ import {sack} from "sack.vfs"
 import {openServer} from "./server.mjs"
 import {Events} from "../events/events.mjs";
 const JSOX = sack.JSOX;
+const debug_ = false;
 
 function loopBack( that, to ) {
 
@@ -78,14 +79,12 @@ export class Protocol extends Events {
 		}
 	}
 	static #dispatchMessage(protocol, ws, msg ) {
-		console.log( "invoking handler for:", msg.op, msg )
+		debug_ && console.log( "invoking handler for:", msg.op, msg )
 		protocol.on( msg.op, [ws, msg] ); 
 	}
 	addFileHandler( ) {
 		//console.log( "Adding websocket handler for 'get'" );
 		this.on( "get", (myWS,msg)=>{
-			console.log( "gotgot:", msg )
-try {
 			let response = {
 				headers:null,
 				content:null,
@@ -94,7 +93,7 @@ try {
 			}
 			// this gets passed to 
 			const url = new URL( msg.url );
-			console.log( "url parts:", url, url.message );
+			debug_ && console.log( "url parts:", url, url.message );
 			this.server.handleEvent ( {url:url.pathname,
 						connection: {
 							headers:{}, remoteAddress:"myRemote" }
@@ -115,7 +114,6 @@ try {
 					myWS.send( { op:"got", id:msg.id, response } );
 				},
 			} );
-}catch(err) { console.log( "error?", err ); }
 		} );
 	}
 }
