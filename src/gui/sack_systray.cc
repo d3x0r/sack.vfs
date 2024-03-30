@@ -160,6 +160,6 @@ void InitSystray( Isolate* isolate, Local<Object> _exports ) {
 	SET_READONLY_METHOD( systrayObject, "set", setSystrayIcon );
 	SET_READONLY_METHOD( systrayObject, "on", setSystrayIconMenu );
 
-	SET( _exports, "Systray", systrayObject );
+	SET_READONLY( _exports, "Systray", systrayObject );
 
 }

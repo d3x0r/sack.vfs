@@ -386,13 +386,13 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	RenderObject::Init( exports );
 	ControlObject::Init( exports );
 	InterShellObject::Init( exports );
-	InitSystray( isolate, exports );
 #endif
 
 #ifdef WIN32
 	RegObject::Init( exports );
 	KeyHidObjectInit( isolate, exports );
 	SoundInit( isolate, exports );
+	InitSystray( isolate, exports );
 #endif
 	InitWebSocket( isolate, exports );
 	InitUDPSocket( isolate, exports );
