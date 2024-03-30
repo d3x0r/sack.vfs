@@ -47,33 +47,45 @@ export class Protocol extends Events {
 	#connect(ws) {
 		const myWS = new WS( ws );
 		const this_ = this;
+		//console.log( "--------------- NEW CONNECTION ------------------" );
 		const results = this.on( "connect", [ws, myWS] );
+		ws.onmessage = handleMessage;
+		ws.onclose = handleClose;
+
+		const parser = sack.JSOX.begin( 
+			(object)=>Protocol.#dispatchMessage(this_, myWS,object) );
+
+
 		if( results && results.length ) {
 			// assume the on-connect provdies its own open/close handlers
 			if( results.includes( true ) ) return;
 		}
 
-		ws.on("message", handleMessage);
-		ws.on("close", handleClose );
-
-		const parser = sack.JSOX.begin( 
-			(object)=>Protocol.#dispatchMessage(this_, myWS,object) );
-
 		function handleClose( code, reason ) {
 			this_.on( "close", [myWS,code,reason] );
+			myWS.on("close", [code.reason]);
 		}
 
 		function handleMessage( msg ) {
 			const result = this_.on( "message", [ws,msg])
-			if( !result || ! result.reduce( (acc,val)=>acc|=!!val, false ) )
-				parser.write( msg );
+			//console.log( "handle message:", result, msg );
+			if( !result || ! result.reduce( (acc,val)=>acc|=!!val, false ) ) {
+				const res2 = myWS.on("message",[ws,msg]);
+				//console.log( "socket handler?", res2, msg )
+				if( !res2 || ! res2.reduce( (acc,val)=>acc|=!!val, false ) )
+					parser.write( msg );
+			}
 		}
 	}
 	static #dispatchMessage(protocol, ws, msg ) {
+		console.log( "invoking handler for:", msg.op, msg )
 		protocol.on( msg.op, [ws, msg] ); 
 	}
-	addFileMessages( ) {
+	addFileHandler( ) {
+		//console.log( "Adding websocket handler for 'get'" );
 		this.on( "get", (myWS,msg)=>{
+			console.log( "gotgot:", msg )
+try {
 			let response = {
 				headers:null,
 				content:null,
@@ -81,7 +93,9 @@ export class Protocol extends Events {
 				statusText : "Ok",
 			}
 			// this gets passed to 
-			this.server.handleEvent ( {url:msg.url,
+			const url = new URL( msg.url );
+			console.log( "url parts:", url, url.message );
+			this.server.handleEvent ( {url:url.pathname,
 						connection: {
 							headers:{}, remoteAddress:"myRemote" }
 				}, {
@@ -97,9 +111,11 @@ export class Protocol extends Events {
 				},
 				end( content ) {
 					response.content = content;
-					myWS.send( { op:"got", response } );
+					console.log( "Replywith got and content?", response );
+					myWS.send( { op:"got", id:msg.id, response } );
 				},
 			} );
+}catch(err) { console.log( "error?", err ); }
 		} );
 	}
 }
@@ -107,9 +123,10 @@ export class Protocol extends Events {
 
 
 
-class WS{
+class WS extends Events{
 	ws = null;
 	constructor(ws){
+		super();
 		this.ws = ws;
 	}
 	/**
