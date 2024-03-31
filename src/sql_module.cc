@@ -1138,9 +1138,12 @@ static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
 		// only do this if we started an async callback on it.
 		struct userMessage msg;
 		msg.mode = UserMessageModes::OnDeallocate;
+		Hold( sql->state );
+
 		msg.onwhat = NULL;
 		msg.done = 0;
 		msg.waiter = NULL;
+
 		EnqueLink( &sql->state->messages, &msg );
 		while( !msg.done ) {
 #ifdef DEBUG_EVENTS			
@@ -1782,22 +1785,21 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 #endif
 				uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
 			}
-		} else {
+		} else { // msg->mode == UserMessageModes::OnDeallocate
 			closing = TRUE;
-			myself->thread = NULL;
-			Hold( myself );
+			if( myself->thread ) {
+				myself->thread = NULL;
+				//Hold( myself );
 #ifdef DEBUG_EVENTS
-			lprintf( "Sack uv_close6 %p", &myself->async );
+				lprintf( "Sack uv_close6 %p", &myself->async );
 #endif
-			uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
+				uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
+			}
 		}	
 		if( msg ) {
 			msg->done = 1;
 			if (msg->waiter)
 				WakeThread( msg->waiter );
-		}
-		if( msg && msg->mode == UserMessageModes::OnDeallocate ) {
-			ReleaseEx( msg DBG_SRC );
 		}
 	}
 	if( !internal && !closing )
