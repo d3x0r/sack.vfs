@@ -3572,7 +3572,7 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 					String::Utf8Value reason( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					if( reason.length() > 123 ) {
 						isolate->ThrowException( Exception::Error(
-							String::NewFromUtf8( isolate, TranslateText( "SyntaxError (text reason too long)" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+							String::NewFromUtf8( isolate, TranslateText( "SyntaxError (text reason longer than 123)" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 						return;
 					}
 					if( obj->pc ) {
@@ -3582,13 +3582,13 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 			}
 			else {
 				isolate->ThrowException( Exception::Error(
-					String::NewFromUtf8( isolate, TranslateText( "InvalidAccessError" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					String::NewFromUtf8( isolate, TranslateText( "InvalidAccessError Code must be 1000 or 3000-4999." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 				return;
 			}
 		}
 		else {
 			isolate->ThrowException( Exception::Error(
-				String::NewFromUtf8( isolate, TranslateText( "InvalidAccessError" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+				String::NewFromUtf8( isolate, TranslateText( "InvalidAccessError Code is not a number." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 			return;
 		}
 	}
