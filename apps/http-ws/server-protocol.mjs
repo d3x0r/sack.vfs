@@ -110,7 +110,7 @@ export class Protocol extends Events {
 				},
 				end( content ) {
 					response.content = content;
-					console.log( "Replywith got and content?", response );
+					//console.log( "Reply with got and content?", response );
 					myWS.send( { op:"got", id:msg.id, response } );
 				},
 			} );
