@@ -26,7 +26,14 @@ const extMap = { '.js': 'text/javascript'
               ,'.crt':'application/x-x509-ca-cert'
               ,'.pem':'application/x-pem-file'
               ,'.wasm': 'application/wasm'
-              , '.asm': 'application/wasm' }
+              , '.asm': 'application/wasm' 
+			, '.bat':'application/x-msdownload'
+			, '.dll':'application/x-msdownload'
+			, '.exe':'application/x-msdownload'
+			, '.cmd':'application/x-msdownload'
+			, '.com':'application/x-msdownload'
+			, '.msi':'application/x-msdownload'
+		}
 
 const requests = [];
 let reqTimeout = 0;
