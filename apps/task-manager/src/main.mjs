@@ -17,7 +17,7 @@ export const pwdBare = process.cwd();
 let firstLoad = true;
 let config = await reloadConfig();
 
-import {openServer} from "../../sideplayr_core/server/server.mjs"
+import {openServer} from "../../http-ws/server.mjs"
 
 import {config as taskConfig, Task, closeAllTasks} from "./task.mjs"
 taskConfig.pwdBare = pwdBare;
@@ -37,7 +37,7 @@ async function reloadConfig() {
 }
 
 const serverOpts = {resourcePath:appRoot+"/ui"
-	, npmPath:parentRoot
+	, npmPath:parentRoot+"/.."
 	, port:Number(process.env.PORT) || config.port || 8080};
 // start server...
 openServer( serverOpts, accept, connect );

@@ -31,13 +31,6 @@ class Display extends Popup {
 	constructor() {
 		super("Service Manager", document.body, { suffix: "-service-manager" });
 
-		/*
-		const styles = [popups.utils.addStyleSheetSrc( this, "/css/styles.css" )
-		, popups.utils.addStyleSheetSrc( this, "/common/css/font-awesome.min.css")];
-    Promise.all( styles ).then( ()=>{
-      this.center();
-    })
-*/
 
 		popups.makeButton( this.divCaption, "Add Task", ()=>{
 			new TaskInfoEditor( null, null );
