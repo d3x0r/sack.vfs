@@ -1,0 +1,144 @@
+span {
+	font-size: 2vh;
+}
+.task-config-header {
+	display: flex;
+	justify-content: space-between;
+	border-bottom: 1px dotted #000;
+}
+.task-config-header-title-text {
+	font-size: 3.5vh;
+	width: 25vw;
+}
+.page-frame {
+	border: .3vh dotted #000;
+	margin: 2vh auto;
+	padding: 0 1vw;
+	width: 95%;
+}
+.page-frame-page-handle {
+	background-color: #bbb;	
+}
+.page-frame-page-handle.pressed {
+	background-color: #aaa;	
+}
+.page-frame-page-frame {
+	width: 100%;
+}
+.task-config-group1{
+	/*display:inline-block;*/
+	border: .1vh solid #fff;
+	border-radius: 1vh;
+	padding: 1vh;
+	margin: 1vh auto;
+	max-width: 27vw;
+}
+.task-config-group-container {
+	display: flex;
+	margin: 0 auto;
+}
+.task-config-group-opts, .task-config-move-opts {
+	border-radius: 1vh;
+	padding: 1vh;
+	margin: 1vh auto;
+	border: .3vh solid #FFF;
+	max-width: 13vw;
+}
+.task-config-group2, .task-config-group3 {
+	display: flex;
+	padding: 1vh;
+	margin: 1vh;
+	border: .3vh solid #fff;
+	border-radius: 1vh;
+}
+
+
+.frameContent-task-config {
+}
+
+.task-config-buttons {
+	flex: 1 1 100%;
+	text-align: right;
+	margin-bottom: 1vh;
+}
+.task-config-move-opts {
+	
+}
+
+.task-config-flex-frame {
+  display:flex;
+	max-width: 100vw;
+}
+
+.hidden {
+  display:none;
+}
+.text-label, .text-label-task-config {
+	font-size: 2vh;
+	line-height: 4vh;
+}
+.text-field, .text-field-task-config {
+	font-size: 3vh;
+	color: #00009F;
+}
+.textInputOption, .textInputOption-task-config {
+	font-size: 2vh;
+	padding: .3vh 1vw;
+	margin-top: .5vh;
+}
+.fieldUnit, .fieldUnit-task-config {
+	border-radius: 0;
+	padding: .3vh .6vw;
+	width: 100%;
+}
+.field-unit-span-task-config, .field-unit-span {
+	font-size: 2vh;
+	margin-right: .4vw;
+}
+.checkOption, .checkOption-task-config {
+	height: 2vh;
+	width: 2vh;
+}
+.data-grid-table-task-config {
+	font-size: 2vh
+}
+.argument-field-task-config, .env-key-task-config, .env-value-task-config {
+	background: #fff;
+	color: #000;
+	padding: .3vh .6vw;
+	cursor: pointer;
+}
+
+.data-grid-container, .data-grid-container-task-config {
+	margin: 1vh auto;
+	vertical-align: top;
+}
+.data-grid-header-row-task-config td {
+	background-color: #000;
+	color: #FFF;
+}
+.data-grid-container-task-config.has-tooltip .tooltip-text{
+	bottom: 100%;
+}
+.has-tooltip .tooltip-text{
+		width: 25vw;
+}
+.formContainer-task-config {
+	position: absolute;
+}
+.button-task-config {
+	margin-left: 1vw;
+}
+.buttonInner-task-config {
+	min-width: 3vw;
+	padding-bottom: .6vh;
+	font-size: 1.8vh;
+}
+.button-prev, .button-next {
+	display: block;
+}
+.buttonInner-prev, .buttonInner-next {
+	padding-top: 0;
+	margin: 3px 25px;
+	line-height: 2.5vh;
+}	
