@@ -471,18 +471,6 @@ function connect( ws ) {
 		ws.send( msg_ );
 	}
 
-	function addTask( id, task ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"addTask", system:local.id, id, task } );
-		send( {op:"addTask", system:local.id, id, task } );
-	}
-	function updateTask( id, task ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"updateTask", system:local.id, id, task } );
-		send( {op:"updateTask", system:local.id, id, task } );
-	}
-	function deleteTask( id ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"deleteTask", system:local.id, id } );
-		send( {op:"deleteTask", system:local.id, id } );
-	}
 
 	function handleClose( code, reason ) {
 		if( protocol === "task-proxy"){
@@ -503,6 +491,19 @@ function connect( ws ) {
 
 }
 
+
+	function addTask( id, task ) {
+		if( local.upstreamWS ) local.upstreamWS.send( {op:"addTask", system:local.id, id, task } );
+		send( {op:"addTask", system:local.id, id, task } );
+	}
+	function updateTask( id, task ) {
+		if( local.upstreamWS ) local.upstreamWS.send( {op:"updateTask", system:local.id, id, task } );
+		send( {op:"updateTask", system:local.id, id, task } );
+	}
+	function deleteTask( id ) {
+		if( local.upstreamWS ) local.upstreamWS.send( {op:"deleteTask", system:local.id, id } );
+		send( {op:"deleteTask", system:local.id, id } );
+	}
 
 function handleMessage( ws, msg_ ) {
 	try {
