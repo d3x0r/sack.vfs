@@ -1,130 +1,3 @@
-
-
-.outputSpan{
-	white-space:pre-wrap;
-	display:block;
-	word-wrap:break-word;
-	/*word-break: break-all;   excessively long words
-	 */
-}
-[class^="frameCaption"] {
-	background-color: #1e88e5;
-	border-radius: 7px 7px 0 0;
-	display: flex;
-	justify-content: space-between;
-}
-.formContainer-service-manager {
-	margin: 4vh 0 0 2vw;
-
-}
-[class^="formContainer"] {
-	background: #FFF !important;
-	color: #000 !important;
-	/*margin: 4vh 0 0 2vw;*/
-}
-[class^="data-grid-table"], [class^="data-grid-riw"], td, th {
-	color: #000;
-	background: #FFF;
-	border-color: #000;
-}
-.data-grid-header-row td{
-	background: #242424 !important;
-	color: #FFF;
-}
-.task-log-listbox{
- 	background-color:#000000a0;
-	color:white;
-	height:80vh;
-	min-width:60em;
-	max-width:80vw;
-	position:relative;
-	left:0;
-	right:0;
-	top:0;
-	bottom:-50;
-	overflow:auto;
-}
-
-
-.task-log-listbox {
-	width: 80vw;
-}
-.button-service-manager-log {
-	background: #1e88e5;
-	height: 2.9vh;
-	/*margin-bottom: .7vh;*/
-	margin: .2vh 0;
-	color:#FFF;
-
-}
-.buttonInner-service-manager-log {
-	background: #1e88e5;
-	padding-top: 0;
-}
-.button-service-manager-stop {
-	background: #d9534f;
-	color:#FFF;
-	height: 2.9vh;
-	/*margin-bottom: .7vh;*/
-	margin-bottom: 0;
-}
-.buttonInner-service-manager-stop {
-	background: #d9534f;
-	color:#FFF;
-	/*padding-top: 0.73vh;*/
-	padding-top: 0;
-}
-.button-service-manager-start {
-	background: #28a745;
-	height: 2.9vh;
-	/*margin-bottom: .7vh;*/
-	margin-bottom: 0;
-}
-.buttonInner-service-manager-start {
-	background: #28a745;
-	color: #FFF;
-	/*padding-top: 0.73vh;*/
-	padding-top: 0;
-}
-.button-service-manager-restart {
-	background: #f0ad4e;
-	height: 2.9vh;
-	/*margin-bottom: .7vh;*/
-	margin-bottom: 0;
-}
-.buttonInner-service-manager-restart {
-	background: #f0ad4e;
-	color: #FFF;
-	/*padding-top: 0.73vh;*/
-	padding-top: 0;
-}
-.button-service-manager-edit {
-	background: #800080;
-	height: 2.9vh;
-	/*margin-bottom: .7vh;*/
-	margin-bottom: 0;
-}
-.buttonInner-service-manager-edit {
-	color: #FFF;
-	/*padding-top: 0.73vh;*/
-	padding-top: 0;
-	margin: 0 25px;
-}
-
-.buttonInner-service-manager-log:hover, buttonInner-service-manager-start:hover, buttonInner-service-manager-stop:hover, buttonInner-service-manager-restart:hover {
-	color: #F0F000;
-	text-shadow: 1px 1px #000;
-}
-.button-service-manager-log.pressed, button-service-manager-stop.pressed, button-service-manager-start.pressed, button-service-manager-restart.pressed {
-	color: #F0F000;
-	box-shadow: 2px 2px #000;
-}
-
-select:disabled{
-	background: inherit;
-	color:inherit;
-}
-
 .task-running:disabled, .task-running {
 	background: #088715;
 	color:white;
@@ -138,60 +11,33 @@ select:disabled{
 	color:black;
 }
 
-.System-Container {
-	border-width:2;
-	border-color:black;
-	border-style:solid;
-	padding:5px;
+.red {
+	background: #f00;
+	color:white;
 }
 
-.form-group{
-	padding: 2vh;
-	display: flexbox;
-	flex-direction: row;
-	width: 300px;
-	justify-content: space-between;
-
+.yellow {
+	background: #dd0;
+	color:white;
 }
 
-.form-group input{
-	padding: 5px;
-	float: right;
+.pumpkin{
+	background: #970;
+	color:white;
 
 }
 
-
-.form-group label {
-	margin-left: -8px;
-	
+.blue {
+	background: blue;
+	color:white;
 }
 
-
-.form-group input[type="checkbox"] {
-	padding: 8px;
-	float: right;
-
-}
-
-
-.btn {
-	padding: 10px;
+.green {
 	background: green;
-	border: none;
-	border-radius: 5px;
-	color: #fff
+	color:white;
 }
 
-.button-add-task {
-	float:right;
-}
-.task-config-footer {
-	display: flex;
-	justify-content: space-between;
-}
-.button-service-manageradd-task {
-	margin-right: .5em;
-}
-.buttonInner-service-manageradd-task{
-	padding-top: 0;
+.purple {
+	background: purple;
+	color:white;
 }
