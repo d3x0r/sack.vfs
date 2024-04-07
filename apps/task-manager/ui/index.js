@@ -130,12 +130,12 @@ function AddTaskList(display, object, field) {
 				} else
              	return delTime( new Date( Date.now() - row.ended.getTime() ) );
 		    } } }
-		, { name:"Show Log", className: "-log", type:{click:(task)=>showLogClick(object,task), text: "LOG ✎"} }
-		, { name:"Stop"    , className: "-stop", type:{click:protocol.stopTask.bind( protocol,object), text: "STOP ▢"} }
-		, { name:"Start"   , className: "-start", type:{click:protocol.startTask.bind( protocol,object), text: "PLAY ▷"} }
-		, { name:"Restart" , className: "-restart", type:{click:protocol.restartTask.bind( protocol,object), text: "RESTART ↻"} }
+		, { name:"Show Log", className: "-log", type:{suffix:" blue", click:(task)=>showLogClick(object,task), text: "LOG ✎"} }
+		, { name:"Stop"    , className: "-stop", type:{suffix:" red", click:protocol.stopTask.bind( protocol,object), text: "STOP ▢"} }
+		, { name:"Start"   , className: "-start", type:{suffix:" green", click:protocol.startTask.bind( protocol,object), text: "PLAY ▷"} }
+		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click:protocol.restartTask.bind( protocol,object), text: "RESTART ↻"} }
 		//, { name:"Edit"    , className: "edit", type:{click:protocol.editTask.bind( protocol,object), text: "Edit ✎"} }
-		, { name:"Edit"    , className: "-edit", type:{click: async function(task) {
+		, { name:"Edit"    , className: "-edit", type:{suffix:" purple", click: async function(task) {
       // Define the new action or function here
 			if( editing[task.id] ) return;
 

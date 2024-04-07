@@ -192,13 +192,13 @@ export class TaskInfoEditor extends Popup {
 		this.args = new popups.DataGrid( this.group2, this, "argVal", { noSort: true,
 			columns: [
 				{field:"arg", name:"Arguments", className: "argument-field", type:{edit:true} },
-				{name: "", className: "-arg-up blue", type :{ text:"▲", click:(row)=>{
+				{name: "", className: "-arg-up", type :{ suffix:" blue", text:"▲", click:(row)=>{
 					this.args.moveRowUp( row );
 				}}},
-				{name: "", className: "-arg-down blue", type :{text: "▼", click:(row)=>{
+				{name: "", className: "-arg-down", type :{suffix:" blue", text: "▼", click:(row)=>{
 					this.args.moveRowDown( row );
 				}}},
-				{name: "", className: "-arg-delete red", type :{ text:"X", click:(row)=>{
+				{name: "", className: "-arg-delete", type :{ suffix:" red", text:"X", click:(row)=>{
 					this.args.deleteRow( row );
 				}}},
 			],
@@ -219,7 +219,7 @@ export class TaskInfoEditor extends Popup {
 			columns: [
 				{field:"key", name:"Key", className: "env-key", type:{edit:true} },
 				{field:"val", name:"Value", className: "env-value", type:{edit:true} },
-				{name: "", className: "-env-delete red", type :{ text:"X", click:(row)=>{
+				{name: "", className: "-env-delete", type :{suffix:" red",  text:"X", click:(row)=>{
 					this.env.deleteRow( row );
 				}}},
 			],
