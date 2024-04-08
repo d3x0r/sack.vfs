@@ -501,8 +501,8 @@ void LogObjectEx( Isolate *isolate, Local<Value> o DBG_PASS ) {
 		_lprintf(DBG_RELAY)( "Is Object %p", o );
 	else if( o->IsNumber() )
 		_lprintf( DBG_RELAY )( "Is Number(unexpected) %p", o );
-	else if( o->IsBool() )
-		_lprintf( DBG_RELAY )( "Is Number(unexpected) %p", o );
+	else if( o->IsBoolean() )
+		_lprintf( DBG_RELAY )( "Is Bool(unexpected) %p", o );
 	else if( o->IsString() ){
 		String::Utf8Value tmp( USE_ISOLATE( isolate ) o );
 		_lprintf( DBG_RELAY )( "Is String(unexpected) %p %s", o, *tmp );
@@ -591,7 +591,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 					INDEX idx;
 					LOGICAL off_stack = FALSE; // the root object is technically on-stack... 
 					Local<Object> refObj = revive->rootObject;
-					lprintf( "Ref Object is the root object...");
+					//lprintf( "Ref Object is the root object...");
 					DATA_FORALL( val->contains, idx, struct jsox_value_container *, pathVal ) {
 						if( revive->failed ) return Undefined( revive->isolate );
 #ifdef DEBUG_REFERENCE_FOLLOW
@@ -661,36 +661,18 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									, pathVal->string
 									, NewStringType::kNormal
 									, (int)pathVal->stringLen).ToLocalChecked();
-								lprintf( "path is:%s", pathVal->string);
+								//lprintf( "path is:%s", pathVal->string);
 								{
 									// if it's in the stack, prefer that value which is more current.
 									struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
-
-									if( idx >= revive->reviveStack->Top || (off_stack) || ( member->object != refObj ) ) {
-										if( refObj->Has( revive->context, pathval ).ToChecked() ) {
+									if( !off_stack && idx < revive->reviveStack->Top ) {
 #ifdef DEBUG_REFERENCE_FOLLOW
-											lprintf ( "object already has path, use that." );
-#endif
-											val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
-											if( val_temp->IsString() ) goto try_on_stack;
-											LogObject( val_temp );
-											off_stack = TRUE;
-										} else {
-#ifdef DEBUG_REFERENCE_FOLLOW
-											lprintf( "This fell off the stack, am assuming it's the current reference object..." );
-#endif
-											val_temp = revive->refObject;
-											off_stack = FALSE;
-										}
-									} else {
-//#ifdef DEBUG_REFERENCE_FOLLOW
 										lprintf( "Looking at reviveStack...  %d %d  %.*s %p", off_stack
-												, member->nameLen
-												, member->nameLen
-												, member->name, member->name );
-//#endif
-try_on_stack: 
-										if( !off_stack && ( member->nameLen == pathVal->stringLen )
+											, member->nameLen
+											, member->nameLen
+											, member->name, member->name );
+#endif
+										if( ( member->nameLen == pathVal->stringLen )
 											&& ( StrCmpEx( pathVal->string, member->name, pathVal->stringLen ) == 0 )
 											) {
 											val_temp = member->object;
@@ -708,14 +690,29 @@ try_on_stack:
 
 												revive->isolate->ThrowException( Exception::TypeError(
 													String::NewFromUtf8( revive->isolate, TranslateText( "bad path specified with reference" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-//#ifdef DEBUG_REVIVAL_CALLBACKS
+												//#ifdef DEBUG_REVIVAL_CALLBACKS
 												lprintf( "(5)Error at high level parse - throw it to JS..." );
-//#endif
+												//#endif
 												revive->failed = TRUE;
 												return Undefined( revive->isolate );
 											}
 										}
 									}
+									if( idx >= revive->reviveStack->Top || (off_stack) /*|| ( member->object != refObj )*/ ) {
+										if( refObj->Has( revive->context, pathval ).ToChecked() ) {
+#ifdef DEBUG_REFERENCE_FOLLOW
+											lprintf ( "object already has path, use that." );
+#endif
+											val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
+											off_stack = TRUE;
+										} else {
+#ifdef DEBUG_REFERENCE_FOLLOW
+											lprintf( "This fell off the stack, am assuming it's the current reference object..." );
+#endif
+											val_temp = revive->refObject;
+											off_stack = FALSE;
+										}
+									} 
 								}
 							}
 							LogObject( val_temp );
