@@ -53,7 +53,7 @@ function Color(init) {
 JSOX.addType( "color", Color
 	, function() { console.log( "calling tojsox?", this ); return this.toString(); }
 	, function() {
-		console.log( "Resuurect from String:[%s]", this );
+		console.log( "Resurect from String:[%s]", this );
 		return new Color(this);
 	}
 );

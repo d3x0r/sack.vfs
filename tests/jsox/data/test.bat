@@ -8,3 +8,6 @@ node rawtest.js ./file7.jsox
 node rawtest.js ./file8.jsox
 node rawtest.js ./testReferenceRevive.jsox
 node rawtest.js ./testQuotes.jsox
+node rawTest.js ./file-001.jsox
+node rawTest.js ./test-flatland-world.jsox
+node rawTest.js ./test-message-1.jsox 
