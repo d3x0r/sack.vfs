@@ -44,6 +44,7 @@ export class Protocol extends Events {
 	static onopen( evt ) {
 		const ThisProtocol = Object.getPrototypeOf( this ).constructor;
 		ThisProtocol.on( "open", true );
+		this.on( "open", true );
 	}
 
 	static onclose( evt ){
