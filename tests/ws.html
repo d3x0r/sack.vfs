@@ -11,16 +11,19 @@ protocol.on( "echo", (msg)=>{
 
 protocol.on( "Inited", (msg)=>{
 	//console.log( "Got echoed Init result?", msg );
+	const s = document.createElement( "span" );
+s.textContent = "Success." ;
+	document.body.appendChild( s );
 } );
 
 protocol.on( "open", (a)=>{
 	//console.log( "Open:", a );
-	//protocol.send(  {op:'echo', arg:"sent something" } );
+	protocol.send(  {op:'echo', arg:"sent something" } );
 } );
 
 protocol.on( "init", (a)=>{
 	//console.log( "Server sends init immediately with response" );
-	//protocol.send( {op:"Inited"} );
+	protocol.send( {op:"Inited"} );
 } );
 
 protocol.on( "close", (a,b)=>{
