@@ -1116,6 +1116,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 						httpInternal->ssl = ssl_IsClientSecure( eventMessage->pc );
 					int sslRedirect = (httpInternal->ssl != myself->ssl);
 					httpInternal->pc = eventMessage->pc;
+					SetTCPWriteAggregation( eventMessage->pc, TRUE );
 					AddLink( &myself->requests, httpInternal );
 					//if( myself->requests->Cnt > 200 )
 					//	DebugBreak();
