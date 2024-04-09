@@ -1768,7 +1768,6 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 			, FunctionTemplate::New( isolate, wssiObject::aggregate )
 		);
 
-		//NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "aggregate", wssiObject::aggregate );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "send", wssiObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "on", wssiObject::on );
