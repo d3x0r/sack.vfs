@@ -48,11 +48,18 @@ function openServer( opts, cb )
 		if( contentEncoding ) {
 			extname = path.extname(path.basename(filePath,extname));
 		}
-
+		if( disk.exists( filePath+".gz" )){
+			contentEncoding = "gzip";
+		}
+		else if( !disk.exists( filePath ) ) {
+			if( disk.isDir( filePath ) ) {
+				filePath += "/index.html";
+			}
+		}
 
 		var contentType = 'text/html';
-		console.log( ":", extname, filePath )
-                contentType = extMap[extname] || "text/plain";
+		//console.log( ":", extname, filePath )
+		contentType = extMap[extname] || "text/plain";
 		if( disk.exists( filePath ) ) {
        			const headers = { 'Content-Type': contentType };
        			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
