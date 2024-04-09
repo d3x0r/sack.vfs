@@ -19,7 +19,8 @@ const extMap = { '.js': 'text/javascript'
               ,'.crt':'application/x-x509-ca-cert'
               ,'.pem':'application/x-pem-file'
               ,'.wasm': 'application/wasm'
-              , '.asm': 'application/wasm' }
+              , '.asm': 'application/wasm' 
+						}
 
 function openServer( opts, cb )
 {
@@ -48,8 +49,10 @@ function openServer( opts, cb )
 		if( contentEncoding ) {
 			extname = path.extname(path.basename(filePath,extname));
 		}
+
 		if( disk.exists( filePath+".gz" )){
 			contentEncoding = "gzip";
+			filePath += ".gz";
 		}
 		else if( !disk.exists( filePath ) ) {
 			if( disk.isDir( filePath ) ) {
