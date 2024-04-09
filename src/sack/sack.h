@@ -250,8 +250,6 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 #    define max(a,b) (((a)>(b))?(a):(b))
 #  endif
 #endif
-#ifndef SACK_PRIMITIVE_TYPES_INCLUDED
-#define SACK_PRIMITIVE_TYPES_INCLUDED
 /* Define most of the sack core types on which everything else is
    based. Also defines some of the primitive container
    structures. We also handle a lot of platform/compiler
@@ -261,6 +259,8 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
    This is automatically included with stdhdrs.h; however, when
    including sack_types.h, the minimal headers are pulled. */
+#ifndef SACK_PRIMITIVE_TYPES_INCLUDED
+#define SACK_PRIMITIVE_TYPES_INCLUDED
 #define HAS_STDINT
 //#define USE_SACK_CUSTOM_MEMORY_ALLOCATION
 	// this has to be a compile option (option from cmake)
@@ -1093,11 +1093,12 @@ SACK_NAMESPACE
    in _DEBUG mode, pass FILELINE_VARSRC */
 #define DBG_VARSRC      FILELINE_VARSRC
 #endif
-// cannot declare _0 since that overloads the
-// vector library definition for origin (0,0,0,0,...)
+/* cannot declare _0 since that overloads the
+   vector library definition for origin (0,0,0,0,...) */
 //typedef void             _0; // totally unusable to declare 0 size things.
 /* the only type other than when used in a function declaration that void is valid is as a pointer to void. no _0 type exists
-	 (it does, but it's in vectlib, and is an origin vector)*/
+ *  (it does, but it's in vectlib, and is an origin vector)
+*/
 typedef void             *P_0;
 /*
  * several compilers are rather picky about the types of data
@@ -1176,7 +1177,12 @@ SACK_NAMESPACE_END
 #endif
 #include <inttypes.h>
 #endif
-SACK_NAMESPACE
+/*
+   Top level namespace.  SACK Is the System Abstraction Componnet Kit.
+   With a little work subsets of this namesapce can be used.  Typrically
+   this is built as just one large c/c++ shared library.
+*/
+namespace sack {
 /* 16 bit unsigned decimal output printf format specifier. This would
    otherwise be defined in \<inttypes.h\>                */
 #define _16f   "u"
@@ -2370,6 +2376,8 @@ TYPELIB_PROC POINTER TYPELIB_CALLTYPE  PeekDataInQueue    ( PDATAQUEUE *pplq );
 #endif
 //---------------------------------------------------------------------------
 #ifdef __cplusplus
+/* This is a rough emulation of SYSv IPC Message Queue objects.
+*/
 namespace message {
 #endif
 /* handle to a message queue. */
@@ -4099,6 +4107,8 @@ TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseIntVector( CTEXTSTR data, int **pData
 #endif
 //--------------------------------------------------------------------------
 #ifdef __cplusplus
+/* Binary tree object; supports custom sort routines
+*/
 	namespace BinaryTree {
 #endif
 /* This type defines a specific node in the tree. It is entirely
@@ -4577,7 +4587,7 @@ SACK_NAMESPACE_END
 #define LOGGING_NAMESPACE_END
 #endif
 #ifdef __cplusplus
-	namespace sack {
+	SACK_NAMESPACE
 /* Handles log output. Logs can be directed to UDP directed, or
    broadcast, or localhost, or to a file location, and under
    windows the debugging console log.
@@ -5496,6 +5506,7 @@ typedef struct win_sockaddr_in SOCKADDR_IN;
 #if defined( _WIN32 )
 // on windows, we add a function that returns HANDLE
 #endif
+/* Memory interface. see <link memory>, */
 #ifndef SHARED_MEM_DEFINED
 /* Multiple inclusion protection symbol. */
 #define SHARED_MEM_DEFINED
@@ -5533,11 +5544,14 @@ typedef struct win_sockaddr_in SOCKADDR_IN;
 #ifndef TIMER_NAMESPACE
 #ifdef __cplusplus
 #define _TIMER_NAMESPACE namespace timers {
+#define _TIMER_NAMESPACE_END }
 /* define a timer library namespace in C++. */
 #define TIMER_NAMESPACE SACK_NAMESPACE namespace timers {
 /* define a timer library namespace in C++ end. */
 #define TIMER_NAMESPACE_END } SACK_NAMESPACE_END
 #else
+#define _TIMER_NAMESPACE
+#define _TIMER_NAMESPACE_END
 #define TIMER_NAMESPACE
 #define TIMER_NAMESPACE_END
 #endif
@@ -5653,7 +5667,7 @@ MEM_PROC  void MEM_API  InitializeCriticalSec ( PCRITICALSECTION pcs );
 using namespace sack::timers;
 #endif
 #ifdef __cplusplus
-namespace sack {
+SACK_NAMESPACE
 /* Memory namespace contains functions for allocating and
    releasing memory. Also contains methods for accessing shared
    memory (if available on the target platform).
@@ -6538,12 +6552,14 @@ inline void operator delete (void * p)
 #ifndef _TIMER_NAMESPACE
 #ifdef __cplusplus
 #define _TIMER_NAMESPACE namespace timers {
+#define _TIMER_NAMESPACE_END }
 /* define a timer library namespace in C++. */
 #define TIMER_NAMESPACE SACK_NAMESPACE namespace timers {
 /* define a timer library namespace in C++ end. */
 #define TIMER_NAMESPACE_END } SACK_NAMESPACE_END
 #else
 #define _TIMER_NAMESPACE
+#define _TIMER_NAMESPACE_END
 #define TIMER_NAMESPACE
 #define TIMER_NAMESPACE_END
 #endif
@@ -6579,7 +6595,9 @@ SACK_NAMESPACE
    EnterCriticalSec see Also
  EnterCriticalSecNoWait
    LeaveCriticalSec                                            */
-_TIMER_NAMESPACE
+#ifdef __cplusplus
+namespace timers {
+#endif
 #ifdef TIMER_SOURCE
 #define TIMER_PROC(type,name) EXPORT_METHOD type CPROC name
 #else
@@ -7191,6 +7209,8 @@ DeclareThreadLocal struct timespec global_static_time_ts;
 #  endif
 #endif
 #endif
+/* Networking interface to provide an event based dispatcher
+   over berkley polled sockets. See <link network>           */
 #ifndef NETWORK_HEADER_INCLUDED
 #define NETWORK_HEADER_INCLUDED
 #ifdef NETWORK_SOURCE
@@ -8485,6 +8505,7 @@ using namespace sack::network::udp;
 #define getsockopt ?
 #define heh yeah these have exact equivalents ....
 */
+/* Sack Layer on libssh2. This provides a event based interface. */
 /*
  * SACK extension to define methods to render to javascript/HTML5 WebSocket event interface
  *
@@ -8512,6 +8533,8 @@ using namespace sack::network::udp;
  */
 #ifndef PROCEDURE_REGISTRY_LIBRARY_DEFINED
 #define PROCEDURE_REGISTRY_LIBRARY_DEFINED
+/* Deadstart interface. Deadstart is like bootstrap, and handles
+   code that runs before main(). See <link deadstart>            */
 #ifndef DEADSTART_DEFINED
 #define DEADSTART_DEFINED
 #ifdef WIN32
@@ -9073,6 +9096,8 @@ typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
    <link sack::app::deadstart, See Also.>                      */
 #define PRELOAD(name)
 #endif
+/* Defines ATEXIT priorities so the library can tear itself down
+   gracefully.                                                   */
 // the higher the number the earlier it is run
 #define ATEXIT_PRIORITY_SHAREMEM  1
 #define ATEXIT_PRIORITY_THREAD_SEMS ATEXIT_PRIORITY_SYSLOG-1
@@ -9716,6 +9741,7 @@ PROCREG_NAMESPACE_END
 #endif
 //#include <controls.h>
 // should consider merging these headers(?)
+/* Define websocket client interface methods. */
 #ifndef HTML5_WEBSOCKET_CLIENT_INCLUDED
 #define HTML5_WEBSOCKET_CLIENT_INCLUDED
 /*****************************************************
@@ -10475,7 +10501,9 @@ using namespace sack::network::ssh;
 #else
 #define _SQL_NAMESPACE
 #define _SQL_NAMESPACE_END
+/* Marks the beginning of SQL Namespace. */
 #define SQL_NAMESPACE
+/* Marks the end of SQL Namespace. */
 #define SQL_NAMESPACE_END
 #endif
 SACK_NAMESPACE
@@ -11964,11 +11992,18 @@ SQL_NAMESPACE_END
 #endif
 #if 0
 #endif
+/* SQL Option Interface. Gets and sets options; option interface
+   resembles legacy windows INI interface.                       */
 #ifndef SQL_OPTIONS_DEFINED
 #define SQL_OPTIONS_DEFINED
 // sqloptint.h leaves namespace open.
 // these headers should really be collapsed.
+/* Provies SQL Option Interface. Options are implemented as a
+   tree of nodes with names and values. Defines abstract
+   interface that can be filled by varying providers.         */
 #ifndef SQL_GET_OPTION_DEFINED
+/* Inclusion protection; used to prevent duplicate inclusion of
+   the same file.                                               */
 #define SQL_GET_OPTION_DEFINED
 #ifdef __cplusplus
 #define _OPTION_NAMESPACE namespace options {
@@ -12218,6 +12253,12 @@ SQLGETOPTION_PROC( void, FindOptions )( PODBC odbc, PLIST *result_list, CTEXTSTR
 _OPTION_NAMESPACE_END _SQL_NAMESPACE_END SACK_NAMESPACE_END
 	USE_OPTION_NAMESPACE
 #endif
+/* Provide a mechanism to register idle() callbacks. These are
+   callbacks that might need to be called when a application is
+   waiting for a result. This is utilized by code that wants to
+   block its state, but requires other events on its own thread
+   to still be dispatched. This will only dispatch events to
+   proper threads to handle the idle callback.                  */
 #ifndef IDLE_FUNCTIONS_DEFINED
 #define IDLE_FUNCTIONS_DEFINED
 # ifdef IDLE_SOURCE
@@ -12226,8 +12267,8 @@ _OPTION_NAMESPACE_END _SQL_NAMESPACE_END SACK_NAMESPACE_END
 #  define IDLE_PROC(type,name) IMPORT_METHOD type CPROC name
 # endif
 #ifdef __cplusplus
-namespace sack {
-	namespace timers {
+SACK_NAMESPACE
+	_TIMER_NAMESPACE
 #endif
 // return -1 if not the correct thread
 // return 0 if no events processed
@@ -12238,10 +12279,8 @@ IDLE_PROC( int, RemoveIdleProc )( IdleProc Proc );
 IDLE_PROC( int, Idle )( void );
 IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds );
 #ifdef __cplusplus
-//	namespace timers {
-	}
-//namespace sack {
-}
+	_TIMER_NAMESPACE_END
+SACK_NAMESPACE_END
 using namespace sack::timers;
 #endif
 #endif
@@ -12749,6 +12788,8 @@ FILESYS_NAMESPACE_END
 using namespace sack::filesys;
 #endif
 #endif
+/* \File Monitor interfaces. This monitors the file system for
+   changes to files.                                           */
 #ifndef FILE_MONITOR_LIBRARY_DEFINED
 #define FILE_MONITOR_LIBRARY_DEFINED
 #ifdef FILEMONITOR_SOURCE
@@ -12834,6 +12875,7 @@ using namespace sack::filesys::monitor;
 // Revision 1.1  2003/11/03 23:01:49  panther
 // Initial commit of librarized filemonitor
 //
+/* Provides Sack Virtual Filesystem interfaces. */
 #ifndef SACK_VFS_DEFINED
 /* Header multiple inclusion protection symbol. */
 #define SACK_VFS_DEFINED
@@ -12946,6 +12988,7 @@ SACK_VFS_PROC uint64_t sack_vfs_find_get_ctime( struct sack_vfs_find_info *info 
 SACK_VFS_PROC uint64_t sack_vfs_find_get_wtime( struct sack_vfs_find_info *info );
 #endif
 #ifdef __cplusplus
+/* virtual file system using file system IO instead of memory mapped IO */
 namespace fs {
 #endif
 	struct sack_vfs_fs_volume;
@@ -13025,6 +13068,9 @@ namespace fs {
 }
 #endif
 #ifdef __cplusplus
+/* Object storage system, uses a optimized hash map to index unique identifiers and data associated with them.
+Timeline exists, Multi-versioning support possible using the same file and different timestamps with associated data.
+*/
 namespace objStore {
 #endif
 	struct sack_vfs_os_volume;
@@ -13351,6 +13397,7 @@ using namespace sack::SACK_VFS::fs;
 using namespace sack::SACK_VFS::objStore;
 #endif
 #endif
+/* In theory - emits JSON, but isn't printf good enough? */
 #ifndef JSON_EMITTER_HEADER_INCLUDED
 #define JSON_EMITTER_HEADER_INCLUDED
 #ifdef JSON_EMITTER_SOURCE
@@ -13615,6 +13662,7 @@ JSON_EMITTER_PROC( char*, json6_escape_string_length )( const char *string, size
 using namespace sack::network::json;
 #endif
 #endif
+/* \TODO : Implement VESL code generation. */
 #ifndef VESL_EMITTER_HEADER_INCLUDED
 #define VESL_EMITTER_HEADER_INCLUDED
 #ifdef VESL_EMITTER_SOURCE
@@ -14564,9 +14612,14 @@ using namespace sack::config;
 // Revision 1.5  2003/03/25 08:38:11  panther
 // Add logging
 //
+/* Salty Random Generator is a random bitstream generator. It
+   generates blobs
+   of randomness, and provides an interface to get a number of
+   bits from 1 to N of the random stream.                      */
 #ifdef SALTY_RANDOM_GENERATOR_SOURCE
 #define SRG_EXPORT EXPORT_METHOD
 #else
+/* Defines export method for SaltyRandomGenerator functions. */
 #define SRG_EXPORT IMPORT_METHOD
 #endif
 //
@@ -14768,6 +14821,8 @@ SRG_EXPORT void BlockShuffle_BusBytes( struct byte_shuffle_key *key, uint8_t *by
 // swap a single byte; can be in-place.
 SRG_EXPORT void BlockShuffle_BusByte( struct byte_shuffle_key *key
 	, uint8_t *bytes, uint8_t *out_bytes );
+/* Provides COM device interface for windows/linux. Mostly
+   windows though.                                         */
 #ifndef SACKCOMM_PROTECT_ME_AGAINST_DOBULE_INCLUSION
 #define SACKCOMM_PROTECT_ME_AGAINST_DOBULE_INCLUSION
 #ifdef SACKCOMM_SOURCE
@@ -14979,7 +15034,12 @@ CONSTRUCT_NAMESPACE_END
 #ifdef __cplusplus
   using namespace sack::task::construct;
 #endif
+/* Provide System Tray interface for windows. (Those icons by
+   the clock). Provides a registration method with a simple menu
+   interface.                                                    */
 #ifndef __NO_MSGSVR__
+/* Common SYSVIPC Message Queue protocol for hosting shared
+   services over a few global pipes.                        */
 #ifndef MESSAGE_SERVICE_PROTOCOL
 #define MESSAGE_SERVICE_PROTOCOL
 #ifdef __cplusplus
@@ -15144,8 +15204,14 @@ enum service_messages {
                       , IM_TARDY
 };
 #define LOWEST_BASE_MESSAGE 0x100
+/* Service route object that manages connection between service and client.
+*/
 typedef struct ServiceRoute_tag SERVICE_ROUTE;
+/* pointer to a service route, which is a pair of endpoints.
+*/
 typedef struct ServiceRoute_tag *PSERVICE_ROUTE;
+/*  This is a unique service address
+*/
 typedef struct ServiceEndPoint_tag SERVICE_ENDPOINT, *PSERVICE_ENDPOINT;
 // this is part of the message structure
 //
