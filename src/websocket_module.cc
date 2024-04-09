@@ -555,7 +555,8 @@ public:
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
 	static void nodelay( const FunctionCallbackInfo<Value>& args );
 	static void ping( const v8::FunctionCallbackInfo<Value>& args );
-
+	static void aggregate( const v8::FunctionCallbackInfo<Value>& args );
+	
 	~wssiObject();
 };
 
@@ -1761,6 +1762,12 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "block", blockClientSocketAccept );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "resume", resumeClientSocketAccept );
 
+		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "aggregate" )
+			, Local<FunctionTemplate>()
+			, FunctionTemplate::New( isolate, wssiObject::aggregate )
+		);
+
+		//NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "aggregate", wssiObject::aggregate );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "send", wssiObject::write );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "close", wssiObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssiTemplate, "on", wssiObject::on );
@@ -3048,6 +3055,17 @@ void wssiObject::nodelay( const FunctionCallbackInfo<Value>& args ) {
 		
 		SetTCPNoDelay( obj->pc, args[0]->BooleanValue(isolate) );
 	}
+}
+
+void wssiObject::aggregate( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+
+	if( args.Length() > 0 ) {
+		wssiObject* obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
+
+		SetTCPWriteAggregation( obj->pc, args[0]->BooleanValue( isolate ) );
+	}
+
 }
 
 void wssiObject::close( const FunctionCallbackInfo<Value>& args ) {
