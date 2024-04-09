@@ -67,19 +67,20 @@ function openServer( opts, cb )
 	};
 
 	server.onaccept = function ( ws ) {
+		ws.aggregate = true;
 		if( cb ) return cb(ws)
 	//	console.log( "Connection received with : ", ws.protocols, " path:", resource );
         	if( process.argv[2] == "1" )
-			this.reject();
+				this.reject();
         	else
-			this.accept();
+				this.accept();
 	};
 
 	server.onconnect = function (ws) {
-		//console.log( "Connect:", ws );
-		ws.nodelay = true;
+		ws.send( "{op:init}" );
 		ws.onmessage = function( msg ) {
                 	// echo message.
+			console.log( "websocket, echo message:", msg );
                         ws.send( msg );
                 };
 		ws.onclose = function() {

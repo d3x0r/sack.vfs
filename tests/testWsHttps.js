@@ -136,7 +136,8 @@ server.onaccept=( function ( protocols, resource ) {
 
 server.onconnect=( function (ws) {
 	//console.log( "Connect:", ws );
-
+	ws.aggregate = true;
+	ws.send( "{op:doSomething}");
 	ws.onmessage( function( msg ) {
         	console.log( "Received data:", msg );
                 ws.send( msg );

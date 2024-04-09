@@ -1,0 +1,30 @@
+
+<script type="module">
+import {Protocol} from "../apps/http-ws/client-protocol.js"
+
+const protocol = new Protocol();
+const ws = protocol.connect( "Protocol?" );
+
+protocol.on( "echo", (msg)=>{
+	//console.log( "Got echo?", msg );
+} );
+
+protocol.on( "Inited", (msg)=>{
+	//console.log( "Got echoed Init result?", msg );
+} );
+
+protocol.on( "open", (a)=>{
+	//console.log( "Open:", a );
+	//protocol.send(  {op:'echo', arg:"sent something" } );
+} );
+
+protocol.on( "init", (a)=>{
+	//console.log( "Server sends init immediately with response" );
+	//protocol.send( {op:"Inited"} );
+} );
+
+protocol.on( "close", (a,b)=>{
+	console.log( "closed?" );
+} );
+
+</script>
