@@ -76,6 +76,9 @@
     "./isTopLevel": {
       "import": "./apps/isTopLevel/isTopLevel.mjs"
     }
+    "./text": {
+      "import": "./apps/text/text.mjs"
+    }
   },
   "old_exports": {
     "index": "./vfs_module.mjs",
