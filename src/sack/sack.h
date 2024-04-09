@@ -7886,6 +7886,7 @@ NETWORK_PROC( LOGICAL, doTCPWriteExx )( PCLIENT lpClient
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
 #define SendTCPLong(c,b,l) doTCPWriteExx(c,b,l, TRUE, FALSE DBG_SRC)
+NETWORK_PROC( void, SetTCPWriteAggregation )( PCLIENT pc, int bAggregate );
 _TCP_NAMESPACE_END
 NETWORK_PROC( void, SetNetworkLong )(PCLIENT lpClient,int nLong,uintptr_t dwValue);
 NETWORK_PROC( uintptr_t, GetNetworkLong )(PCLIENT lpClient, int nLong);
