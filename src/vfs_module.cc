@@ -64,36 +64,10 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	Local<String> retval = String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
 	Release( (POINTER)data );
 	return retval;
-	/*
-	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
-	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
-	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-	PARRAY_BUFFER_HOLDER holder = GetHolder();
-	holder->s.Reset( isolate, arrayBuffer );
-	holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-	holder->buffer = (void*)data;
-	return arrayBuffer;
-	*/
 }
 
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
 	return String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
-	/*
-	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
-	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
-	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-	static const char *prior_root;
-	if( prior_root != real_root )
-	{
-		prior_root = real_root;
-		PARRAY_BUFFER_HOLDER holder = GetHolder();
-		holder->s.Reset( isolate, arrayBuffer );
-		holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-		Hold( (char*)real_root );
-		holder->buffer = (void*)real_root;
-	}
-	return arrayBuffer;
-	*/
 }
 
 
@@ -401,8 +375,6 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
-	InitWebSocket( isolate, exports );
-	InitUDPSocket( isolate, exports );
 	InitTask( isolate, exports );
 	ObjectStorageInit( isolate, exports );
 	fileMonitorInit( isolate, exports );
@@ -414,15 +386,18 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	RenderObject::Init( exports );
 	ControlObject::Init( exports );
 	InterShellObject::Init( exports );
-	InitSystray( isolate, exports );
 #endif
 
 #ifdef WIN32
 	RegObject::Init( exports );
 	KeyHidObjectInit( isolate, exports );
 	SoundInit( isolate, exports );
+	InitSystray( isolate, exports );
 #endif
+	InitWebSocket( isolate, exports );
+	InitUDPSocket( isolate, exports );
 	TLSObject::Init( isolate, exports );
+	SSH2_Object::Init( isolate, exports );
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );

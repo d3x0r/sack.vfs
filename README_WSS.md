@@ -50,6 +50,7 @@ Server events
   | key  | &lt;string&gt;; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
   | passphrase | &lt;string&gt;; uses passphrase for key provided |
   | hosts | &lt;array of hosts&gt;; (Server Host Option below) |
+  | pipe | bool - (reserved)internal use | 
   
   | Server Host Option |  |
   |----|----|
@@ -105,6 +106,8 @@ This is only for threads accepted by a server, which may fork a thread, and hand
 specified target thread.  The handoff takes a unique string which should identify the target thread; although,
 a pool of threads all using the same identifier may each receive one socket.  Once the accept event is fired,
 it is cleared, and the thread will have to re-post a listener to accept another socket.
+
+The return of onaccept may be a promise which will wait until it is resolved before accepting the socket.
 
 ``` js
 // rough example, not sure about the onaccept interface

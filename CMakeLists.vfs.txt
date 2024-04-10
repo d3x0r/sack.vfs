@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.0)
+#cmake_minimum_required(VERSION 3.21)
+# limited by ubuntu 18 to 3.10
+cmake_minimum_required(VERSION 3.10)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS On)
 
@@ -149,6 +151,7 @@ FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define SHA2_LOCAL\n" )
 SET( EXTRA_HEADERS
 	${SACK_BASE}/include/stdhdrs.h
         ${SACK_BASE}/include/network.h
+        ${SACK_BASE}/include/sack_ssh.h
         ${SACK_BASE}/include/pssql.h
         ${SACK_BASE}/include/sqlgetoption.h
         ${SACK_BASE}/include/idle.h
@@ -167,7 +170,12 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/sackcomm.h
 	${SACK_BASE}/include/translation.h
         ${SACK_BASE}/include/construct.h
+        ${SACK_BASE}/include/systray.h	
 )
+
+if( WIN32 )
+	SET( SYSTRAY_SOURCES ${SACK_BASE}/src/systraylib/systray.c )
+endif( WIN32 )
 
 SET( EXTRA_SOURCES
 	${SACK_BASE}/src/utils/virtual_file_system/vfs.c
@@ -221,6 +229,7 @@ SET( EXTRA_SOURCES
         ${SACK_BASE}/src/netlib/net_winsock2.c
 	${SACK_BASE}/src/netlib/ping.c
 	${SACK_BASE}/src/netlib/ssl_layer.c
+	${SACK_BASE}/src/netlib/ssh_layer.c
 
         ${SACK_BASE}/src/salty_random_generator/salty_generator.c
         ${SACK_BASE}/src/salty_random_generator/crypt_util.c
@@ -248,6 +257,8 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/windows_hardware_library/listhids.c
 
 	${SACK_BASE}/src/translationlib/translate.c
+	${SACK_BASE}/src/systraylib/systray.c
+	${SYSTRAY_SOURCES}
 
 	${SACK_BASE}/src/deadstart/deadstart_lib.c
 )
@@ -308,6 +319,7 @@ SET( BUILD_AMALGAM on )
 set( C_SOURCES
         ${SACK_BASE}/src/contrib/sqlite/3.33.0-TableAlias/sqlite3.c
 )
+
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 			COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 		)			
@@ -316,6 +328,25 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                                    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 )
+
+if( CMAKE_MINIMUM_REQUIRED_VERSION STREQUAL 3.21 )
+foreach( path libssh2 libssh2/cmake libssh2/include libssh2/LICENSES libssh2/src )
+	#message( "process path: ${path}" )
+	FILE( MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/${path} )
+	FILE( GLOB files RELATIVE  ${SACK_BASE}/src/contrib/libssh2 ${SACK_BASE}/src/contrib/${path}/* )
+	foreach( file ${files} )
+		#message( "addfile: ${path} ${file}" )
+		if( NOT IS_DIRECTORY ${SACK_BASE}/src/contrib/libssh2/${file} ) 
+			FILE( COPY_FILE ${SACK_BASE}/src/contrib/libssh2/${file} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/${file} ONLY_IF_DIFFERENT )
+		endif()
+	endforeach()
+endforeach()
+FILE( COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/local/CMakeLists.txt ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/CMakeLists.txt )
+FILE( COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/src/local/CMakeLists.txt ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/src/CMakeLists.txt )
+else()
+message( "No copy rule for libssh2 updates" )
+endif()
+
 
 if( WIN32 )
 	set( PPCTOOL c:/tools/ppc.exe )
@@ -381,6 +412,7 @@ if( WIN32 )
 		src/playSound_module.cc
 		src/win32/commandline.cc
 		src/win32/window_shell.cc
+		src/gui/sack_systray.cc
 #		src/fixup_windows_executable.cc
 		)
 elseif( UNIX )
@@ -388,6 +420,8 @@ elseif( UNIX )
 		src/linux/commandline.cc
 	)
 endif( WIN32 )
+
+
 
 SET( CPP_SOURCES
 	src/vfs_module.cc
@@ -406,7 +440,7 @@ SET( CPP_SOURCES
 	src/fileMonitor_module.cc
 	src/system_module.cc
 	src/text_object.cc
-#	src/ssh2_module.cc
+	src/ssh2_module.cc
 	${MORE_MODULE_SOURCES}
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
 )
@@ -423,9 +457,11 @@ SET( C_SOURCES
    SET( LIBSSH2_SKIP_INSTALL ON )
    set( LIBSSH2_BUILD_SHARED_LIBS OFF )
    SET( LIBSSH2_SKIP_DOCS ON )
-   set( BUILD_EXAMPLES OFF )
-   set( BUILD_TESTING OFF ) 
+   SET( LIBSSH2_BUILD_DEBUG ON )
+   set( LIBSSH2_BUILD_EXAMPLES OFF )
+   set( LIBSSH2_BUILD_TESTING OFF ) 
    SET( ENABLE_ZLIB_COMPRESSION ON )
+   
    SET( OPENSSL_ROOT_DIR ../libressl/3.8.0 )
    add_subdirectory( src/sack/libssh2 )
    include_directories( src/sack/libssh2/include )

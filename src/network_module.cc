@@ -714,55 +714,19 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 static void getName( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	struct hostent* phe;
-	uint8_t ipv4[4];
-	uint16_t ipv6[8];
-	LOGICAL isv4;
-	TEXTSTR start, end;
 	if( args.Length() < 0 ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "A string to decode as an IP to lookup." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	String::Utf8Value addr( USE_ISOLATE( isolate ) args[0] );
-	start = *addr;
-	if( end = StrChr( start, ':' ) ) {
-		int byte = 0;
-		isv4 = FALSE;
-		while( start[0] && byte < 8 ) {
-			if( end ) end[0] = 0;
-			ipv6[byte++] = (uint16_t)strtol( start, NULL, 16 );
-			if( end ) start = end + 1;
-			if( start[0] ) end = StrChr( start, ':' );
-		}
-	} else if( end = StrChr( start, '.' ) ) {
-		int byte = 0;
-		isv4 = TRUE;
-		while( start[0] && byte < 4 ) {
-			if( end ) end[0] = 0;
-			ipv4[byte++] = (uint8_t)strtol( start, NULL, 10 );
-			if( end ) start = end + 1;
-			if( start[0] ) end = StrChr( start, '.' );
-		}
-	}
-	if( isv4 )
-		phe = gethostbyaddr( (char*)ipv4, 4, AF_INET);
-	else
-		phe = gethostbyaddr( (char*)ipv6, 16, AF_INET6 );
-
-	if( phe )
+	SOCKADDR* sockaddr = CreateSockAddress( *addr, 0 );
+	char domain_name[256];
+	//char service_name[32];
+	int rc =  getnameinfo( (const SOCKADDR*)sockaddr,SOCKADDR_LENGTH(sockaddr), domain_name, 256, NULL, 0, 0 );
+	
+	if( !rc )
 	{
-		Local<Array> result = Array::New( isolate );
-		int rnum = 0;
-		char** alias = phe->h_aliases;
-		if( phe->h_name )
-		result->Set( isolate->GetCurrentContext(), rnum++, String::NewFromUtf8( isolate, phe->h_name ).ToLocalChecked() );
-		//printf( "%s %s", argv[1], phe->h_name );
-		while( alias[0] )
-		{
-			result->Set( isolate->GetCurrentContext(), rnum++, String::NewFromUtf8( isolate, alias[0] ).ToLocalChecked() );
-			alias++;
-		}
-		args.GetReturnValue().Set( result );
+		args.GetReturnValue().Set( String::NewFromUtf8( isolate, domain_name ).ToLocalChecked() );
 	} else {
 		args.GetReturnValue().Set( Null(isolate) );
 	}
@@ -775,7 +739,7 @@ struct pingState {
 	volatile int done;
 	volatile int handled;
 	struct {
-		uint32_t dwIp;
+		SOCKADDR* addr;
 		CTEXTSTR name;
 		int min;
 		int max;
@@ -809,7 +773,8 @@ static void pingAsync( uv_async_t* async ) {
 			data->Set( context, String::NewFromUtf8Literal( state->isolate, "IP" ), String::NewFromUtf8( state->isolate, state->result.name ).ToLocalChecked() );
 		else
 			data->Set( context, String::NewFromUtf8Literal( state->isolate, "IP" ), Null( state->isolate ) );
-		data->Set( context, String::NewFromUtf8Literal( state->isolate, "dwIP" ), Number::New( state->isolate, state->result.dwIp ) );
+		data->Set( context, String::NewFromUtf8Literal( state->isolate, "name" ), String::NewFromUtf8( state->isolate, GetAddrName( state->result.addr ) ).ToLocalChecked() );
+		data->Set( context, String::NewFromUtf8Literal( state->isolate, "ip" ), String::NewFromUtf8( state->isolate, GetAddrString( state->result.addr ) ).ToLocalChecked() );
 		data->Set( context, String::NewFromUtf8Literal( state->isolate, "min" ), Number::New( state->isolate, state->result.min ) );
 		data->Set( context, String::NewFromUtf8Literal( state->isolate, "max" ), Number::New( state->isolate, state->result.max ) );
 		data->Set( context, String::NewFromUtf8Literal( state->isolate, "avg" ), Number::New( state->isolate, state->result.avg ) );
@@ -824,9 +789,9 @@ static void pingAsync( uv_async_t* async ) {
 	}
 }
 
-static void pingResult( uintptr_t psv, uint32_t dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops ) {
+static void pingResult( uintptr_t psv, SOCKADDR* dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops ) {
 	struct pingState* state = (struct pingState*)psv;
-	state->result.dwIp = dwIP;
+	state->result.addr = dwIP;
 	state->result.name = StrDup( name );
 	state->result.min = min;
 	state->result.max = max;

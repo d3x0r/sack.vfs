@@ -377,9 +377,22 @@ typedef struct _LIBSSH2_SK_SIG_INFO {
              const char *agentPath, \
              void **abstract)
 
+#define LIBSSH2_LISTERNER_CONNECT_FUNC(name) \
+	void name(LIBSSH2_SESSION *session, void**session_abstract, LIBSSH2_LISTENER *listener, \
+			  void **listener_abstract, LIBSSH2_CHANNEL* channel )
+
+#define LIBSSH2_CHANNEL_EOF_FUNC(name) \
+    void name(LIBSSH2_SESSION *session, void **session_abstract, \
+              LIBSSH2_CHANNEL *channel, void **channel_abstract)
 #define LIBSSH2_CHANNEL_CLOSE_FUNC(name) \
     void name(LIBSSH2_SESSION *session, void **session_abstract, \
               LIBSSH2_CHANNEL *channel, void **channel_abstract)
+#define LIBSSH2_CHANNEL_DATA_FUNC(name) \
+    void name( LIBSSH2_SESSION*session, void **session_abstract, \
+               LIBSSH2_CHANNEL*channel, void **channel_abstract, \
+               int stream,              \
+               const uint8_t*buffer,       \
+               size_t length)
 
 /* I/O callbacks */
 #define LIBSSH2_RECV_FUNC(name)                                         \
@@ -391,33 +404,22 @@ typedef struct _LIBSSH2_SK_SIG_INFO {
                  const void *buffer, size_t length,                     \
                  int flags, void **abstract)
 
-#define LIBSSH2_CHANNEL_EOF_FUNC(name)   \
-    void name( LIBSSH2_SESSION* session, \
-               LIBSSH2_CHANNEL* channel, \
-               void **abstract )
-
-#define LIBSSH2_CHANNEL_DATA_FUNC(name) \
-    void name( LIBSSH2_SESSION*session, \
-               LIBSSH2_CHANNEL*channel, \
-               int is_stderr,           \
-               const void*buffer,       \
-               size_t length,           \
-               void **abstract )
-
 /* libssh2_session_callback_set() constants */
 enum LIBSSH2_CALLBACKS {
-	LIBSSH2_CALLBACK_IGNORE               = 0,
-	LIBSSH2_CALLBACK_DEBUG                = 1,
-	LIBSSH2_CALLBACK_DISCONNECT           = 2,
-	LIBSSH2_CALLBACK_MACERROR             = 3,
-	LIBSSH2_CALLBACK_X11                  = 4,
-	LIBSSH2_CALLBACK_SEND                 = 5,
-	LIBSSH2_CALLBACK_RECV                 = 6,
-	LIBSSH2_CALLBACK_AUTHAGENT            = 7,
-	LIBSSH2_CALLBACK_AUTHAGENT_IDENTITIES = 8,
-	LIBSSH2_CALLBACK_AUTHAGENT_SIGN       = 9,
-	LIBSSH2_CALLBACK_CHANNEL_EOF          = 10,
-	LIBSSH2_CALLBACK_CHANNEL_DATA         = 11,
+	LIBSSH2_CALLBACK_IGNORE,
+	LIBSSH2_CALLBACK_DEBUG,
+	LIBSSH2_CALLBACK_DISCONNECT,
+	LIBSSH2_CALLBACK_MACERROR,
+	LIBSSH2_CALLBACK_X11,
+	LIBSSH2_CALLBACK_SEND,
+	LIBSSH2_CALLBACK_RECV,
+	LIBSSH2_CALLBACK_AUTHAGENT,
+	LIBSSH2_CALLBACK_AUTHAGENT_IDENTITIES,
+	LIBSSH2_CALLBACK_AUTHAGENT_SIGN,
+	LIBSSH2_CALLBACK_CHANNEL_EOF,
+	LIBSSH2_CALLBACK_CHANNEL_CLOSE,
+	LIBSSH2_CALLBACK_CHANNEL_DATA,
+    LIBSSH2_CALLBACK_LISTENER_ACCEPT,
 };
 
 /* libssh2_session_method_pref() constants */
@@ -675,9 +677,17 @@ libssh2_session_callback_set2(LIBSSH2_SESSION *session, enum LIBSSH2_CALLBACKS c
 
 LIBSSH2_DEPRECATED(1.11.1, "Use libssh2_session_callback_set2()")
 LIBSSH2_API void *libssh2_session_callback_set(LIBSSH2_SESSION *session,
-                                               int cbtype, void *callback);
+                                               enum LIBSSH2_CALLBACKS cbtype, void *callback);
 LIBSSH2_API int libssh2_session_banner_set(LIBSSH2_SESSION *session,
                                            const char *banner);
+#ifndef LIBSSH2_NO_DEPRECATED
+LIBSSH2_DEPRECATED(1.4.0, "Use libssh2_session_banner_set()")
+LIBSSH2_API int libssh2_banner_set(LIBSSH2_SESSION *session,
+                                   const char *banner);
+
+LIBSSH2_DEPRECATED(1.2.8, "Use libssh2_session_handshake()")
+LIBSSH2_API int libssh2_session_startup(LIBSSH2_SESSION *session, int sock);
+#endif
 LIBSSH2_API int libssh2_session_handshake(LIBSSH2_SESSION *session,
                                           libssh2_socket_t sock);
 LIBSSH2_API int libssh2_session_disconnect_ex(LIBSSH2_SESSION *session,
@@ -759,7 +769,8 @@ libssh2_userauth_publickey(LIBSSH2_SESSION *session,
                            size_t pubkeydata_len,
                            LIBSSH2_USERAUTH_PUBLICKEY_SIGN_FUNC
                                ((*sign_callback)),
-                           void **abstract);
+                           void **
+    t);
 
 LIBSSH2_API int
 libssh2_userauth_hostbased_fromfile_ex(LIBSSH2_SESSION *session,
@@ -829,12 +840,7 @@ libssh2_userauth_publickey_sk(LIBSSH2_SESSION *session,
 LIBSSH2_API int libssh2_poll(LIBSSH2_POLLFD *fds, unsigned int nfds,
                              long timeout);
 
-/* data input into the ssh session; results with 
-    _send callbacks or
-    _DATA callbacks 
-   replaces _RECV callback.
-*/
-LIBSSH2_API int libssh2_transport_add_data(LIBSSH2_SESSION * session, uint8_t* buffer, size_t length );
+LIBSSH2_API int libssh2_read( LIBSSH2_SESSION *session );
 
 /* Channel API */
 #define LIBSSH2_CHANNEL_WINDOW_DEFAULT  (2*1024*1024)
@@ -862,6 +868,13 @@ libssh2_channel_open_ex(LIBSSH2_SESSION *session, const char *channel_type,
                             LIBSSH2_CHANNEL_WINDOW_DEFAULT, \
                             LIBSSH2_CHANNEL_PACKET_DEFAULT, NULL, 0)
 
+LIBSSH2_API void** libssh2_channel_abstract( LIBSSH2_CHANNEL* channel );
+
+LIBSSH2_API libssh2_cb_generic*
+libssh2_channel_callback_set( LIBSSH2_CHANNEL* channel,
+    enum LIBSSH2_CALLBACKS cbtype,
+    libssh2_cb_generic* callback );
+
 LIBSSH2_API LIBSSH2_CHANNEL *
 libssh2_channel_direct_tcpip_ex(LIBSSH2_SESSION *session, const char *host,
                                 int port, const char *shost, int sport);
@@ -879,6 +892,12 @@ libssh2_channel_forward_listen_ex(LIBSSH2_SESSION *session, const char *host,
                                   int queue_maxsize);
 #define libssh2_channel_forward_listen(session, port) \
     libssh2_channel_forward_listen_ex((session), NULL, (port), NULL, 16)
+
+LIBSSH2_API libssh2_cb_generic* libssh2_listener_callback_set( LIBSSH2_LISTENER* listener,
+	enum LIBSSH2_CALLBACKS cbtype,
+	libssh2_cb_generic* callback );
+LIBSSH2_API void** libssh2_listener_abstract( LIBSSH2_LISTENER* listener );
+
 
 LIBSSH2_API int libssh2_channel_forward_cancel(LIBSSH2_LISTENER *listener);
 

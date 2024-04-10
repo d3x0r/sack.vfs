@@ -7,7 +7,6 @@ sql.config
 package-lock.json
 option.db
 src/sack/libressl/3.8.0/include/openssl/opensslconf.h
-
 apps/syslog-scanner/sqlite.db
 tests/gun.db
 tests/gun.db-journal
@@ -17,3 +16,7 @@ tests/tmpCert.pem
 tests/sql/Test.db
 tests/sql/sql.log
 zz
+src/sack/libssh2/configure.ac
+src/sack/libssh2/maketgz
+src/sack/libssh2/Makefile.am
+tests/tasks/vgcore*

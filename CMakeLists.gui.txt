@@ -1,5 +1,7 @@
 set_property(GLOBAL PROPERTY USE_FOLDERS On)
-cmake_minimum_required(VERSION 3.20)
+#cmake_minimum_required(VERSION 3.20)
+# limited by ubuntu 10 to 3.10
+cmake_minimum_required(VERSION 3.10)
 
 
 project (sack_gui)

@@ -3,6 +3,7 @@ import {sack} from "sack.vfs"
 import {openServer} from "./server.mjs"
 import {Events} from "../events/events.mjs";
 const JSOX = sack.JSOX;
+const debug_ = false;
 
 function loopBack( that, to ) {
 
@@ -47,36 +48,83 @@ export class Protocol extends Events {
 	#connect(ws) {
 		const myWS = new WS( ws );
 		const this_ = this;
+		//console.log( "--------------- NEW CONNECTION ------------------" );
 		const results = this.on( "connect", [ws, myWS] );
+		ws.onmessage = handleMessage;
+		ws.onclose = handleClose;
+
+		const parser = sack.JSOX.begin( 
+			(object)=>Protocol.#dispatchMessage(this_, myWS,object) );
+
+
 		if( results && results.length ) {
 			// assume the on-connect provdies its own open/close handlers
 			if( results.includes( true ) ) return;
 		}
 
-		ws.on("message", handleMessage);
-		ws.on("close", handleClose );
-
-		const parser = sack.JSOX.begin( 
-			(object)=>Protocol.#dispatchMessage(this_, myWS,object) );
-
 		function handleClose( code, reason ) {
 			this_.on( "close", [myWS,code,reason] );
+			myWS.on("close", [code.reason]);
 		}
 
 		function handleMessage( msg ) {
 			const result = this_.on( "message", [ws,msg])
-			if( !result || ! result.reduce( (acc,val)=>acc|=!!val, false ) )
-				parser.write( msg );
+			//console.log( "handle message:", result, msg );
+			if( !result || ! result.reduce( (acc,val)=>acc|=!!val, false ) ) {
+				const res2 = myWS.on("message",[ws,msg]);
+				//console.log( "socket handler?", res2, msg )
+				if( !res2 || ! res2.reduce( (acc,val)=>acc|=!!val, false ) )
+					parser.write( msg );
+			}
 		}
 	}
 	static #dispatchMessage(protocol, ws, msg ) {
+		debug_ && console.log( "invoking handler for:", msg.op, msg )
 		protocol.on( msg.op, [ws, msg] ); 
+	}
+	addFileHandler( ) {
+		//console.log( "Adding websocket handler for 'get'" );
+		this.on( "get", (myWS,msg)=>{
+			let response = {
+				headers:null,
+				content:null,
+				status : 0,
+				statusText : "Ok",
+			}
+			// this gets passed to 
+			const url = new URL( msg.url );
+			debug_ && console.log( "url parts:", url, url.message );
+			this.server.handleEvent ( {url:url.pathname,
+						connection: {
+							headers:{}, remoteAddress:"myRemote" }
+				}, {
+				set statusText(val) {
+					response.statusText = val;
+				},
+				get statusText() {
+					return response.statusText;
+				},
+				writeHead(A,B) {
+					response.status = A;
+					response.headers = B;
+				},
+				end( content ) {
+					response.content = content;
+					//console.log( "Reply with got and content?", response );
+					myWS.send( { op:"got", id:msg.id, response } );
+				},
+			} );
+		} );
 	}
 }
 
-class WS{
+
+
+
+class WS extends Events{
 	ws = null;
 	constructor(ws){
+		super();
 		this.ws = ws;
 	}
 	/**

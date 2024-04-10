@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.6)
+#cmake_minimum_required(VERSION 3.21)
+# limited by ubuntu 10 to 3.10
+cmake_minimum_required(VERSION 3.10)
 
 project( UnusedProjectName )
 
