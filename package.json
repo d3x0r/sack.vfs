@@ -75,7 +75,7 @@
     },
     "./isTopLevel": {
       "import": "./apps/isTopLevel/isTopLevel.mjs"
-    }
+    },
     "./text": {
       "import": "./apps/text/text.mjs"
     }
