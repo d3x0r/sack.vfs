@@ -84,6 +84,8 @@ class DbStorage {
 			this.#psql = true;     
 		else if( db.provider === 2 )
 			this.#mysql = true;     
+		else if( db.provider === 5 )
+			this.#mysql = true;  // really is mariadb   
 		if( db.provider === 1 )
 			this.#sqlite = true;     
 
@@ -280,6 +282,9 @@ class ObjectStorage {
 		} );
 	}
 
+	async dir() {
+		return (await this.getRoot).files;
+	}
 
 	// define a class... to be handled by stringification
 	defineClasss (a,b) {
@@ -875,6 +880,10 @@ class ObjectStorage {
 
 	} // end of get() method
 	
+	flush() {
+		// this doesn't really cache anything to flush?
+
+	}
 } // end of ObjectStorage class
 
 
