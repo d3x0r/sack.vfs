@@ -660,7 +660,9 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 #define PREFIX_PACKED
 // private thing left as a note, and forgotten.  some compilers did not define offsetof
 #define my_offsetof( ppstruc, member ) ((uintptr_t)&((*ppstruc)->member)) - ((uintptr_t)(*ppstruc))
-SACK_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+#endif
 #ifdef BCC16
 #define __inline__
 #define MAINPROC(type,name)     type _pascal name
@@ -1182,7 +1184,9 @@ SACK_NAMESPACE_END
    With a little work subsets of this namesapce can be used.  Typrically
    this is built as just one large c/c++ shared library.
 */
+#ifdef __cplusplus
 namespace sack {
+#endif
 /* 16 bit unsigned decimal output printf format specifier. This would
    otherwise be defined in \<inttypes.h\>                */
 #define _16f   "u"
@@ -1750,9 +1754,7 @@ SACK_NAMESPACE_END
    defined in sack_types.h.                                  */
 #ifndef LINKSTUFF
 #define LINKSTUFF
-	SACK_NAMESPACE
-	_CONTAINER_NAMESPACE
-#    define TYPELIB_CALLTYPE
+#  define TYPELIB_CALLTYPE
 #  if defined( _TYPELIBRARY_SOURCE_STEAL )
 #    define TYPELIB_PROC extern
 #  elif defined( NO_EXPORTS )
@@ -1766,7 +1768,16 @@ SACK_NAMESPACE_END
 #  else
 #    define TYPELIB_PROC IMPORT_METHOD
 #  endif
-_LINKLIST_NAMESPACE
+#  ifdef __cplusplus
+	namespace sack {
+   /* Containers is a bunch of common types like lists, queues,
+      stacks.                                                   */
+	   namespace containers {
+#  endif
+#  ifdef __cplusplus
+/* virtual file system using file system IO instead of memory mapped IO */
+namespace list {
+#  endif
 //--------------------------------------------------------
 TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        CreateListEx   ( DBG_VOIDPASS );
 /* Destroy a PLIST. */
@@ -1981,7 +1992,10 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
 	}
 #endif
 //--------------------------------------------------------
-_DATALIST_NAMESPACE
+#ifdef __cplusplus
+/* virtual file system using file system IO instead of memory mapped IO */
+namespace data_list {
+#endif
 /* Creates a data list which hold data elements of the specified
    size.
                                                                  */
@@ -4498,7 +4512,9 @@ using namespace sack::containers;
 // Revision 1.39  2003/03/25 08:38:11  panther
 // Add logging
 //
-SACK_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+#endif
 #ifndef IS_DEADSTART
 // this is always statically linked with libraries, so they may contact their
 // core executable to know when it's done loading everyone else also...
@@ -4587,7 +4603,7 @@ SACK_NAMESPACE_END
 #define LOGGING_NAMESPACE_END
 #endif
 #ifdef __cplusplus
-	SACK_NAMESPACE
+	namespace sack {
 /* Handles log output. Logs can be directed to UDP directed, or
    broadcast, or localhost, or to a file location, and under
    windows the debugging console log.
@@ -4990,19 +5006,62 @@ using namespace sack::logging;
 // if( SUS_GT( 324, int, 545, unsigned int ) ) {
 //    is >
 // }
+/* Compare two numbers a>b, the first being signed and the second
+   being unsigned. Compares only within overlapping ranges else
+   \returns condition of non-overlap.
+   at is the type of a and bt is the type of b
+*/
 #  define SUS_GT(a,at,b,bt)   (((a)<0)?0:(((bt)a)>(b)))
+/* Compare two numbers a>b, the first being unsigned and the second
+   being signed. Compares only within overlapping ranges else
+   \returns condition of non-overlap.
+   at is the type of a and bt is the type of b
+*/
 #  define USS_GT(a,at,b,bt)   (((b)<0)?1:((a)>((at)b)))
+/* Compare two numbers, the first being unsigned and the second
+   being signed. Compares only within overlapping ranges else
+   \returns condition of non-overlap.
+   at is the type of a and bt is the type of b
+*/
 #  define SUS_LT(a,at,b,bt)   (((a)<0)?1:(((bt)a)<(b)))
+/* Compare two numbers, the first being unsigned and the second
+   being signed. Compares only within overlapping ranges else
+   \returns condition of non-overlap.
+   at is the type of a and bt is the type of b
+*/
 #  define USS_LT(a,at,b,bt)   (((b)<0)?0:((a)<((at)b)))
+/* Compare two numbers a>=b, the first being signed and the second
+   being unsigned. Compares only within overlapping ranges else
+   \returns condition of non-overlap.
+   at is the type of a and bt is the type of b
+*/
 #  define SUS_GTE(a,at,b,bt)  (((a)<0)?0:(((bt)a)>=(b)))
+/* Compare two numbers a>=b, the first being unsigned and the second
+   being signed. Compares only within overlapping ranges else
+   \returns condition of non-overlap.
+   at is the type of a and bt is the type of b
+*/
 #  define USS_GTE(a,at,b,bt)  (((b)<0)?1:((a)>=((at)b)))
+/* Compare two numbers a<=b, the first being signed and the second
+   being unsigned. Compares only within overlapping ranges else
+   \returns condition of non-overlap.
+   at is the type of a and bt is the type of b
+*/
 #  define SUS_LTE(a,at,b,bt)  (((a)<0)?1:(((bt)a)<=(b)))
+/* Compare two numbers a<=b, the first being unsigned and the second
+   being signed. Compares only within overlapping ranges else
+   \returns condition of non-overlap.
+   at is the type of a and bt is the type of b
+*/
 #  define USS_LTE(a,at,b,bt)  (((b)<0)?0:((a)<=((at)b)))
 #if 0
 // simplified meanings of the macros
 #  define SUS_GT(a,at,b,bt)   ((a)>(b))
 #  define USS_GT(a,at,b,bt)   ((a)>(b))
 #  define SUS_LT(a,at,b,bt)   ((a)<(b))
+/* Compare two numbers, the first being unsigned and the second
+   being signed. Compares only within overlapping ranges else
+   \returns condition of non-overlap.                           */
 #  define USS_LT(a,at,b,bt)   ((a)<(b))
 #  define SUS_GTE(a,at,b,bt)  ((a)>=(b))
 #  define USS_GTE(a,at,b,bt)  ((a)>=(b))
@@ -5053,8 +5112,13 @@ using namespace sack::containers;
 #ifndef UNDER_CE
 #define HAVE_ENVIRONMENT
 #endif
-SACK_NAMESPACE
-	_SYSTEM_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+  /*
+    System interface namespace has Tasks, Environment, and dynamic library loading.
+  */
+	namespace system {
+#endif
 typedef struct task_info_tag *PTASK_INFO;
 typedef void (CPROC*TaskEnd)(uintptr_t, PTASK_INFO task_ended);
 typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, size_t size );
@@ -5396,8 +5460,12 @@ typedef struct addrinfoW {
     struct addrinfoW    *ai_next;
 } ADDRINFOW;
 typedef ADDRINFOW   *PADDRINFOW;
+/* Compatibility declaration for MinGW (use MinGW64 to build now
+   please?)                                                      */
 typedef ADDRINFOA   ADDRINFOT;
 typedef ADDRINFOA   *PADDRINFOT;
+/* Compatibility declaration for MinGW (use MinGW64 to build now
+   please?)                                                      */
 typedef ADDRINFOA   ADDRINFO;
 typedef ADDRINFOA   *LPADDRINFO;
 #endif
@@ -5556,7 +5624,13 @@ typedef struct win_sockaddr_in SOCKADDR_IN;
 #define TIMER_NAMESPACE_END
 #endif
 #endif
-	TIMER_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+/*
+   timer, timing, threading, and criticalsection.
+*/
+namespace timers {
+# endif
    // enables file/line monitoring of sections and a lot of debuglogging
 //#define DEBUG_CRITICAL_SECTIONS
    /* this symbol controls the logging in timers.c... (higher level interface to NoWait primatives)*/
@@ -5667,7 +5741,7 @@ MEM_PROC  void MEM_API  InitializeCriticalSec ( PCRITICALSECTION pcs );
 using namespace sack::timers;
 #endif
 #ifdef __cplusplus
-SACK_NAMESPACE
+namespace sack {
 /* Memory namespace contains functions for allocating and
    releasing memory. Also contains methods for accessing shared
    memory (if available on the target platform).
@@ -7243,7 +7317,9 @@ DeclareThreadLocal struct timespec global_static_time_ts;
 #define SACK_NETWORK_TCP_NAMESPACE_END _TCP_NAMESPACE_END _NETWORK_NAMESPACE_END SACK_NAMESPACE_END
 #define SACK_NETWORK_UDP_NAMESPACE  SACK_NAMESPACE _NETWORK_NAMESPACE _UDP_NAMESPACE
 #define SACK_NETWORK_UDP_NAMESPACE_END _UDP_NAMESPACE_END _NETWORK_NAMESPACE_END SACK_NAMESPACE_END
-SACK_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+#endif
 	/* Event based networking interface.
 	   Example
 	   \Example One : A simple client side application. Reads
@@ -7361,16 +7437,24 @@ SACK_NAMESPACE
 	       return 0;
 	   }
 	   </code>                                                                                    */
-	_NETWORK_NAMESPACE
-//#ifndef CLIENT_DEFINED
+#ifdef __cplusplus
+	namespace network {
+#endif
+/*
+  Opaque structure representing a network connection.
+*/
 typedef struct NetworkClient *PCLIENT;
-//typedef struct Client
-//{
-//   unsigned char Private_Structure_information_here;
-//}CLIENT, *PCLIENT;
-//#endif
+/*
+   Get the system name.
+*/
 NETWORK_PROC( CTEXTSTR, GetSystemName )( void );
+/*
+  Lock a network connection for read or for write.
+*/
 NETWORK_PROC( PCLIENT, NetworkLockEx )( PCLIENT pc, int readWrite DBG_PASS );
+/*
+  Unlock a network connection for read or for write.
+*/
 NETWORK_PROC( void, NetworkUnlockEx )( PCLIENT pc, int readWrite DBG_PASS );
 /* <combine sack::network::NetworkLockEx@PCLIENT pc>
    \ \                                               */
@@ -9141,7 +9225,9 @@ USE_SACK_DEADSTART_NAMESPACE
 #define PROCREG_NAMESPACE
 #define PROCREG_NAMESPACE_END
 #endif
-SACK_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+#endif
 /* Deadstart is support which differs per compiler, but allows
    applications access a C++ feature - static classes with
    constructors that initialize at loadtime, but, have the
@@ -10491,6 +10577,7 @@ using namespace sack::network::ssh;
 #if defined( SQLSTUB_SOURCE ) || defined( SQLPROXY_LIBRARY_SOURCE )
 #define PSSQL_PROC(type,name) EXPORT_METHOD type CPROC name
 #else
+/* Macro declaring PSSQL procs. */
 #define PSSQL_PROC(type,name) IMPORT_METHOD type CPROC name
 #endif
 #ifdef __cplusplus
@@ -10506,7 +10593,9 @@ using namespace sack::network::ssh;
 /* Marks the end of SQL Namespace. */
 #define SQL_NAMESPACE_END
 #endif
-SACK_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+#endif
 /* SQL access library. This provides a simple access to ODBC
    connections, and to sqlite. If no database is specified,
    there is an internal database that can be used. These methods
@@ -10525,7 +10614,9 @@ SACK_NAMESPACE
    ProcessConfigurationFile(); If this file does not exist, it
    will be automatically created with default values.
    (Need to describe this sql.config file)                       */
-_SQL_NAMESPACE
+#ifdef __cplusplus
+    namespace sql {
+#endif
 /* <combine PSSQL_PROC>
    \ \                    */
 #define SQLPROXY_PROC PSSQL_PROC
@@ -11561,15 +11652,23 @@ PSSQL_PROC( int, PushSQLQueryEx )(PODBC);
 #define PushSQLQueryEx(odbc) PushSQLQueryExEx(odbc DBG_SRC )
 // no application support for username/password, sorry, trust thy odbc layer, please
 PSSQL_PROC( PODBC, ConnectToDatabase )( CTEXTSTR dsn );
+// get a connection to a database by name.
 PSSQL_PROC( PODBC, SQLGetODBC )( CTEXTSTR dsn );
+// get a connection to the database specifying user and password.
 PSSQL_PROC( PODBC, SQLGetODBCEx )( CTEXTSTR dsn, CTEXTSTR user, CTEXTSTR pass );
+// drop an interface (no longer in use/close); these are in a pool, and the underlaying connection might not close.
 PSSQL_PROC( void, SQLDropODBC )( PODBC odbc );
+// Drop the odbc instance, and close the connection.
 PSSQL_PROC( void, SQLDropAndCloseODBC )( CTEXTSTR dsn );
 #endif
 // default parameter to require is the global flag RequireConnection from sql.config....
 PSSQL_PROC( PODBC, ConnectToDatabaseExx )( CTEXTSTR DSN, LOGICAL bRequireConnection DBG_PASS );
+// default parameter to require is the global flag RequireConnection from sql.config....
+// the require connection parameter indicates the connection must connect, and will block until connected.
 PSSQL_PROC( PODBC, ConnectToDatabaseEx )( CTEXTSTR DSN, LOGICAL bRequireConnection );
+// default parameter to require is the global flag RequireConnection from sql.config....
 #define ConnectToDatabaseEx( dsn, required ) ConnectToDatabaseExx( dsn, required DBG_SRC )
+// default parameter to require is the global flag RequireConnection from sql.config....
 #define ConnectToDatabase( dsn ) ConnectToDatabaseExx( dsn, FALSE DBG_SRC )
 // Extended connect to database function; provides user and password separate from the DSN
 // which allows logging the SQL connection name, without dumping the username ans password.
@@ -11801,6 +11900,9 @@ PSSQL_PROC( CTEXTSTR, GuidZero )( void );
    litte_endian will byte-swap the grouped portions of numbers in a guid so they can be printed appropriately*/
 PSSQL_PROC( uint8_t*, GetGUIDBinaryEx )( CTEXTSTR guid, LOGICAL litte_endian );
 #define GetGUIDBinary(g) GetGUIDBinaryEx(g, TRUE )
+/* structure of a little endian UUID.  This allows formatting into the various
+ size fields of a uuid text string.
+ */
 struct guid_binary {
 	union {
 		struct {
@@ -12267,7 +12369,7 @@ _OPTION_NAMESPACE_END _SQL_NAMESPACE_END SACK_NAMESPACE_END
 #  define IDLE_PROC(type,name) IMPORT_METHOD type CPROC name
 # endif
 #ifdef __cplusplus
-SACK_NAMESPACE
+namespace sack {
 	_TIMER_NAMESPACE
 #endif
 // return -1 if not the correct thread
@@ -12344,7 +12446,9 @@ using namespace sack::timers;
 #define FILEMON_NAMESPACE_END _FILEMON_NAMESPACE_END _FILESYS_NAMESPACE_END SACK_NAMESPACE_END
 /* Defines the file montior namespace when compiling C++. */
 #define FILEMON_NAMESPACE SACK_NAMESPACE _FILESYS_NAMESPACE _FILEMON_NAMESPACE
-SACK_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+#endif
 /* \File system abstractions. A few things like get current path
    may or may not exist on a function.
    Primarily this defines functions 'pathchr' and 'pathrchr'
@@ -12354,7 +12458,9 @@ SACK_NAMESPACE
    methods on windows and linux to get event notifications when
    directories and, by filtering, files that have changed.
                                                                  */
-_FILESYS_NAMESPACE
+#ifdef __cplusplus
+	namespace filesys {
+#endif
 	enum ScanFileFlags {
 SFF_DEFAULT = 0,
  // go into subdirectories
@@ -12799,8 +12905,12 @@ using namespace sack::filesys;
 #endif
 // filemon will require system features, so pull stdhdrs instead of
 // just sack_tyeps
-  // for namespace nesting/definition
-FILEMON_NAMESPACE
+// for namespace definitions
+#ifdef __cplusplus
+namespace sack {
+	namespace filesys {
+		namespace monitor {
+#endif
 typedef struct monitor_tag *PMONITOR;
 typedef struct filechangecallback_tag *PCHANGEHANDLER;
 typedef struct filemonitor_tag *PFILEMON;
@@ -12854,27 +12964,6 @@ FILEMON_NAMESPACE_END
 using namespace sack::filesys::monitor;
 #endif
 #endif
-//----------------------------------------------------------------------
-//
-// $Log: filemon.h,v $
-// Revision 1.6  2005/02/23 13:01:35  panther
-// Fix scrollbar definition.  Also update vc projects
-//
-// Revision 1.5  2004/12/01 23:15:58  panther
-// Extend file monitor to make forced scan timeout settable by the application
-//
-// Revision 1.4  2004/01/16 17:07:08  d3x0r
-// Header updates...
-//
-// Revision 1.3  2003/11/09 22:31:36  panther
-// Add extended monitor registration
-//
-// Revision 1.2  2003/11/04 11:39:15  panther
-// Modified interface to monitor files
-//
-// Revision 1.1  2003/11/03 23:01:49  panther
-// Initial commit of librarized filemonitor
-//
 /* Provides Sack Virtual Filesystem interfaces. */
 #ifndef SACK_VFS_DEFINED
 /* Header multiple inclusion protection symbol. */
@@ -12906,7 +12995,11 @@ using namespace sack::filesys::monitor;
 #define SACK_VFS_NAMESPACE_END _SACK_VFS_NAMESPACE_END SACK_NAMESPACE_END
 /* define the file system namespace. */
 #define SACK_VFS_NAMESPACE SACK_NAMESPACE _SACK_VFS_NAMESPACE
-SACK_VFS_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+	/* Virtual File System interface/module. */
+	namespace SACK_VFS {
+#endif
 #if !defined( VIRTUAL_OBJECT_STORE ) && !defined( FILE_BASED_VFS )
 struct sack_vfs_volume;
 struct sack_vfs_file;
@@ -13326,6 +13419,7 @@ SACK_VFS_PROC LOGICAL sack_vfs_os_analyze( struct sack_vfs_os_volume* volume );
 #ifdef __cplusplus
 }
 #endif
+//DOM-IGNORE-BEGIN
 #if defined USE_VFS_FS_INTERFACE
 #define sack_vfs_volume sack_vfs_fs_volume
 #define sack_vfs_file sack_vfs_fs_file
@@ -13390,6 +13484,7 @@ SACK_VFS_PROC LOGICAL sack_vfs_os_analyze( struct sack_vfs_os_volume* volume );
 #define sack_vfs_find_get_cdate  sack_vfs_os_find_get_cdate
 #define sack_vfs_find_get_wdate  sack_vfs_os_find_get_wdate
 #endif
+//DOM-IGNORE-END
 SACK_VFS_NAMESPACE_END
 #if defined( __cplusplus )
 using namespace sack::SACK_VFS;
@@ -13406,7 +13501,7 @@ using namespace sack::SACK_VFS::objStore;
 #define JSON_EMITTER_PROC(type,name) IMPORT_METHOD type CPROC name
 #endif
 #ifdef __cplusplus
-SACK_NAMESPACE namespace network { namespace json {
+namespace sack { namespace network { namespace json {
 #endif
 enum JSON_ObjectElementTypes
 {
@@ -13821,67 +13916,69 @@ struct vesl_value_container {
 using namespace sack::network::vesl;
 #endif
 #endif
-/***************************************************************
- * JSOX Parser
- *
- * Parses JSOX (github.com/d3x0r/jsox)
- *
- * This function is meant for a simple utility to just take a known completed packet,
- * and get the values from it.  There may be mulitple top level values, although
- * the JSON standard will only supply a single object or array as the first value.
- * jsox_parse_message( "utf8 data", sizeof( "utf8 data" )-1, &pdlMessage );
- *
- *
- * Example :
- // call to parse a message... and iterate through each value.
- {
-parse_message
-    PDATALIST pdlMessage;
-    LOGICAL gotMessage;
-	 if( jsox_parse_message( "utf8 data", sizeof( "utf8 data" )-1, &pdlMessage ) ) {
-		  int index;
-        struct jsox_value_container *value;
-		  DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value ) {
-           // for each value in the result.... the first layer will
-           // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
-           // then for each value->contains (as a datalist like above), process each of those values.
-		  }
-        jsox_dispose_mesage( &pdlMessage );
-    }
- }
- *
- *  This is a streaming setup, where a data block can be added,
- *  and the stream of objects can be returned from it....
- *
- *  Example 2:
- // allocate a parser to keep track of the parsing state...
- struct jsox_parse_state *parser = jsox_begin_parse();
- // at some point later, add some data to it...
- jsox_parse_add_data( parser, "utf8-data", sizeof( "utf8-data" ) - 1 );
- // and then get any objects that have been parsed from the stream so far...
- {
-    PDATALIST pdlMessage;
-	 pdlMessage = jsox_parse_get_data( parser );
-    if( pdlMessage )
-	 {
-        int index;
-        struct jsox_value_container *value;
-        DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value ) {
-           // for each value in the result.... the first layer will
-           // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
-           // then for each value->contains (as a datalist like above), process each of those values.
-        }
-        jsox_dispose_mesage( &pdlMessage );
-		  jsox_parse_add_data( parser, NULL, 0 ); // trigger parsing next message.
-	 }
- }
- *
- ***************************************************************/
+/* JSOX Parser
+   Parses JSOX (github.com/d3x0r/jsox)
+   This function is meant for a simple utility to just take a
+   known completed packet, and get the values from it. There may
+   be mulitple top level values, although the JSON standard will
+   only supply a single object or array as the first value.
+   jsox_parse_message( "utf8 data", sizeof( "utf8 data" )-1,
+   &amp;pdlMessage );
+   \Example :
+   <code>
+   // call to parse a message... and iterate through each value
+   {
+     PDATALIST pdlMessage;
+     LOGICAL gotMessage;
+     if( jsox_parse_message( "utf8 data", sizeof( "utf8 data" )-1, &amp;pdlMessage ) )
+     {
+       int index;
+       struct jsox_value_container *value;
+       DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value )
+       {
+          // for each value in the result.... the first layer will
+          // always be just one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
+		  // then for each value-\>contains (as a datalist like above),
+          // process each of those values.
+       }
+       jsox_dispose_mesage( &amp;pdlMessage );
+     }
+   }
+   </code>
+   This is a streaming setup, where a data block can be added, and
+   the stream of objects can be returned from it....
+   \Example 2:
+   <code lang="c++">
+   // allocate a parser to keep track of the parsing state... struct jsox_parse_state *parser = jsox_begin_parse();
+   // at some point later, add some data to it... jsox_parse_add_data( parser, "utf8-data", sizeof( "utf8-data" ) - 1 );
+   // and then get any objects that have been parsed from the stream so far...
+   {
+     PDATALIST pdlMessage;
+     pdlMessage = jsox_parse_get_data( parser );
+     if( pdlMessage )
+     {
+       int index;
+       struct jsox_value_container *value;
+       DATALIST_FORALL( pdlMessage, index, struct jsox_value_container *. value )
+       {
+         // for each value in the result.... the first layer will
+         // always be just
+         // one element, either a simple type, or a VALUE_ARRAY or VALUE_OBJECT, which
+         // then for each value-\>contains (as a datalist like above), process each of those values.
+       }
+       jsox_dispose_mesage( &amp;pdlMessage );
+       jsox_parse_add_data( parser, NULL, 0 );
+       // trigger parsing next message.
+     }
+   }
+   </code>                                                                                                                                                                                                                    */
 #ifndef JSOX_PARSER_HEADER_INCLUDED
 #define JSOX_PARSER_HEADER_INCLUDED
 // include types to get namespace, and, well PDATALIST types
 #ifdef __cplusplus
-SACK_NAMESPACE namespace network {
+namespace sack { namespace network {
+	/* <combinewith jsox_parser.h>
+	   \ \                         */
 	namespace jsox {
 #endif
 #ifdef JSOX_PARSER_SOURCE
@@ -14066,7 +14163,7 @@ using namespace sack::network::jsox;
 /* An exclusion symbol for defining CDATA and color operations. */
 #define COLOR_STRUCTURE_DEFINED
 #ifdef __cplusplus
-SACK_NAMESPACE
+namespace sack {
 	namespace image {
 #endif
 		// byte index values for colors on the video buffer...
@@ -14258,16 +14355,22 @@ using namespace sack::image;
 #  endif
 #  define	 SACK_MATH_FRACTION_NAMESPACE_END
 #endif
-SACK_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+#endif
 	/* Namespace of custom math routines.  Contains operators
 	 for Vectors and fractions. */
-	_MATH_NAMESPACE
+#ifdef __cplusplus
+	namespace math {
+#endif
 	/* Fraction namespace contains a PFRACTION type which is used to
    store integer fraction values. Provides for ration and
    proportion scaling. Can also represent fractions that contain
    a whole part and a fractional part (5 2/3 : five and
 	two-thirds).                                                  */
-	_FRACTION_NAMESPACE
+#ifdef __cplusplus
+	namespace fraction {
+#endif
 /* Define the call type of the function. */
 #define FRACTION_API CPROC
 #  ifdef FRACTION_SOURCE
@@ -14420,7 +14523,10 @@ using namespace sack::math::fraction;
 #define CONFIGSCR_PROC(type,name) IMPORT_METHOD type CPROC name
 #endif
 #ifdef __cplusplus
-SACK_NAMESPACE namespace config {
+namespace sack {
+	/* <combinewith configscript.h>
+	   \ \                          */
+	namespace config {
 #endif
 typedef char *__arg_list[1];
 typedef __arg_list arg_list;
@@ -14846,6 +14952,7 @@ SRG_EXPORT void BlockShuffle_BusByte( struct byte_shuffle_key *key
 #define SACKCOMM_ERR_MIN -20
 #ifdef __LINUX__
 typedef void DCB;
+/* Compatibility type for getting com port errors. */
 typedef void COMSTAT;
 #define STDPROC
 #endif
@@ -15056,7 +15163,9 @@ using namespace sack;
 #define MSGPROTOCOL_NAMESPACE
 #define MSGPROTOCOL_NAMESPACE_END
 #endif
-SACK_NAMESPACE
+#ifdef __cplusplus
+namespace sack {
+#endif
 	/* This namespace contains an implmentation of inter process
 	   communications using a set of message queues which result
 	   from 'msgget' 'msgsnd' and 'msgrcv'. This are services
@@ -15069,11 +15178,15 @@ SACK_NAMESPACE
 	   See Also
 	   RegisterService
 	   LoadService                                                         */
-	_MSG_NAMESPACE
+#ifdef __cplusplus
+	namespace msg {
+#endif
 /* Defines structures and methods for receiving and sending
 	   messages. Also defines some utility macros for referencing
 		message ID from a user interface structure.                */
-	_PROTOCOL_NAMESPACE
+#ifdef __cplusplus
+		namespace protocol {
+#endif
 #define MSGQ_ID_BASE "Srvr"
 // this is a fun thing, in order to use it,
 // undefine MyInterface, and define your own to your
