@@ -53,12 +53,11 @@ export class Text {
 
 		tabs= 0;
 		spaces = 0;
-		flags= 0; // this is actually a whole object if we want to get technical.
+		flags= null; // this is actually a whole object if we want to get technical.
 		 text= "";
 		 next= null;
 		 pred= null;
 		 indirect= null;
-
 
 		 append(seg) { if (seg) { var end = this; while (end.next) end = end.next; seg.pred = this; end.next = seg; } return seg; }
 		 break() { var result; if (result = this.next) { this.next = null; result.pred = null; return result } return null; }
@@ -71,33 +70,21 @@ export class Text {
 			return textString(t);
 		}
 		 clone() {
-			var t = Text();
-			t.spaces = this.spaces;
-			t.tabs = this.tabs;
-			t.text = this.text;
-			return t;
+			return new Text( { spaces:this.spaces, tabs:this.tabs, text:this.text, flags:this.flags } );
 		}
 		 Next() { if (!this) return null; return this.next }
 		 first() { var cur = this; while (cur.pred) cur = cur.pred; return cur; }
 		 get last() { var cur = this; while (cur.next) cur = cur.next; return cur; }
 
-	constructor (def) {
+	constructor(def) {
 		this.tabs= def && def.tabs || 0
 		this.spaces= def && def.spaces || 0;
 		this.text= (def && def.text === null) ? null : def && def.text || def || ""
 
 	}
-	return text;
-}
-
-function Next(wordref) {
-	if (wordref.word) return wordref.word.Next();
-	return null;
-}
-function SegAppend(_this, that) { if (_this === null) return that; return _this.append(that); }
-
-
-exports.Parse = function TextParse(input, punctuation, filter_space, bTabs, bSpaces)
+        
+        
+        static Parse(input, punctuation, filter_space, bTabs, bSpaces)
 // returns a TEXT list of parsed data
 {
 	if (!filter_space) filter_space = "\r";// " \t\r"
@@ -138,6 +125,8 @@ exports.Parse = function TextParse(input, punctuation, filter_space, bTabs, bSpa
 		spaces = 0;
 		return word;
 	}
+        
+	function SegAppend(_this, that) { if (_this === null) return that; return _this.append(that); }
 
 	function collapse() {
 		//console.log( "Collapsing:", out.collect.text.length );
@@ -237,7 +226,7 @@ exports.Parse = function TextParse(input, punctuation, filter_space, bTabs, bSpa
 						if ((!elipses &&
 							(c = NextChar()) &&
 							(c === '.'))) {
-							if ((word = out.getText())) {
+					    ON    	if ((word = out.getText())) {
 								outdata = SegAppend(outdata, SET_SPACES(word));
 							}
 							out.collect.text += '.';
@@ -315,3 +304,5 @@ exports.Parse = function TextParse(input, punctuation, filter_space, bTabs, bSpa
 	while (outdata && outdata.pred) outdata = outdata.pred;
 	return (outdata);
 }
+}
+
