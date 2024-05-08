@@ -26,7 +26,7 @@
     "sack.http": "./shttp.cli.mjs",
     "sping": "./sping.cli.mjs"
   },
-   "public": true,
+   "private": false,
   "dependencies": {
     "sack.vfs": "https://github.com/d3x0r/sack.vfs"
   }
