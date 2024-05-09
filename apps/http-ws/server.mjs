@@ -193,6 +193,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	};
 
 	const serverResult = {
+		server,
 		handleEvent( req, res ) {
 			return eventHandler( req, res );
 		},
