@@ -80,12 +80,12 @@ export function getRequestHandler( serverOpts ) {
 		const contentType = extMap[extname] || "text/plain";
 		//console.log( ":", extname, filePath )
 		if( disk.exists( filePath ) ) {
-			const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
-			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
-			res.writeHead(200, headers );
 			const fc = disk.read(filePath );
 
 			if( fc ) {
+				const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
+				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
+				res.writeHead(200, headers );
 				res.end( fc );
 
 				if( requests.length !== 0 )
@@ -93,7 +93,7 @@ export function getRequestHandler( serverOpts ) {
 				reqTimeout = setTimeout( logRequests, 100 );
 				requests.push( req.url );
 			} else {
-				console.log( 'file exists, but reading it returned nothing?', filePath );
+				console.log( 'file exists, but reading it returned nothing?', filePath, fc );
 				return false;
 			}
 			return true;
@@ -142,7 +142,8 @@ let eventHandler = null;
 export function openServer( opts, cbAccept, cbConnect )
 {
 	let handlers = [];
-	const serverOpts = opts || {port:process.env.PORT || 8080} ;
+	const serverOpts = opts || {};
+        if( !("port" in serverOpts )) serverOpts.port = process.env.PORT || 8080;
 	const server = sack.WebSocket.Server( serverOpts )
 
 	//console.log( "serving on " + serverOpts.port, server );
@@ -193,6 +194,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	};
 
 	const serverResult = {
+		server,
 		handleEvent( req, res ) {
 			return eventHandler( req, res );
 		},
