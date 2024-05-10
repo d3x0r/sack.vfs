@@ -90,6 +90,7 @@ Server events
   | close | closes the connection |
   | on | event handler for specified type `on(eventName, callback)` | 
   | noDelay | setter that takes a boolean and enables/disables TCP_NODELAY. | 
+  | aggregate | accessor - set whether to aggregate sends that happen within a short time (3ms). |
 
 ## HTTP Fallback
 
