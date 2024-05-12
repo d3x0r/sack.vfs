@@ -1728,7 +1728,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "on", wscObject::on );
 		NODE_SET_PROTOTYPE_METHOD( wscTemplate, "ping", wscObject::ping );
 
-		wssiTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "aggregate" )
+		wscTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "aggregate" )
 			, Local<FunctionTemplate>()
 			, FunctionTemplate::New( isolate, wscObject::aggregate )
 		);
