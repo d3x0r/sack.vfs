@@ -1,3 +1,7 @@
+.button-service-manageradd-task {
+	float:right;
+}
+
 .task-log-listbox {
     /* make scrollable */
     height: 80vh;
