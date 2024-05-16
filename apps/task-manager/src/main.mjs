@@ -54,7 +54,7 @@ const server = openServer( serverOpts, accept, connect );
 server.addHandler( (req,res)=>{
 	if( req.url.startsWith( "/events")){
 		req.url = "/../.." + req.url;
-		console.log( "added?", req );
+		//console.log( "added?", req );
 	}
 	return false;
 })
@@ -505,7 +505,7 @@ function connect( ws ) {
 		}
 		console.log( "Client disconnect:", code, reason );
 		const id = local.connections.findIndex( conn=>conn.ws===ws );
-		console.log( "Did we find the connection?", id );
+		//console.log( "Did we find the connection?", id );
 		if( id >=0 ) local.connections.splice( id, 1 );
 	}
 
