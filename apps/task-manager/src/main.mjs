@@ -29,7 +29,16 @@ const JSOX = sack.JSOX;
 
 async function reloadConfig() {
 	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.run.jsox" ).catch( err=>({default:null}) )).default;
-	const config = config_run || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.jsox" )).default;
+	const config = config_run
+	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.jsox" ).catch( err=>({default:null}) )).default 
+	      || { extraModules:[]
+	         , hostname:""
+	         , useUpstream: false
+	         , upstreamServer: ""
+	         , port:0
+	         , tasks:[] 
+	         };
+
 	if( !firstLoad )
 		config.tasks.forEach( loadTask );
 	firstLoad = false;
@@ -199,7 +208,7 @@ function handleNoLog( ws, msg, msg_ )
 
 
 function handleTaskInfo( ws, msg, msg_ ) {
-	console.log( "handleTaskInfo:", msg_ );
+	//console.log( "handleTaskInfo:", msg_ );
 	if( msg.system === local.id ) {
 		const task = local.taskMap[msg.id];
 		if( task ){
@@ -225,10 +234,11 @@ function connectToCore() {
 	ws.onopen = ()=>{
 		console.log( "Sending initial tasks" );
 		ws.send( JSOX.stringify( {op:"extern.tasks", tasks:local.tasks
-				, system:config.hostname || os.hostname()
-				, id : local.id
-				, port:serverOpts.port}
-				))
+		      , system:config.hostname || os.hostname()
+		      , id : local.id
+		      , port:serverOpts.port
+		      }
+		))
 		local.upstreamWS = ws;
 	}
 	ws.onmessage = (msg)=>handleMessage(ws,msg);
@@ -239,7 +249,7 @@ function connectToCore() {
 	}
 }
 
-console.log( "Upstream?", config.useUpstream, config.upstreamServer )
+//console.log( "Upstream?", config.useUpstream, config.upstreamServer )
 if( config.useUpstream )
 	connectToCore();
 
