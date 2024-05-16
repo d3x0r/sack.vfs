@@ -1,3 +1,12 @@
+.task-log-listbox {
+    /* make scrollable */
+    height: 80vh;
+	overflow:auto;
+	background:black;
+	border-style:inset;
+	border-width:3px;
+}
+
 .task-running:disabled, .task-running {
 	background: #088715;
 	color:white;

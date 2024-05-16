@@ -14,7 +14,8 @@ export const local = {
 	pageFrame : null, // page control for systems.
 	firstPage : null, // the first status has a page itself...
 	reset() {
-		local.statusDisplay.remove();
+		if( local.statusDisplay )
+			local.statusDisplay.remove();
 		const tasks = Object.keys( local.tasks );
 		local.pageFrame.activate( local.firstPage	);
 		for( let task of tasks ) {

@@ -49,10 +49,17 @@ const serverOpts = {resourcePath:appRoot+"/ui"
 	, npmPath:parentRoot+"/.."
 	, port:Number(process.env.PORT) || config.port || 8080};
 // start server...
-openServer( serverOpts, accept, connect );
+console.log( "Serve on port:", serverOpts.port );
+const server = openServer( serverOpts, accept, connect );
+server.addHandler( (req,res)=>{
+	if( req.url.startsWith( "/events")){
+		req.url = "/../.." + req.url;
+		console.log( "added?", req );
+	}
+	return false;
+})
 
 class LogStream {
-
 	constructor( connectionn ) {
 		this.connection = connection; // this ahs to be part of handling log messages...
 
@@ -260,7 +267,10 @@ config.tasks.forEach( loadTask );
 function loadTask( task ) {
 	const oldTask = local.tasks.find( oldTask=>oldTask.name === task.name );
 	if( !oldTask ) {
-		const newTask =   new Task( task );
+		const newTask = new Task( task );
+		if( !config.tasks.find( oldTask=>oldTask.name === task.name )){
+			config.tasks.push( task );
+		}
 		local.tasks.push( newTask );
 		local.taskMap[newTask.id] = newTask;
 		return newTask;
@@ -563,19 +573,23 @@ function handleMessage( ws, msg_ ) {
 			handleLog( ws, msg, msg_ );
 			break;
 		case "createTask": {
-				if( msg.system && msg.system != local.id ) {
-					local.systems.find( system=>{
-						if( system.id === msg.system ) {
-							system.createTask( msg_ );
-							return true;
-						} 
-						return false;
-					});
-				}else {
-					const task = loadTask( msg.task );
-					saveRunConfig();
-					addTask( task.id, task );
-				}
+			if( local.system === msg.system || !msg.system ) {
+				const task = loadTask( msg.task );
+				saveRunConfig();
+				addTask( task.id, task ); // sends new task
+			} else if( msg.system && msg.system != local.system ) {
+				local.systems.find( system=>{
+					if( system.id === msg.system ) {
+						system.createTask( msg_ );
+						return true;
+					} 
+					return false;
+				});
+			}else {
+				const task = loadTask( msg.task );
+				saveRunConfig();
+				addTask( task.id, task );
+			}
 			}
 			break;
 		case "updateTask": {

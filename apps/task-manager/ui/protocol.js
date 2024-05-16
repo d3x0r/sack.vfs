@@ -1,7 +1,7 @@
 
 
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
-import {Events} from "/node_modules/sack.vfs/apps/events/events.mjs"
+import {Events} from "/events/events.mjs"
 import {System} from "./system.mjs"
 
 
@@ -87,8 +87,8 @@ export class Protocol extends Events {
 		const p = new Promise( (res,rej)=>{
 			const system = config.local.systemMap[task];
 			Protocol.taskRequests.push( {id:task,res} );
-			console.log("We are here in Get Task Info with "+task);
-			this.ws.send( JSOX.stringify(  {op:"getTaskInfo", system:system.id, id:task} ));
+			//console.log("We are here in Get Task Info with "+task);
+			this.ws.send( JSOX.stringify(  {op:"getTaskInfo", system:(system?system.id:config.local.system), id:task} ));
 		});//.then( (obj)=>{/*obj is .task and .title which is task.title*/ /*console.log( "Got Data ?", task );*/  return obj;} );
 		return p;
 	}
