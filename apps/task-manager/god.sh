@@ -5,5 +5,4 @@ nvm use 17
 #call npm run start
 gdb --args node  --experimental-loader=sack.vfs/import.mjs  src/main.mjs
 
-
-exec $*
+#exec $*
