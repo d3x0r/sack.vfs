@@ -155,7 +155,11 @@ TaskObject::~TaskObject() {
 
 	while( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output2 ) )
 		Deallocate( struct taskObjectOutputItem*, outmsg );
-
+	for( int i = 0; i < nArg; i++ ) {
+		if( argArray[i] )
+			Deallocate( char*, argArray[i] );
+	}
+	ReleaseEx( argArray DBG_SRC );
 	DeleteLink( &l.tasks, this );
 	DeleteLinkQueue( &output );
 	DeleteLinkQueue( &output2 );
@@ -174,7 +178,9 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "isRunning", TaskObject::isRunning );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "send", TaskObject::Write );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "terminate", TaskObject::Terminate );
-	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Write );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Print );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "log", TaskObject::Print );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "print", TaskObject::Print );
 #if _WIN32
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getStyles", TaskObject::getProcessWindowStyles );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getPosition", TaskObject::getProcessWindowPos );
@@ -522,9 +528,6 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			newTask->killAtExit = true;
 
-			char **argArray = NULL;
-			PLIST envList = NULL;
-			int nArg;
 
 			
 			if( opts->Has( context, optName = strings->noWindowString->Get( isolate ) ).ToChecked() ) {
@@ -615,25 +618,25 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				if( GETV( opts, optName )->IsString() ) {
 					char **args2;
 					args = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-					ParseIntoArgs( *args[0], &nArg, &argArray );
+					ParseIntoArgs( *args[0], &newTask->nArg, &newTask->argArray );
 
-					args2 = NewArray( char*, nArg + 1 );
+					args2 = NewArray( char*, newTask->nArg + 1 );
 			
 					int n;
-					for( n = 0; n < nArg; n++ )
-						args2[n] = argArray[n];
+					for( n = 0; n < newTask->nArg; n++ )
+						args2[n] = newTask->argArray[n];
 					args2[n] = NULL;
-					Release( argArray );
-					argArray = args2;
+					Release( newTask->argArray );
+					newTask->argArray = args2;
 				} else if( GETV( opts, optName )->IsArray() ) {
 					uint32_t n;
 					Local<Array> arr = Local<Array>::Cast( GETV( opts, optName ) );
 
-					argArray = NewArray( char *, arr->Length() + 1 );
+					newTask->argArray = NewArray( char *, newTask->nArg = arr->Length() + 1 );
 					for( n = 0; n < arr->Length(); n++ ) {
-						argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) GETN( arr, n )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+						newTask->argArray[n] = StrDup( *String::Utf8Value( USE_ISOLATE( isolate ) GETN( arr, n )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 					}
-					argArray[n] = NULL;
+					newTask->argArray[n] = NULL;
 				}
 			}
 			if( opts->Has( context, optName = strings->workString->Get( isolate ) ).ToChecked() ) {
@@ -644,7 +647,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->envString->Get( isolate ) ).ToChecked() ) {
 				Local<Value> val;
 				Local<Object> env = GETV( opts, optName ).As<Object>();
-				readEnv( isolate, context, env, &envList );
+				readEnv( isolate, context, env, &newTask->envList );
 				//lprintf( "env params not supported(yet)" );
 				/*
 				if( GETV( opts, optName )->IsString() ) {
@@ -726,7 +729,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			//lprintf( "What is this? %d %d %d %d %d", ( end || input || input2 || !noWait ), end, input, input2, !noWait );
 			newTask->task = LaunchPeerProgram_v2( bin?*bin[0]:NULL
 				, work?*work[0]:NULL
-				, argArray
+				, newTask->argArray
 				, ( firstArgIsArg? LPP_OPTION_FIRST_ARG_IS_ARG:0 )
 				| ( hidden?0:LPP_OPTION_DO_NOT_HIDE)
 				| (newGroup? LPP_OPTION_NEW_GROUP : 0)
@@ -742,7 +745,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
 				, (uintptr_t)newTask 
-				, envList
+				, newTask->envList
 				DBG_SRC );
 
 			// if the option is specified
@@ -828,14 +831,50 @@ void TaskObject::loadLibrary( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( LoadFunction( *s, NULL ) )
 		args.GetReturnValue().Set( True( isolate ) );
 	args.GetReturnValue().Set( False( isolate ) );
-
 }
 
 void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
-	pprintf( task->task, "%s", *s );
+	if( task->task ) {
+		if( args[0]->IsTypedArray() ) {
+			Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
+			Local<ArrayBuffer> ab = ta->Buffer();
+	#if ( NODE_MAJOR_VERSION >= 14 )
+			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+	#else
+			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+	#endif
+		} else if( args[0]->IsUint8Array() ) {
+			Local<Uint8Array> body = args[0].As<Uint8Array>();
+			Local<ArrayBuffer> ab = body->Buffer();
+	#if ( NODE_MAJOR_VERSION >= 14 )
+			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+	#else
+			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+	#endif
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+	#if ( NODE_MAJOR_VERSION >= 14 )
+			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
+	#else
+			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
+	#endif
+		}
+		else {
+			String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+			task_send( task->task, (const uint8_t*)*s, s.length() );
+		}
+	}
+}
+
+void TaskObject::Print( const v8::FunctionCallbackInfo<Value>& args ) {
+	//Isolate* isolate = args.GetIsolate();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	if( task->task ) {
+		String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		pprintf( task->task, "%s", *s );
+	}
 }
 
 void TaskObject::End( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1209,6 +1248,7 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 		}
 		while( bin[argStart] ) {
 			while( bin[argStart] == ' ' ) argStart++;
+			if( !bin[argStart] ) break;
 			argEnd = argStart + 1;
 			if( bin[argStart] == '"' ) {
 				argStart++;

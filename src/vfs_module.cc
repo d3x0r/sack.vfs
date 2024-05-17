@@ -64,36 +64,10 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	Local<String> retval = String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
 	Release( (POINTER)data );
 	return retval;
-	/*
-	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
-	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
-	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-	PARRAY_BUFFER_HOLDER holder = GetHolder();
-	holder->s.Reset( isolate, arrayBuffer );
-	holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-	holder->buffer = (void*)data;
-	return arrayBuffer;
-	*/
 }
 
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
 	return String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
-	/*
-	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
-	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
-	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-	static const char *prior_root;
-	if( prior_root != real_root )
-	{
-		prior_root = real_root;
-		PARRAY_BUFFER_HOLDER holder = GetHolder();
-		holder->s.Reset( isolate, arrayBuffer );
-		holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-		Hold( (char*)real_root );
-		holder->buffer = (void*)real_root;
-	}
-	return arrayBuffer;
-	*/
 }
 
 
@@ -274,6 +248,34 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
+/*
+void decodeFlags2( int flags ) {
+
+	fprintf( stderr, "FD FLAGS:%08x ", flags );
+	fprintf( stderr, "%08x\n", FD_CLOEXEC );
+}
+
+
+void decodeFlags( int flags ) {
+	if( flags & O_RDONLY ) fprintf( stderr, "rdonly " );
+	if( flags & O_WRONLY ) fprintf( stderr, "wronly " );
+	if( flags & O_RDWR ) fprintf( stderr, "rdwr " );
+	if( flags & O_CREAT ) fprintf( stderr, "create " );
+	if( flags & O_EXCL ) fprintf( stderr, "excl " );
+	if( flags & O_NONBLOCK ) fprintf( stderr, "noblock " );
+	if( flags & O_TRUNC ) fprintf( stderr, "truync " );
+	if( flags & O_APPEND ) fprintf( stderr, "append " );
+	if( flags & O_DSYNC ) fprintf( stderr, "dsync " );
+	if( flags & FASYNC ) fprintf( stderr, "fasycn " );
+	if( flags & O_DIRECT ) fprintf( stderr, "direct " );
+	/*if( flags & O_LARGEFILE )* / fprintf( stderr, "largefile %08x ", O_LARGEFILE );
+	if( flags & O_DIRECTORY ) fprintf( stderr, "directory " );
+	if( flags & O_NOFOLLOW ) fprintf( stderr, "nofollow " );
+	if( flags & O_CLOEXEC ) fprintf( stderr, "cloexec " );
+	fprintf( stderr, "%08x\n", O_CLOEXEC );
+}
+*/
+
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	static int runOnce = 1;
 	Isolate* isolate = Isolate::GetCurrent();
@@ -297,7 +299,39 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 		SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 	}
 #endif
+#ifdef __LINUX__
+		fcntl( 0, F_SETFD, fcntl( 0, F_GETFD ) & ~FD_CLOEXEC );
+		fcntl( 1, F_SETFD, fcntl( 1, F_GETFD ) & ~FD_CLOEXEC );
+		fcntl( 2, F_SETFD, fcntl( 2, F_GETFD ) & ~FD_CLOEXEC );
+
+/*
+		decodeFlags( fcntl( 0, F_GETFL, 0 ) );
+		decodeFlags( fcntl( 1, F_GETFL, 0 ) );
+		decodeFlags( fcntl( 2, F_GETFL, 0 ) );
+		decodeFlags2( fcntl( 0, F_GETFD, 0 ) );
+		decodeFlags2( fcntl( 1, F_GETFD, 0 ) );
+		decodeFlags2( fcntl( 2, F_GETFD, 0 ) );
+
+		fprintf( stderr, "Default handle inherit in node: %08x %08x %08x\n"
+		       , fcntl( 0, F_GETFL, 0 )
+		       , fcntl( 1, F_GETFL, 0 )
+		       , fcntl( 2, F_GETFL, 0 ) );
+*/
+#endif
 	if( runOnce ) {
+#ifdef __ANDROID__
+		{
+			//SACKSystemSetProgramPath( "" );
+			// maybe if this is set I can get the program path with the maps scanner?
+			SACKSystemSetProgramName( "node" );
+			char buf[1024];
+			getcwd( buf, 1024 );
+			SACKSystemSetWorkingPath( buf );
+			// this should have been filled by maps scan?
+			SACKSystemSetLibraryPath( TARGET_INSTALL_PREFIX );
+		}
+#endif
+
 		InvokeDeadstart();
 		MarkRootDeadstartComplete();
 
@@ -341,8 +375,6 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
-	InitWebSocket( isolate, exports );
-	InitUDPSocket( isolate, exports );
 	InitTask( isolate, exports );
 	ObjectStorageInit( isolate, exports );
 	fileMonitorInit( isolate, exports );
@@ -354,15 +386,18 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	RenderObject::Init( exports );
 	ControlObject::Init( exports );
 	InterShellObject::Init( exports );
-	InitSystray( isolate, exports );
 #endif
 
 #ifdef WIN32
 	RegObject::Init( exports );
 	KeyHidObjectInit( isolate, exports );
 	SoundInit( isolate, exports );
+	InitSystray( isolate, exports );
 #endif
+	InitWebSocket( isolate, exports );
+	InitUDPSocket( isolate, exports );
 	TLSObject::Init( isolate, exports );
+	SSH2_Object::Init( isolate, exports );
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
@@ -1901,6 +1936,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "trunc", truncateFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "close", closeFile );
 		// read stream methods
+		/*
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pause", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "resume", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setEncoding", openFile );
@@ -1914,6 +1950,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setDefaultEncoding", openFile );
 
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
+		*/
 
 		c->fileConstructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		//exports->Set( String::NewFromUtf8Literal( isolate, "File" ),

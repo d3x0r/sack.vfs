@@ -166,11 +166,10 @@ void TLSObject::Init( Isolate *isolate, Local<Object> exports )
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> tlsTemplate;
 
-OpenSSL_add_all_algorithms();
-ERR_load_crypto_strings();
+	ssl_InitLibrary();
 
 	tlsTemplate = FunctionTemplate::New( isolate, New );
-	tlsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Volume" ) );
+	tlsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.TLS" ) );
 	tlsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype

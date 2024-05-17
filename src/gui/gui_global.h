@@ -180,5 +180,4 @@ struct global {
 void InitInterfaces( int opengl, int vulkan );
 uintptr_t MakeEvent( RenderObject*r, enum GUI_eventType type, ... );
 
-void InitSystray( Isolate* isolate, Local<Object> _exports );
 void enableEventLoop( class constructorSet *c ); // PSI control events.

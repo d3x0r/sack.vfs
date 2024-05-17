@@ -760,7 +760,7 @@ private:
 			{
 				size_t len;
 				uint8_t outbuf[32];
-				uint8_t *bytes;
+				uint8_t *bytes = NULL;
 				if( !args[1]->IsUndefined() ) {
 					String::Utf8Value hash( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					id = *hash;

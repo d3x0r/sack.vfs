@@ -185,7 +185,7 @@ app.get( "/Token", (req,res)=>{
 
 ```
 
-## Websocket quick service
+## Websocket quick service (server/node side)
 
 Importing protocol.mjs
 
@@ -213,9 +213,51 @@ import {Protocol} from "sack.vfs/protocol";
 class MyProtocol extends Protocol {
 	constructor( opts ) {
 		super( opts );
+
+		// optional message handler handle messages...
+		// messages will be handled this, and will not be routed further
+		// if this returns a non falsy value; otherwise they will be routed 
+		// directly to registered `on` handlers.
+		// ws.ws is the real websocket handle
+		this.on( "message", (ws,msg)=>{
+			
+		} )
+
+		// optional connection handler; the ws is the bare object, WS as the second parameter
+		// is a wrapped 'ws' object that provides 'send()' and 'emit()' methods.
+		// the second, WS object is what is sent to message handlers.
+		// WS.ws is the real websocket handle
+		this.on( "connect", (ws,WS)=>{
+			
+		} )
+
+		const closeEvent = this.on( "close", (ws,code,reason)=>{
+			// handle close  on the socket ; ws is wrapped ws object...
+			// ws.ws is the real websocket handle.
+		})
 	}
 }
 
-// new MyProtocol( {port:5252 } );
+
+//const protocol = new MyProtocol( {port:5252 } );
+
+// otherwise users of 
+protocol can use protocol.on( "msgtype" ) where "msgtype" will be the command of 'op' contained in a mesage.
+
 ```
 
+There are several ways one can send a message.  The builtin protocol routes replies on the
+message content `op` field.  Emit can be used to abstract the requirment of knowing that.
+
+``` js
+
+const protocol = new MyProtocol( {port:1234, protocol:"protocol", resourcePath:"../ui" });
+
+protocol.on( "asdf", (ws,msg)=>{
+	/* process asdf event message */
+	ws.emit( "asdfReply", {message:"data"}); // sends {op:"asdfReply", message:"data"}
+	ws.emit( "asdfReply", "data");           // sends {op:"asdfReply", asdfReply:"data" }
+	ws.send( {op:"asdfReply", ok:true });    // sends JSOX formatted object literal.
+})
+
+```

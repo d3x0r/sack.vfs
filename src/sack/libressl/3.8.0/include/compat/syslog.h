@@ -29,6 +29,11 @@ struct syslog_data {
 
 #define SYSLOG_DATA_INIT {0, (const char *)0, LOG_USER, 0xff}
 
+#ifdef syslog_r
+#  undef syslog_r
+#  undef vsyslog_r
+#endif
+
 void syslog_r(int, struct syslog_data *, const char *, ...);
 void vsyslog_r(int, struct syslog_data *, const char *, va_list);
 

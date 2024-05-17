@@ -29,21 +29,25 @@ class Event {
 export class Events {
 	#events = {};
 	static set log(value) {
+		if( !this ) throw new Error( "(log)Events should have the class type as this..."+(this)+(Events) );
 		const type = getType( this );
 		if( value ) // only enable; once enable no disable
 			type.log = value;
 	}
 
 	static set usePriority(value) {
+		if( !this ) throw new Error( "(SetPriority)Events should have the class type as this..."+(this)+(Events) );
 		const type = getType( this );
 		type.usePriority = value;
 	}
 
 	static on( evt, d, extra ) {
+		if( !this ) throw new Error( "(on)Events should have the class type as this..."+(this)+(Events) );
 		const type = getType( this );
 		return on( type.static_events, type.usePriority, type.log, evt, d, extra );		
 	}
 	static off( evt, d ) {
+		if( !this ) throw new Error( "(off)Events should have the class type as this..."+(this)+(Events) );
 		const type = getType( this );
 		return off( type.static_events, type.log, evt, d );
 	}

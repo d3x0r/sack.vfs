@@ -1,6 +1,23 @@
 
 ### Websocket Server Interface
 
+``` js
+// primary method, pass options object
+const ws = sack.WebSocket.Server( /*options*/ );
+
+// example of some sample options
+const ws = sack.WebSocket.Server( { port: 1234, address: "::0" } );
+
+
+// the constructor can also take a URL and port as arguments instead of in option object
+// but the option object is the common method
+const ws = sack.WebSocket.Server( [/*url*/, /*port*/,] /*options*/ );
+
+
+
+```
+
+
 Server Constructor Parameters
   - (optional) URL - a URL formatted string specifying server address and optional port.
   - (optional) Port - a number indicating which port number to listen on; if No URL, and no address option specified, listens on all addresses on this port.
@@ -33,6 +50,7 @@ Server events
   | key  | &lt;string&gt;; uses PEM private key specified for encryption; used by clients to authenticate cerficates  |
   | passphrase | &lt;string&gt;; uses passphrase for key provided |
   | hosts | &lt;array of hosts&gt;; (Server Host Option below) |
+  | pipe | bool - (reserved)internal use | 
   
   | Server Host Option |  |
   |----|----|
@@ -72,11 +90,13 @@ Server events
   | close | closes the connection |
   | on | event handler for specified type `on(eventName, callback)` | 
   | noDelay | setter that takes a boolean and enables/disables TCP_NODELAY. | 
+  | aggregate | accessor - set whether to aggregate sends that happen within a short time (3ms). |
 
 ## HTTP Fallback
 
 Providing a `onrequest` callback to the server, will allow the server to handle HTTP(S) request events.
 The request is given a `req`uest and a `res`ponse object which are used to serve the HTTP(S) request.
+request has 'connection' which has information about the local and remote address/port/MAC addresses if available.
 
 ### Websocket Node Worker-Thread Support
 
@@ -87,6 +107,8 @@ This is only for threads accepted by a server, which may fork a thread, and hand
 specified target thread.  The handoff takes a unique string which should identify the target thread; although,
 a pool of threads all using the same identifier may each receive one socket.  Once the accept event is fired,
 it is cleared, and the thread will have to re-post a listener to accept another socket.
+
+The return of onaccept may be a promise which will wait until it is resolved before accepting the socket.
 
 ``` js
 // rough example, not sure about the onaccept interface

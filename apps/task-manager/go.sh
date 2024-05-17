@@ -7,4 +7,4 @@ nvm use 17
 node  --experimental-loader=sack.vfs/import.mjs  src/main.mjs
 
 
-exec $*
+#exec $*

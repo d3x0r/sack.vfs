@@ -31,6 +31,11 @@ public:
 
 	bool stopped;
 	bool killed;
+
+	char** argArray = NULL;
+	PLIST envList = NULL;
+	int nArg = 0;
+
 #if _WIN32
 	int moved;
 	LOGICAL moveSuccess;
@@ -43,6 +48,7 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void Write( const v8::FunctionCallbackInfo<Value>& args );
+	static void Print( const v8::FunctionCallbackInfo<Value>& args );
 	static void End( const v8::FunctionCallbackInfo<Value>& args );
 	static void Terminate( const v8::FunctionCallbackInfo<Value>& args );
 	static void isRunning( const v8::FunctionCallbackInfo<Value>& args );

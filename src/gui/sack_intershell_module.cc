@@ -916,8 +916,8 @@ static uintptr_t cbCreateControl( PSI_CONTROL parent, int32_t x, int32_t y, uint
 	is_control *c = NewArray( is_control, 1 );
 	PMENU_BUTTON button = InterShell_GetCurrentlyCreatingButton();
 	isLocal.creating_parent = parent;
-	c->psvData.Empty();
-	c->psvControl.Empty();
+	c->psvData.Reset();
+	c->psvControl.Reset();
 	c->button = button;
 	c->isButton = FALSE;
 	c->caption = NULL;
@@ -1018,8 +1018,8 @@ static uintptr_t cbCreateButton( PMENU_BUTTON button ) {
 	CTEXTSTR controlType = InterShell_GetCurrentlyCreatingButtonType();
 	InterShellObject *io = findControlType( controlType );
 	is_control *c = NewArray( is_control, 1 );
-	c->psvData.Empty();
-	c->psvControl.Empty();
+	c->psvData.Reset();
+	c->psvControl.Reset();
 	c->isButton = TRUE;
 	c->button = button;
 	c->pc = NULL;

@@ -86,6 +86,7 @@ typedef struct global_tag
 	PLINKQUEUE mouseEvents;
 	PTHREAD mouseThread;
 	int buttons;
+	int mouseX, mouseY;
 
 	//PLIST inputs;
 	//HHOOK hookHandle;
@@ -109,9 +110,14 @@ static void getCursor( const v8::FunctionCallbackInfo<Value>& args ) {
 	const Local<String> y = String::NewFromUtf8Literal( isolate, "y" );
 	Local<Object> obj = Object::New( isolate );
 	POINT point;
-	GetCursorPos( &point );
-	obj->Set( isolate->GetCurrentContext(), x, Number::New( isolate, point.x ) );
-	obj->Set( isolate->GetCurrentContext(), y, Number::New( isolate, point.y ) );
+	if( hidg.hookHandleMLL ) {
+		obj->Set( isolate->GetCurrentContext(), x, Number::New( isolate, hidg.mouseX ) );
+		obj->Set( isolate->GetCurrentContext(), y, Number::New( isolate, hidg.mouseY ) );
+	} else {
+		GetCursorPos( &point );
+		obj->Set( isolate->GetCurrentContext(), x, Number::New( isolate, point.x ) );
+		obj->Set( isolate->GetCurrentContext(), y, Number::New( isolate, point.y ) );
+	}
 	args.GetReturnValue().Set( obj );
 }
 static void setCursor( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -220,6 +226,13 @@ uintptr_t MouseInputThread( PTHREAD thread )
 	HMODULE xx = GetModuleHandle( "sack_vfs.node" );
 	//lprintf( "%p", xx );
 	hidg.hookHandleMLL = SetWindowsHookEx( WH_MOUSE_LL, MouseProcLL, xx, 0 );
+	// initialize to the best state we can know.
+	// after this point, this will track with the low level messages received.
+	hidg.buttons = ( GetAsyncKeyState( VK_LBUTTON ) ? MK_LBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_RBUTTON ) ? MK_RBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_MBUTTON ) ? MK_MBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_XBUTTON1 ) ? MK_XBUTTON1 : 0 )
+		| ( GetAsyncKeyState( VK_XBUTTON2 ) ? MK_XBUTTON2 : 0 );
 	//hidg.hookHandleM = SetWindowsHookEx( WH_MOUSE, MouseProc, xx, 0 );
 	{
 		MSG msg;
@@ -583,6 +596,8 @@ void mouse_asyncmsg( uv_async_t* handle ) {
 					break;
 				*/
 			}
+			hidg.mouseX = msg->data.pt.x;
+			hidg.mouseY = msg->data.pt.y;
 			SET( eventObj, "wheel", Integer::New( isolate, wheel ) );
 			SET( eventObj, "buttons", Integer::New( isolate, hidg.buttons ) );
 			SET( eventObj, "x", Integer::New( isolate, msg->data.pt.x ) );
@@ -661,7 +676,14 @@ void MouseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void MouseObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	// set read callback
+   Isolate *isolate = args.GetIsolate();
 	MouseObject* com = ObjectWrap::Unwrap<MouseObject>( args.This() );
+	if( args.Length() > 0 ) {
+		if( args[0]->IsFunction() ) {
+			Local<Function> arg0 = Local<Function>::Cast( args[0] );
+			com->readCallback.Reset( isolate, arg0 );
+		}
+	}
 }
 
 void MouseObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -687,6 +709,152 @@ void MouseObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
 	*/
 }
 
+static void generateEvents( Isolate *isolate, Local<Array> events ) {
+	Local<Context> context = isolate->GetCurrentContext();
+	int old_buttons;
+	POINT curPos;
+
+	//GetCursorPos( &curPos );
+	curPos.x = hidg.mouseX;
+	curPos.y = hidg.mouseY;
+	old_buttons = hidg.buttons;
+	PDATALIST pdlInputs = CreateDataList( sizeof( INPUT ) );
+	INPUT input;
+	int used_inputs = 0;
+	int event = 0;
+	input.type = INPUT_MOUSE;
+	input.mi.time = 0; // auto time
+	input.mi.dwExtraInfo = 0;
+
+	for( event = 0; event < events->Length(); event++ ) {
+		Local<Object> e = events->Get( context, event ).ToLocalChecked().As<Object>();
+		Local<Value> ex = e->Get( context, String::NewFromUtf8Literal( isolate, "x" ) ).ToLocalChecked();
+		Local<Value> ey = e->Get( context, String::NewFromUtf8Literal( isolate, "y" ) ).ToLocalChecked();
+		Local<Value> eb = e->Get( context, String::NewFromUtf8Literal( isolate, "buttons" ) ).ToLocalChecked();
+		Local<Value> esh = e->Get( context, String::NewFromUtf8Literal( isolate, "vscroll" ) ).ToLocalChecked();
+		Local<Value> esw = e->Get( context, String::NewFromUtf8Literal( isolate, "hscroll" ) ).ToLocalChecked();
+		int64_t x = ex->IsNumber() ? ex.As<Number>()->IntegerValue( context ).ToChecked() : curPos.x;
+		int64_t y = ey->IsNumber() ? ey.As<Number>()->IntegerValue( context ).ToChecked() : curPos.y;
+		int64_t b = eb->IsNumber() ? eb.As<Number>()->IntegerValue( context ).ToChecked() : old_buttons;
+		int64_t realB = b; // we destroy b with certain button combinations...
+
+		//lprintf( "data: %d %d %d %d", x, y, b, old_buttons );
+		bool hasScroll1 = esh->IsNumber();
+		double down_up = hasScroll1 ? esh.As<Number>()->Value() : 0;
+		// even if there's a parameter, it might not be a command
+		if( !down_up ) hasScroll1 = false;
+		bool hasScroll2 = esw->IsNumber();
+		double right_left = hasScroll2 ? esw.As<Number>()->Value() : 0;
+		// even if there's a parameter, it might not be a command
+		if( !right_left ) hasScroll1 = false;
+		//lprintf( "has Scrolls:%d %d", hasScroll1, hasScroll2 );
+
+		bool has_x = false;
+		if( b & 0x1000000 ) {
+			x += curPos.x;
+			y += curPos.y;
+		}
+		used_inputs = 0; // used_inputs is for a subset of events that get genertaed... one move
+		do {
+			if( used_inputs ) {
+				//lprintf( "adding a second part of the event.." );
+				// don't NEED to set dx,dy to 0, but it's cleaner if we do
+				input.mi.dx = 0;
+				input.mi.dy = 0;
+				input.mi.dwFlags = 0;
+			} else {
+				if( x != curPos.x || y != curPos.y ) {
+					double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN ) - 1;
+					double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN ) - 1;
+					double const sx = 65535.0f / fScreenWidth;
+					double const sy = 65535.0f / fScreenHeight;
+					input.mi.dx = (LONG)ceil( x * sx );
+					input.mi.dy = (LONG)ceil( y * sy );
+					/* assume that this event WILL move the mouse */
+					//lprintf( "Updating the current mouse position... %d %d", x, y );
+					curPos.x = hidg.mouseX = x;
+					curPos.y = hidg.mouseY = y;
+					input.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
+				} else {
+					//lprintf( "Same position as current?" );
+					// don't NEED to set dx,dy to 0, but it's cleaner if we do
+					input.mi.dx = 0;
+					input.mi.dy = 0;
+					input.mi.dwFlags = 0;
+					//lprintf( "no motion needed..." );
+				}
+
+				// normal buttons have no extra data either - only include their states in the first message.
+				input.mi.dwFlags |=
+					( ( ( b & MK_LBUTTON ) && !( old_buttons & MK_LBUTTON ) ) ? MOUSEEVENTF_LEFTDOWN : 0 )
+					| ( ( ( b & MK_RBUTTON ) && !( old_buttons & MK_RBUTTON ) ) ? MOUSEEVENTF_RIGHTDOWN : 0 )
+					| ( ( ( b & MK_MBUTTON ) && !( old_buttons & MK_MBUTTON ) ) ? MOUSEEVENTF_MIDDLEDOWN : 0 )
+					| ( ( !( b & MK_LBUTTON ) && ( old_buttons & MK_LBUTTON ) ) ? MOUSEEVENTF_LEFTUP : 0 )
+					| ( ( !( b & MK_RBUTTON ) && ( old_buttons & MK_RBUTTON ) ) ? MOUSEEVENTF_RIGHTUP : 0 )
+					| ( ( !( b & MK_MBUTTON ) && ( old_buttons & MK_MBUTTON ) ) ? MOUSEEVENTF_MIDDLEUP : 0 )
+					;
+				// button messages are only on transition, not hold-states; update old_buttons
+				// x1 and x2 states are updated as they are built into an event
+				old_buttons = ( old_buttons & ( MK_XBUTTON1 | MK_XBUTTON2 ) )
+					| ( b & ( MK_LBUTTON | MK_RBUTTON | MK_MBUTTON ) );
+			}
+
+			if( b & MK_XBUTTON1 && !( old_buttons & MK_XBUTTON1 ) ) {
+				input.mi.dwFlags |= MOUSEEVENTF_XDOWN;
+				input.mi.mouseData = XBUTTON1; // scroll wheel
+				b &= ~MK_XBUTTON1;
+				has_x = true;
+			} else if( !( b & MK_XBUTTON1 ) && ( old_buttons & MK_XBUTTON1 ) ) {
+				input.mi.dwFlags |= MOUSEEVENTF_XUP;
+				input.mi.mouseData = XBUTTON1; // scroll wheel
+				old_buttons &= ~MK_XBUTTON1;
+				has_x = true;
+			} else if( b & MK_XBUTTON2 && !( old_buttons & MK_XBUTTON2 ) ) {
+				input.mi.dwFlags |= MOUSEEVENTF_XDOWN;
+				input.mi.mouseData = XBUTTON2; // scroll wheel
+				b &= ~MK_XBUTTON2;
+				has_x = true;
+			} else if( !( b & MK_XBUTTON2 ) && ( old_buttons & MK_XBUTTON2 ) ) {
+				input.mi.dwFlags |= MOUSEEVENTF_XUP;
+				input.mi.mouseData = XBUTTON2; // scroll wheel
+				old_buttons &= ~MK_XBUTTON2;
+				has_x = true;
+			} else {
+				has_x = false;
+				if( hasScroll1 ) {
+					input.mi.dwFlags |= MOUSEEVENTF_WHEEL;
+					input.mi.mouseData = (DWORD)( down_up * WHEEL_DELTA );
+					hasScroll1 = false;
+				} else if( hasScroll2 ) {
+					input.mi.dwFlags |= MOUSEEVENTF_HWHEEL;
+					input.mi.mouseData = (DWORD)( right_left * WHEEL_DELTA );
+					hasScroll2 = false;
+				} else {
+					input.mi.mouseData = 0;
+				}
+			}
+
+			hidg.buttons = old_buttons;
+			//lprintf( "Adding events: x:%d y:%d f:%d ex:%d md:%d t:%d", input.mi.dx, input.mi.dy, input.mi.dwFlags, input.mi.dwExtraInfo, input.mi.mouseData, input.mi.time );
+			AddDataItem( &pdlInputs, &input );
+			used_inputs++;
+		} while( ( b & ( MK_XBUTTON2 ) || ( old_buttons & MK_XBUTTON2 ) ) || hasScroll1 || hasScroll2 );
+	}
+	if( 0 ) {
+		for( int i = 0; i < pdlInputs->Cnt; i++ ) {
+			INPUT* input = (INPUT*)GetDataItem( &pdlInputs, i );
+			lprintf( "Generating event: x:%d y:%d f:%d ex:%d md:%d t:%d", input->mi.dx, input->mi.dy, input->mi.dwFlags, input->mi.dwExtraInfo, input->mi.mouseData, input->mi.time );
+		}
+	}
+	
+	//int n = 
+	SendInput( pdlInputs->Cnt, (LPINPUT)pdlInputs->data, sizeof( INPUT ) );
+	//lprintf( "Send Inputreplied? %d", n );
+	DeleteDataList( &pdlInputs );
+
+}
+
+
 void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 	int old_buttons;
 	//static int old_x; // save old x,y to know whether current is a move or just a click
@@ -694,17 +862,26 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 	POINT curPos;
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 3 ) {
+		if( args[0]->IsArray() ) {
+			Local<Array> arr = Local<Array>::Cast( args[0] );
+			generateEvents( isolate, arr );
+			return;
+		}
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "At least 3 arguments must be specified for a mouse event (x, y, buttons)." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	Local<Context> context = isolate->GetCurrentContext();
 	GetCursorPos( &curPos );
+	/*
 	old_buttons = ( GetAsyncKeyState( VK_LBUTTON ) ? MK_LBUTTON : 0 )
 		| ( GetAsyncKeyState( VK_RBUTTON ) ? MK_RBUTTON : 0 )
 		| ( GetAsyncKeyState( VK_MBUTTON ) ? MK_MBUTTON : 0 )
 		| ( GetAsyncKeyState( VK_XBUTTON1 ) ? MK_XBUTTON1 : 0 )
 		| ( GetAsyncKeyState( VK_XBUTTON2 ) ? MK_XBUTTON2 : 0 );
+	*/
+	//lprintf( "current key state buttons: %08x %08x", old_buttons, hidg.buttons );
+	old_buttons = hidg.buttons;
 	int64_t x = args[0]->IsNumber() ? args[0].As<Number>()->IntegerValue( context ).ToChecked():curPos.x;
 	int64_t y = args[1]->IsNumber() ? args[1].As<Number>()->IntegerValue( context ).ToChecked():curPos.y;
 	int64_t b = args[2]->IsNumber() ? args[2].As<Number>()->IntegerValue( context ).ToChecked():old_buttons;
@@ -718,6 +895,7 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 	double right_left = hasScroll2?args[4].As<Number>()->Value():0;
 	// even if there's a parameter, it might not be a command
 	if( !right_left ) hasScroll1 = false;
+	//lprintf( "has Scrolls:%d %d", hasScroll1, hasScroll2 );
 
 	INPUT inputs[4];
 	int used_inputs = 0;
@@ -803,7 +981,7 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		inputs[used_inputs].mi.time = 0; // auto time
 		inputs[used_inputs].mi.dwExtraInfo = 0;
-
+		hidg.buttons = old_buttons;
 		used_inputs++;
 	} while( ( b & ( MK_XBUTTON2 ) || ( old_buttons & MK_XBUTTON2 ) ) || hasScroll1 || hasScroll2 );
 	//lprintf( "Generating events: %d %d %d", used_inputs, inputs[0].mi.dx, inputs[0].mi.dy  );
