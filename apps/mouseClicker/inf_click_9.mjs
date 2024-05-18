@@ -108,27 +108,51 @@ let clicking = false;
 const clickPerSec = 10;
 const mouse = sack.Mouse( mouseCallback );
 let clickPos = null;
+let ul = null;
+let br = null;
 
 function mouseCallback(event){
-	console.log( "Constructor event:", event );
+	//console.log( "Constructor event:", event );
+	if( ul && br ) {
+		const clickPos = sack.Mouse.cursor;               	
+		console.log( "at:", ((clickPos.x - ul.x)/(br.x-ul.x)).toFixed(4), ((clickPos.y - ul.y)/(br.y-ul.y)).toFixed(4) )
+	}
 	if( event.buttons & 32 ) {
 		if( !_4down ) { 
-			clickPos = sack.Mouse.cursor;               	
+console.log( "click:", ul, br );
 			_4down = true;
-        	clicking = !clicking;
 			if( clicking ) {
-				positions = base_positions.map( pos=>({x:(pos.x-base.x+clickPos.x),y:(pos.y-base.y+clickPos.y)}) );
+				clicking = false;
+				ul = br = null;
+				return;
+			}
+			if( !ul ) {
+				ul = sack.Mouse.cursor;
+				return;
+			}
+			if( !br ) {
+				br = sack.Mouse.cursor;
+				//return;
+				positions = base_positions.map( pos=>({x:(pos.x*(br.x-ul.x)+ul.x),y:(pos.y*(br.y-ul.y)+ul.y)}) );
+			}
+			
+			
+        	clicking = true;
+		if(0)
+			{
+				//positions = base_positions.map( pos=>({x:(pos.x-base.x+clickPos.x),y:(pos.y-base.y+clickPos.y)}) );
 				//console.log( "positions:", positions );
 				click = 0;
 				setTimeout( ()=>{
-				doClick(positions[clicks[0]]);
+					doClick(positions[clicks[click++]]);
 				}, 250 ); // allow time to unclick
 			}
 		} else {
 		}
 	} else {
-        	_4down = false;
-        }
+		_4down = false;
+		
+	}
 }
 
 function doClick( pos ) {

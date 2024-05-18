@@ -4,8 +4,8 @@
 
 [![buddy pipeline](https://app.buddy.works/d3ck0r-1/sack-vfs/pipelines/pipeline/492336/badge.svg?token=60065f4e65bb4060abba4ed78e886e269a135fdbc7f1ae03ccc0e79af3cffe76 "buddy pipeline")](https://app.buddy.works/d3ck0r-1/sack-vfs/pipelines/pipeline/492336)
 
-(Deprecating; no free support - one shot 10k credits then 0) [![Build Status](https://travis-ci.com/d3x0r/sack.vfs.svg?branch=master)](https://app.travis-ci.com/github/d3x0r/sack.vfs)
 
+Quick summary of features/subsystems.
 
 - WebSocket/HTTP/HTTPS network library.  UDP sockets (`http`,`UDP` replacment).
 - JSON/[JSON6](https://github.com/d3x0r/JSON6) (stream)parser,
