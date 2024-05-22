@@ -5,6 +5,7 @@
 .task-log-listbox {
     /* make scrollable */
     height: 80vh;
+	width:60vw;
 	overflow:auto;
 	background:black;
 	border-style:inset;
