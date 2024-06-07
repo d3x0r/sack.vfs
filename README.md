@@ -252,6 +252,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.1.822(in progress)
+    - Enable option to load ssl certificates for HTTPS app service.
     - JSOX decode fixes.  Handle `'':` as not an error.  which also means `{:` is not an error and it's a zero length string.
     - Enable System Tray interface on windows (linux doesn't have a standard API; and tool doesnt' exist)
     - Fix rare JSOX parsing ref follow where part of path is used and then forks to previous data.
