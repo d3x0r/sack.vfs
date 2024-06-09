@@ -27,7 +27,7 @@ lbs.db = sack.DB( lbs.DSN, (db)=>{
 } );
 
 
-const ips = lbs.db.do( "select IP from banlist where allow=0" );
+const ips = lbs.db.do( "select IP from banlist where allow=0 and last_hit>now()-interval 1 month" );
 let i = 0;
 
 function ban() {

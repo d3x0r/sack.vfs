@@ -361,17 +361,16 @@ class ObjectStorage {
 		encoderList.forEach( f=>{
 			function redirect(f) {
 				return function redirect(field,val) {
-					if(f ) {
+					// call loaded anyway.  loaded can't change the object.
+					if( !field && ( this instanceof StoredObject ) ) this.loaded( this_, currentReadId );
+					// call registered handler; handler can change what this object is.
+					if(f) {
 						if( !field ) { 
 							return f.call( this, field, this_ ); 
-						} else return f.call(this,field,val ) 
+						} else return f.call(this,field,val );
 					}else {
-						if( !field ) {
-							if( this instanceof StoredObject ){
-								this.loaded( this_, currentReadId );
-							}
-							return this;
-						} else return val;
+						if( !field ) return this;
+						else return val;
 					}
 				}
 			}
@@ -774,7 +773,7 @@ class ObjectStorage {
 					_debug_dangling && console.log( "NOT DANGLING; existing object already exists... " );
 					this.d.p = Promise.resolve( existing.data );  // this will still have to be swapped.
 				}
-				console.log( "Container ref:", s, this.d.p );
+				//console.log( "Container ref:", s, this.d.p );
 
 			} catch(err) { console.log( "Init ObjectContainerRef failed:", err)}
 		}
@@ -1585,6 +1584,7 @@ class StoredObject {
 	}
 
 	loaded( storage,id ) {
+		//console.trace( "stored object loaded callback:", id );
 		this.#storage = storage;
 		this.#id = id;
 	}
