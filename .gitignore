@@ -20,3 +20,4 @@ src/sack/libssh2/configure.ac
 src/sack/libssh2/maketgz
 src/sack/libssh2/Makefile.am
 tests/tasks/vgcore*
+apps/task-manager/config.run.jsox
