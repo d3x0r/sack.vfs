@@ -738,11 +738,11 @@ static Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_
 		#define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
 		if( remoteAddress ) {
 			getnameinfo( remoteAddress, SOCKADDR_LENGTH( remoteAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
-			SETV( result, strings->localNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+			SETV( result, strings->remoteNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
 		}
 		if( localAddress ) {
 			getnameinfo( localAddress, SOCKADDR_LENGTH( localAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD );
-			SETV( result, strings->remoteNameString->Get( isolate ), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+			SETV( result, strings->localNameString->Get( isolate ), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
 		}
 	}
 
