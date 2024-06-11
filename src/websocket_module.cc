@@ -3762,11 +3762,18 @@ static void 	readHeaders( Isolate *isolate, Local<Context> context, httpRequestO
 		Local<Value> name = props->Get( context, p ).ToLocalChecked();
 		Local<Value> value = headers->Get( context, name ).ToLocalChecked();
 		String::Utf8Value localName( isolate,  name );
-		String::Utf8Value localValue( isolate, value );
-		const size_t len = localName.length() + localValue.length() + 2;
-		TEXTCHAR* field = NewArray( TEXTCHAR, len );
-		// HTTP header requirements dictate NO control characters are meant to be sent.
-		snprintf( field, len, "%s:%s", *localName, *localValue );
+		TEXTCHAR* field;
+		if( value->IsString() ) {
+			String::Utf8Value localValue( isolate, value );
+			const size_t len = localName.length() + localValue.length() + 2;
+			field = NewArray( TEXTCHAR, len );
+			// HTTP header requirements dictate NO control characters are meant to be sent.
+			snprintf( field, len, "%s:%s", *localName, *localValue );
+		} else if( value->IsUndefined() ) {
+			const size_t len = localName.length()+2;
+			field = NewArray( TEXTCHAR, len );
+			snprintf( field, len, "%s~", *localName );
+		}
 		AddLink( &httpRequest->headers, field );
 	}
 }
