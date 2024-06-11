@@ -1854,7 +1854,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE         EmptyList      ( PLIST *pList );
 typedef class iList
 {
 public:
-	PLIST list;
+	volatile PLIST list;
 	INDEX idx;
 	inline iList() { list = CreateListEx( DBG_VOIDSRC ); }
 	inline ~iList() { DeleteListEx( &list DBG_SRC ); }
@@ -1993,7 +1993,7 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
 #endif
 //--------------------------------------------------------
 #ifdef __cplusplus
-/* virtual file system using file system IO instead of memory mapped IO */
+/* A type of dynamic array that contains the data of the elements and not just pointers like PLIST. */
 namespace data_list {
 #endif
 /* Creates a data list which hold data elements of the specified
@@ -9955,7 +9955,7 @@ LOGICAL HTTPAPI AddHttpData( HTTPState pHttpState, CPOINTER buffer, size_t size 
             to 'content\-length' meta tag.
    FALSE :  Still collecting full packet                           */
 //HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState );
-HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState, int (*send)(uintptr_t psv, CPOINTER buf, size_t len), uintptr_t psv );
+HTTP_EXPORT enum ProcessHttpResult HTTPAPI ProcessHttp( HTTPState pHttpState, int (*send)(uintptr_t psv, CPOINTER buf, size_t len), uintptr_t psv );
 HTTP_EXPORT
  /* Gets the specific result code at the header of the packet -
    http 2.0 OK sort of thing.                                  */
@@ -11535,7 +11535,7 @@ PSSQL_PROC( int, SQLRecordQuery_js )( PODBC odbc
 /*
 	this properly releases the list and all allocated strings within the entires
  */
-void ReleaseSQLResults( PDATALIST *ppdlResults );
+PSSQL_PROC( void, ReleaseSQLResults )( PDATALIST *ppdlResults );
 /* Do a SQL query on the default odbc connection. The first
    record results immediately if there are any records. Returns
    the results as an array of strings. If you know the select
