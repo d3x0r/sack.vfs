@@ -54,6 +54,6 @@ function getPage( addr, port ) {
 }
 //getPage( "google.com" );
 for( let i = 0; i < 100; i++ )
-getPage( "sp.d3x0r.org" );
+getPage( "localhost" );
 		
 console.log( "completed" );
