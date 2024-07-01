@@ -47,6 +47,10 @@ struct optionStrings {
 	Eternal<String>* primaryString;
 	Eternal<String>* deviceString;
 #endif
+#if defined( __LINUX__ )
+	Eternal<String>* usePtyString;
+#endif
+
 };
 
 
@@ -122,6 +126,10 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->primaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "primary" ) );
 		check->deviceString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "device" ) );
 		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
+#endif
+#if defined( __LINUX__ )
+		check->usePtyString =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "usePty" ) );
+
 #endif
 	}
 	return check;
@@ -523,6 +531,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool noKill = false;
 			bool asAdmin = false;
 			bool noWait = true;
+			bool usePty = false;
 			bool detach = false;
 			bool noInheritStdio = false;
 
@@ -564,6 +573,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->noWaitString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					noWait = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			if( opts->Has( context, optName = strings->usePtyString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					usePty = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->detachedString->Get( isolate ) ).ToChecked() ) {
@@ -741,6 +755,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( useSignal ? LPP_OPTION_USE_SIGNAL:0 )
 				| ( detach ? LPP_OPTION_DETACH : 0 )
 				| ( asAdmin ? LPP_OPTION_ELEVATE : 0 )
+				| ( usePty? LPP_OPTION_INTERACTIVE : 0 )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
@@ -871,6 +886,7 @@ void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 void TaskObject::Print( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	if( task->ending || task->ended ||task->stopped || task->killed ) return;
 	if( task->task ) {
 		String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 		pprintf( task->task, "%s", *s );
