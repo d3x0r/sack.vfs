@@ -1626,7 +1626,7 @@ typedef struct DataBlock volatile * volatile PDATALIST;
 /* Data Blocks are like LinkBlocks, and store blocks of data in
    slab format. If the count of elements exceeds available, the
    structure is grown, to always contain a continuous array of
-   structures of Size size.
+   structures of Size size. No locking is provided.
    Remarks
    When blocks are deleted, all subsequent blocks are shifted
    down in the array. So the free blocks are always at the end. */
@@ -1993,7 +1993,7 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
 #endif
 //--------------------------------------------------------
 #ifdef __cplusplus
-/* A type of dynamic array that contains the data of the elements and not just pointers like PLIST. */
+/* A type of dynamic array that contains the data of the elements and not just pointers like PLIST. Has no locks builtin. */
 namespace data_list {
 #endif
 /* Creates a data list which hold data elements of the specified
@@ -2081,7 +2081,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE       EmptyDataList ( PDATALIST *ppdl );
       }
    }
    </code>                                   */
-#define DATA_NEXTALL( l, i, t, v )  if(((v)=(t)NULL),(l))	   for( ((i)++);	                         ((i) < (l)->Cnt)                                             ?((v)=(t)((l)->data + (((l)->Size) * (i))))	         :(((v)=(t)NULL),0); (i)++ )
+#define DATA_NEXTALL( l, i, t, v )  if(((v)=(t)NULL),(l))	   for( ((i)++);	                         ((i) < (l)->Cnt)                                             ?(((v)=(t)((l)->data + (((l)->Size) * (i)))),1)	         :(((v)=(t)NULL),0); (i)++ )
 /* <combine sack::containers::data_list::CreateDataListEx@uintptr_t nSize>
    Creates a DataList specifying just the size. Uses the current
    source and line for debugging parameter.                               */
@@ -4722,8 +4722,8 @@ typedef void (CPROC*UserLoggingCallback)( CTEXTSTR log_string );
 SYSLOG_PROC  void SYSLOG_API  SetSystemLog ( enum syslog_types type, const void *data );
 SYSLOG_PROC  void SYSLOG_API  ProtectLoggedFilenames ( LOGICAL bEnable );
 SYSLOG_PROC  void SYSLOG_API  SystemLogFL ( CTEXTSTR FILELINE_PASS );
-SYSLOG_PROC  void SYSLOG_API  SystemLogEx ( CTEXTSTR DBG_PASS );
-SYSLOG_PROC  void SYSLOG_API  SystemLog ( CTEXTSTR );
+//SYSLOG_PROC  void SYSLOG_API  SystemLogEx ( CTEXTSTR DBG_PASS );
+//SYSLOG_PROC  void SYSLOG_API  SystemLog ( CTEXTSTR );
 SYSLOG_PROC  void SYSLOG_API  BinaryToString( PVARTEXT pvt, const uint8_t* buffer, size_t size DBG_PASS );
 SYSLOG_PROC  void SYSLOG_API  LogBinaryFL ( const uint8_t* buffer, size_t size FILELINE_PASS );
 SYSLOG_PROC  void SYSLOG_API  LogBinaryEx ( const uint8_t* buffer, size_t size DBG_PASS );
@@ -4746,12 +4746,14 @@ SYSLOG_PROC  void SYSLOG_API  SetSystemLoggingLevel ( uint32_t nLevel );
    The '.' at the end of 'sample string' is a non printable
    character. characters 0-31 and 127+ are printed as '.'.       */
 #define LogBinary(buf,sz) LogBinaryFL((uint8_t*)(buf),sz DBG_SRC )
+#define SystemLogEx(buf,...) SystemLogFL(buf,##__VA_ARGS__)
 #define SystemLog(buf)    SystemLogFL(buf DBG_SRC )
 #else
 // need to include the typecast... binary logging doesn't really care what sort of pointer it gets.
 #define LogBinary(buf,sz) LogBinary((uint8_t*)(buf),sz )
 //#define LogBinaryEx(buf,sz,...) LogBinaryFL(buf,sz FILELINE_NULL)
-//#define SystemLogEx(buf,...) SystemLogFL(buf FILELINE_NULL )
+#define SystemLogEx(buf,...) SystemLogFL(buf FILELINE_NULL )
+#define SystemLog(buf)    SystemLogFL(buf FILELINE_NULL )
 #endif
 // int result is useless... but allows this to be
 // within expressions, which with this method should be easy.
@@ -4939,11 +4941,11 @@ enum SyslogTimeSpecifications {
 /* Specify how time is logged. */
 SYSLOG_PROC void SYSLOG_API SystemLogTime( uint32_t enable );
 #ifndef NO_LOGGING
-#define OutputLogString(s) SystemLog(s)
+#define OutputLogString(s) SystemLogFL(s FILELINE_SRC )
 /* Depricated. Logs a format string that takes 0 parameters.
    See Also
    <link sack::logging::lprintf, lprintf>                    */
-#define Log(s)                                   SystemLog( s )
+#define Log(s)                                   SystemLogFL( s FILELINE_SRC )
 #else
 #define OutputLogString(s)
 /* Depricated. Logs a format string that takes 0 parameters.
@@ -7978,18 +7980,52 @@ NETWORK_PROC( LOGICAL, doTCPWriteExx )( PCLIENT lpClient
                                    , int failpending
                                    DBG_PASS
                                   );
+/* \#The buffer will be sent in the order of the writes to the
+   socket, and released when empty. If the socket is immediatly
+   able to write, the buffer will be sent, and any remai
+   Parameters
+   lpClient :     network connection to write to
+   pInBuffer :    buffer to write
+   nInLen :       Length of the buffer to send
+   bLongBuffer :  if TRUE, then the buffer written is maintained
+				  exactly by the network layer. A WriteComplete
+				  callback will be invoked when the buffer has
+				  been sent so the application might delete the
+				  buffer.
+   failpending :  Uhmm... maybe if it goes to pending, fail?
+   pend_on_fail : True/false - if the write fails, should it be
+				  pending until it can be sent.
+   Remarks
+   If bLongBuffer is not set, then if the write cannot
+   immediately complete, then a new buffer is allocated
+   internally, and unsent data is buffered by the network
+   collection. This allows the user to not worry about slowdowns
+   due to blocking writes. Often writes complete immediately,
+   and are not buffered other than in the user's own buffer
+   passed to this write.                                         */
+NETWORK_PROC( LOGICAL,  doTCPWriteV2 )( PCLIENT lpClient
+                     , CPOINTER pInBuffer
+                     , size_t nInLen
+                     , int bLongBuffer
+                     , int failpending
+                     , int pend_on_fail
+                     DBG_PASS
+                     );
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
-#define doTCPWriteEx( c,b,l,f1,f2) doTCPWriteExx( (c),(b),(l),(f1),(f2) DBG_SRC )
+#define doTCPWriteExx( c,b,l,f1,f2,fop,...) doTCPWriteV2( (c),(b),(l),(f1),(f2),(fop),##__VA_ARGS__ )
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
-#define SendTCPEx( c,b,l,p) doTCPWriteExx( c,b,l,FALSE,p DBG_SRC)
+#define doTCPWriteEx( c,b,l,f1,f2) doTCPWriteV2( (c),(b),(l),(f1),(f2),TRUE DBG_SRC )
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
-#define SendTCP(c,b,l) doTCPWriteExx(c,b,l, FALSE, FALSE DBG_SRC)
+#define SendTCPEx( c,b,l,p) doTCPWriteV2( c,b,l,FALSE,p,TRUE DBG_SRC)
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
-#define SendTCPLong(c,b,l) doTCPWriteExx(c,b,l, TRUE, FALSE DBG_SRC)
+#define SendTCP(c,b,l) doTCPWriteV2(c,b,l, FALSE, FALSE,TRUE DBG_SRC)
+/* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
+   \ \                                                                                  */
+#define SendTCPLong(c,b,l) doTCPWriteV2(c,b,l, TRUE, FALSE,TRUE DBG_SRC)
 NETWORK_PROC( void, SetTCPWriteAggregation )( PCLIENT pc, int bAggregate );
 _TCP_NAMESPACE_END
 NETWORK_PROC( void, SetNetworkLong )(PCLIENT lpClient,int nLong,uintptr_t dwValue);
@@ -10311,6 +10347,9 @@ SACK_NETWORK_NAMESPACE
 #ifdef __cplusplus
 namespace ssh {
 #endif
+struct ssh_channel;
+struct ssh_listener;
+struct ssh_sftp;
 typedef void ( *ssh_handshake_cb )( uintptr_t psv, const uint8_t* fingerprint );
 // ----------------- SESSIONS ---------------------
 /*
