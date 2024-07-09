@@ -15,6 +15,16 @@ void disableTaskManager( const v8::FunctionCallbackInfo<Value>& args );
 
 #endif
 
+static void logMemory( const v8::FunctionCallbackInfo<Value>& args ) {
+	if( args.Length() > 0 )
+		SetAllocateLogging( args[0]->TOBOOL( args.GetIsolate() ) );
+}
+
+static void debugMemory( const v8::FunctionCallbackInfo<Value>& args ) {
+	if( args.Length() > 0 )
+		SetAllocateDebug( args[0]->TOBOOL( args.GetIsolate() ) );
+}
+
 static void openMemory( const v8::FunctionCallbackInfo<Value>& args ) {
   Isolate* isolate = args.GetIsolate();
   int hasWhat = args.Length() > 0;
@@ -516,6 +526,8 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "allowSpawn", allowSpawn );
   NODE_SET_METHOD( systemInterface, "disallowSpawn", disallowSpawn );
   NODE_SET_METHOD( systemInterface, "openMemory", openMemory );
+  NODE_SET_METHOD( systemInterface, "logMemory", logMemory );
+  NODE_SET_METHOD( systemInterface, "debugMemory", debugMemory );
   NODE_SET_METHOD( systemInterface, "createMemory", createMemory );
   NODE_SET_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
   NODE_SET_METHOD( systemInterface, "reboot", reboot );
