@@ -575,11 +575,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					noWait = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
+#if defined( __LINUX__ )
 			if( opts->Has( context, optName = strings->usePtyString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					usePty = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
+#endif
 			if( opts->Has( context, optName = strings->detachedString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					detach = GETV( opts, optName )->TOBOOL( isolate );
