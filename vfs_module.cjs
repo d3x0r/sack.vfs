@@ -89,7 +89,7 @@ if( !sack )
 			if( gui && basePath )
 				process.env.PATH = basePath
 					+";"+__dirname+"\\build\\RelWithDebInfo\\bin"
-					+";"+__dirname+"\\build\\RelWithDebINfo\\share\\SACK\\plugins"
+					+";"+__dirname+"\\build\\RelWithDebInfo\\share\\SACK\\plugins"
           sack = require( "./build/RelWithDebInfo/" + name );
       } catch( err ){
         errN.push(err);
