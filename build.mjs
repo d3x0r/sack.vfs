@@ -1,12 +1,17 @@
 
 import child_process from "node:child_process";
-import os from "os";
 
-const platform = os.platform;
+let config = ""
+if( process.argv[2] === "reldeb") 
+	config = "reldeb-";
+else if( process.argv[2] === "debug" )
+	config = "debug-";
+
+const platform = process.platform;
 
 switch( platform ) {
 case "win32":
-	const proc = child_process.exec( "npm run build-vfs-config-windows", {}, (error, stdout, stderr)=>{
+	const proc = child_process.execSync( "npm run build-vfs-"+config+"config-windows", {}, (error, stdout, stderr)=>{
         		if( error ) {
                         	console.log( error );
                         	process.exit( 1 );
@@ -20,7 +25,8 @@ case "win32":
         	});        
 	break;
 case "linux":
-	child_process.exec( "npm run build-vfs-config" );
+	child_process.execSync( "npm run build-vfs-"+config+"config" );
+	console.log( "configure happened?");
 	break;
 default:
 	console.error( "Platform not handled to build:", platform );
