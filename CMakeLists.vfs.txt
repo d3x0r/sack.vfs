@@ -20,6 +20,12 @@ list(GET VERSION_LIST 2 NODE_VERSION_PATCH)
 ########
 
 #message( "WHAT? ${NODE_RUNTIMEVERSION} ${NONDE_VERSION_MAJOR}" )
+
+if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
+	add_definitions( -Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion -Wno-unused-parameter )
+endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+
+
 if( MSVC )
   #add_definitions( -D_CRT_SECURE_NO_WARNINGS -wd4995 -wd4996 )
   #add_definitions( -wd4996 )
@@ -145,7 +151,7 @@ ENDFOREACH()
 
 FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NO_AUTO_VECTLIB_NAMES\n" )
 FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NODE_ADDON_BUILD\n" )
-FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define SHA2_LOCAL\n" )
+#FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define SHA2_LOCAL\n" )
 
 
 SET( EXTRA_HEADERS
@@ -166,11 +172,14 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/http.h
         ${SACK_BASE}/include/procreg.h
         ${SACK_BASE}/include/configscript.h
-	${SACK_BASE}/include/salty_generator.h
+        ${SACK_BASE}/include/salty_generator.h
         ${SACK_BASE}/include/sackcomm.h
-	${SACK_BASE}/include/translation.h
+        ${SACK_BASE}/include/translation.h
         ${SACK_BASE}/include/construct.h
         ${SACK_BASE}/include/systray.h	
+        ${SACK_BASE}/include/md5.h	
+        ${SACK_BASE}/include/sha1.h	
+        ${SACK_BASE}/include/sha2.h	
 )
 
 if( WIN32 )
@@ -401,6 +410,11 @@ endif( EXISTS ${SACK_BASE} )
 	add_subdirectory( src/sack/libressl/${LIBRESSL_VERSION} )
    include_directories( src/sack/libressl/${LIBRESSL_VERSION}/include )
    set( SSL_LIBS ssl crypto tls )
+	if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
+   	set_target_properties( ssl_obj PROPERTIES COMPILE_FLAGS "-Wno-sign-compare -Wno-unused-function")
+   	set_target_properties( tls_obj PROPERTIES COMPILE_FLAGS "-Wno-sign-compare")
+   	set_target_properties( crypto_obj PROPERTIES COMPILE_FLAGS "-Wno-sign-compare -Wno-missing-field-initializers")
+	endif( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
 
 
 
@@ -449,9 +463,9 @@ SET( C_SOURCES
 )
 
 
-    SET( ZBASEDIR src/sack/zlib-1.3 )
-    include( ${ZBASEDIR}/CMakeLists.part )
-    source_group("Source Files\\zlib-1.3 Library" FILES ${ZLIB_SOURCE})
+#    SET( ZBASEDIR src/sack/zlib-1.3 )
+#    include( ${ZBASEDIR}/CMakeLists.part )
+#    source_group("Source Files\\zlib-1.3 Library" FILES ${ZLIB_SOURCE})
 
 
    SET( LIBSSH2_SKIP_INSTALL ON )
@@ -476,8 +490,8 @@ add_library(${PROJECT} SHARED 	${CPP_SOURCES} ${ZLIB_SOURCE} ${C_SOURCES}  )
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROPERTIES 
 	COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0;SQLITE_OMIT_UTF16;SQLITE_ENABLE_COLUMN_METADATA;SQLITE_ENABLE_STAT4" )
 # reduces possible issues between release and debug runtimes.
-#set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
-#	COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
+	COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
 
 if( WIN32 )
 #  force using native CS (which are slightly slower than SACK's implementation) (test/debug option)
@@ -496,9 +510,8 @@ set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
    # so picky about not setting c++17 for C files - who cares?
 	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
-			COMPILE_FLAGS "-std=c++17" )
+			COMPILE_FLAGS "/std:c++17" )
 
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion")
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 

@@ -56,7 +56,6 @@ public:
 	class SSH2_RemoteListen* remoteListen;
 	struct html5_web_socket* wsPipe;
 	/*
-	/*
 	* eof Event handler
 	*/
 	void( *internal_eofCallback )( SSH2_Channel*, struct html5_web_socket* wsPipe );

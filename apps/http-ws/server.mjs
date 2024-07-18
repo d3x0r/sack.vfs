@@ -7,6 +7,12 @@ import {uExpress} from "./uexpress.mjs";
 import path from "path";
 const disk = sack.Volume();
 
+const myPath = import.meta.url.split(/\/|\\/g);
+const tmpPath = myPath.slice();
+tmpPath.splice( 0, 3 );
+tmpPath.splice( tmpPath.length-1, 1 );
+const parentRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-2).join( '/' );
+
 function read( name ) {
 	try {
 		const data = sack.Volume.readAsString( name );
