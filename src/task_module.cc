@@ -514,7 +514,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<String> optName;
 			struct optionStrings *strings = getStrings( isolate );
 			Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
-			String::Utf8Value *args = NULL;
+			String::Utf8Value *argString = NULL;
 			String::Utf8Value *bin = NULL;
 			String::Utf8Value *work = NULL;
 			bool end = false;
@@ -633,8 +633,8 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Value> val;
 				if( GETV( opts, optName )->IsString() ) {
 					char **args2;
-					args = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-					ParseIntoArgs( *args[0], &newTask->nArg, &newTask->argArray );
+					argString = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					ParseIntoArgs( *argString[0], &newTask->nArg, &newTask->argArray );
 
 					args2 = NewArray( char*, newTask->nArg + 1 );
 			
@@ -793,9 +793,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			} else if( newTask->task && !moveOpts.IsEmpty() )
 				doMoveWindow( isolate, context, newTask, NULL, moveOpts );
 #endif
+			if( work ) delete work;
+			if( bin ) delete bin;
+			if( argString ) delete argString;
 
 		}
-
+		
 		args.GetReturnValue().Set( _this );
 	}
 	else {
