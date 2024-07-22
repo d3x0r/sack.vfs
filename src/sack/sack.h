@@ -330,7 +330,6 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 //#  define TARGETNAME "sack_bag.dll"  //$(TargetFileName)
 //#endif
 #    define MD5_SOURCE
-#    define SHA2_SOURCE
 #    define USE_SACK_FILE_IO
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
@@ -1170,7 +1169,10 @@ typedef P_0 POINTER;
 /* This is a pointer to constant data. void const *. Compatible
    with things like char const *.                               */
 typedef const void *CPOINTER;
-SACK_NAMESPACE_END
+#ifdef __cplusplus
+ //SACK_NAMESPACE_END // namespace sack {
+}
+#endif
 //------------------------------------------------------
 // formatting macro defintions for [vsf]printf output of the above types
 #if !defined( _MSC_VER ) || ( _MSC_VER >= 1900 )
@@ -1749,7 +1751,10 @@ typedef struct DataQueue volatile* volatile PDATAQUEUE;
    maybe whether we are not complete, and are processing
    startups)                                                   */
 _CONTAINER_NAMESPACE_END
-SACK_NAMESPACE_END
+#ifdef __cplusplus
+ //SACK_NAMESPACE_END // namespace sack {
+}
+#endif
 /* This contains the methods to use the base container types
    defined in sack_types.h.                                  */
 #ifndef LINKSTUFF
@@ -4570,8 +4575,10 @@ IMPORT_METHOD
 #ifndef NO_SACK_EXIT_OVERRIDE
 #define exit(n) BAG_Exit(n)
 #endif
- // namespace sack {
-SACK_NAMESPACE_END
+#ifdef __cplusplus
+ //SACK_NAMESPACE_END // namespace sack {
+}
+#endif
 // this should become common to all libraries and programs...
 //#include <construct.h> // pronounced 'kahn-struct'
 /*
@@ -4993,8 +5000,9 @@ SYSLOG_PROC void SYSLOG_API SystemLogTime( uint32_t enable );
    See Also
    <link sack::logging::lprintf, lprintf>                    */
 #define Log10(s,p1,p2,p3,p4,p5,p6,p7,p8,p9,p10)  lprintf( s, p1, p2, p3,p4,p5,p6,p7,p8,p9,p10 )
-LOGGING_NAMESPACE_END
 #ifdef __cplusplus
+ //LOGGING_NAMESPACE_END
+} }
 using namespace sack::logging;
 #endif
 #endif
@@ -5407,8 +5415,9 @@ SYSTEM_PROC( PDATALIST, GetProcessTree )( PTASK_INFO task );
 */
 SYSTEM_PROC( int, GetTaskPTY )( PTASK_INFO task );
 #endif
-SACK_SYSTEM_NAMESPACE_END
 #ifdef __cplusplus
+ // SACK_SYSTEM_NAMESPACE_END
+} }
 using namespace sack::system;
 #endif
 #endif
@@ -8715,8 +8724,9 @@ SACK_NAMESPACE
                                                                    */
 		namespace deadstart {
 		}
-        }
-SACK_NAMESPACE_END
+	}
+ //SACK_NAMESPACE_END
+}
 #else
 #define USE_SACK_DEADSTART_NAMESPACE
 #define SACK_DEADSTART_NAMESPACE
@@ -12422,7 +12432,8 @@ IDLE_PROC( int, Idle )( void );
 IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds );
 #ifdef __cplusplus
 	_TIMER_NAMESPACE_END
-SACK_NAMESPACE_END
+ //SACK_NAMESPACE_END
+}
 using namespace sack::timers;
 #endif
 #endif
@@ -13525,8 +13536,9 @@ SACK_VFS_PROC LOGICAL sack_vfs_os_analyze( struct sack_vfs_os_volume* volume );
 #define sack_vfs_find_get_wdate  sack_vfs_os_find_get_wdate
 #endif
 //DOM-IGNORE-END
-SACK_VFS_NAMESPACE_END
 #if defined( __cplusplus )
+ //SACK_VFS_NAMESPACE_END
+} }
 using namespace sack::SACK_VFS;
 using namespace sack::SACK_VFS::fs;
 using namespace sack::SACK_VFS::objStore;
@@ -14151,7 +14163,8 @@ JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_array_value )(s
 	, void( *callback )(uintptr_t psv, struct jsox_value_container *val), uintptr_t psv
 	);
 #ifdef __cplusplus
-} } SACK_NAMESPACE_END
+//SACK_NAMESPACE_END
+} } }
 using namespace sack::network::jsox;
 #endif
 #endif
@@ -14361,8 +14374,9 @@ namespace sack {
 #define BASE_COLOR_PURPLE        Color( 0x7A, 0x11, 0x7C )
 #ifdef __cplusplus
  //	 namespace image {
+	}
+ //SACK_NAMESPACE_END
 }
-SACK_NAMESPACE_END
 using namespace sack::image;
 #endif
 #endif
@@ -14535,8 +14549,9 @@ FRACTION_PROC  uint32_t FRACTION_API  ScaleValue ( PFRACTION f, int32_t value );
    Returns
    the value of ( value * 1/ f )               */
 FRACTION_PROC  uint32_t FRACTION_API  InverseScaleValue ( PFRACTION f, int32_t value );
-	SACK_MATH_FRACTION_NAMESPACE_END
 #ifdef __cplusplus
+ //	SACK_MATH_FRACTION_NAMESPACE_END
+} } }
 using namespace sack::math::fraction;
 #endif
 #endif
@@ -15463,8 +15478,9 @@ PREFIX_PACKED struct MsgSrv_ReplyServiceLoad_msg
 #ifdef _MSC_VER
 #pragma pack (pop)
 #endif
-MSGPROTOCOL_NAMESPACE_END
 #ifdef __cplusplus
+ //MSGPROTOCOL_NAMESPACE_END
+} } }
 using namespace sack::msg::protocol;
 #endif
 #endif
