@@ -37,7 +37,7 @@ static void newText( const FunctionCallbackInfo<Value>& args ) {
 		for( n = 0; n < args.Length(); n++ )
 			passArgs[n] = args[n];
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), n, passArgs ).ToLocalChecked() );
-		delete passArgs;
+		delete[] passArgs;
 	}
 
 }

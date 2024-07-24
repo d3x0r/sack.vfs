@@ -4,6 +4,7 @@
 #include "ssh2_module.h"
 #include "websocket_module.h"
 
+//#define DEBUG_AGGREGATE_WRITES
 //#define DEBUG_EVENTS
 //#define EVENT_DEBUG_STDOUT
 #define USE_NETWORK_AGGREGATE 1
@@ -2116,6 +2117,9 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 		}
 	}
+	else {
+		lprintf("Failed to find HTTP state to write to?? %p", obj->pc);
+	}
 }
 
 void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -2239,19 +2243,34 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 		} else {
 			if( obj->pc ) {
+#ifdef DEBUG_AGGREGATE_WRITES
+				lprintf( "Sending header buffer: %p  %d", obj->pc, GetTextSize(buffer) );
+#endif
 				SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
 				if( content && contentLen ) {
+#ifdef DEBUG_AGGREGATE_WRITES
+					lprintf( "And there's some content to send: %p %d", obj->pc, contentLen );
+#endif
 					// allow network layer to keep this content buffer
 					SendTCPLong( obj->pc, content, contentLen );
 				}
 			} else {
+#ifdef DEBUG_AGGREGATE_WRITES
+				lprintf( "Send to pipe somehow??" );
+#endif
 				WebSocketPipeSend( obj->wss->wsPipe, GetText( buffer ), GetTextSize( buffer ) );
 				if( content && contentLen )
 					WebSocketPipeSend( obj->wss->wsPipe, content, contentLen );
 			}
+#ifdef DEBUG_AGGREGATE_WRITES
+			lprintf( "Done with end function %p", obj->pc );
+#endif
 		}
 #endif
-	} else lprintf( "Decided not to send?" );
+	}
+#ifdef DEBUG_AGGREGATE_WRITES
+	else lprintf( "Decided not to send?" );
+#endif
 	if( obj->pc )
 		ClearNetWork( obj->pc, (uintptr_t)obj->wss );
 	{

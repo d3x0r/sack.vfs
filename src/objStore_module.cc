@@ -313,7 +313,7 @@ static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-
+/*
 static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 1 ) {
@@ -333,7 +333,7 @@ static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
 	}
 }
-
+*/
 
 static void finishPostClose( uv_handle_t *async ) {
 	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
@@ -460,7 +460,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "delete", ObjectStorageObject::removeObject );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "flush", ObjectStorageObject::flush );
 
-	Local<Function> VolFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
+	//Local<Function> VolFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
 	class constructorSet* c = getConstructors( isolate );
 	Local<Function> objectStoreFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
@@ -596,7 +596,7 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 
 void ObjectStorageObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 	//Local<Function> cb;
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	// And unload?
@@ -607,7 +607,7 @@ void ObjectStorageObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void ObjectStorageObject::removeObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 	//Local<Function> cb;
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	if( args[0]->IsString() ) {

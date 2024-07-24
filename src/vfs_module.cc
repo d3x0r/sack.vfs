@@ -764,7 +764,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = json6_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = json6_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
 						struct reviver_data r;
@@ -807,7 +807,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = json6_parse_add_data( parser, buf, newRead ));
 						result > 0; 
 						result = json6_parse_add_data(parser, NULL, 0) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
 						if( data->Cnt ) {
@@ -865,7 +865,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = jsox_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = jsox_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = jsox_parse_get_data( parser );
 						struct reviver_data r;
@@ -911,7 +911,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = jsox_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = jsox_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = jsox_parse_get_data( parser );
 						if( data->Cnt ) {
@@ -1629,13 +1629,14 @@ static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args 
 
 void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 {
+#if NOT_INCOMPLETE
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
 	Local<Value> argv[2] = {
 		v8::String::NewFromUtf8Literal( isolate, "ping" ), // event name
 		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};
-
+#endif
 	//node::MakeCallback(isolate, args.This(), "emit", 2, argv);
 }
 
@@ -1680,6 +1681,7 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		int whence;
 		if( args.Length() == 1 ) {
 			length = args[1]->Int32Value(isolate->GetCurrentContext()).FromMaybe(0);
+			position = 0;
 			whence = SEEK_CUR;
 		}
 		else if( args.Length() == 2 ) {
@@ -1697,6 +1699,15 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 			file->buf = NewArray( char, length );
 			file->size = length;
 		}
+		if (file->vol->volNative) {
+			sack_vfs_seek( file->file, position, whence );
+			sack_vfs_read( file->file, file->buf, file->size );
+		}
+		else {
+			sack_fseek( file->cfile, position, whence );
+			file->size = sack_fread(file->buf, file->size, 1, file->cfile);
+		}
+
 	}
 }
 
@@ -1824,7 +1835,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 					sack_vfs_seek( file->file, offset, SEEK_SET );
 				else
 					sack_vfs_seek( file->file, 0, SEEK_END );
-				sack_vfs_write( file->file, *data, data.length() );
+				sack_vfs_write( file->file, *data, datalen );
 				sack_vfs_write( file->file, "\n", 1 );
 			}
 			else {
@@ -1905,7 +1916,7 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = Isolate::GetCurrent();
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( file->vol->volNative )
 		args.GetReturnValue().Set( Number::New( isolate, (double)sack_vfs_tell( file->file ) ) );

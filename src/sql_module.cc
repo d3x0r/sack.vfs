@@ -298,7 +298,7 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				dsn = *arg;
 				obj = new SqlObject( dsn, isolate, args.This(), callback );
 			} else if( args[0]->IsObject() ){
-				Local<Object> opts = Local<Object>::Cast( args[0] );
+				//Local<Object> opts = Local<Object>::Cast( args[0] );
 				lprintf( "option object method for opening a database connection is not complete!");
 				isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText( "option object method for opening a database connection is not complete!" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -339,13 +339,13 @@ void SqlObject::doWrap( SqlObject *sql, Local<Object> o ) {
 int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 {
 	CTEXTSTR pCurrentCharacter;
-	int decimal_count, s, begin = TRUE, digits;
+	int decimal_count, begin = TRUE, digits;
 	// remember where we started...
 	// if the first segment is indirect, collect it and only it
 	// as the number... making indirects within a number what then?
 
 	decimal_count = 0;
-	s = 0;
+	//s = 0;
 	digits = 0;
 	pCurrentCharacter = text;
 	while( pCurrentCharacter[0] )
@@ -362,7 +362,7 @@ int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 			}
 			else if( ((*pCurrentCharacter) == '-') && begin)
 			{
-				s++;
+				//s++;
 			}
 			else if( ((*pCurrentCharacter) < '0') || ((*pCurrentCharacter) > '9') )
 			{
@@ -421,7 +421,7 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-	Local<Context> context = args.GetIsolate()->GetCurrentContext();
+	//Local<Context> context = args.GetIsolate()->GetCurrentContext();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	SetSQLAutoTransact( sql->state->odbc, args[0]->TOBOOL(args.GetIsolate()) );
@@ -721,7 +721,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 				DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
 					if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
 
-					Local<Object> container = colMap[idx].t->container;
+					//Local<Object> container = colMap[idx].t->container;
 					if (fields[colMap[idx].col].used > 1) {
 						// add an array on the name for each result to be stored
 						if (fields[colMap[idx].col].first == idx) {
@@ -867,7 +867,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 
 static void DoQuery( struct query_thread_params *params ) {
 	Isolate* isolate = params->isolate;
-	Local<Context> context = params->context;
+	//Local<Context> context = params->context;
 
 	SqlObject* sql = params->sql;
 	PTEXT statement = params->statement;
