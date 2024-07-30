@@ -502,7 +502,7 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg, String::Utf8Value *name, uint32_t p ) {
+static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg, String::Utf8Value *name, uint32_t p, PVARTEXT pvtErrors ) {
 	struct jsox_value_container val;
 	if( name ) {
 		val.name = DupCStrLen( *name[0], val.nameLen = name[0].length() );
@@ -576,11 +576,11 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	}
 	else {
 		String::Utf8Value text( USE_ISOLATE( isolate ) arg->ToString(isolate->GetCurrentContext()).ToLocalChecked() );
-		val.value_type = JSOX_VALUE_STRING;
-		val.string = DupCStrLen( *text, val.stringLen = text.length() );
+		//val.value_type = JSOX_VALUE_STRING;
+		//val.string = DupCStrLen( *text, val.stringLen = text.length() );
 		//AddDataItem( pdlParams, &val );
-	    
-		lprintf( "Unsupported TYPE parameter %d %s", p+1, *text );
+		vtprintf( pvtErrors, "Unsupported TYPE parameter %d %s\n", p+1, *text ); 
+		//lprintf( "Unsupported TYPE parameter %d %s", p+1, *text );
 		return FALSE;
 	}
 	return TRUE;
@@ -913,6 +913,7 @@ static uintptr_t queryThread( PTHREAD thread ) {
 static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject *sql, LOGICAL promised ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
+	PVARTEXT pvtErrors = VarTextCreate();
 	if (args.Length() == 0) {
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "Required parameter, SQL query, is missing." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -974,8 +975,8 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 					Local<Value> valName = GETN( paramNames, p );
 					Local<Value> value = GETV( params, valName );
 					String::Utf8Value name( USE_ISOLATE( isolate ) valName->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-					if (!PushValue( isolate, &pdlParams, value, &name, p )) {
-						lprintf( "bad value in SQL:%s", *sqlStmt );
+					if (!PushValue( isolate, &pdlParams, value, &name, p, pvtErrors )) {
+						vtprintf( pvtErrors, "bad value in SQL:%s\n", *sqlStmt );
 					}
 				}
 			}
@@ -1014,8 +1015,8 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 					}
 				}
 				else {
-					if (!PushValue( isolate, &pdlParams, args[arg], NULL, arg ))
-						lprintf( "bad value in format parameter string:%s", *sqlStmt );
+					if (!PushValue( isolate, &pdlParams, args[arg], NULL, arg, pvtErrors ))
+						vtprintf( pvtErrors, "bad value in format parameter string:%s\n", *sqlStmt );
 					VarTextAddCharacter( pvtStmt, '?' );
 				}
 			}
@@ -1026,11 +1027,22 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
 			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
 			for (; arg < args.Length(); arg++) {
-				if (!PushValue( isolate, &pdlParams, args[arg], NULL, 0 ))
-					lprintf( "Bad value in sql statement:%s", *sqlStmt );
+				if (!PushValue( isolate, &pdlParams, args[arg], NULL, arg-1, pvtErrors )) {
+					vtprintf( pvtErrors, "Bad value in sql statement:%s\n", *sqlStmt );
+				}
 			}
 		}
 	}
+	{
+		PTEXT error = VarTextPeek( pvtErrors );
+		if( GetTextSize( error ) ) {
+			LineRelease( statement );
+			statement = NULL;
+			isolate->ThrowException( Exception::Error(
+				String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		}
+	}
+	VarTextDestroy( &pvtErrors );
 	if (statement) {
 		struct query_thread_params *params = new query_thread_params();
 		params->isolate = isolate;
