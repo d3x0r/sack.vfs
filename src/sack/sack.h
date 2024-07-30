@@ -4119,7 +4119,15 @@ TYPELIB_PROC TEXTSTR TYPELIB_CALLTYPE ConvertTextURI( CTEXTSTR text, INDEX lengt
    \result == https://www.google.com/#hl=en&amp;sugexp=eqn&amp;cp=11&amp;gs_id=1a&amp;xhr=t&amp;q=;+\\+++:+
    </code>                                                                                                                        */
 TYPELIB_PROC TEXTSTR TYPELIB_CALLTYPE ConvertURIText( CTEXTSTR text, INDEX length );
+/* Parses a string that contains a comma separated list of
+   strings into an array of strings. Has no quoting support, and
+   simply parses on any comma in a string.
+   Parameters
+   \ \
+                                                                 */
 TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseStringVector( CTEXTSTR data, CTEXTSTR **pData, int *nData );
+/* Parses a string with numbers separated by commas into an
+   array of ints.                                           */
 TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseIntVector( CTEXTSTR data, int **pData, int *nData );
 #ifdef __cplusplus
  //namespace text {
@@ -4299,9 +4307,12 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  RemoveBinaryNode( PTREEROOT root, POINTER u
    </code>                                          */
 TYPELIB_PROC  CPOINTER TYPELIB_CALLTYPE  FindInBinaryTree( PTREEROOT root, uintptr_t key );
 // result of fuzzy routine is 0 = match.  100 = inexact match
+// 101 = no longer matching; result with last 100 match.
 // 1 = no match, actual may be larger
 // -1 = no match, actual may be lesser
 // 100 = inexact match- checks nodes near for better match.
+//
+// Basically scans left and right from 100 match to find best match.
 TYPELIB_PROC  CPOINTER TYPELIB_CALLTYPE  LocateInBinaryTree( PTREEROOT root, uintptr_t key
 														, int (CPROC*fuzzy)( uintptr_t psv, uintptr_t node_key ) );
 /* During FindInBinaryTree and LocateInBinaryTree, the last
@@ -6153,7 +6164,12 @@ MEM_PROC  void MEM_API  GetMemStats ( uint32_t *pFree, uint32_t *pUsed, uint32_t
    bTrueFalse :  if TRUE, allocation logging is turned on. Enables
                  logging when each block is Allocated, Released,
                  or Held.                                          */
-MEM_PROC  int MEM_API  SetAllocateLogging ( LOGICAL bTrueFalse );
+MEM_PROC  int MEM_API  SetAllocateLoggingEx ( LOGICAL bTrueFalse DBG_PASS );
+#define SetAllocateLogging(tf) SetAllocateLoggingEx( tf DBG_SRC )
+MEM_PROC  int MEM_API  ClearAllocateLoggingEx ( LOGICAL bTrueFalse DBG_PASS );
+#define ClearAllocateLogging(tf) ClearAllocateLoggingEx( tf DBG_SRC )
+MEM_PROC  int MEM_API  ResetAllocateLoggingEx ( LOGICAL bTrueFalse DBG_PASS );
+#define ResetAllocateLogging(tf) ResetAllocateLoggingEx( tf DBG_SRC )
 /* disables storing file/line, also disables auto GetMemStats
    checking
    Parameters
@@ -8466,8 +8482,9 @@ public:
 }NETWORK;
 #  endif
 #endif
-SACK_NETWORK_NAMESPACE_END
 #ifdef __cplusplus
+ //SACK_NETWORK_NAMESPACE_END
+} }
 using namespace sack::network;
 using namespace sack::network::tcp;
 using namespace sack::network::udp;
@@ -8677,7 +8694,7 @@ using namespace sack::network::udp;
 #  define USE_SACK_DEADSTART_NAMESPACE using namespace sack::app::deadstart;
 #  define SACK_DEADSTART_NAMESPACE  SACK_NAMESPACE namespace app { namespace deadstart {
 #  define SACK_DEADSTART_NAMESPACE_END  } } SACK_NAMESPACE_END
-SACK_NAMESPACE
+namespace sack{
 	namespace app{
 /* Application namespace. */
 /* These are compiler-platform abstractions to provide a method
@@ -8736,7 +8753,12 @@ SACK_NAMESPACE
 #ifdef TYPELIB_SOURCE
 #define DEADSTART_SOURCE
 #endif
-SACK_DEADSTART_NAMESPACE
+#ifdef __cplusplus
+namespace sack{
+	namespace app{
+		namespace deadstart {
+//SACK_DEADSTART_NAMESPACE
+#endif
 /* A macro to specify the call type of schedule routines. This
    can be changed in most projects without affect, it comes into
    play if plugins built by different compilers are used,
@@ -9245,7 +9267,10 @@ typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
 #else
 #define ATEXIT_PRIORITY_ROOT 101
 #endif
-SACK_DEADSTART_NAMESPACE_END
+#ifdef __cplusplus
+ //SACK_DEADSTART_NAMESPACE_END
+} } }
+#endif
 USE_SACK_DEADSTART_NAMESPACE
 #endif
 #ifdef PROCREG_SOURCE
@@ -9865,8 +9890,10 @@ PROCREG_PROC( void, RegisterAndCreateGlobalWithInit )( POINTER *ppGlobal, uintpt
  * Add a transaltion tree index at the same time.
  */
 PROCREG_PROC( CTEXTSTR, SaveNameConcatN )( CTEXTSTR name1, ... );
-// no space stripping, saves literal text
+// no space stripping, saves literal text (case insensitive indexing; '/' and '\' are the same)
 PROCREG_PROC( CTEXTSTR, SaveText )( CTEXTSTR text );
+// no space stripping, saves literal text (case sensitive indexing; '/' and '\' are the same)
+PROCREG_PROC( CTEXTSTR, SaveTextCS )( CTEXTSTR text );
 PROCREG_NAMESPACE_END
 #ifdef __cplusplus
 	using namespace sack::app::registry;
@@ -13011,8 +13038,9 @@ FILEMONITOR_PROC( void, SetFMonitorForceScanTime )( PMONITOR monitor, uint32_t d
 // returns 0 if no changed were pending, else returns number
 // of changes dispatched (not nessecarily handled)
 FILEMONITOR_PROC( int, DispatchChanges )( PMONITOR monitor );
-FILEMON_NAMESPACE_END
 #ifdef __cplusplus
+//FILEMON_NAMESPACE_END
+} } }
 using namespace sack::filesys::monitor;
 #endif
 #endif
