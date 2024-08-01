@@ -634,7 +634,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 
 										} else {
 											lprintf( "Referenced array member is not an object!. " );
-											DebugBreak();
 										}
 									} 
 									//else
