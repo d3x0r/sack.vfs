@@ -179,7 +179,7 @@ function initPrototypes()
 		if( s.includes( "\u{FEFF}" ) ) return (useQuote + escape(s) +useQuote);
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 			|| /([0-9-])/.test(s[0])
-			|| /((\n|\r|\t)|[ \[\]{}()<>!+*/.:,-])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
+			|| /((\n|\r|\t)|[ #\[\]{}()<>!+*/.:,-])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
 	}
 
 	pushToProto( ArrayBuffer.prototype, { external:true, name:"ab"
@@ -458,7 +458,7 @@ sack.JSOX.stringifier = function() {
 		if( s.includes( "\u{FEFF}" ) ) return (useQuote + escape(s) +useQuote);
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 			|| /([0-9-])/.test(s[0])
-			|| /((\n|\r|\t)|[ \[\]{}()<>!+*/.:,-])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
+			|| /((\n|\r|\t)|[ #\[\]{}()<>!+*/.:,-])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
 	}
 
 
