@@ -932,7 +932,6 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 	if (args.Length() > 1) {
 		int arg = 1;
 		LOGICAL isFormatString;
-		PVARTEXT pvtStmt = VarTextCreate();
 		struct jsox_value_container val;
 		memset( &val, 0, sizeof( val ) );
 		int escape = 0;
@@ -988,9 +987,10 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 			isFormatString = TRUE;
 		}
 		else if (StrChr( *sqlStmt, '?' )) {
-			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
-			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
-			isFormatString = TRUE;
+			// statement should already be arg[0] cloned.
+			//String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+			//statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
+			//isFormatString = TRUE;
 		}
 		else {
 			arg = 0;
@@ -1000,6 +1000,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		if (!pdlParams)
 			pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
 		if (!isFormatString) {
+			PVARTEXT pvtStmt = VarTextCreate();
 			for (; arg < args.Length(); arg++) {
 				if (args[arg]->IsString()) {
 					String::Utf8Value text( USE_ISOLATE( isolate ) args[arg]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -1020,12 +1021,11 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 					VarTextAddCharacter( pvtStmt, '?' );
 				}
 			}
+			if( statement ) LineRelease( statement );
 			statement = VarTextGet( pvtStmt );
 			VarTextDestroy( &pvtStmt );
 		}
 		else {
-			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
-			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
 			for (; arg < args.Length(); arg++) {
 				if (!PushValue( isolate, &pdlParams, args[arg], NULL, arg-1, pvtErrors )) {
 					vtprintf( pvtErrors, "Bad value in sql statement:%s\n", *sqlStmt );
@@ -1087,7 +1087,6 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 				// buildQueryResult releases resources that are used...
 				if( params->error ) ReleaseEx( params->error DBG_SRC );
 				else args.GetReturnValue().Set( Array::New( isolate ) );
-				LineRelease( params->statement );
 				if( params->pdlParams )
 					DeleteDataList( &params->pdlParams );
 			}
@@ -1150,7 +1149,8 @@ static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
 		// only do this if we started an async callback on it.
 		struct userMessage msg;
 		msg.mode = UserMessageModes::OnDeallocate;
-		Hold( sql->state );
+		// the release should be done when this posted message gets handled...
+		//Hold( sql->state );
 
 		msg.onwhat = NULL;
 		msg.done = 0;
@@ -1225,7 +1225,7 @@ SqlObject::~SqlObject() {
 		uv_async_send( &state->async );
 	}
 	CloseDatabase( state->odbc );
-	ReleaseEx( state DBG_SRC );
+	//ReleaseEx( state DBG_SRC );
 }
 
 //-----------------------------------------------------------
@@ -1766,6 +1766,8 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 				// probably results in a Resolve();
 				buildQueryResult( msg->params ); // this is in charge of releasing any data... 
 			}
+			LineRelease( msg->params->statement );
+
 			// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
 			//lprintf( "Releasing message..." );
 			Release( msg );

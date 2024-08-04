@@ -52,6 +52,8 @@ processor.add( "%m Failed password for %w from %w", failed_pass );
 processor.add( "%m Invalid user %w from %w", failed_pass );
 processor.add( "%m Invalid user %w from %w port %i", failed_pass );
 
+//sshd[510]: Timeout before authentication for connection from 10.0.0.34 to 34.128.67.53, pid = 1866775
+//processor.add( "%m  Timeout before authentication for connection from %w to %w, pid = %i", failed_timeout1 )
 //Sep 25 20:14:29 tower sshd[2659362]: error: kex_exchange_identification: Connection closed by remote host
 //Sep 25 20:14:29 tower sshd[2659362]: Connection closed by 156.59.134.94 port 53812
 processor.add( "%m sshd[%i]: error: kex_exchange_identification: Connection closed by remote host", failed_key );
@@ -132,9 +134,9 @@ function AddBan( IP, line )
 	if( lbs.db ) {
 		const result = lbs.db.do( "select 1 from banlist where IP=?", IP )
 		if( result && result[0] ) {
-			console.log( "already banned? %s\n", IP );
+			console.log( "(will ban anyway?) already banned? %s\n", IP );
 			lbs.db.do( "update banlist set last_hit=now() where IP=?", IP );
-			return; // no need to include this one.
+			//return; // no need to include this one.
 		} else {
 			console.log( "insert IP:", IP );
 			lbs.db.do( "insert into banlist (IP) values(?)", IP );
