@@ -990,7 +990,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 			// statement should already be arg[0] cloned.
 			//String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
 			//statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
-			//isFormatString = TRUE;
+			isFormatString = TRUE;
 		}
 		else {
 			arg = 0;
