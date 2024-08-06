@@ -27,8 +27,8 @@ uintptr_t WSReverseCallback( uintptr_t psv, struct ssh_listener* listener, int b
 class wssObject : public node::ObjectWrap {
 	LOGICAL closed;
 public:
-	bool resolveAddr;
-	bool resolveMac;
+	bool resolveAddr = false;
+	bool resolveMac = false;
 	
 	PCLIENT pc;  // pc and wsPipe should be a union. usage is mutuaully exclusive
 	/* but then I would need a flag anyway to indiciate which.

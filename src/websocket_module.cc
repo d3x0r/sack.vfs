@@ -739,8 +739,17 @@ static Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_
 		char tmp[NI_MAXHOST+1];
 		#define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
 		if( remoteAddress ) {
-			getnameinfo( remoteAddress, SOCKADDR_LENGTH( remoteAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
-			SETV( result, strings->remoteNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+			int addrres = getnameinfo( remoteAddress, SOCKADDR_LENGTH( remoteAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
+			if( !addrres ) {
+				lprintf( "Name info for address: %s %d", tmp, addrres );
+				SETV( result, strings->remoteNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+			} else {
+				uint32_t dwError = WSAGetLastError();
+				if( addrres == EAI_NONAME ) {
+					SETV( result, strings->remoteNameString->Get(isolate), remote );
+				}else
+					lprintf( "name info address error: %d", addrres );
+			}
 		}
 		if( localAddress ) {
 			getnameinfo( localAddress, SOCKADDR_LENGTH( localAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD );
