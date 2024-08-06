@@ -463,9 +463,9 @@ class wscObject : public node::ObjectWrap {
 
 public:
 	PCLIENT pc;
-	bool resolveAddr;
-	bool resolveMac;
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	bool resolveAddr = false;
+	bool resolveMac = false;
+	uv_async_t async = {}; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
 	//wscEvent *eventMessage;
@@ -516,14 +516,14 @@ public:
 // web sock server instance Object  (a connection from a remote)
 class wssiObject : public node::ObjectWrap {
 public:
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	uv_async_t async = {}; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
 	PCLIENT pc;
 	struct html5_web_socket* wsPipe;
 
-	bool resolveAddr;
-	bool resolveMac;
+	bool resolveAddr = false;
+	bool resolveMac = false;
 	LOGICAL closed;
 	const char *protocolResponse;
 	enum wsReadyStates readyState;
@@ -1271,10 +1271,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 							}
 						}
 					}
-					uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
 				}
 				else
 					eventMessage->data.request.accepted = 1;
+				uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
 			} else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
 				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc, myself->wsPipe, myself, NULL, NULL );
 				if( !myself->errorCloseCallback.IsEmpty() ) {
@@ -3135,13 +3135,46 @@ void wssiObject::aggregate( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void wssiObject::close( const FunctionCallbackInfo<Value>& args ) {
-	//Isolate* isolate = args.GetIsolate();
+	Isolate* isolate = args.GetIsolate();
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
-	if( obj->pc && !obj->closed )
-		if( obj->pc )
-			WebSocketClose( obj->pc, 1000, NULL );
-		else if( obj->wsPipe )
-			WebSocketPipeClose( obj->wsPipe, 1000, NULL );
+	if( args.Length() == 0 ) {
+		if( obj->pc && !obj->closed )
+			if( obj->pc )
+				WebSocketClose( obj->pc, 1000, NULL );
+			else if( obj->wsPipe )
+				WebSocketPipeClose( obj->wsPipe, 1000, NULL );
+	}
+	if( args[0]->IsNumber() ) {
+		int code = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+		{
+			if( args.Length() > 1 ) {
+				String::Utf8Value reason( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+				if( reason.length() > 123 ) {
+					isolate->ThrowException( Exception::Error(
+						String::NewFromUtf8( isolate, TranslateText( "SyntaxError (text reason longer than 123)" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					return;
+				}
+				if( obj->pc ) 
+					WebSocketClose( obj->pc, code, *reason);
+				else if( obj->wsPipe )
+					WebSocketPipeClose( obj->wsPipe, code, *reason );
+			
+			}
+			else {
+				if( obj->pc ) 
+					WebSocketClose( obj->pc, code, NULL );
+				else if( obj->wsPipe )
+					WebSocketPipeClose( obj->wsPipe, code, NULL );
+			}
+		}
+	}
+	else {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "InvalidAccessError Code is not a number." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+
+
 }
 
 void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
