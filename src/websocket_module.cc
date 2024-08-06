@@ -208,6 +208,7 @@ struct wssEvent {
 		struct pendingWrite* write;
 		struct {
 			int accepted;
+			int rejected;
 			const char *protocol;
 			const char *resource;
 		} request;
@@ -1189,10 +1190,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				// events are setup in the ssh_module when the channel is accepted
 				//  
 				wssiInternal->server = myself;
+				uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
+				
 				AddLink( &myself->opening, wssiInternal );
 				eventMessage->result = wssiInternal;
-
-
 
 				SETV( wssi, strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc, wssiInternal->wsPipe, NULL, NULL, wssiInternal ) );
 				SETV( wssi, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
@@ -1272,9 +1273,9 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 						}
 					}
 				}
-				else
-					eventMessage->data.request.accepted = 1;
-				uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
+				else {
+					WebSocketAccept( wssiInternal->pc, (char*)eventMessage->data.request.protocol, TRUE );
+				}
 			} else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
 				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc, myself->wsPipe, myself, NULL, NULL );
 				if( !myself->errorCloseCallback.IsEmpty() ) {
@@ -2020,6 +2021,52 @@ static void webSockServerEvent( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOIN
 	return webSockServerEvent_( pc, (wssiObjectReference*)psv, binary, buffer, msglen );
 }
 
+static void webSockServerAcceptAsync( PCLIENT pc, uintptr_t psv, const char* protocols, const char* resource )
+{
+	wssObject* wss = (wssObject*)psv;
+	const struct html5_web_socket* ws = ( !wss->pc ) ? (struct html5_web_socket*)pc : NULL;
+	//channel->
+	struct wssEvent* pevt = GetWssEvent();
+	//struct wssEvent evt;
+	( *pevt ).data.request.protocol = protocols;
+	( *pevt ).data.request.resource = resource;
+	if( !pc && !ws ) lprintf( "FATALITY - ACCEPT EVENT RECEVIED ON A NON SOCKET!?" );
+
+	( *pevt ).pc = pc;
+	( *pevt ).data.request.accepted = 0;
+	( *pevt ).data.request.rejected = 0;
+	//lprintf( "Websocket accepted... (blocks until handled.)" );
+	( *pevt ).eventType = WS_EVENT_ACCEPT;
+	( *pevt ).done = FALSE;
+	( *pevt ).waiter = MakeThread();
+	( *pevt ).channel = NULL;
+	( *pevt )._this = wss;
+	//HoldWssEvent( pevt );
+
+	EnqueLink( &wss->eventQueue, pevt );
+	if( ( *pevt ).waiter == l.jsThread ) {
+		wssAsyncMsg( &wss->async );
+	} else {
+#ifdef DEBUG_EVENTS
+		lprintf( "socket server accept %p", &wss->async );
+#endif		
+		uv_async_send( &wss->async );
+	}
+
+	//while( !( *pevt ).done )
+	//	Wait();
+	//if( ( *pevt ).data.request.protocol != protocols )
+	//	( *pevt ).result->protocolResponse = ( *pevt ).data.request.protocol;
+	//( *protocolReply ) = (char*)( *pevt ).data.request.protocol;
+	{
+		//LOGICAL result = (LOGICAL)( *pevt ).data.request.accepted;
+		//DropWssEvent( pevt );
+		return;// result;
+	}
+
+}
+
+
 
 static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* protocols, const char* resource, char** protocolReply ) {
 
@@ -2040,7 +2087,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* proto
 	( *pevt ).waiter = MakeThread();
 	( *pevt ).channel = NULL;
 	( *pevt )._this = wss;
-	HoldWssEvent( pevt );
+	//HoldWssEvent( pevt );
 
 	EnqueLink( &wss->eventQueue, pevt );
 	if( ( *pevt ).waiter == l.jsThread ) {
@@ -2517,10 +2564,12 @@ wssObject::wssObject( struct wssOptions *opts ) {
 			, webSockServerEvent // this gets psvSender
 			, webSockServerClosed // this gets psv returned from open
 			, webSockServerError // this gets psv returned from open
-			, webSockServerAccept // this gets psv returned from open
+			, NULL //webSockServerAccept // this gets psv returned from open
 			, webSockHttpRequest  // this gets this as psv
 			, webSockHttpClose
 			, NULL, (uintptr_t)this );
+
+		SetWebSocketAcceptAsyncCallback( pc, webSockServerAcceptAsync );
 		
 		pc = NULL;
 		eventQueue = CreateLinkQueue();
@@ -2569,7 +2618,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 				);
 			}
 		}
-		SetWebSocketAcceptCallback( pc, webSockServerAccept );
+		SetWebSocketAcceptAsyncCallback( pc, webSockServerAcceptAsync );
 		readyState = LISTENING;
 		SetNetworkListenerReady( pc );
 	} else {
@@ -2968,6 +3017,7 @@ void wssObject::accept( const FunctionCallbackInfo<Value>& args ) {
 		obj->eventMessage->data.request.protocol = StrDup( *protocol );
 	}
 	obj->eventMessage->data.request.accepted = 1;
+	WebSocketAccept( obj->eventMessage->pc, (char*)obj->eventMessage->data.request.protocol, 1 );
 }
 
 void wssObject::reject( const FunctionCallbackInfo<Value>& args ) {
@@ -2977,7 +3027,8 @@ void wssObject::reject( const FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Reject cannot be used outside of connection callback." ) ) );
 		return;
 	}
-	obj->eventMessage->data.request.accepted = 0;
+	obj->eventMessage->data.request.rejected = 1;
+	WebSocketAccept( obj->eventMessage->pc, NULL, 0 );
 }
 
 void wssObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
@@ -3469,13 +3520,7 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		String::Utf8Value *protocol = NULL;
 		Local<Object> opts;
 		opts.Clear();
-		wscOpts.ssl = FALSE;
-		wscOpts.key = NULL;
-		wscOpts.key_len = 0;
-		wscOpts.pass = NULL;
-		wscOpts.pass_len = 0;
-		wscOpts.root_cert = NULL;
-		wscOpts.protocol = NULL;
+		MemSet( &wscOpts, 0, sizeof( wscOpts ) );
 
 		if( args[1]->IsString() ) {
 			checkArg2 = true;
