@@ -26,9 +26,8 @@ function connect( id ) {
 	}
 	function messaged( msg ) {
 		const arr = msg.split(',').map( Number );
-		if( nbuffer < 4 )
-			ws.send( '' + ( nbuffer+1 )+','+id );
 		if( arr.length != 40000 ) console.log( "Fatal - buffer is wrong length:", arr.length );
+		if( arr[0] === -1 ) nbuffer = -1;
 		let errors= 0;
 		for( let n = 0; errors < 17 && n < 40000; n++ ) {
 			if( arr[n] != nbuffer )  {
@@ -38,9 +37,14 @@ function connect( id ) {
 			}
 		}
 
-		nbuffer++;
-		info.nbuffer = nbuffer;
-		do_log && console.log( "messaged.", id, msg.length );
+		if( arr[0] === -1 ) nbuffer = 0;
+		else {
+			if( nbuffer < 4 )
+				ws.send( '' + ( nbuffer+1 )+','+id );
+			nbuffer++;
+			info.nbuffer = nbuffer;
+			do_log && console.log( "messaged.", id, msg.length );
+		}
 	}
 	function closed(code,reason) {
 		const index = outstanding.findIndex( (o)=>o.id === id );

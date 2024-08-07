@@ -16,18 +16,16 @@ function connected( ws ) {
 	ws.onmessage = messaged;
 	ws.onclose = closed;
 
-	let nbuffer = -1;
-	let buffer = '';
+let nbuffer = 0;
+let buffer = '';
 
-	function makebuffer() {
-		const arr = [];
-		for( let n = 0; n < 40000; n++ ) arr.push( nbuffer );
-		nbuffer++;
-		buffer = arr.join(',');
-		return buffer;
-	}
+function makebuffer() {
+	const arr = [];
+	for( let n = 0; n < 40000; n++ ) arr.push( nbuffer );
+	nbuffer++;
+	buffer = arr.join(',');
+}
 
-	ws.send( makebuffer() );
 //	setTimeout( ()=>{ ws.close( 1002, "done." ); }, 100 );
 	function messaged( msg ) {
 		const parts = msg.split(',')
