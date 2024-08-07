@@ -125,7 +125,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					}
 					//ssh->activeP
 				} else {
-					lprintf( "Error Event: %d %s", event->iData, event->data );
+					lprintf( "Error Event: %d %s", event->iData, (char*)event->data );
 				}
 				if( !event->waiter ) ReleaseEx( event->data DBG_SRC );
 				/*
@@ -161,7 +161,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						//ssh->activePromise = NULL;
 						//ssh->activeP
 					} else {
-						lprintf( "Channel Error Event: %d %s", event->iData, event->data );
+						lprintf( "Channel Error Event: %d %s", event->iData, (char*)event->data );
 					}
 					// event->data is the message which is a dynamic string
 					if( !event->waiter ) ReleaseEx( event->data DBG_SRC );
@@ -172,7 +172,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					SSH2_RemoteListen* listener = (SSH2_RemoteListen*)event->data2;
 					//if( !IsQueueEmpty( &listener->activePromises ) ) 
 					{
-						lprintf( "Unhandled listener error event: %d %s", event->iData, event->data );
+						lprintf( "Unhandled listener error event: %d %s", event->iData, (char*)event->data );
 						Local<Object> error = Object::New( isolate );
 						error->Set( isolate->GetCurrentContext()
 							, String::NewFromUtf8Literal( isolate, "message" )
@@ -191,7 +191,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						//ssh->activePromise = NULL;
 						//ssh->activeP
 					//} else {
-						lprintf( "Channel Error Event: %d %s", event->iData, event->data );
+						lprintf( "Channel Error Event: %d %s", event->iData, (char*)event->data );
 					}
 					// event->data is the message which is a dynamic string
 					if( !event->waiter ) ReleaseEx( event->data DBG_SRC );
