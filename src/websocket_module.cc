@@ -1410,6 +1410,7 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 					uv_close( (uv_handle_t*)&wsc->async, uv_closed_wsc );
 					DeleteLinkQueue( &wsc->eventQueue );
 					wsc->readyState = CLOSED;
+					wsc->closed = TRUE;
 				}
 				break;
 			}
@@ -1862,12 +1863,16 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		(*pevt).eventType = WS_EVENT_OPEN;
 		(*pevt)._this = wssi;
 		EnqueLink( &wssi->eventQueue, pevt );
-                //lprintf( "Send Event:%p", &wss->async );
-                wssi->readyState = wsReadyStates::OPEN;
+		//lprintf( "Send Event:%p", &wss->async );
+		wssi->readyState = wsReadyStates::OPEN;
 #ifdef DEBUG_EVENTS
 		lprintf( "Open event send...%p", &wssi->async );
-#endif		
-		uv_async_send( &wssi->async );
+#endif
+		if( MakeThread() == l.jsThread ) {
+			wssiAsyncMsg( &wss->async );
+		}
+		else
+			uv_async_send( &wssi->async );
 		// can't change this result later, so need to send 
 		// it as a refernence, in case the JS object changes
 		return (uintptr_t)wssi->wssiRef;
