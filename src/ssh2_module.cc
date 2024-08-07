@@ -92,7 +92,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						if( pr_login.IsEmpty() ) {
 							Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, dontReleaseBufferBackingStore, NULL );
 							ab = ArrayBuffer::New( isolate, bs );
 #else
 #error "Need to implement ArrayBuffer creation for node 14 and earlier (node 14 is End of life, consider upgrading)"
@@ -214,7 +214,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						if( pr_connect.IsEmpty() ) {
 							Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, dontReleaseBufferBackingStore, NULL );
 							ab = ArrayBuffer::New( isolate, bs );
 #else
 #error "Need to implement ArrayBuffer creation for node 14 and earlier (node 14 is End of life, consider upgrading)"
@@ -796,7 +796,7 @@ void SSH2_Object::fingerprint( const v8::FunctionCallbackInfo<Value>& args ) {
 	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
 	Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, dontReleaseBufferBackingStore, NULL );
 	ab = ArrayBuffer::New( isolate, bs );
 #else
 	ab =
