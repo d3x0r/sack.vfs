@@ -337,7 +337,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 
 
 		//SetAllocateLogging( TRUE );
-		//SetManualAllocateCheck( TRUE );
+		SetManualAllocateCheck( TRUE );
 		//SetAllocateDebug( FALSE );
 		//lprintf( "Do Init in modules (shouldn't do some of this)");
 		SetSystemLog( SYSLOG_FILE, stdout );
