@@ -1148,13 +1148,6 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 					//	DebugBreak();
 					//lprintf( "requests %p is %d", myself->requests, myself->requests->Cnt );
 					//lprintf( "New request..." );
-					{
-						static int n;
-						if( n++ > 100 ) {
-							DebugDumpMem();
-							n = 0;
-						}
-					}
 					argv[0] = makeRequest( isolate, strings, eventMessage->pc, sslRedirect, myself );
 					if( !argv[0]->IsNull() ) {
 						argv[1] = http;
