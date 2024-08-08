@@ -1859,7 +1859,6 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 			Deallocate( const char *, wssi->protocolResponse );
 			wssi->protocolResponse = NULL;
 		}
-		//lprintf( "Send open event?" );
 		(*pevt).eventType = WS_EVENT_OPEN;
 		(*pevt)._this = wssi;
 		EnqueLink( &wssi->eventQueue, pevt );
@@ -1869,7 +1868,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		lprintf( "Open event send...%p", &wssi->async );
 #endif
 		if( MakeThread() == l.jsThread ) {
-			wssiAsyncMsg( &wss->async );
+			wssiAsyncMsg( &wssi->async );
 		}
 		else
 			uv_async_send( &wssi->async );
@@ -2581,8 +2580,8 @@ wssObject::wssObject( struct wssOptions *opts ) {
 		readyState = LISTENING;
 	} else {
 		NetworkWait( NULL, 256, 2 );  // 1GB memory
-
-		pc = WebSocketCreate_v2( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed, webSockServerError, (uintptr_t)this, WEBSOCK_SERVER_OPTION_WAIT );
+		pc = WebSocketCreate_v2( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed
+					, webSockServerError, (uintptr_t)this, WEBSOCK_SERVER_OPTION_WAIT );
 		wsPipe = NULL;
 	}
 	if( pc ) {
