@@ -121,7 +121,7 @@ export function getRequestHandler( serverOpts ) {
 
 				if( requests.length !== 0 )
 					clearTimeout( reqTimeout );
-				reqTimeout = setTimeout( logRequests, 100 );
+				reqTimeout = setTimeout( logRequests, 500 );
 				requests.push( req.url );
 			} else {
 				console.log( 'file exists, but reading it returned nothing?', filePath, fc );
