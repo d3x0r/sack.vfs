@@ -190,11 +190,13 @@ import {SACK} from "sack.vfs";
     - [HTTP Server](https://github.com/d3x0r/sack.vfs/blob/master/README_WSS.md#http-fallback)
  - [Websocket Client](https://github.com/d3x0r/sack.vfs/blob/master/README_WSC.md#http-request-interface--httphttps-)
  - [HTTP Requests](https://github.com/d3x0r/sack.vfs/blob/master/README_HTTP.md)
- - [UDP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md##udp-socket-object-networkudp) - Low level system UDP sockets; TCP could be available, but HTTP and Websocket suffice.
- - [TLS](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
- - [ComPort](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
- - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
- - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
+ - [UDP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md) - Low level system UDP sockets. 
+ - [TCP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md) - Low level system TCP sockets.
+ - [ICMP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md) - ICMP interface (name lookup and ping)
+ - [TLS](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - certificate creation and validation
+ - [ComPort](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - COM port IO
+ - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Monitors files for changes
+ - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Other
 
 ### GUI Interfaces
 
@@ -251,6 +253,8 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
+- 1.3.0(in progress)
+    - change version, mostly to have a cleaner version point, but there are some significant changes to this, that really obsoletes everything before
 - 1.1.822(in progress)
     - Enable option to load ssl certificates for HTTPS app service.
     - JSOX decode fixes.  Handle `'':` as not an error.  which also means `{:` is not an error and it's a zero length string.
