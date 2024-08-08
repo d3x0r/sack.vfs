@@ -742,7 +742,7 @@ static Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_
 		if( remoteAddress ) {
 			int addrres = getnameinfo( remoteAddress, SOCKADDR_LENGTH( remoteAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
 			if( !addrres ) {
-				lprintf( "Name info for address: %s %d", tmp, addrres );
+				//lprintf( "Name info for address: %s %d", tmp, addrres );
 				SETV( result, strings->remoteNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
 			} else {
 				uint32_t dwError = WSAGetLastError();
@@ -753,8 +753,18 @@ static Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_
 			}
 		}
 		if( localAddress ) {
-			getnameinfo( localAddress, SOCKADDR_LENGTH( localAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD );
-			SETV( result, strings->localNameString->Get( isolate ), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+			int addrres = getnameinfo( localAddress, SOCKADDR_LENGTH( localAddress ), tmp, NI_MAXHOST, NULL, 0, NI_NAMEREQD );
+			if( !addrres ) {
+				//lprintf( "Name info for address: %s %d", tmp, addrres );
+				SETV( result, strings->localNameString->Get( isolate ), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+			} else {
+				uint32_t dwError = WSAGetLastError();
+				if( addrres == EAI_NONAME ) {
+					SETV( result, strings->localNameString->Get(isolate), local );
+				}else
+					lprintf( "name info address error: %d", addrres );
+			}
+			
 		}
 	}
 
