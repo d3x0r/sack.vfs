@@ -18,6 +18,9 @@ struct optionStrings {
 	Eternal<String> *readStringsString;
 	Eternal<String> *reuseAddrString;
 	Eternal<String> *reusePortString;
+
+	// object field for connect callback in options
+	Eternal<String> *connectString;
 };
 
 struct udpOptions {
@@ -35,6 +38,29 @@ struct udpOptions {
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
 };
 
+
+struct tcpOptions {
+	Isolate *isolate;
+
+	// server side options (client side bind option)
+	int port;
+	char *address;
+	bool reuseAddr;
+	bool reusePort;
+
+	// client side options (else is server)
+	int toPort;
+	char *toAddress;
+
+	bool addressDefault;
+	bool v6;
+	bool readStrings;
+	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
+	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
+	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
+};
+
+
 struct addrFinder {
 	char *addr;
 	int port;
@@ -48,6 +74,9 @@ public:
 	addrObject( char *address, int port );
 	addrObject();
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
+
+	// utility functions?  This is probably a verbose object that all of these are available
+	// in the resulting JS object without getting parts.
 	//static void getAddress( const v8::FunctionCallbackInfo<Value>& args );
 	//static void getAddress(	Local<String> property, const PropertyCallbackInfo<Value>& info );
 	//static void getPort( Local<String> property, const PropertyCallbackInfo<Value>& info );
@@ -59,7 +88,7 @@ public:
 	~addrObject();
 };
 
-// web sock server Object
+// UDP socket Object
 class udpObject : public node::ObjectWrap {
 public:
 	LOGICAL closed;
@@ -86,6 +115,41 @@ public:
 
 	~udpObject();
 };
+
+// TCP socket Object
+class tcpObject : public node::ObjectWrap {
+public:
+	LOGICAL closed;
+	PCLIENT pc;
+	POINTER buffer;  // pending read buffer?
+	Persistent<Object> _this;
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE eventQueue;
+	bool readStrings;  // return a string instead of a buffer
+	//	static Persistent<Function> constructor;	
+	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
+   // if this is a client, this is triggered when the socket completes or fails connection
+   // if this is a server, this is a newly accepted connection
+	//    messageCallback and closeCallback are automatically copied
+   //    a server listen socket(normally) can't close (should check for disconnecting network)
+   //    a server will also never get messages.
+   //    But the newly accepted socket can also just have their callbacks set.
+	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
+	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
+	struct udpEvent *eventMessage; // probably use the same queue?
+
+public:
+
+	tcpObject( struct tcpOptions *opts );
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void on( const v8::FunctionCallbackInfo<Value>& args );
+	static void send( const v8::FunctionCallbackInfo<Value>& args );
+	static void close( const v8::FunctionCallbackInfo<Value>& args );
+
+	~tcpObject();
+};
+
 
 enum udpEvents {
 	UDP_EVENT_READ,
@@ -208,14 +272,18 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->broadcastString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "broadcast" ) );
 		check->messageString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "message" ) );
 		check->closeString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "close" ) );
+
 		check->familyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "family" ) );
 		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IPv4" ) );
 		check->v6String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IPv6" ) );
+
 		check->toPortString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "toPort" ) );
 		check->toAddressString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "toAddress" ) );
 		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "readStrings" ) );
 		check->reusePortString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reusePort" ) );
 		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reuseAddress" ) );
+
+		check->connectString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "connect" ) );
 	}
 	return check;
 }
@@ -239,6 +307,21 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 
 		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	}
+	{
+		Local<FunctionTemplate> tcpTemplate;
+		tcpTemplate = FunctionTemplate::New( isolate, tcpObject::New );
+		tcpTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.stream.socket" ) );
+		tcpTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "close", tcpObject::close );
+		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "on", tcpObject::on );
+		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "send", tcpObject::send );
+		tcpTemplate->ReadOnlyPrototype();
+
+		c->tcpConstructor.Reset( isolate, tcpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+
+		SET_READONLY( oNet, "TCP", tcpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	}
+
 	{
 		Local<Object> icmpObject = Object::New( isolate );
 		NODE_SET_METHOD( icmpObject, "ping", ping );
@@ -526,7 +609,7 @@ void udpObject::setBroadcast( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.Holder() );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
@@ -548,7 +631,7 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void udpObject::close( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	udpObject *obj = ObjectWrap::Unwrap<udpObject>( args.This() );
 	RemoveClient( obj->pc );
 }
@@ -592,6 +675,246 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
+
+//---------------------------- TCP Sockets ---------------------------
+
+tcpObject::tcpObject( struct tcpOptions *opts ) {
+	SOCKADDR *addr = CreateSockAddress( opts->address, opts->port );
+	NetworkWait( NULL, 256, 2 );  // 1GB memory
+
+	pc = NULL;
+	pc = CPPServeUDPAddrEx( addr, (cReadCompleteEx)ReadComplete, (uintptr_t)this, (cCloseCallback)Closed, (uintptr_t)this, TRUE DBG_SRC );
+	if( pc ) {
+		buffer = NewArray( uint8_t, 4096 );
+		//if( opts->toAddress )
+		//	GuaranteeAddr( pc, CreateSockAddress( opts->toAddress, opts->toPort ) );
+		if( opts->reuseAddr )
+			SetSocketReuseAddress( pc, TRUE );
+		if( opts->reusePort )
+			SetSocketReusePort( pc, TRUE );
+		this->readStrings = opts->readStrings;
+		eventQueue = CreateLinkQueue();
+		//lprintf( "Init async handle. (wss)" );
+		async.data = this;
+		class constructorSet *c = getConstructors( opts->isolate );
+		uv_async_init( c->loop, &async, udpAsyncMsg );
+		doUDPRead( pc, (POINTER)buffer, 4096 );
+		if( !opts->messageCallback.IsEmpty() )
+			this->messageCallback = opts->messageCallback;
+	}
+
+}
+
+tcpObject::~tcpObject() {
+	if( !closed )
+		RemoveClient( pc );
+}
+
+void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	int argc = args.Length();
+	if( argc == 0 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify either type or options for server." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+
+	if( args.IsConstructCall() ) {
+		// Invoked as constructor: `new MyObject(...)`
+		struct tcpOptions tcpOpts;
+		int argBase = 0;
+		tcpOpts.isolate= isolate;
+		tcpOpts.readStrings = false;
+		tcpOpts.address = NULL;
+		tcpOpts.port = 0;
+		tcpOpts.addressDefault = false;
+
+		
+		// if it was uninitialized it would fail to reset
+		//tcpOpts.messageCallback.Reset();
+
+		if( args[argBase]->IsString() ) {
+			tcpOpts.address = StrDup( *String::Utf8Value( isolate,  args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+			argBase++;
+		}
+		if( ( args.Length() >= argBase ) && args[argBase]->IsObject() ) {
+			Local<Object> opts = args[argBase]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
+
+			Local<String> optName;
+			struct optionStrings *strings = getStrings( isolate );
+			// ---- get port
+			if( !opts->Has( context, optName = strings->portString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.port = 0;
+			}
+			else {
+				tcpOpts.port = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+			}
+			// ---- get family
+			if( opts->Has( context, optName = strings->familyString->Get( isolate ) ).ToChecked() ) {
+				String::Utf8Value family( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+				tcpOpts.v6 = (StrCmp( *family, "IPv6" ) == 0);
+				if( tcpOpts.addressDefault ) {
+					Deallocate( char *, tcpOpts.address );
+					if( tcpOpts.v6 )
+						tcpOpts.address = StrDup( "[::]" );
+					else
+						tcpOpts.address = StrDup( "0.0.0.0" );
+				}
+			}
+			// ---- get address
+			if( !opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.addressDefault = true;
+				if( tcpOpts.v6 )
+					tcpOpts.address = StrDup( "[::]" );
+				else
+					tcpOpts.address = StrDup( "0.0.0.0" );
+			}
+			else {
+				tcpOpts.address = StrDup( *String::Utf8Value( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()) );
+			}
+			// ---- get to port
+			if( opts->Has( context, optName = strings->toPortString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.toPort = (int)GETV( opts, optName )->ToInteger(isolate->GetCurrentContext()).ToLocalChecked()->Value();
+			}
+			else
+				tcpOpts.toPort = 0;
+			// ---- get toAddress
+			if( opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.toAddress = StrDup( *String::Utf8Value( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+			}
+			else
+				tcpOpts.toAddress = NULL;
+
+			// ---- get message callback
+			if( opts->Has( context, optName = strings->messageString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.messageCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+			}
+			// ---- get connect callback
+			if( opts->Has( context, optName = strings->connectString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.connectCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+			}
+			// ---- get close callback
+			if( opts->Has( context, optName = strings->closeString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.closeCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+			}
+			// ---- get read strings setting
+			if( opts->Has( context, optName = strings->readStringsString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.readStrings = GETV( opts, optName )->ToBoolean( isolate )->Value();
+			}
+			// ---- get reuse address
+			if( opts->Has( context, optName = strings->reuseAddrString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.reuseAddr = GETV( opts, optName )->ToBoolean( isolate )->Value();
+			}
+			else tcpOpts.reuseAddr = false;
+			// ---- get reuse port
+			if( opts->Has( context, optName = strings->reusePortString->Get( isolate ) ).ToChecked() ) {
+				tcpOpts.reusePort = GETV( opts, optName )->ToBoolean( isolate )->Value();
+			}
+			else tcpOpts.reusePort = false;
+			argBase++;
+		}
+
+		if( args.Length() >= argBase && args[argBase]->IsFunction() ) {
+			Local<Function> arg0 = Local<Function>::Cast( args[argBase] );
+			tcpOpts.messageCallback.Reset( isolate, arg0 );
+		}
+
+		Local<Object> _this = args.This();
+		tcpObject* obj = new tcpObject( &tcpOpts );
+		Deallocate( char*, tcpOpts.address );
+		Deallocate( char*, tcpOpts.toAddress );
+		obj->_this.Reset( isolate, _this );
+		obj->Wrap( _this );
+
+		args.GetReturnValue().Set( _this );
+	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		int argc = args.Length();
+		Local<Value> *argv = new Local<Value>[argc];
+		for( int n = 0; n < argc; n++ )
+			argv[n] = args[n];
+
+		class constructorSet *c = getConstructors(isolate);
+		Local<Function> cons = Local<Function>::New( isolate, c->udpConstructor );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
+		delete[] argv;
+	}
+}
+
+void tcpObject::on( const FunctionCallbackInfo<Value>& args ) {
+	//Isolate* isolate = args.GetIsolate();
+	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.Holder() );
+	if( args.Length() == 2 ) {
+		Isolate* isolate = args.GetIsolate();
+		String::Utf8Value event( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		Local<Function> cb = Local<Function>::Cast( args[1] );
+		if( StrCmp( *event, "error" ) == 0 ) {
+			// not sure how to get this... so many errors so few callbacks
+		}
+		else if( StrCmp( *event, "message" ) == 0 ) {
+			if( cb->IsFunction() )
+				obj->messageCallback.Reset( isolate, cb );
+		}
+		else if( StrCmp( *event, "connect" ) == 0 ) {
+			if( cb->IsFunction() )
+				obj->connectCallback.Reset( isolate, cb );
+		}
+		else if( StrCmp( *event, "close" ) == 0 ) {
+			if( cb->IsFunction() )
+				obj->closeCallback.Reset( isolate, cb );
+		}
+	}
+
+}
+
+void tcpObject::close( const FunctionCallbackInfo<Value>& args ) {
+	//Isolate* isolate = args.GetIsolate();
+	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	RemoveClient( obj->pc );
+}
+
+void tcpObject::send( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	if( !obj->pc ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	SOCKADDR *dest = NULL;
+	if( args.Length() > 1 ) {
+		class constructorSet *c = getConstructors( isolate );
+		Local<FunctionTemplate> tpl = c->addrTpl.Get( isolate );
+		Local<Object> argObj = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
+		if( !argObj.IsEmpty() && tpl->HasInstance( argObj ) ) {
+			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
+			if( obj )
+				dest = obj->addr;
+		}
+		else {
+			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Address argument is not a sack.core.Network.Address" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			return;
+		}
+	}
+	if( args[0]->IsArrayBuffer() ) {
+		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
+#else
+		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
+#endif
+	}
+	else if( args[0]->IsString() ) {
+		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		SendUDPEx( obj->pc, *buf, buf.length(), dest );
+	}
+	else {
+		lprintf( "Unhandled message format" );
+	}
+}
+
+
+//---------------------------- Socket Address ---------------------------
 
 addrObject::addrObject( char *address, int port ) {
 	this->key.addr = address;
@@ -663,7 +986,7 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		addrObject* obj = new addrObject( address, port );
 		AddBinaryNode( l.addresses, obj, (uintptr_t)&obj->key );
 		AddBinaryNode( l.addressesBySA, obj, (uintptr_t)obj->addr );
-		struct optionStrings *strings = getStrings( isolate );
+		//struct optionStrings *strings = getStrings( isolate );
 		uint16_t realPort;
 		GetAddressParts( obj->addr, NULL, &realPort );
 		if( obj->addr ) {
@@ -711,6 +1034,8 @@ void addrObject::New( const FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( addr->_this.Get( isolate ) );
 	}
 }
+
+//-------------- ICMP ----------------------------
 
 static void getName( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
