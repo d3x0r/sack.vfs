@@ -47,6 +47,7 @@ struct tcpOptions {
 	char *address;
 	bool reuseAddr;
 	bool reusePort;
+	bool delayConnect;
 
 	// client side options (else is server)
 	int toPort;
@@ -55,6 +56,7 @@ struct tcpOptions {
 	bool addressDefault;
 	bool v6;
 	bool readStrings;
+
 	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
@@ -101,7 +103,7 @@ public:
 //	static Persistent<Function> constructor;
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
-	struct udpEvent *eventMessage;
+	struct networkEvent *eventMessage;
 
 public:
 
@@ -136,7 +138,7 @@ public:
    //    But the newly accepted socket can also just have their callbacks set.
 	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
-	struct udpEvent *eventMessage; // probably use the same queue?
+	struct networkEvent *eventMessage; // probably use the same queue?
 
 public:
 
@@ -151,21 +153,22 @@ public:
 };
 
 
-enum udpEvents {
-	UDP_EVENT_READ,
-	UDP_EVENT_CLOSE,
+enum networkEvents {
+	NET_EVENT_READ,
+	NET_EVENT_CLOSE,
+	NET_EVENT_CONNECT,
 };
 
-struct udpEvent {
-	enum udpEvents eventType;
+struct networkEvent {
+	enum networkEvents eventType;
 	class udpObject *_this;
 	CPOINTER buf;
 	size_t buflen;
 	SOCKADDR *from;
 };
-typedef struct udpEvent UDP_EVENT;
-#define MAXUDP_EVENTSPERSET 128
-DeclareSet( UDP_EVENT );
+typedef struct networkEvent NET_EVENT;
+#define MAXNET_EVENTSPERSET 128
+DeclareSet( NET_EVENT );
 
 static void getName( const v8::FunctionCallbackInfo<Value>& args );
 static void ping( const v8::FunctionCallbackInfo<Value>& args );
@@ -173,7 +176,7 @@ static void ping( const v8::FunctionCallbackInfo<Value>& args );
 static struct local {
 	int data;
 	PLIST strings;
-	PUDP_EVENTSET udpEvents;
+	PNET_EVENTSET networkEvents;
 	BinaryTree::PTREEROOT addresses;
 	BinaryTree::PTREEROOT addressesBySA;
 } l;
@@ -355,15 +358,15 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 	udpObject* obj = (udpObject*)handle->data;
-	udpEvent *eventMessage;
+	networkEvent *eventMessage;
 
 	{
 		Local<Value> argv[2];
-		while( eventMessage = (struct udpEvent*)DequeLink( &obj->eventQueue ) ) {
+		while( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) {
 			Local<Function> cb;
 			Local<Object> ab;
 			switch( eventMessage->eventType ) {
-			case UDP_EVENT_READ:
+			case NET_EVENT_READ:
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
@@ -388,15 +391,18 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 				}
 				ReleaseAddress( eventMessage->from );
 				break;
-			case UDP_EVENT_CLOSE:
+			case NET_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, obj->closeCallback );
 				if( !cb.IsEmpty() )
 					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&obj->async, NULL );
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
+			default:
+				lprintf( "Unknown event type passed to udpAsyncMsg: %d", eventMessage->eventType );
+				break;
 			}
-			DeleteFromSet( UDP_EVENT, l.udpEvents, eventMessage );
+			DeleteFromSet( NET_EVENT, l.networkEvents, eventMessage );
 		}
 	}
 	{
@@ -413,8 +419,8 @@ static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, S
 		// skip init read; buffer is allocated later and then this callback is triggered
 	}
 	else {
-		struct udpEvent *pevt = GetFromSet( UDP_EVENT, &l.udpEvents );
-		(*pevt).eventType = UDP_EVENT_READ;
+		struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
+		(*pevt).eventType = NET_EVENT_READ;
 		(*pevt).buf = NewArray( uint8_t*, buflen );
 		//lprintf( "Send buffer %p", (*pevt).buf );
 		memcpy( (POINTER)(*pevt).buf, buffer, buflen );
@@ -431,8 +437,8 @@ static void CPROC Closed( uintptr_t psv ) {
 	udpObject *_this = (udpObject*)psv;
 	_this->closed = true;
 
-	struct udpEvent *pevt = GetFromSet( UDP_EVENT, &l.udpEvents );
-	(*pevt).eventType = UDP_EVENT_CLOSE;
+	struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
+	(*pevt).eventType = NET_EVENT_CLOSE;
 	(*pevt)._this = _this;
 	EnqueLink( &_this->eventQueue, pevt );
 	uv_async_send( &_this->async );
@@ -678,29 +684,124 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 
 //---------------------------- TCP Sockets ---------------------------
 
-tcpObject::tcpObject( struct tcpOptions *opts ) {
-	SOCKADDR *addr = CreateSockAddress( opts->address, opts->port );
-	NetworkWait( NULL, 256, 2 );  // 1GB memory
+static void tcpAsyncMsg( uv_async_t* handle ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	udpObject* obj = (udpObject*)handle->data;
+	networkEvent* eventMessage;
 
-	pc = NULL;
-	pc = CPPServeUDPAddrEx( addr, (cReadCompleteEx)ReadComplete, (uintptr_t)this, (cCloseCallback)Closed, (uintptr_t)this, TRUE DBG_SRC );
+	{
+		Local<Value> argv[2];
+		while( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) {
+			Local<Function> cb;
+			Local<Object> ab;
+			switch( eventMessage->eventType ) {
+			case NET_EVENT_READ:
+				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
+				if( !obj->readStrings ) {
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( isolate, bs );
+#else
+					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
+					PARRAY_BUFFER_HOLDER holder = GetHolder();
+					holder->o.Reset( isolate, ab );
+					holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+					holder->buffer = (void*)eventMessage->buf;
+#endif
+					argv[0] = ab;
+					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+				} else {
+					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
+					//lprintf( "built string from %p", eventMessage->buf );
+					argv[0] = buf.ToLocalChecked();
+					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					Deallocate( CPOINTER, eventMessage->buf );
+				}
+				ReleaseAddress( eventMessage->from );
+				break;
+			case NET_EVENT_CLOSE:
+				cb = Local<Function>::New( isolate, obj->closeCallback );
+				if( !cb.IsEmpty() )
+					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+				uv_close( (uv_handle_t*)&obj->async, NULL );
+				DeleteLinkQueue( &obj->eventQueue );
+				break;
+			}
+			DeleteFromSet( NET_EVENT, l.networkEvents, eventMessage );
+		}
+	}
+	{
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
+}
+
+
+void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
+
+}
+
+void TCP_Connect( uintptr_t psv, int error ) {
+
+}
+
+void TCP_Write( uintptr_t psv, CPOINTER buffer, size_t length ) {
+
+}
+
+void TCP_Close( uintptr_t psv ) {
+
+}
+
+void TCP_Notify( uintptr_t psv, PCLIENT pcNew ) {
+	tcpObject* tcpNew = new tcpObject( NULL );
+	tcpNew->pc = pcNew;
+
+}
+
+tcpObject::tcpObject( struct tcpOptions *opts ) {
+	if( !opts ) {
+		return;
+	}
+	SOCKADDR *addr = opts->address?CreateSockAddress( opts->address, opts->port ):NULL;
+	SOCKADDR *toAddr = opts->toAddress?CreateSockAddress( opts->toAddress, opts->port ):NULL;
+
+	NetworkWait( NULL, 256, 2 );  
+
+	if( toAddr )
+		pc = CPPOpenTCPClientAddrExxx( toAddr, TCP_ReadComplete, (uintptr_t)this
+						, TCP_Close, (uintptr_t)this
+			, TCP_Write, (uintptr_t)this
+			, TCP_Connect, (uintptr_t)this
+			, opts->delayConnect DBG_SRC );
+	else
+		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
+
 	if( pc ) {
-		buffer = NewArray( uint8_t, 4096 );
-		//if( opts->toAddress )
-		//	GuaranteeAddr( pc, CreateSockAddress( opts->toAddress, opts->toPort ) );
 		if( opts->reuseAddr )
 			SetSocketReuseAddress( pc, TRUE );
 		if( opts->reusePort )
 			SetSocketReusePort( pc, TRUE );
+
 		this->readStrings = opts->readStrings;
+
 		eventQueue = CreateLinkQueue();
 		//lprintf( "Init async handle. (wss)" );
 		async.data = this;
+
 		class constructorSet *c = getConstructors( opts->isolate );
-		uv_async_init( c->loop, &async, udpAsyncMsg );
-		doUDPRead( pc, (POINTER)buffer, 4096 );
+		uv_async_init( c->loop, &async, tcpAsyncMsg );
 		if( !opts->messageCallback.IsEmpty() )
 			this->messageCallback = opts->messageCallback;
+		if( !opts->connectCallback.IsEmpty() )
+			this->connectCallback = opts->connectCallback;
+		if( !opts->closeCallback.IsEmpty() )
+			this->closeCallback = opts->closeCallback;
 	}
 
 }
