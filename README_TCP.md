@@ -2,6 +2,15 @@
 
 ## TCP Socket Object (Network.TCP)
 
+This is a simple TCP interface.  More complex interfaces might support callbacks for completion of very large packets; sending
+large packets which allow the network to not duplicate the data.  The network does generally queue the data, releasing application
+buffers on write.  Reads are meant to be read into a user supplied buffer, but this provides a default 4k buffer; TCP read events for
+large packets will be a series of 4K buffers.
+
+Close() is implemented gracefully, so any sent data will still be sent, but no further data will be received.  When any pending writes
+are completed, the socket is fully closed.
+
+
 ``` js
 var sack = require( 'sack.vfs' );
 var tcp  = sack.Network.TCP( "localhost:5555", (msg,rinfo)=>{ console.log( "got message:", msg ) } );
