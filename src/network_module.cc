@@ -750,7 +750,7 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 
 				class constructorSet* c = getConstructors( isolate );
 				Local<Function> cons = Local<Function>::New( isolate, c->tcpConstructor );
-				Local<Object> tcpNew = cons->NewInstance( isolate->GetCurrentContext(), NULL, 0 ).ToLocalChecked();
+				Local<Object> tcpNew = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 				tcpObject* tcpObj = tcpObject::getSelf( tcpNew );
 				tcpObj->server = obj;
 				tcpObj->readStrings = obj->readStrings;
@@ -921,7 +921,8 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 			, opts->delayConnect DBG_SRC );
 	else {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
-		SetNetworkListenerReady( pc );
+		if( pc ) SetNetworkListenerReady( pc );
+		else lprintf( "Failed to listen at:", opts->address );
 	}
 
 	if( pc ) {
@@ -945,7 +946,6 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		if( !opts->closeCallback.IsEmpty() )
 			this->closeCallback = opts->closeCallback;
 	}
-
 }
 
 tcpObject::~tcpObject() {
