@@ -278,6 +278,10 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
     - Added some tests for `Task()` objects; fixed some minor memory leaks.
     - Modified Task `send()` method to send direct buffer, without format support; previously behaved like printf format.
     - Handle task write/read during close better; may generate an EPIPE, which can be caught with `process.on( "EPIPE", ...)` in JS script.
+    - (JSOX)Quote strings that have a '#' in them.
+    - (JSOX)allow '#' to start a comment until end-of-line.
+    - (JSOX)fix cummulative error in column count on a comma after a number.
+
 - 1.1.821
     - Linux build fix; don't use windows admin option.
 - 1.1.820
