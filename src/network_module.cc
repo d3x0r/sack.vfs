@@ -922,7 +922,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	else {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
 		if( pc ) SetNetworkListenerReady( pc );
-		else lprintf( "Failed to listen at:", opts->address );
+		else lprintf( "Failed to listen at:%s", opts->address );
 	}
 
 	if( pc ) {
