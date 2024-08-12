@@ -2,7 +2,7 @@
 #include "global.h"
 
 
-static Persistent<Function> monitorConstructor;
+//static Persistent<Function> monitorConstructor;
 
 enum fm_eventType {
 	FileMonitor_Event_Change,
@@ -146,9 +146,9 @@ static monitorWrapper* newMonitor( char *path, int delay ) {
 static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
-		int defaultDelay = 0;
+		int defaultDelay = 250;
 		String::Utf8Value path( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		if( args.Length() > 1 ) {
+		if( args.Length() > 1 && args[1]->IsNumber() ) {
 			defaultDelay = (int)args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
 		}
 		monitorWrapper* obj = newMonitor( *path, defaultDelay );
@@ -158,7 +158,8 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, monitorConstructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->monitorConstructor );
 		Local<Value> *passArgs = new Local<Value>[args.Length()];
 		int n;
 		for( n = 0; n < args.Length(); n++ )
@@ -171,6 +172,7 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 
 void fileMonitorInit( Isolate* isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> monitorTemplate;
+	class constructorSet* c = getConstructors( isolate );
 
 	monitorTemplate = FunctionTemplate::New( isolate, makeNewMonitor );
 	monitorTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.FileMonitor" ) );
@@ -179,7 +181,7 @@ void fileMonitorInit( Isolate* isolate, Local<Object> exports ) {
 
 	NODE_SET_PROTOTYPE_METHOD( monitorTemplate, "addFilter", addMonitorFilter );
 	//NODE_SET_PROTOTYPE_METHOD( monitorTemplate, "addObserver", addMonitorObserver );
-	monitorConstructor.Reset( isolate, monitorTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked()  );
+	c->monitorConstructor.Reset( isolate, monitorTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked()  );
 	SET_READONLY( exports, "FileMonitor", monitorTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked()  );
 
 }

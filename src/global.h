@@ -218,7 +218,7 @@ class constructorSet {
 	Persistent<Function> addrConstructor;
 	Persistent<FunctionTemplate> addrTpl;
 	Persistent<Function> udpConstructor;
-	//Persistent<Function> tcpConstructor;
+	Persistent<Function> tcpConstructor;
 
 	Persistent<Map> fromPrototypeMap;
 

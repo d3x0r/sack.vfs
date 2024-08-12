@@ -617,7 +617,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 
 										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
 										if( !member ) {
-											lprintf( "Stack is %d at %d get %d", revive->reviveStack->Top, idx, revive->reviveStack->Top - idx - 1 );
+											lprintf( "Stack is %lu at %lu get %lu", revive->reviveStack->Top, idx, revive->reviveStack->Top - idx - 1 );
 										}
 										if( member && member->index == (uint32_t)pathVal->result_n ) {
 											LogObject( member->object );
@@ -634,7 +634,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 
 										} else {
 											lprintf( "Referenced array member is not an object!. " );
-											DebugBreak();
 										}
 									} 
 									//else

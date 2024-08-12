@@ -92,7 +92,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						if( pr_login.IsEmpty() ) {
 							Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, dontReleaseBufferBackingStore, NULL );
 							ab = ArrayBuffer::New( isolate, bs );
 #else
 #error "Need to implement ArrayBuffer creation for node 14 and earlier (node 14 is End of life, consider upgrading)"
@@ -125,7 +125,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					}
 					//ssh->activeP
 				} else {
-					lprintf( "Error Event: %d %s", event->iData, event->data );
+					lprintf( "Error Event: %d %s", event->iData, (char*)event->data );
 				}
 				if( !event->waiter ) ReleaseEx( event->data DBG_SRC );
 				/*
@@ -161,7 +161,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						//ssh->activePromise = NULL;
 						//ssh->activeP
 					} else {
-						lprintf( "Channel Error Event: %d %s", event->iData, event->data );
+						lprintf( "Channel Error Event: %d %s", event->iData, (char*)event->data );
 					}
 					// event->data is the message which is a dynamic string
 					if( !event->waiter ) ReleaseEx( event->data DBG_SRC );
@@ -172,7 +172,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					SSH2_RemoteListen* listener = (SSH2_RemoteListen*)event->data2;
 					//if( !IsQueueEmpty( &listener->activePromises ) ) 
 					{
-						lprintf( "Unhandled listener error event: %d %s", event->iData, event->data );
+						lprintf( "Unhandled listener error event: %d %s", event->iData, (char*)event->data );
 						Local<Object> error = Object::New( isolate );
 						error->Set( isolate->GetCurrentContext()
 							, String::NewFromUtf8Literal( isolate, "message" )
@@ -191,7 +191,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						//ssh->activePromise = NULL;
 						//ssh->activeP
 					//} else {
-						lprintf( "Channel Error Event: %d %s", event->iData, event->data );
+						lprintf( "Channel Error Event: %d %s", event->iData, (char*)event->data );
 					}
 					// event->data is the message which is a dynamic string
 					if( !event->waiter ) ReleaseEx( event->data DBG_SRC );
@@ -214,7 +214,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						if( pr_connect.IsEmpty() ) {
 							Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, dontReleaseBufferBackingStore, NULL );
 							ab = ArrayBuffer::New( isolate, bs );
 #else
 #error "Need to implement ArrayBuffer creation for node 14 and earlier (node 14 is End of life, consider upgrading)"
@@ -796,7 +796,7 @@ void SSH2_Object::fingerprint( const v8::FunctionCallbackInfo<Value>& args ) {
 	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
 	Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, releaseBufferBackingStore, NULL );
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)ssh->fingerprintData, 20, dontReleaseBufferBackingStore, NULL );
 	ab = ArrayBuffer::New( isolate, bs );
 #else
 	ab =

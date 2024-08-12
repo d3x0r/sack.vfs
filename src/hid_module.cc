@@ -453,7 +453,7 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->KeyHidObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), args.Length(), argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -670,7 +670,7 @@ void MouseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		for( int n = 0; n < args.Length(); n++ ) argv[n] = args[n];
 		Local<Function> cons = Local<Function>::New( isolate, c->MouseHidObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), args.Length(), argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 

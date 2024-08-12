@@ -98,7 +98,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 			DWORD dwDisposition;
 			dwStatus = RegCreateKeyEx( hive,
 													  end, 0
-													 , ""
+													 , /* it's only an in...*/(LPSTR)""
 													 , REG_OPTION_NON_VOLATILE
 													 , KEY_ALL_ACCESS
 													 , NULL
@@ -130,7 +130,7 @@ void RegObject::getRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 
 		RegCloseKey( hTemp );
 #endif
-		bool swap;
+		bool swap = false;
 		if( dwStatus == ERROR_SUCCESS )
 		{
 			switch( dwRetType ) {

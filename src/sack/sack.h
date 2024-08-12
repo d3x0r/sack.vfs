@@ -1,7 +1,6 @@
 /*CMake Option defined*/
 #define NO_AUTO_VECTLIB_NAMES
 #define NODE_ADDON_BUILD
-#define SHA2_LOCAL
 /* Includes the system platform as required or appropriate. If
    under a linux system, include appropriate basic linux type
    headers, if under windows pull "windows.h".
@@ -331,6 +330,7 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 //#  define TARGETNAME "sack_bag.dll"  //$(TargetFileName)
 //#endif
 #    define MD5_SOURCE
+#    define SHA2_SOURCE
 #    define USE_SACK_FILE_IO
 /* Defined when SACK_BAG_EXPORTS is defined. This was an
    individual library module once upon a time.           */
@@ -1170,7 +1170,10 @@ typedef P_0 POINTER;
 /* This is a pointer to constant data. void const *. Compatible
    with things like char const *.                               */
 typedef const void *CPOINTER;
-SACK_NAMESPACE_END
+#ifdef __cplusplus
+ //SACK_NAMESPACE_END // namespace sack {
+}
+#endif
 //------------------------------------------------------
 // formatting macro defintions for [vsf]printf output of the above types
 #if !defined( _MSC_VER ) || ( _MSC_VER >= 1900 )
@@ -1626,7 +1629,7 @@ typedef struct DataBlock volatile * volatile PDATALIST;
 /* Data Blocks are like LinkBlocks, and store blocks of data in
    slab format. If the count of elements exceeds available, the
    structure is grown, to always contain a continuous array of
-   structures of Size size.
+   structures of Size size. No locking is provided.
    Remarks
    When blocks are deleted, all subsequent blocks are shifted
    down in the array. So the free blocks are always at the end. */
@@ -1749,7 +1752,10 @@ typedef struct DataQueue volatile* volatile PDATAQUEUE;
    maybe whether we are not complete, and are processing
    startups)                                                   */
 _CONTAINER_NAMESPACE_END
-SACK_NAMESPACE_END
+#ifdef __cplusplus
+ //SACK_NAMESPACE_END // namespace sack {
+}
+#endif
 /* This contains the methods to use the base container types
    defined in sack_types.h.                                  */
 #ifndef LINKSTUFF
@@ -1854,7 +1860,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE         EmptyList      ( PLIST *pList );
 typedef class iList
 {
 public:
-	PLIST list;
+	volatile PLIST list;
 	INDEX idx;
 	inline iList() { list = CreateListEx( DBG_VOIDSRC ); }
 	inline ~iList() { DeleteListEx( &list DBG_SRC ); }
@@ -1993,7 +1999,7 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
 #endif
 //--------------------------------------------------------
 #ifdef __cplusplus
-/* virtual file system using file system IO instead of memory mapped IO */
+/* A type of dynamic array that contains the data of the elements and not just pointers like PLIST. Has no locks builtin. */
 namespace data_list {
 #endif
 /* Creates a data list which hold data elements of the specified
@@ -2081,7 +2087,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE       EmptyDataList ( PDATALIST *ppdl );
       }
    }
    </code>                                   */
-#define DATA_NEXTALL( l, i, t, v )  if(((v)=(t)NULL),(l))	   for( ((i)++);	                         ((i) < (l)->Cnt)                                             ?((v)=(t)((l)->data + (((l)->Size) * (i))))	         :(((v)=(t)NULL),0); (i)++ )
+#define DATA_NEXTALL( l, i, t, v )  if(((v)=(t)NULL),(l))	   for( ((i)++);	                         ((i) < (l)->Cnt)                                             ?(((v)=(t)((l)->data + (((l)->Size) * (i)))),1)	         :(((v)=(t)NULL),0); (i)++ )
 /* <combine sack::containers::data_list::CreateDataListEx@uintptr_t nSize>
    Creates a DataList specifying just the size. Uses the current
    source and line for debugging parameter.                               */
@@ -2337,6 +2343,8 @@ TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE      UnqueData        ( PDATAQUEUE *pplq,
 TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE      IsDataQueueEmpty ( PDATAQUEUE *pplq );
 /* Empty a dataqueue of all data. (Sets head=tail). */
 TYPELIB_PROC  void TYPELIB_CALLTYPE         EmptyDataQueue ( PDATAQUEUE *pplq );
+/* returns how many entries are in the queue. */
+TYPELIB_PROC  INDEX   TYPELIB_CALLTYPE      GetDataQueueLength( PDATAQUEUE pdq );
 /*
  * get a PDATAQUEUE element at index
  * result buffer is a pointer to the type of structure expected to be
@@ -4113,7 +4121,15 @@ TYPELIB_PROC TEXTSTR TYPELIB_CALLTYPE ConvertTextURI( CTEXTSTR text, INDEX lengt
    \result == https://www.google.com/#hl=en&amp;sugexp=eqn&amp;cp=11&amp;gs_id=1a&amp;xhr=t&amp;q=;+\\+++:+
    </code>                                                                                                                        */
 TYPELIB_PROC TEXTSTR TYPELIB_CALLTYPE ConvertURIText( CTEXTSTR text, INDEX length );
+/* Parses a string that contains a comma separated list of
+   strings into an array of strings. Has no quoting support, and
+   simply parses on any comma in a string.
+   Parameters
+   \ \
+                                                                 */
 TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseStringVector( CTEXTSTR data, CTEXTSTR **pData, int *nData );
+/* Parses a string with numbers separated by commas into an
+   array of ints.                                           */
 TYPELIB_PROC LOGICAL TYPELIB_CALLTYPE ParseIntVector( CTEXTSTR data, int **pData, int *nData );
 #ifdef __cplusplus
  //namespace text {
@@ -4293,9 +4309,12 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  RemoveBinaryNode( PTREEROOT root, POINTER u
    </code>                                          */
 TYPELIB_PROC  CPOINTER TYPELIB_CALLTYPE  FindInBinaryTree( PTREEROOT root, uintptr_t key );
 // result of fuzzy routine is 0 = match.  100 = inexact match
+// 101 = no longer matching; result with last 100 match.
 // 1 = no match, actual may be larger
 // -1 = no match, actual may be lesser
 // 100 = inexact match- checks nodes near for better match.
+//
+// Basically scans left and right from 100 match to find best match.
 TYPELIB_PROC  CPOINTER TYPELIB_CALLTYPE  LocateInBinaryTree( PTREEROOT root, uintptr_t key
 														, int (CPROC*fuzzy)( uintptr_t psv, uintptr_t node_key ) );
 /* During FindInBinaryTree and LocateInBinaryTree, the last
@@ -4570,8 +4589,10 @@ IMPORT_METHOD
 #ifndef NO_SACK_EXIT_OVERRIDE
 #define exit(n) BAG_Exit(n)
 #endif
- // namespace sack {
-SACK_NAMESPACE_END
+#ifdef __cplusplus
+ //SACK_NAMESPACE_END // namespace sack {
+}
+#endif
 // this should become common to all libraries and programs...
 //#include <construct.h> // pronounced 'kahn-struct'
 /*
@@ -4722,8 +4743,8 @@ typedef void (CPROC*UserLoggingCallback)( CTEXTSTR log_string );
 SYSLOG_PROC  void SYSLOG_API  SetSystemLog ( enum syslog_types type, const void *data );
 SYSLOG_PROC  void SYSLOG_API  ProtectLoggedFilenames ( LOGICAL bEnable );
 SYSLOG_PROC  void SYSLOG_API  SystemLogFL ( CTEXTSTR FILELINE_PASS );
-SYSLOG_PROC  void SYSLOG_API  SystemLogEx ( CTEXTSTR DBG_PASS );
-SYSLOG_PROC  void SYSLOG_API  SystemLog ( CTEXTSTR );
+//SYSLOG_PROC  void SYSLOG_API  SystemLogEx ( CTEXTSTR DBG_PASS );
+//SYSLOG_PROC  void SYSLOG_API  SystemLog ( CTEXTSTR );
 SYSLOG_PROC  void SYSLOG_API  BinaryToString( PVARTEXT pvt, const uint8_t* buffer, size_t size DBG_PASS );
 SYSLOG_PROC  void SYSLOG_API  LogBinaryFL ( const uint8_t* buffer, size_t size FILELINE_PASS );
 SYSLOG_PROC  void SYSLOG_API  LogBinaryEx ( const uint8_t* buffer, size_t size DBG_PASS );
@@ -4746,12 +4767,14 @@ SYSLOG_PROC  void SYSLOG_API  SetSystemLoggingLevel ( uint32_t nLevel );
    The '.' at the end of 'sample string' is a non printable
    character. characters 0-31 and 127+ are printed as '.'.       */
 #define LogBinary(buf,sz) LogBinaryFL((uint8_t*)(buf),sz DBG_SRC )
+#define SystemLogEx(buf,...) SystemLogFL(buf,##__VA_ARGS__)
 #define SystemLog(buf)    SystemLogFL(buf DBG_SRC )
 #else
 // need to include the typecast... binary logging doesn't really care what sort of pointer it gets.
 #define LogBinary(buf,sz) LogBinary((uint8_t*)(buf),sz )
 //#define LogBinaryEx(buf,sz,...) LogBinaryFL(buf,sz FILELINE_NULL)
-//#define SystemLogEx(buf,...) SystemLogFL(buf FILELINE_NULL )
+#define SystemLogEx(buf,...) SystemLogFL(buf FILELINE_NULL )
+#define SystemLog(buf)    SystemLogFL(buf FILELINE_NULL )
 #endif
 // int result is useless... but allows this to be
 // within expressions, which with this method should be easy.
@@ -4939,11 +4962,11 @@ enum SyslogTimeSpecifications {
 /* Specify how time is logged. */
 SYSLOG_PROC void SYSLOG_API SystemLogTime( uint32_t enable );
 #ifndef NO_LOGGING
-#define OutputLogString(s) SystemLog(s)
+#define OutputLogString(s) SystemLogFL(s FILELINE_SRC )
 /* Depricated. Logs a format string that takes 0 parameters.
    See Also
    <link sack::logging::lprintf, lprintf>                    */
-#define Log(s)                                   SystemLog( s )
+#define Log(s)                                   SystemLogFL( s FILELINE_SRC )
 #else
 #define OutputLogString(s)
 /* Depricated. Logs a format string that takes 0 parameters.
@@ -4991,8 +5014,9 @@ SYSLOG_PROC void SYSLOG_API SystemLogTime( uint32_t enable );
    See Also
    <link sack::logging::lprintf, lprintf>                    */
 #define Log10(s,p1,p2,p3,p4,p5,p6,p7,p8,p9,p10)  lprintf( s, p1, p2, p3,p4,p5,p6,p7,p8,p9,p10 )
-LOGGING_NAMESPACE_END
 #ifdef __cplusplus
+ //LOGGING_NAMESPACE_END
+} }
 using namespace sack::logging;
 #endif
 #endif
@@ -5405,8 +5429,9 @@ SYSTEM_PROC( PDATALIST, GetProcessTree )( PTASK_INFO task );
 */
 SYSTEM_PROC( int, GetTaskPTY )( PTASK_INFO task );
 #endif
-SACK_SYSTEM_NAMESPACE_END
 #ifdef __cplusplus
+ // SACK_SYSTEM_NAMESPACE_END
+} }
 using namespace sack::system;
 #endif
 #endif
@@ -6141,7 +6166,12 @@ MEM_PROC  void MEM_API  GetMemStats ( uint32_t *pFree, uint32_t *pUsed, uint32_t
    bTrueFalse :  if TRUE, allocation logging is turned on. Enables
                  logging when each block is Allocated, Released,
                  or Held.                                          */
-MEM_PROC  int MEM_API  SetAllocateLogging ( LOGICAL bTrueFalse );
+MEM_PROC  int MEM_API  SetAllocateLoggingEx ( LOGICAL bTrueFalse DBG_PASS );
+#define SetAllocateLogging(tf) SetAllocateLoggingEx( tf DBG_SRC )
+MEM_PROC  int MEM_API  ClearAllocateLoggingEx ( LOGICAL bTrueFalse DBG_PASS );
+#define ClearAllocateLogging(tf) ClearAllocateLoggingEx( tf DBG_SRC )
+MEM_PROC  int MEM_API  ResetAllocateLoggingEx ( LOGICAL bTrueFalse DBG_PASS );
+#define ResetAllocateLogging(tf) ResetAllocateLoggingEx( tf DBG_SRC )
 /* disables storing file/line, also disables auto GetMemStats
    checking
    Parameters
@@ -7978,18 +8008,52 @@ NETWORK_PROC( LOGICAL, doTCPWriteExx )( PCLIENT lpClient
                                    , int failpending
                                    DBG_PASS
                                   );
+/* \#The buffer will be sent in the order of the writes to the
+   socket, and released when empty. If the socket is immediatly
+   able to write, the buffer will be sent, and any remai
+   Parameters
+   lpClient :     network connection to write to
+   pInBuffer :    buffer to write
+   nInLen :       Length of the buffer to send
+   bLongBuffer :  if TRUE, then the buffer written is maintained
+				  exactly by the network layer. A WriteComplete
+				  callback will be invoked when the buffer has
+				  been sent so the application might delete the
+				  buffer.
+   failpending :  Uhmm... maybe if it goes to pending, fail?
+   pend_on_fail : True/false - if the write fails, should it be
+				  pending until it can be sent.
+   Remarks
+   If bLongBuffer is not set, then if the write cannot
+   immediately complete, then a new buffer is allocated
+   internally, and unsent data is buffered by the network
+   collection. This allows the user to not worry about slowdowns
+   due to blocking writes. Often writes complete immediately,
+   and are not buffered other than in the user's own buffer
+   passed to this write.                                         */
+NETWORK_PROC( LOGICAL,  doTCPWriteV2 )( PCLIENT lpClient
+                     , CPOINTER pInBuffer
+                     , size_t nInLen
+                     , int bLongBuffer
+                     , int failpending
+                     , int pend_on_fail
+                     DBG_PASS
+                     );
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
-#define doTCPWriteEx( c,b,l,f1,f2) doTCPWriteExx( (c),(b),(l),(f1),(f2) DBG_SRC )
+#define doTCPWriteExx( c,b,l,f1,f2,fop,...) doTCPWriteV2( (c),(b),(l),(f1),(f2),(fop),##__VA_ARGS__ )
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
-#define SendTCPEx( c,b,l,p) doTCPWriteExx( c,b,l,FALSE,p DBG_SRC)
+#define doTCPWriteEx( c,b,l,f1,f2) doTCPWriteV2( (c),(b),(l),(f1),(f2),TRUE DBG_SRC )
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
-#define SendTCP(c,b,l) doTCPWriteExx(c,b,l, FALSE, FALSE DBG_SRC)
+#define SendTCPEx( c,b,l,p) doTCPWriteV2( c,b,l,FALSE,p,TRUE DBG_SRC)
 /* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
    \ \                                                                                  */
-#define SendTCPLong(c,b,l) doTCPWriteExx(c,b,l, TRUE, FALSE DBG_SRC)
+#define SendTCP(c,b,l) doTCPWriteV2(c,b,l, FALSE, FALSE,TRUE DBG_SRC)
+/* <combine sack::network::tcp::doTCPWriteExx@PCLIENT@CPOINTER@int@int@int failpending>
+   \ \                                                                                  */
+#define SendTCPLong(c,b,l) doTCPWriteV2(c,b,l, TRUE, FALSE,TRUE DBG_SRC)
 NETWORK_PROC( void, SetTCPWriteAggregation )( PCLIENT pc, int bAggregate );
 _TCP_NAMESPACE_END
 NETWORK_PROC( void, SetNetworkLong )(PCLIENT lpClient,int nLong,uintptr_t dwValue);
@@ -8420,8 +8484,9 @@ public:
 }NETWORK;
 #  endif
 #endif
-SACK_NETWORK_NAMESPACE_END
 #ifdef __cplusplus
+ //SACK_NETWORK_NAMESPACE_END
+} }
 using namespace sack::network;
 using namespace sack::network::tcp;
 using namespace sack::network::udp;
@@ -8631,7 +8696,7 @@ using namespace sack::network::udp;
 #  define USE_SACK_DEADSTART_NAMESPACE using namespace sack::app::deadstart;
 #  define SACK_DEADSTART_NAMESPACE  SACK_NAMESPACE namespace app { namespace deadstart {
 #  define SACK_DEADSTART_NAMESPACE_END  } } SACK_NAMESPACE_END
-SACK_NAMESPACE
+namespace sack{
 	namespace app{
 /* Application namespace. */
 /* These are compiler-platform abstractions to provide a method
@@ -8679,8 +8744,9 @@ SACK_NAMESPACE
                                                                    */
 		namespace deadstart {
 		}
-        }
-SACK_NAMESPACE_END
+	}
+ //SACK_NAMESPACE_END
+}
 #else
 #define USE_SACK_DEADSTART_NAMESPACE
 #define SACK_DEADSTART_NAMESPACE
@@ -8689,7 +8755,12 @@ SACK_NAMESPACE_END
 #ifdef TYPELIB_SOURCE
 #define DEADSTART_SOURCE
 #endif
-SACK_DEADSTART_NAMESPACE
+#ifdef __cplusplus
+namespace sack{
+	namespace app{
+		namespace deadstart {
+//SACK_DEADSTART_NAMESPACE
+#endif
 /* A macro to specify the call type of schedule routines. This
    can be changed in most projects without affect, it comes into
    play if plugins built by different compilers are used,
@@ -9198,7 +9269,10 @@ typedef void(*atexit_priority_proc)(void (*)(void),int,CTEXTSTR DBG_PASS);
 #else
 #define ATEXIT_PRIORITY_ROOT 101
 #endif
-SACK_DEADSTART_NAMESPACE_END
+#ifdef __cplusplus
+ //SACK_DEADSTART_NAMESPACE_END
+} } }
+#endif
 USE_SACK_DEADSTART_NAMESPACE
 #endif
 #ifdef PROCREG_SOURCE
@@ -9818,8 +9892,10 @@ PROCREG_PROC( void, RegisterAndCreateGlobalWithInit )( POINTER *ppGlobal, uintpt
  * Add a transaltion tree index at the same time.
  */
 PROCREG_PROC( CTEXTSTR, SaveNameConcatN )( CTEXTSTR name1, ... );
-// no space stripping, saves literal text
+// no space stripping, saves literal text (case insensitive indexing; '/' and '\' are the same)
 PROCREG_PROC( CTEXTSTR, SaveText )( CTEXTSTR text );
+// no space stripping, saves literal text (case sensitive indexing; '/' and '\' are the same)
+PROCREG_PROC( CTEXTSTR, SaveTextCS )( CTEXTSTR text );
 PROCREG_NAMESPACE_END
 #ifdef __cplusplus
 	using namespace sack::app::registry;
@@ -9955,7 +10031,7 @@ LOGICAL HTTPAPI AddHttpData( HTTPState pHttpState, CPOINTER buffer, size_t size 
             to 'content\-length' meta tag.
    FALSE :  Still collecting full packet                           */
 //HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState );
-HTTP_EXPORT int HTTPAPI ProcessHttp( HTTPState pHttpState, int (*send)(uintptr_t psv, CPOINTER buf, size_t len), uintptr_t psv );
+HTTP_EXPORT enum ProcessHttpResult HTTPAPI ProcessHttp( HTTPState pHttpState, int (*send)(uintptr_t psv, CPOINTER buf, size_t len), uintptr_t psv );
 HTTP_EXPORT
  /* Gets the specific result code at the header of the packet -
    http 2.0 OK sort of thing.                                  */
@@ -10113,6 +10189,7 @@ typedef void (*web_socket_error)( PCLIENT pc, uintptr_t psv, int error );
 typedef void (*web_socket_event)( PCLIENT pc, uintptr_t psv, LOGICAL binary, CPOINTER buffer, size_t msglen );
 // protocolsAccepted value set can be released in opened callback, or it may be simply assigned as protocols passed...
 typedef LOGICAL ( *web_socket_accept )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource, char **protocolsAccepted);
+typedef void ( *web_socket_accept_async )(PCLIENT pc, uintptr_t psv, const char *protocols, const char *resource );
 typedef void (*web_socket_completion)( PCLIENT pc, uintptr_t psv, int binary, int bytesRead );
  // passed psv used in server create; since it is sort of an open, return a psv for next states(if any)
 typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
@@ -10172,9 +10249,11 @@ WEBSOCKET_EXPORT void SetWebSocketCloseCallback( PCLIENT pc, web_socket_closed c
 WEBSOCKET_EXPORT void SetWebSocketErrorCallback( PCLIENT pc, web_socket_error callback );
 WEBSOCKET_EXPORT void SetWebSocketHttpCallback( PCLIENT pc, web_socket_http_request callback );
 WEBSOCKET_EXPORT void SetWebSocketHttpCloseCallback( PCLIENT pc, web_socket_http_close callback );
+WEBSOCKET_EXPORT void SetWebSocketAcceptAsyncCallback( PCLIENT pc, web_socket_accept_async callback );
 WEBSOCKET_EXPORT void SetWebSocketPipeErrorCallback( struct html5_web_socket* ws, web_socket_error callback );
 WEBSOCKET_EXPORT void SetWebSocketPipeHttpCallback( struct html5_web_socket* ws, web_socket_http_request callback );
 WEBSOCKET_EXPORT void SetWebSocketPipeHttpCloseCallback( struct html5_web_socket* ws, web_socket_http_close callback );
+WEBSOCKET_EXPORT void SetWebSocketPipeAcceptAsyncCallback( struct html5_web_socket* pc, web_socket_accept_async callback );
 // if set in server accept callback, this will return without extension set
 // on client socket (default), does not request permessage-deflate
 #define WEBSOCK_DEFLATE_DISABLE 0
@@ -10304,6 +10383,10 @@ HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketPipeResource )( struct html5_web_socket
 HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketPipeHttpState )( struct html5_web_socket* socket );
 HTML5_WEBSOCKET_PROC( void, ResetWebsocketRequestHandler )( PCLIENT pc_client );
 HTML5_WEBSOCKET_PROC( uintptr_t, WebSocketGetServerData )( PCLIENT pc );
+// when using async accept - this is used to accept the socket.
+HTML5_WEBSOCKET_PROC( void, WebSocketPipeAccept )( struct html5_web_socket* socket, char *protocols, int yesno );
+// when using async accept - this is used to accept the socket.
+HTML5_WEBSOCKET_PROC( void, WebSocketAccept )( PCLIENT pc, char *protocols, int yesno );
 HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif
@@ -10311,6 +10394,9 @@ SACK_NETWORK_NAMESPACE
 #ifdef __cplusplus
 namespace ssh {
 #endif
+struct ssh_channel;
+struct ssh_listener;
+struct ssh_sftp;
 typedef void ( *ssh_handshake_cb )( uintptr_t psv, const uint8_t* fingerprint );
 // ----------------- SESSIONS ---------------------
 /*
@@ -11535,7 +11621,7 @@ PSSQL_PROC( int, SQLRecordQuery_js )( PODBC odbc
 /*
 	this properly releases the list and all allocated strings within the entires
  */
-void ReleaseSQLResults( PDATALIST *ppdlResults );
+PSSQL_PROC( void, ReleaseSQLResults )( PDATALIST *ppdlResults );
 /* Do a SQL query on the default odbc connection. The first
    record results immediately if there are any records. Returns
    the results as an array of strings. If you know the select
@@ -12383,7 +12469,8 @@ IDLE_PROC( int, Idle )( void );
 IDLE_PROC( int, IdleFor )( uint32_t dwMilliseconds );
 #ifdef __cplusplus
 	_TIMER_NAMESPACE_END
-SACK_NAMESPACE_END
+ //SACK_NAMESPACE_END
+}
 using namespace sack::timers;
 #endif
 #endif
@@ -12960,8 +13047,9 @@ FILEMONITOR_PROC( void, SetFMonitorForceScanTime )( PMONITOR monitor, uint32_t d
 // returns 0 if no changed were pending, else returns number
 // of changes dispatched (not nessecarily handled)
 FILEMONITOR_PROC( int, DispatchChanges )( PMONITOR monitor );
-FILEMON_NAMESPACE_END
 #ifdef __cplusplus
+//FILEMON_NAMESPACE_END
+} } }
 using namespace sack::filesys::monitor;
 #endif
 #endif
@@ -13486,8 +13574,9 @@ SACK_VFS_PROC LOGICAL sack_vfs_os_analyze( struct sack_vfs_os_volume* volume );
 #define sack_vfs_find_get_wdate  sack_vfs_os_find_get_wdate
 #endif
 //DOM-IGNORE-END
-SACK_VFS_NAMESPACE_END
 #if defined( __cplusplus )
+ //SACK_VFS_NAMESPACE_END
+} }
 using namespace sack::SACK_VFS;
 using namespace sack::SACK_VFS::fs;
 using namespace sack::SACK_VFS::objStore;
@@ -14112,7 +14201,8 @@ JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_array_value )(s
 	, void( *callback )(uintptr_t psv, struct jsox_value_container *val), uintptr_t psv
 	);
 #ifdef __cplusplus
-} } SACK_NAMESPACE_END
+//SACK_NAMESPACE_END
+} } }
 using namespace sack::network::jsox;
 #endif
 #endif
@@ -14322,8 +14412,9 @@ namespace sack {
 #define BASE_COLOR_PURPLE        Color( 0x7A, 0x11, 0x7C )
 #ifdef __cplusplus
  //	 namespace image {
+	}
+ //SACK_NAMESPACE_END
 }
-SACK_NAMESPACE_END
 using namespace sack::image;
 #endif
 #endif
@@ -14496,8 +14587,9 @@ FRACTION_PROC  uint32_t FRACTION_API  ScaleValue ( PFRACTION f, int32_t value );
    Returns
    the value of ( value * 1/ f )               */
 FRACTION_PROC  uint32_t FRACTION_API  InverseScaleValue ( PFRACTION f, int32_t value );
-	SACK_MATH_FRACTION_NAMESPACE_END
 #ifdef __cplusplus
+ //	SACK_MATH_FRACTION_NAMESPACE_END
+} } }
 using namespace sack::math::fraction;
 #endif
 #endif
@@ -15424,8 +15516,9 @@ PREFIX_PACKED struct MsgSrv_ReplyServiceLoad_msg
 #ifdef _MSC_VER
 #pragma pack (pop)
 #endif
-MSGPROTOCOL_NAMESPACE_END
 #ifdef __cplusplus
+ //MSGPROTOCOL_NAMESPACE_END
+} } }
 using namespace sack::msg::protocol;
 #endif
 #endif
@@ -15452,3 +15545,223 @@ SYSTRAY_PROC void AddSystrayMenuFunction_v2( CTEXTSTR text, void (CPROC* functio
 // Revision 1.3  2003/03/25 08:38:11  panther
 // Add logging
 //
+/* MD5.H - header file for MD5C.C
+ */
+/* Copyright (C) 1991-2, RSA Data Security, Inc. Created 1991. All
+rights reserved.
+License to copy and use this software is granted provided that it
+is identified as the "RSA Data Security, Inc. MD5 Message-Digest
+Algorithm" in all material mentioning or referencing this software
+or this function.
+License is also granted to make and use derivative works provided
+that such works are identified as "derived from the RSA Data
+Security, Inc. MD5 Message-Digest Algorithm" in all material
+mentioning or referencing the derived work.
+RSA Data Security, Inc. makes no representations concerning either
+the merchantability of this software or the suitability of this
+software for any particular purpose. It is provided "as is"
+without express or implied warranty of any kind.
+These notices must be retained in any copies of any part of this
+documentation and/or software.
+ */
+#ifndef MD5_ALGORITHM_DEFINED
+#define MD5_ALGORITHM_DEFINED
+#ifdef MD5_SOURCE
+#define MD5_PROC(type,name) EXPORT_METHOD type name
+#else
+#define MD5_PROC(type,name) IMPORT_METHOD type name
+#endif
+/* MD5 context. */
+typedef struct {
+	uint32_t state[4];
+	uint32_t count[2];
+  unsigned char buffer[64];
+} MD5_CTX;
+MD5_PROC( void, MD5Init )(MD5_CTX *);
+MD5_PROC( void, MD5Update )(MD5_CTX *, unsigned char *, unsigned int);
+MD5_PROC( void, MD5Final )(unsigned char [16], MD5_CTX *);
+#endif
+/* SHA1 Standard library from somewhere... */
+/*
+ *  sha1.h
+ *
+ *  Description:
+ *      This is the header file for code which implements the Secure
+ *      Hashing Algorithm 1 as defined in FIPS PUB 180-1 published
+ *      April 17, 1995.
+ *
+ *      Many of the variable names in this code, especially the
+ *      single character names, were used because those were the names
+ *      used in the publication.
+ *
+ *      Please read the file sha1.c for more information.
+ *
+ */
+#ifndef INCLUDED_SHA1_H_
+#define INCLUDED_SHA1_H_
+#define _SHA1_H_
+#ifdef SHA1_SOURCE
+#define SHA1_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define SHA1_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#if !defined(  HAS_STDINT )
+#ifndef __WATCOMC__
+	typedef unsigned long uint32_t;
+	typedef short int_least16_t;
+	typedef unsigned char uint8_t;
+#else
+#endif
+//typedef unsigned char uint8_t;
+//typedef int int_least16_t;
+#endif
+/*
+ * If you do not have the ISO standard stdint.h header file, then you
+ * must typdef the following:
+ *    name              meaning
+ *  uint32_t         unsigned 32 bit integer
+ *  uint8_t          unsigned 8 bit integer (i.e., unsigned char)
+ *  int_least16_t    integer of >= 16 bits
+ *
+ */
+#ifndef _SHA_enum_
+#define _SHA_enum_
+enum
+{
+    shaSuccess = 0,
+    shaNull,
+    shaInputTooLong,
+    shaStateError
+};
+#endif
+#define SHA1HashSize 20
+/*
+ *  This structure will hold context information for the SHA-1
+ *  hashing operation
+ */
+typedef struct SHA1Context
+{
+    uint32_t Intermediate_Hash[SHA1HashSize/4];
+    uint32_t Length_Low;
+    uint32_t Length_High;
+                               /* Index into message block array   */
+    int_least16_t Message_Block_Index;
+    uint8_t Message_Block[64];
+    int Computed;
+    int Corrupted;
+} SHA1Context;
+#define SHA1_DIGEST_SIZE SHA1HashSize
+typedef SHA1Context sha1_ctx;
+/*
+ *  Function Prototypes
+ */
+SHA1_PROC( int, SHA1Reset )(  SHA1Context *);
+SHA1_PROC( int, SHA1Input )(  SHA1Context *,
+                const uint8_t *,
+                size_t);
+SHA1_PROC( int, SHA1Result )( SHA1Context *,
+                uint8_t Message_Digest[SHA1HashSize]);
+#endif
+// $Log: $
+/*
+ * FIPS 180-2 SHA-224/256/384/512 implementation
+ * Last update: 02/02/2007
+ * Issue date:  04/30/2005
+ *
+ * Copyright (C) 2005, 2007 Olivier Gay <olivier.gay@a3.epfl.ch>
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the project nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE PROJECT AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE PROJECT OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+#ifndef SHA2_H
+#define SHA2_H
+#ifdef SHA2_LOCAL
+#  define SHA2_PROC   static
+#else
+#  ifdef SHA2_SOURCE
+#    define SHA2_PROC   EXPORT_METHOD
+#  else
+#    define SHA2_PROC   IMPORT_METHOD
+#  endif
+#endif
+#define SHA224_DIGEST_SIZE ( 224 / 8)
+#define SHA256_DIGEST_SIZE ( 256 / 8)
+#define SHA384_DIGEST_SIZE ( 384 / 8)
+#define SHA512_DIGEST_SIZE ( 512 / 8)
+#define SHA256_BLOCK_SIZE  ( 512 / 8)
+#define SHA512_BLOCK_SIZE  (1024 / 8)
+#define SHA384_BLOCK_SIZE  SHA512_BLOCK_SIZE
+#define SHA224_BLOCK_SIZE  SHA256_BLOCK_SIZE
+#ifndef SHA2_TYPES
+#define SHA2_TYPES
+typedef unsigned char uint8;
+typedef unsigned int  uint32;
+typedef unsigned long long uint64;
+#endif
+#ifdef __cplusplus
+extern "C" {
+#endif
+typedef struct {
+    unsigned int tot_len;
+    unsigned int len;
+    unsigned char block[2 * SHA256_BLOCK_SIZE];
+    uint32 h[8];
+}sha256_ctx;
+typedef struct {
+    unsigned int tot_len;
+    unsigned int len;
+    unsigned char block[2 * SHA512_BLOCK_SIZE];
+    uint64 h[8];
+}sha512_ctx;
+typedef sha512_ctx sha384_ctx;
+typedef sha256_ctx sha224_ctx;
+SHA2_PROC void sha224_init(sha224_ctx *ctx);
+SHA2_PROC void sha224_update(sha224_ctx *ctx, const unsigned char *message,
+                   unsigned int len);
+SHA2_PROC void sha224_final(sha224_ctx *ctx, unsigned char *digest);
+SHA2_PROC void sha224(const unsigned char *message, unsigned int len,
+            unsigned char *digest);
+SHA2_PROC void sha256_init(sha256_ctx * ctx);
+SHA2_PROC void sha256_update(sha256_ctx *ctx, const unsigned char *message,
+                   unsigned int len);
+SHA2_PROC void sha256_final(sha256_ctx *ctx, unsigned char *digest);
+SHA2_PROC void sha256(const unsigned char *message, unsigned int len,
+            unsigned char *digest);
+SHA2_PROC void sha384_init(sha384_ctx *ctx);
+SHA2_PROC void sha384_update(sha384_ctx *ctx, const unsigned char *message,
+                   unsigned int len);
+SHA2_PROC void sha384_final(sha384_ctx *ctx, unsigned char *digest);
+SHA2_PROC void sha384(const unsigned char *message, unsigned int len,
+            unsigned char *digest);
+SHA2_PROC void sha512_init(sha512_ctx *ctx);
+SHA2_PROC void sha512_update(sha512_ctx *ctx, const unsigned char *message,
+                   unsigned int len);
+SHA2_PROC void sha512_final(sha512_ctx *ctx, unsigned char *digest);
+SHA2_PROC void sha512(const unsigned char *message, unsigned int len,
+            unsigned char *digest);
+#ifdef __cplusplus
+}
+#endif
+#endif

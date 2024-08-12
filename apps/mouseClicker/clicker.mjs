@@ -28,25 +28,25 @@ function keyEvents( event ) {
 
 let _4down = false;
 let clicking = false;
-const clickPerSec = 30;
+const clickPerSec = 120;
 const mouse = sack.Mouse( mouseCallback );
 let clickPos = null;
 
 function mouseCallback(event){
 	//console.log( "mouse event:", event );
-        if( event.buttons & 32 ) {
+	if( event.buttons & 32 ) {
 		if( !_4down ) { 
-				clickPos = sack.Mouse.cursor;               	
-                	_4down = true;
-	        	clicking = !clicking;
+			clickPos = sack.Mouse.cursor;               	
+			_4down = true;
+			clicking = !clicking;
 			console.log( "click?", clicking );
-        	        if( clicking )
-	        	        doClick();
-                } else {
-                }
-        } else {
-        	_4down = false;
-        }
+			if( clicking )
+				doClick();
+		} else {
+		}
+	} else {
+		_4down = false;
+	}
 }
 
 function doClick( ) {

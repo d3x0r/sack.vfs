@@ -298,7 +298,7 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				dsn = *arg;
 				obj = new SqlObject( dsn, isolate, args.This(), callback );
 			} else if( args[0]->IsObject() ){
-				Local<Object> opts = Local<Object>::Cast( args[0] );
+				//Local<Object> opts = Local<Object>::Cast( args[0] );
 				lprintf( "option object method for opening a database connection is not complete!");
 				isolate->ThrowException( Exception::Error(
 					String::NewFromUtf8( isolate, TranslateText( "option object method for opening a database connection is not complete!" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -339,13 +339,13 @@ void SqlObject::doWrap( SqlObject *sql, Local<Object> o ) {
 int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 {
 	CTEXTSTR pCurrentCharacter;
-	int decimal_count, s, begin = TRUE, digits;
+	int decimal_count, begin = TRUE, digits;
 	// remember where we started...
 	// if the first segment is indirect, collect it and only it
 	// as the number... making indirects within a number what then?
 
 	decimal_count = 0;
-	s = 0;
+	//s = 0;
 	digits = 0;
 	pCurrentCharacter = text;
 	while( pCurrentCharacter[0] )
@@ -362,7 +362,7 @@ int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 			}
 			else if( ((*pCurrentCharacter) == '-') && begin)
 			{
-				s++;
+				//s++;
 			}
 			else if( ((*pCurrentCharacter) < '0') || ((*pCurrentCharacter) > '9') )
 			{
@@ -421,7 +421,7 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-	Local<Context> context = args.GetIsolate()->GetCurrentContext();
+	//Local<Context> context = args.GetIsolate()->GetCurrentContext();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	SetSQLAutoTransact( sql->state->odbc, args[0]->TOBOOL(args.GetIsolate()) );
@@ -502,7 +502,7 @@ void SqlStmtObject::Set( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg, String::Utf8Value *name, uint32_t p ) {
+static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> arg, String::Utf8Value *name, uint32_t p, PVARTEXT pvtErrors ) {
 	struct jsox_value_container val;
 	if( name ) {
 		val.name = DupCStrLen( *name[0], val.nameLen = name[0].length() );
@@ -576,11 +576,11 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	}
 	else {
 		String::Utf8Value text( USE_ISOLATE( isolate ) arg->ToString(isolate->GetCurrentContext()).ToLocalChecked() );
-		val.value_type = JSOX_VALUE_STRING;
-		val.string = DupCStrLen( *text, val.stringLen = text.length() );
+		//val.value_type = JSOX_VALUE_STRING;
+		//val.string = DupCStrLen( *text, val.stringLen = text.length() );
 		//AddDataItem( pdlParams, &val );
-	    
-		lprintf( "Unsupported TYPE parameter %d %s", p+1, *text );
+		vtprintf( pvtErrors, "Unsupported TYPE parameter %d %s\n", p+1, *text ); 
+		//lprintf( "Unsupported TYPE parameter %d %s", p+1, *text );
 		return FALSE;
 	}
 	return TRUE;
@@ -721,7 +721,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 				DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
 					if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
 
-					Local<Object> container = colMap[idx].t->container;
+					//Local<Object> container = colMap[idx].t->container;
 					if (fields[colMap[idx].col].used > 1) {
 						// add an array on the name for each result to be stored
 						if (fields[colMap[idx].col].first == idx) {
@@ -867,7 +867,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 
 static void DoQuery( struct query_thread_params *params ) {
 	Isolate* isolate = params->isolate;
-	Local<Context> context = params->context;
+	//Local<Context> context = params->context;
 
 	SqlObject* sql = params->sql;
 	PTEXT statement = params->statement;
@@ -913,6 +913,7 @@ static uintptr_t queryThread( PTHREAD thread ) {
 static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject *sql, LOGICAL promised ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
+	PVARTEXT pvtErrors = VarTextCreate();
 	if (args.Length() == 0) {
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "Required parameter, SQL query, is missing." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -931,7 +932,6 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 	if (args.Length() > 1) {
 		int arg = 1;
 		LOGICAL isFormatString;
-		PVARTEXT pvtStmt = VarTextCreate();
 		struct jsox_value_container val;
 		memset( &val, 0, sizeof( val ) );
 		int escape = 0;
@@ -974,8 +974,8 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 					Local<Value> valName = GETN( paramNames, p );
 					Local<Value> value = GETV( params, valName );
 					String::Utf8Value name( USE_ISOLATE( isolate ) valName->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-					if (!PushValue( isolate, &pdlParams, value, &name, p )) {
-						lprintf( "bad value in SQL:%s", *sqlStmt );
+					if (!PushValue( isolate, &pdlParams, value, &name, p, pvtErrors )) {
+						vtprintf( pvtErrors, "bad value in SQL:%s\n", *sqlStmt );
 					}
 				}
 			}
@@ -987,8 +987,9 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 			isFormatString = TRUE;
 		}
 		else if (StrChr( *sqlStmt, '?' )) {
-			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
-			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
+			// statement should already be arg[0] cloned.
+			//String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
+			//statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
 			isFormatString = TRUE;
 		}
 		else {
@@ -999,6 +1000,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		if (!pdlParams)
 			pdlParams = CreateDataList( sizeof( struct jsox_value_container ) );
 		if (!isFormatString) {
+			PVARTEXT pvtStmt = VarTextCreate();
 			for (; arg < args.Length(); arg++) {
 				if (args[arg]->IsString()) {
 					String::Utf8Value text( USE_ISOLATE( isolate ) args[arg]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -1014,23 +1016,33 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 					}
 				}
 				else {
-					if (!PushValue( isolate, &pdlParams, args[arg], NULL, arg ))
-						lprintf( "bad value in format parameter string:%s", *sqlStmt );
+					if (!PushValue( isolate, &pdlParams, args[arg], NULL, arg, pvtErrors ))
+						vtprintf( pvtErrors, "bad value in format parameter string:%s\n", *sqlStmt );
 					VarTextAddCharacter( pvtStmt, '?' );
 				}
 			}
+			if( statement ) LineRelease( statement );
 			statement = VarTextGet( pvtStmt );
 			VarTextDestroy( &pvtStmt );
 		}
 		else {
-			String::Utf8Value sqlStmt( USE_ISOLATE( isolate ) args[0] );
-			statement = SegCreateFromCharLen( *sqlStmt, sqlStmt.length() );
 			for (; arg < args.Length(); arg++) {
-				if (!PushValue( isolate, &pdlParams, args[arg], NULL, 0 ))
-					lprintf( "Bad value in sql statement:%s", *sqlStmt );
+				if (!PushValue( isolate, &pdlParams, args[arg], NULL, arg-1, pvtErrors )) {
+					vtprintf( pvtErrors, "Bad value in sql statement:%s\n", *sqlStmt );
+				}
 			}
 		}
 	}
+	{
+		PTEXT error = VarTextPeek( pvtErrors );
+		if( GetTextSize( error ) ) {
+			LineRelease( statement );
+			statement = NULL;
+			isolate->ThrowException( Exception::Error(
+				String::NewFromUtf8( isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		}
+	}
+	VarTextDestroy( &pvtErrors );
 	if (statement) {
 		struct query_thread_params *params = new query_thread_params();
 		params->isolate = isolate;
@@ -1075,7 +1087,6 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 				// buildQueryResult releases resources that are used...
 				if( params->error ) ReleaseEx( params->error DBG_SRC );
 				else args.GetReturnValue().Set( Array::New( isolate ) );
-				LineRelease( params->statement );
 				if( params->pdlParams )
 					DeleteDataList( &params->pdlParams );
 			}
@@ -1138,7 +1149,8 @@ static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
 		// only do this if we started an async callback on it.
 		struct userMessage msg;
 		msg.mode = UserMessageModes::OnDeallocate;
-		Hold( sql->state );
+		// the release should be done when this posted message gets handled...
+		//Hold( sql->state );
 
 		msg.onwhat = NULL;
 		msg.done = 0;
@@ -1213,7 +1225,7 @@ SqlObject::~SqlObject() {
 		uv_async_send( &state->async );
 	}
 	CloseDatabase( state->odbc );
-	ReleaseEx( state DBG_SRC );
+	//ReleaseEx( state DBG_SRC );
 }
 
 //-----------------------------------------------------------
@@ -1754,6 +1766,8 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 				// probably results in a Resolve();
 				buildQueryResult( msg->params ); // this is in charge of releasing any data... 
 			}
+			LineRelease( msg->params->statement );
+
 			// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
 			//lprintf( "Releasing message..." );
 			Release( msg );

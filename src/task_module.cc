@@ -47,6 +47,10 @@ struct optionStrings {
 	Eternal<String>* primaryString;
 	Eternal<String>* deviceString;
 #endif
+#if defined( __LINUX__ )
+	Eternal<String>* usePtyString;
+#endif
+
 };
 
 
@@ -122,6 +126,10 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->primaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "primary" ) );
 		check->deviceString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "device" ) );
 		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
+#endif
+#if defined( __LINUX__ )
+		check->usePtyString =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "usePty" ) );
+
 #endif
 	}
 	return check;
@@ -506,7 +514,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			Local<String> optName;
 			struct optionStrings *strings = getStrings( isolate );
 			Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
-			String::Utf8Value *args = NULL;
+			String::Utf8Value *argString = NULL;
 			String::Utf8Value *bin = NULL;
 			String::Utf8Value *work = NULL;
 			bool end = false;
@@ -523,6 +531,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool noKill = false;
 			bool asAdmin = false;
 			bool noWait = true;
+			bool usePty = false;
 			bool detach = false;
 			bool noInheritStdio = false;
 
@@ -566,6 +575,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					noWait = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
+#if defined( __LINUX__ )
+			if( opts->Has( context, optName = strings->usePtyString->Get( isolate ) ).ToChecked() ) {
+				if( GETV( opts, optName )->IsBoolean() ) {
+					usePty = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+#endif
 			if( opts->Has( context, optName = strings->detachedString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					detach = GETV( opts, optName )->TOBOOL( isolate );
@@ -617,8 +633,8 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Value> val;
 				if( GETV( opts, optName )->IsString() ) {
 					char **args2;
-					args = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-					ParseIntoArgs( *args[0], &newTask->nArg, &newTask->argArray );
+					argString = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					ParseIntoArgs( *argString[0], &newTask->nArg, &newTask->argArray );
 
 					args2 = NewArray( char*, newTask->nArg + 1 );
 			
@@ -741,6 +757,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( useSignal ? LPP_OPTION_USE_SIGNAL:0 )
 				| ( detach ? LPP_OPTION_DETACH : 0 )
 				| ( asAdmin ? LPP_OPTION_ELEVATE : 0 )
+				| ( usePty? LPP_OPTION_INTERACTIVE : 0 )
 				, input ? getTaskInput : NULL
 				, input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
@@ -776,9 +793,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			} else if( newTask->task && !moveOpts.IsEmpty() )
 				doMoveWindow( isolate, context, newTask, NULL, moveOpts );
 #endif
+			if( work ) delete work;
+			if( bin ) delete bin;
+			if( argString ) delete argString;
 
 		}
-
+		
 		args.GetReturnValue().Set( _this );
 	}
 	else {
@@ -871,6 +891,7 @@ void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 void TaskObject::Print( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	if( task->ending || task->ended ||task->stopped || task->killed ) return;
 	if( task->task ) {
 		String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 		pprintf( task->task, "%s", *s );
@@ -1050,7 +1071,6 @@ static void doStyleWindow( Isolate* isolate, Local<Context> context, TaskObject*
 
 void TaskObject::refreshWindow( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	HWND hWnd = RefreshTaskWindow( task->task );
 	Local<ArrayBuffer> ab;
@@ -1354,10 +1374,10 @@ static void setProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	if( !args[0]->IsInt32() ) return;
-	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
-	int64_t winStyles = args[1]->IsNumber() ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
-	int64_t winStylesEx = args[2]->IsNumber() ? args[2]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
-	int64_t classStyles = args[3]->IsNumber() ? args[3]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
+	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
+	int64_t winStyles = args[1]->IsNumber() ? args[1]->IntegerValue( context ).FromMaybe( -1 ) : -1;
+	int64_t winStylesEx = args[2]->IsNumber() ? args[2]->IntegerValue( context ).FromMaybe( -1 ) : -1;
+	int64_t classStyles = args[3]->IsNumber() ? args[3]->IntegerValue( context ).FromMaybe( -1 ) : -1;
 	HWND hWnd = find_main_window( id );
 	//lprintf( "Set Values: %d %p %08x %08x %08x", id, hWnd, winStyles, winStylesEx, classStyles );
 	if( winStyles != -1 )
@@ -1374,7 +1394,7 @@ static void getProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	if( !args[0]->IsInt32() ) return;
-	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
 	HWND hWnd = find_main_window( id );
 	int32_t winStyles = (int32_t)GetWindowLongPtr( hWnd, GWL_STYLE );
 	int32_t winStylesEx = (int32_t)GetWindowLongPtr( hWnd, GWL_EXSTYLE );
@@ -1391,7 +1411,7 @@ static void getProcessWindowPos( const FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	if( !args[0]->IsInt32() ) return;
-	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
 	HWND hWnd = find_main_window( id );
 	Local<Object> position = Object::New( isolate );
 	RECT rect;
@@ -1407,7 +1427,7 @@ static void setProcessWindowPos( const FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	if( !args[0]->IsInt32() ) return;
-	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
 	Local<Object> opts = Local<Object>::Cast( args[1] );
 	HWND hWnd = find_main_window( id );
 	doMoveWindow( isolate, context, NULL, hWnd, opts );
@@ -1428,7 +1448,7 @@ void TaskObject::styleWindow( const FunctionCallbackInfo<Value>& args ){
 	Local<Context> context = isolate->GetCurrentContext();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 
-	Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
+	Local<Object> opts = args[0]->ToObject( context ).ToLocalChecked();
 	doStyleWindow( isolate, context, task, NULL, opts );
 }
 
@@ -1468,7 +1488,6 @@ void TaskObject::setProcessWindowStyles( const FunctionCallbackInfo<Value>& args
 
 void TaskObject::getProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	HWND hWnd = RefreshTaskWindow( task->task );
 	int32_t winStyles = (int32_t)GetWindowLongPtr( hWnd, GWL_STYLE );
@@ -1484,7 +1503,7 @@ void TaskObject::getProcessWindowStyles( const FunctionCallbackInfo<Value>& args
 static void getProcessWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
 	HWND hWnd = find_main_window( id );
 	char* str = NewArray( char, 256 );
 	if( hWnd ) {
@@ -1509,14 +1528,14 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify process ID to terminate." ) ) );
 		return;
 	}
-	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
-	int32_t code = (int32_t)(args.Length() > 1 ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 ) : (int64_t)0);
+	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
+	int32_t code = (int32_t)(args.Length() > 1 ? args[1]->IntegerValue( context ).FromMaybe( 0 ) : (int64_t)0);
 
 
 #ifdef _WIN32
 	char* name = NULL;
 	if( args.Length() > 2 ) {
-		String::Utf8Value s( USE_ISOLATE( isolate ) args[2]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value s( USE_ISOLATE( isolate ) args[2]->ToString( context ).ToLocalChecked() );
 		name = StrDup( *s );
 	}
 	HWND hWndMain = find_main_window( id );
@@ -1598,8 +1617,8 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify process ID to terminate." ) ) );
 		return;
 	}
-	int32_t id = (int32_t)args[0]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
-	int64_t code = (int32_t)(args.Length() > 1 ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 ) : (int64_t)0);
+	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
+	int64_t code = (int32_t)(args.Length() > 1 ? args[1]->IntegerValue( context ).FromMaybe( 0 ) : (int64_t)0);
 #ifdef _WIN32
 	HANDLE hProcess = OpenProcess( PROCESS_ALL_ACCESS, FALSE, id );
 	if( hProcess ) {

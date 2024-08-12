@@ -2,10 +2,10 @@
 
 [![Join the chat at https://gitter.im/sack-vfs/Lobby](https://badges.gitter.im/sack-vfs/Lobby.svg)](https://gitter.im/sack-vfs/Lobby?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) 
 
-[![buddy pipeline](https://app.buddy.works/sackvfs/sack-vfs/pipelines/pipeline/457231/badge.svg?token=02218aba131a83da260fe88b34078c59e02303a7038ef0c7e36652ce2a7e5e4e "buddy pipeline")](https://app.buddy.works/sackvfs/sack-vfs/pipelines/pipeline/457231)
+[![buddy pipeline](https://app.buddy.works/d3ck0r-1/sack-vfs/pipelines/pipeline/492336/badge.svg?token=60065f4e65bb4060abba4ed78e886e269a135fdbc7f1ae03ccc0e79af3cffe76 "buddy pipeline")](https://app.buddy.works/d3ck0r-1/sack-vfs/pipelines/pipeline/492336)
 
-(Deprecating; no free support - one shot 10k credits then 0) [![Build Status](https://travis-ci.com/d3x0r/sack.vfs.svg?branch=master)](https://app.travis-ci.com/github/d3x0r/sack.vfs)
 
+Quick summary of features/subsystems.
 
 - WebSocket/HTTP/HTTPS network library.  UDP sockets (`http`,`UDP` replacment).
 - JSON/[JSON6](https://github.com/d3x0r/JSON6) (stream)parser,
@@ -190,11 +190,13 @@ import {SACK} from "sack.vfs";
     - [HTTP Server](https://github.com/d3x0r/sack.vfs/blob/master/README_WSS.md#http-fallback)
  - [Websocket Client](https://github.com/d3x0r/sack.vfs/blob/master/README_WSC.md#http-request-interface--httphttps-)
  - [HTTP Requests](https://github.com/d3x0r/sack.vfs/blob/master/README_HTTP.md)
- - [UDP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md##udp-socket-object-networkudp) - Low level system UDP sockets; TCP could be available, but HTTP and Websocket suffice.
- - [TLS](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
- - [ComPort](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
- - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
- - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md)
+ - [UDP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md) - Low level system UDP sockets. 
+ - [TCP](https://github.com/d3x0r/sack.vfs/blob/master/README_TCP.md) - Low level system TCP sockets.
+ - [ICMP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md) - ICMP interface (name lookup and ping)
+ - [TLS](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - certificate creation and validation
+ - [ComPort](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - COM port IO
+ - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Monitors files for changes
+ - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Other
 
 ### GUI Interfaces
 
@@ -251,7 +253,11 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
+- 1.3.0(in progress)
+    - change version, mostly to have a cleaner version point, but there are some significant changes to this, that really obsoletes everything before
+    - Add simple TCP network interface. 
 - 1.1.822(in progress)
+    - Enable option to load ssl certificates for HTTPS app service.
     - JSOX decode fixes.  Handle `'':` as not an error.  which also means `{:` is not an error and it's a zero length string.
     - Enable System Tray interface on windows (linux doesn't have a standard API; and tool doesnt' exist)
     - Fix rare JSOX parsing ref follow where part of path is used and then forks to previous data.
@@ -273,6 +279,10 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
     - Added some tests for `Task()` objects; fixed some minor memory leaks.
     - Modified Task `send()` method to send direct buffer, without format support; previously behaved like printf format.
     - Handle task write/read during close better; may generate an EPIPE, which can be caught with `process.on( "EPIPE", ...)` in JS script.
+    - (JSOX)Quote strings that have a '#' in them.
+    - (JSOX)allow '#' to start a comment until end-of-line.
+    - (JSOX)fix cummulative error in column count on a comma after a number.
+
 - 1.1.821
     - Linux build fix; don't use windows admin option.
 - 1.1.820

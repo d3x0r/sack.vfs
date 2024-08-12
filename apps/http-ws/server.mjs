@@ -7,6 +7,37 @@ import {uExpress} from "./uexpress.mjs";
 import path from "path";
 const disk = sack.Volume();
 
+const myPath = import.meta.url.split(/\/|\\/g);
+const tmpPath = myPath.slice();
+tmpPath.splice( 0, 3 );
+tmpPath.splice( tmpPath.length-1, 1 );
+const parentRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-2).join( '/' );
+
+function read( name ) {
+	try {
+		const data = sack.Volume.readAsString( name );
+		return data;
+	} catch(err) {
+		console.log( "Failed to load cert:", name );
+		return undefined;
+	}
+}
+
+function getCertChain( ) {
+	//SSLCertificateFile /etc/letsencrypt/live/d3x0r.org/fullchain.pem
+	//SSLCertificateKeyFile /etc/letsencrypt/live/d3x0r.org/privkey.pem
+
+	if( process.env.SSL_PATH ) return process.env.SSL_PATH + "/fullchain.pem"
+	return  parentRoot + "/certgen/cert-chain.pem"
+}
+function getCertKey( ) {
+	if( process.env.SSL_PATH ) return process.env.SSL_PATH + "/privkey.pem"
+	return  parentRoot + "/certgen/rootkeynopass.prv"
+}
+
+const certChain = read( getCertChain() );
+const certKey = read( getCertKey() );
+
 const encMap = {
 		'.gz':'gzip'
 };
@@ -90,7 +121,7 @@ export function getRequestHandler( serverOpts ) {
 
 				if( requests.length !== 0 )
 					clearTimeout( reqTimeout );
-				reqTimeout = setTimeout( logRequests, 100 );
+				reqTimeout = setTimeout( logRequests, 500 );
 				requests.push( req.url );
 			} else {
 				console.log( 'file exists, but reading it returned nothing?', filePath, fc );
@@ -143,7 +174,12 @@ export function openServer( opts, cbAccept, cbConnect )
 {
 	let handlers = [];
 	const serverOpts = opts || {};
-        if( !("port" in serverOpts )) serverOpts.port = process.env.PORT || 8080;
+	if( !("port" in serverOpts )) serverOpts.port = process.env.PORT || 8080;
+	if( certChain ) 
+	{
+		serverOpts.cert = serverOpts.cert || certChain;
+		serverOpts.key = serverOpts.key || certKey;
+	}
 	const server = sack.WebSocket.Server( serverOpts )
 
 	//console.log( "serving on " + serverOpts.port, server );
@@ -171,6 +207,14 @@ export function openServer( opts, cbAccept, cbConnect )
 			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
 		}
 	}
+
+	server.on( "lowError",function (error, address, buffer) {
+		if( error !== 1 && error != 6 ) 
+			console.log( "Low Error with:", error, address, buffer  );
+		if( buffer )
+			buffer = new TextDecoder().decode( buffer );
+		server.disableSSL(buffer); // resume with non SSL
+	} );
 
 	server.onaccept = function ( ws ) {
 		//console.log( "send accept?", cbAccept );

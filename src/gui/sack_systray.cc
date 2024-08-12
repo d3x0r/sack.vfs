@@ -78,6 +78,7 @@ static void enableEventLoop( void ) {
 	systrayLocal.eventLoopEnables++;
 }
 
+#if 0
 static void disableEventLoop( void ) {
 	if( systrayLocal.eventLoopRegistered ) {
 		if( !(--systrayLocal.eventLoopEnables) ) {
@@ -86,7 +87,7 @@ static void disableEventLoop( void ) {
 		}
 	}
 }
-
+#endif
 
 static uintptr_t MakeSystrayEvent( enum systrayEvents type, ... ) {
 	systrayEvent* pe;
@@ -120,8 +121,6 @@ static void CPROC doubleClickCallback( void ) {
 	MakeSystrayEvent( Event_Systray_DoubleClick );
 }
 
-
-
 void setSystrayIcon( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() > 0 ) {
@@ -154,7 +153,7 @@ void setSystrayIconMenu( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 void InitSystray( Isolate* isolate, Local<Object> _exports ) {
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 
 	Local<Object> systrayObject = Object::New( isolate );
 	SET_READONLY_METHOD( systrayObject, "set", setSystrayIcon );

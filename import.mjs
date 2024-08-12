@@ -239,7 +239,7 @@ if( version[0] >= 21 || ( version[0] >= 20 && version[1] >= 6 ) ) {
 	const fileURL = url.pathToFileURL("./", import.meta.url );
 	debug_ && console.log( "FileURL?", fileURL );
 	//module.register( "sack.vfs/import.mjs", fileURL );
-	module.register( "sack.vfs/import.mjs", fileURL );
+	module.register( "sack.vfs/import.mjs", fileURL.href );
 }
 
 /*
