@@ -18,8 +18,8 @@ tcp2.send( "Hello World" );
 |-----|----|
 | ()  | not valid, requires either a string, or option object. |
 | ( "localhost:1234" ) | creates a UDP socket bound to localhost port 1234 |
-| ( { address: "localhost",<BR>port:1234} ) | creates a UDP socket bound to localhost port 1234 |
-| ( { address: "localhost",<BR>port:1234}, (msg,rinfo)=>{} ) | creates a UDP socket bound to localhost port 1234, and specifies a message handler callback |
+| ( { address: "localhost",<BR>port:1234} ) | creates a TCP socket bound to localhost port 1234 |
+| ( { address: "localhost",<BR>port:1234}, (msg,rinfo)=>{} ) | creates a TCP socket bound to localhost port 1234, and specifies a message handler callback |
 
   can pass a string address to listen on.  "IP[:port]" format.  IPv6 IP should be enclosed in brackets;  `[::1]:80`.
   if address is not passed, an object with socket options must be specified.
@@ -46,6 +46,8 @@ tcp2.send( "Hello World" );
 | send | (message [,address]) | Send a message, message can be an ArrayBuffer or string,   if second parameter is passed it should be an sack.Network.Address object. |
 | close | () | Close the socket. |
 | on | (eventName, callback) | Set message or close callbacks on the socket. |
+| ssl | setter true/false | enable/disable ssl; reading this returns secure status(yes/no) of client. |
+| readStrings | setter true/false | controls whether the next read is text or a byte buffer |
 
 #### TCP Events
 
@@ -58,4 +60,4 @@ tcp2.send( "Hello World" );
 
 Needs a good example?
 
-~~See Also [testudp.js](https://github.com/d3x0r/sack.vfs/blob/master/tests/testudp.js) for example usage.~~
+See Also [TCP Server Client Example](https://github.com/d3x0r/sack.vfs/blob/master/tests/tcp/) for example usage.

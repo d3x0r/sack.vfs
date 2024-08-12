@@ -114,12 +114,15 @@ public:
 	static void on( const v8::FunctionCallbackInfo<Value>& args );
 	static void send( const v8::FunctionCallbackInfo<Value>& args );
 	static void setBroadcast( const FunctionCallbackInfo<Value>& args );
+	static void string_get( const FunctionCallbackInfo<Value>& args );
+	static void string_set( const FunctionCallbackInfo<Value>& args );
 
 	~udpObject();
 };
 
 // TCP socket Object
 class tcpObject : public node::ObjectWrap {
+	static Isolate *isolate; // temporary initializing new socket...
 public:
 	LOGICAL closed;
 	PCLIENT pc;
@@ -128,6 +131,7 @@ public:
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
 	bool readStrings;  // return a string instead of a buffer
+	class tcpObject *server; // if this is an accepted client, this is the server object
 	//	static Persistent<Function> constructor;	
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
    // if this is a client, this is triggered when the socket completes or fails connection
@@ -149,26 +153,46 @@ public:
 	static void send( const v8::FunctionCallbackInfo<Value>& args );
 	static void close( const v8::FunctionCallbackInfo<Value>& args );
 
+	static void ssl_get( const v8::FunctionCallbackInfo<Value>& args );
+	static void ssl_set( const v8::FunctionCallbackInfo<Value>& args );
+	static void tcpObject::string_get( const FunctionCallbackInfo<Value>& args );
+	static void tcpObject::string_set( const FunctionCallbackInfo<Value>& args );
+
+	static class tcpObject* getSelf( Local<Object> _this );
 	~tcpObject();
 };
 
+Isolate *tcpObject::isolate = NULL;
 
 enum networkEvents {
 	NET_EVENT_READ,
 	NET_EVENT_CLOSE,
-	NET_EVENT_CONNECT,
+	NET_EVENT_CONNECT,  // server accepcted connection - connect callback
+	NET_EVENT_CONNECTED,  // client connected - connect callback
+	NET_EVENT_CONNECT_ERROR, // client failed connect - connect callback
 };
 
 struct networkEvent {
 	enum networkEvents eventType;
-	class udpObject *_this;
+	union {
+		class udpObject* udp;
+		class tcpObject* tcp;
+	} _this;
+	int error;
 	CPOINTER buf;
 	size_t buflen;
 	SOCKADDR *from;
 };
+
 typedef struct networkEvent NET_EVENT;
 #define MAXNET_EVENTSPERSET 128
 DeclareSet( NET_EVENT );
+
+static void TCP_Close( uintptr_t psv );
+static void TCP_Write( uintptr_t psv, CPOINTER buffer, size_t length );
+static void TCP_Close( uintptr_t psv );
+static void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length );
+
 
 static void getName( const v8::FunctionCallbackInfo<Value>& args );
 static void ping( const v8::FunctionCallbackInfo<Value>& args );
@@ -304,6 +328,10 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "on", udpObject::on );
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "send", udpObject::send );
 		NODE_SET_PROTOTYPE_METHOD( udpTemplate, "setBroadcast", udpObject::setBroadcast );
+		udpTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readStrings" )
+			, FunctionTemplate::New( isolate, udpObject::string_get )
+			, FunctionTemplate::New( isolate, udpObject::string_set )
+		);
 		udpTemplate->ReadOnlyPrototype();
 
 		c->udpConstructor.Reset( isolate, udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -318,6 +346,15 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "close", tcpObject::close );
 		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "on", tcpObject::on );
 		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "send", tcpObject::send );
+		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "ssl", tcpObject::on );
+		tcpTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "ssl" )
+				, FunctionTemplate::New( isolate, tcpObject::ssl_get )
+				, FunctionTemplate::New( isolate, tcpObject::ssl_set )
+			);
+		tcpTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readStrings" )
+			, FunctionTemplate::New( isolate, tcpObject::string_get )
+			, FunctionTemplate::New( isolate, tcpObject::string_set )
+		);
 		tcpTemplate->ReadOnlyPrototype();
 
 		c->tcpConstructor.Reset( isolate, tcpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -380,13 +417,13 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 					holder->buffer = (void*)eventMessage->buf;
 #endif
 					argv[0] = ab;
-					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this.udp->_this.Get( isolate ), 2, argv );
 				}
 				else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					//lprintf( "built string from %p", eventMessage->buf );
 					argv[0] = buf.ToLocalChecked();
-					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this.udp->_this.Get( isolate ), 2, argv );
 					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				ReleaseAddress( eventMessage->from );
@@ -394,7 +431,7 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			case NET_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, obj->closeCallback );
 				if( !cb.IsEmpty() )
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+					cb->Call( context, eventMessage->_this.udp->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&obj->async, NULL );
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
@@ -425,7 +462,7 @@ static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, S
 		//lprintf( "Send buffer %p", (*pevt).buf );
 		memcpy( (POINTER)(*pevt).buf, buffer, buflen );
 		(*pevt).buflen = buflen;
-		(*pevt)._this = _this;
+		(*pevt)._this.udp = _this;
 		(*pevt).from = DuplicateAddress( from );
 		EnqueLink( &_this->eventQueue, pevt );
 		uv_async_send( &_this->async );
@@ -439,7 +476,7 @@ static void CPROC Closed( uintptr_t psv ) {
 
 	struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
 	(*pevt).eventType = NET_EVENT_CLOSE;
-	(*pevt)._this = _this;
+	(*pevt)._this.udp = _this;
 	EnqueLink( &_this->eventQueue, pevt );
 	uv_async_send( &_this->async );
 }
@@ -672,7 +709,15 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
 #endif
 	}
-	else if( args[0]->IsString() ) {
+	else if( args[0]->IsUint8Array() ) {
+		Local<Uint8Array> body = args[0].As<Uint8Array>();
+		Local<ArrayBuffer> ab = body->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
+#else
+		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
+#endif
+	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		SendUDPEx( obj->pc, *buf, buf.length(), dest );
 	}
@@ -690,7 +735,7 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
-	udpObject* obj = (udpObject*)handle->data;
+	tcpObject* obj = (tcpObject*)handle->data;
 	networkEvent* eventMessage;
 
 	{
@@ -699,8 +744,44 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 			Local<Function> cb;
 			Local<Object> ab;
 			switch( eventMessage->eventType ) {
+			case NET_EVENT_CONNECT:
+			{
+				cb = Local<Function>::New( isolate, obj->connectCallback );
+
+				class constructorSet* c = getConstructors( isolate );
+				Local<Function> cons = Local<Function>::New( isolate, c->tcpConstructor );
+				Local<Object> tcpNew = cons->NewInstance( isolate->GetCurrentContext(), NULL, 0 ).ToLocalChecked();
+				tcpObject* tcpObj = tcpObject::getSelf( tcpNew );
+				tcpObj->server = obj;
+				tcpObj->readStrings = obj->readStrings;
+				tcpObj->pc = (PCLIENT)( eventMessage->buf );
+				tcpObj->messageCallback = obj->messageCallback;
+				tcpObj->connectCallback = obj->connectCallback;
+				tcpObj->closeCallback = obj->closeCallback;
+
+				SetCPPNetworkCloseCallback( tcpObj->pc, TCP_Close, (uintptr_t)tcpObj );
+				SetCPPNetworkReadComplete( tcpObj->pc, TCP_ReadComplete, (uintptr_t)tcpObj );
+				SetCPPNetworkWriteComplete( tcpObj->pc, TCP_Write, (uintptr_t)tcpObj );
+
+
+				argv[0] = tcpNew;
+				if( !cb.IsEmpty() )
+					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 1, argv );
+			}
+				break;
+			case NET_EVENT_CONNECTED:
+				cb = Local<Function>::New( isolate, obj->connectCallback );
+				if( !cb.IsEmpty() )
+					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, argv );
+				break;
+			case NET_EVENT_CONNECT_ERROR:
+				cb = Local<Function>::New( isolate, obj->connectCallback );
+				argv[0] = Integer::New( isolate, eventMessage->error );
+				if( !cb.IsEmpty() )
+					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 1, argv );
+				break;
 			case NET_EVENT_READ:
-				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
+				//argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
 					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
@@ -713,12 +794,14 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 					holder->buffer = (void*)eventMessage->buf;
 #endif
 					argv[0] = ab;
-					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					if( !obj->messageCallback.IsEmpty() )
+						obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 1, argv );
 				} else {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
 					//lprintf( "built string from %p", eventMessage->buf );
 					argv[0] = buf.ToLocalChecked();
-					obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
+					if( !obj->messageCallback.IsEmpty() )
+						obj->messageCallback.Get( isolate )->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 1, argv );
 					Deallocate( CPOINTER, eventMessage->buf );
 				}
 				ReleaseAddress( eventMessage->from );
@@ -726,7 +809,7 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 			case NET_EVENT_CLOSE:
 				cb = Local<Function>::New( isolate, obj->closeCallback );
 				if( !cb.IsEmpty() )
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, argv );
 				uv_close( (uv_handle_t*)&obj->async, NULL );
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
@@ -743,35 +826,92 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 
 
 void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
-
+	tcpObject *obj = (tcpObject*)psv;
+	if( buffer ) {
+		struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
+		(*pevt).eventType = NET_EVENT_READ;
+		(*pevt).buf = NewArray( uint8_t*, length );
+		//lprintf( "Send buffer %p", (*pevt).buf );
+		memcpy( (POINTER)(*pevt).buf, buffer, length );
+		(*pevt).buflen = length;
+		(*pevt)._this.tcp = obj;
+		EnqueLink( &obj->eventQueue, pevt );
+		uv_async_send( &obj->async );
+	}
+	else {
+		obj->buffer = buffer = NewArray( uint8_t, 4096 );
+		if( !obj->server ) {
+			struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
+			(*pevt).eventType = NET_EVENT_CONNECTED;
+			(*pevt)._this.tcp = obj;
+			EnqueLink( &obj->eventQueue, pevt );
+			uv_async_send( &obj->async );
+		}
+	}
+	ReadTCP( obj->pc, (POINTER)buffer, 4096 );
 }
 
 void TCP_Connect( uintptr_t psv, int error ) {
-
+	tcpObject *obj = (tcpObject*)psv;
+	struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
+	if( !error ) {
+		(*pevt).eventType = NET_EVENT_CONNECTED;
+	}
+	else {
+		(*pevt).eventType = NET_EVENT_CONNECT_ERROR;
+		(*pevt).error = error;
+	}
+	(*pevt)._this.tcp = obj;
+	EnqueLink( &obj->eventQueue, pevt );
+	uv_async_send( &obj->async );
 }
 
 void TCP_Write( uintptr_t psv, CPOINTER buffer, size_t length ) {
-
+	//tcpObject *obj = (tcpObject*)psv;
+	// buffer is completed, so we can release it.
 }
 
 void TCP_Close( uintptr_t psv ) {
-
+	tcpObject *obj = (tcpObject*)psv;
+	if( obj->buffer ) {
+		Release( obj->buffer );
+	}
+	struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
+	(*pevt).eventType = NET_EVENT_CLOSE;
+	(*pevt)._this.tcp = obj;
+	EnqueLink( &obj->eventQueue, pevt );
+	uv_async_send( &obj->async );
+	
+	obj->pc = NULL;
 }
 
 void TCP_Notify( uintptr_t psv, PCLIENT pcNew ) {
-	tcpObject* tcpNew = new tcpObject( NULL );
-	tcpNew->pc = pcNew;
-
+//	tcpObject* tcpNew = new tcpObject( NULL );
+//	tcpNew->pc = pcNew;
+//	tcpNew->server = (tcpObject*)psv;
+	struct networkEvent* pevt = GetFromSet( NET_EVENT, &l.networkEvents );
+	( *pevt ).eventType = NET_EVENT_CONNECT;
+	( *pevt )._this.tcp = (tcpObject*)psv;
+	( *pevt ).buf = (CPOINTER)pcNew;
+	EnqueLink( &( (tcpObject*)psv )->eventQueue, pevt );
+	uv_async_send( &( (tcpObject*)psv )->async );
 }
 
 tcpObject::tcpObject( struct tcpOptions *opts ) {
 	if( !opts ) {
+		// this is an accepting socket; no options....
+		eventQueue = CreateLinkQueue();
+		async.data = this;
+
+		class constructorSet* c = getConstructors( tcpObject::isolate );
+		uv_async_init( c->loop, &async, tcpAsyncMsg );
+		// pc will be set later...
 		return;
 	}
+	NetworkWait( NULL, 256, 2 );
 	SOCKADDR *addr = opts->address?CreateSockAddress( opts->address, opts->port ):NULL;
 	SOCKADDR *toAddr = opts->toAddress?CreateSockAddress( opts->toAddress, opts->port ):NULL;
 
-	NetworkWait( NULL, 256, 2 );  
 
 	if( toAddr )
 		pc = CPPOpenTCPClientAddrExxx( toAddr, TCP_ReadComplete, (uintptr_t)this
@@ -779,8 +919,10 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 			, TCP_Write, (uintptr_t)this
 			, TCP_Connect, (uintptr_t)this
 			, opts->delayConnect DBG_SRC );
-	else
+	else {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
+		SetNetworkListenerReady( pc );
+	}
 
 	if( pc ) {
 		if( opts->reuseAddr )
@@ -815,6 +957,7 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
+	if(0)
 	if( argc == 0 ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify either type or options for server." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
@@ -833,86 +976,81 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		
 		// if it was uninitialized it would fail to reset
 		//tcpOpts.messageCallback.Reset();
-
-		if( args[argBase]->IsString() ) {
-			tcpOpts.address = StrDup( *String::Utf8Value( isolate,  args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
-			argBase++;
-		}
-		if( ( args.Length() >= argBase ) && args[argBase]->IsObject() ) {
-			Local<Object> opts = args[argBase]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
-
-			Local<String> optName;
-			struct optionStrings *strings = getStrings( isolate );
-			// ---- get port
-			if( !opts->Has( context, optName = strings->portString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.port = 0;
+		if( argc > 0 ) {
+			if( args[argBase]->IsString() ) {
+				tcpOpts.address = StrDup( *String::Utf8Value( isolate, args[argBase]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+				argBase++;
 			}
-			else {
-				tcpOpts.port = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
-			}
-			// ---- get family
-			if( opts->Has( context, optName = strings->familyString->Get( isolate ) ).ToChecked() ) {
-				String::Utf8Value family( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-				tcpOpts.v6 = (StrCmp( *family, "IPv6" ) == 0);
-				if( tcpOpts.addressDefault ) {
-					Deallocate( char *, tcpOpts.address );
+			if( ( args.Length() >= argBase ) && args[argBase]->IsObject() ) {
+				Local<Object> opts = args[argBase]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
+
+				Local<String> optName;
+				struct optionStrings* strings = getStrings( isolate );
+				// ---- get port
+				if( !opts->Has( context, optName = strings->portString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.port = 0;
+				} else {
+					tcpOpts.port = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+				}
+				// ---- get family
+				if( opts->Has( context, optName = strings->familyString->Get( isolate ) ).ToChecked() ) {
+					String::Utf8Value family( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					tcpOpts.v6 = ( StrCmp( *family, "IPv6" ) == 0 );
+					if( tcpOpts.addressDefault ) {
+						Deallocate( char*, tcpOpts.address );
+						if( tcpOpts.v6 )
+							tcpOpts.address = StrDup( "[::]" );
+						else
+							tcpOpts.address = StrDup( "0.0.0.0" );
+					}
+				}
+				// ---- get address
+				if( !opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.addressDefault = true;
 					if( tcpOpts.v6 )
 						tcpOpts.address = StrDup( "[::]" );
 					else
 						tcpOpts.address = StrDup( "0.0.0.0" );
+				} else {
+					tcpOpts.address = StrDup( *String::Utf8Value( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 				}
-			}
-			// ---- get address
-			if( !opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.addressDefault = true;
-				if( tcpOpts.v6 )
-					tcpOpts.address = StrDup( "[::]" );
-				else
-					tcpOpts.address = StrDup( "0.0.0.0" );
-			}
-			else {
-				tcpOpts.address = StrDup( *String::Utf8Value( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked()) );
-			}
-			// ---- get to port
-			if( opts->Has( context, optName = strings->toPortString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.toPort = (int)GETV( opts, optName )->ToInteger(isolate->GetCurrentContext()).ToLocalChecked()->Value();
-			}
-			else
-				tcpOpts.toPort = 0;
-			// ---- get toAddress
-			if( opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.toAddress = StrDup( *String::Utf8Value( isolate,  GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
-			}
-			else
-				tcpOpts.toAddress = NULL;
+				// ---- get to port
+				if( opts->Has( context, optName = strings->toPortString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.toPort = (int)GETV( opts, optName )->ToInteger( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
+				} else
+					tcpOpts.toPort = 0;
+				// ---- get toAddress
+				if( opts->Has( context, optName = strings->toAddressString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.toAddress = StrDup( *String::Utf8Value( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+				} else
+					tcpOpts.toAddress = NULL;
 
-			// ---- get message callback
-			if( opts->Has( context, optName = strings->messageString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.messageCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+				// ---- get message callback
+				if( opts->Has( context, optName = strings->messageString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.messageCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+				}
+				// ---- get connect callback
+				if( opts->Has( context, optName = strings->connectString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.connectCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+				}
+				// ---- get close callback
+				if( opts->Has( context, optName = strings->closeString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.closeCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+				}
+				// ---- get read strings setting
+				if( opts->Has( context, optName = strings->readStringsString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.readStrings = GETV( opts, optName )->ToBoolean( isolate )->Value();
+				}
+				// ---- get reuse address
+				if( opts->Has( context, optName = strings->reuseAddrString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.reuseAddr = GETV( opts, optName )->ToBoolean( isolate )->Value();
+				} else tcpOpts.reuseAddr = false;
+				// ---- get reuse port
+				if( opts->Has( context, optName = strings->reusePortString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.reusePort = GETV( opts, optName )->ToBoolean( isolate )->Value();
+				} else tcpOpts.reusePort = false;
+				argBase++;
 			}
-			// ---- get connect callback
-			if( opts->Has( context, optName = strings->connectString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.connectCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
-			}
-			// ---- get close callback
-			if( opts->Has( context, optName = strings->closeString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.closeCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
-			}
-			// ---- get read strings setting
-			if( opts->Has( context, optName = strings->readStringsString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.readStrings = GETV( opts, optName )->ToBoolean( isolate )->Value();
-			}
-			// ---- get reuse address
-			if( opts->Has( context, optName = strings->reuseAddrString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.reuseAddr = GETV( opts, optName )->ToBoolean( isolate )->Value();
-			}
-			else tcpOpts.reuseAddr = false;
-			// ---- get reuse port
-			if( opts->Has( context, optName = strings->reusePortString->Get( isolate ) ).ToChecked() ) {
-				tcpOpts.reusePort = GETV( opts, optName )->ToBoolean( isolate )->Value();
-			}
-			else tcpOpts.reusePort = false;
-			argBase++;
 		}
 
 		if( args.Length() >= argBase && args[argBase]->IsFunction() ) {
@@ -921,9 +1059,12 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		}
 
 		Local<Object> _this = args.This();
-		tcpObject* obj = new tcpObject( &tcpOpts );
-		Deallocate( char*, tcpOpts.address );
-		Deallocate( char*, tcpOpts.toAddress );
+		tcpObject::isolate = isolate;
+		tcpObject* obj = new tcpObject( argc?&tcpOpts:NULL );
+		if( argc > 0 ) {
+			Deallocate( char*, tcpOpts.address );
+			Deallocate( char*, tcpOpts.toAddress );
+		}
 		obj->_this.Reset( isolate, _this );
 		obj->Wrap( _this );
 
@@ -937,10 +1078,14 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 			argv[n] = args[n];
 
 		class constructorSet *c = getConstructors(isolate);
-		Local<Function> cons = Local<Function>::New( isolate, c->udpConstructor );
+		Local<Function> cons = Local<Function>::New( isolate, c->tcpConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
 		delete[] argv;
 	}
+}
+
+class tcpObject* tcpObject::getSelf( Local<Object> _this ) {
+	return ObjectWrap::Unwrap<tcpObject>( _this );
 }
 
 void tcpObject::on( const FunctionCallbackInfo<Value>& args ) {
@@ -982,38 +1127,86 @@ void tcpObject::send( const FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
-	SOCKADDR *dest = NULL;
-	if( args.Length() > 1 ) {
-		class constructorSet *c = getConstructors( isolate );
-		Local<FunctionTemplate> tpl = c->addrTpl.Get( isolate );
-		Local<Object> argObj = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
-		if( !argObj.IsEmpty() && tpl->HasInstance( argObj ) ) {
-			addrObject *obj = ObjectWrap::Unwrap<addrObject>( args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
-			if( obj )
-				dest = obj->addr;
-		}
-		else {
-			isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Address argument is not a sack.core.Network.Address" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-			return;
-		}
-	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 #if ( NODE_MAJOR_VERSION >= 14 )
-		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
+		SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
 #else
-		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
+		SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
 #endif
 	}
-	else if( args[0]->IsString() ) {
+	else if( args[0]->IsUint8Array() ) {
+		Local<Uint8Array> body = args[0].As<Uint8Array>();
+		Local<ArrayBuffer> ab = body->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
+		SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
+#endif
+	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		SendUDPEx( obj->pc, *buf, buf.length(), dest );
+		SendTCP( obj->pc, *buf, buf.length() );
 	}
 	else {
 		lprintf( "Unhandled message format" );
 	}
 }
 
+void tcpObject::string_get( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject* obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	if( !obj->pc ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	args.GetReturnValue().Set( Boolean::New( isolate, obj->readStrings ) );
+}
+void tcpObject::string_set( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject* obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	if( args.Length() && args[0]->IsBoolean() ) {
+		obj->readStrings = args[0]->BooleanValue( isolate );
+	}
+}
+
+void udpObject::string_get( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject* obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	args.GetReturnValue().Set( Boolean::New( isolate, obj->readStrings ) );
+}
+void udpObject::string_set( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject* obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	if( args.Length() && args[0]->IsBoolean() ) {
+		obj->readStrings = args[0]->BooleanValue( isolate );
+	}
+}
+
+void tcpObject::ssl_get( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	args.GetReturnValue().Set( Boolean::New( isolate, obj->readStrings ) );
+}
+
+void tcpObject::ssl_set( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	if( !obj->pc ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	if( args.Length() && args[0]->IsBoolean() ) {
+		if( args[0]->BooleanValue( isolate ) ) {
+			// keypair, keypass, rootcert
+			ssl_BeginClientSession( obj->pc, NULL, 0, NULL, 0, NULL, 0 );
+		}
+		else {
+			// passes the buffer/length here to the read callback
+			//  This is for the server to fall back to HTTP from HTTPS.
+			ssl_EndSecure( obj->pc, NULL, 0 );
+		}
+	}
+}
 
 //---------------------------- Socket Address ---------------------------
 
