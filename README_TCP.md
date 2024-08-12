@@ -39,14 +39,20 @@ tcp2.send( "Hello World" );
 | TCP Socket options | Type | Description  |
 |----|----|---|
 | port  | &lt;number&gt; |specify the port to listen on |
-| address | &lt;string&gt;; |specify the address to listen on (defaults to [::]). Optional port notation can be used (specified with a colon followed by a number (or name if under linux?))<BR>If the port is specified here, it overrides the `port` option.|
+| address | &lt;string&gt; |specify the address to listen on (defaults to [::]). Optional port notation can be used (specified with a colon followed by a number (or name if under linux?))<BR>If the port is specified here, it overrides the `port` option.  This triggers the tcp object to behave as a server for the connect callback.|
 | family | &lt;string&gt; |either 'IPv4' or 'IPv6' which controls the default address; otherwise address string will determine the family |
 | toPort | &lt;number&gt; vspecify the port to send to if not specified in send call |
-| toAddress | &lt;string&gt; |specify the address to send to if not specified in send call.  Optional port notation can be used (specified with a colon followed by a number (or name if under linux?)) <BR>If the port is specified here, it overrides the `toPort` option.|
+| toAddress | &lt;string&gt; |specify the address to connect to; using toPort (if any) as a default port.  This triggers the TCP object to be a client to a server.|
 | readStrings | &lt;bool&gt;| if `true` messages passed to message callback will be given as text format, otherwise will be a TypedArray |
 | reuseAddress | &lt;bool&gt; |if `true` set reuse address socket option |
 | reusePort | &lt;bool&gt; |if `true` set reuse port socket option (linux option, not applicable for windows) |
-| message | &lt;function&gt; | |
+| message | &lt;function&gt; | receives a buffer as a parameter.  The buffer is either a Uint8Array or a string, depending on readStrings option.  |
+| connect | &lt;function&gt; | For a server, this receives a new connection.  For a client, this will receive `undefined` or a number that is the error of the connection. |
+| close | &lt;function&gt; | called when a connection is closed.  No parameters are given. |
+
+If both `address` and `toAddress` are specified, then it is a client connection, which uses address as the address to `bind()` to.  (Untested)
+
+Errors connect returns depend on the system; windows system will return windows websock errors, while linux/mac will return POSIX(?) errors.
 
 #### TCP socket methods
 
