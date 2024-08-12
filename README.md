@@ -253,10 +253,11 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.0(in progress)
+- 1.3.1(in progress)
+- 1.3.0
     - change version, mostly to have a cleaner version point, but there are some significant changes to this, that really obsoletes everything before
     - Add simple TCP network interface. 
-- 1.1.822(in progress)
+- 1.1.822
     - Enable option to load ssl certificates for HTTPS app service.
     - JSOX decode fixes.  Handle `'':` as not an error.  which also means `{:` is not an error and it's a zero length string.
     - Enable System Tray interface on windows (linux doesn't have a standard API; and tool doesnt' exist)

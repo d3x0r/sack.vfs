@@ -155,8 +155,8 @@ public:
 
 	static void ssl_get( const v8::FunctionCallbackInfo<Value>& args );
 	static void ssl_set( const v8::FunctionCallbackInfo<Value>& args );
-	static void tcpObject::string_get( const FunctionCallbackInfo<Value>& args );
-	static void tcpObject::string_set( const FunctionCallbackInfo<Value>& args );
+	static void string_get( const FunctionCallbackInfo<Value>& args );
+	static void string_set( const FunctionCallbackInfo<Value>& args );
 
 	static class tcpObject* getSelf( Local<Object> _this );
 	~tcpObject();
