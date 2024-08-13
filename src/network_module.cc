@@ -783,12 +783,10 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				tcpObj->messageCallback = obj->messageCallback;
 				tcpObj->connectCallback = obj->connectCallback;
 				tcpObj->closeCallback = obj->closeCallback;
-				if( !tcpObj->ssl ) {
-					SetCPPNetworkCloseCallback( tcpObj->pc, TCP_Close, (uintptr_t)tcpObj );
-					SetCPPNetworkReadComplete( tcpObj->pc, TCP_ReadComplete, (uintptr_t)tcpObj );
-					SetCPPNetworkWriteComplete( tcpObj->pc, TCP_Write, (uintptr_t)tcpObj );
-				}
 
+				SetCPPNetworkCloseCallback( tcpObj->pc, TCP_Close, (uintptr_t)tcpObj );
+				SetCPPNetworkReadComplete( tcpObj->pc, TCP_ReadComplete, (uintptr_t)tcpObj );
+				SetCPPNetworkWriteComplete( tcpObj->pc, TCP_Write, (uintptr_t)tcpObj );
 
 				argv[0] = tcpNew;
 				if( !cb.IsEmpty() )
