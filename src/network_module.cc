@@ -776,16 +776,18 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				Local<Function> cons = Local<Function>::New( isolate, c->tcpConstructor );
 				Local<Object> tcpNew = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 				tcpObject* tcpObj = tcpObject::getSelf( tcpNew );
+				tcpObj->ssl = obj->ssl;
 				tcpObj->server = obj;
 				tcpObj->readStrings = obj->readStrings;
 				tcpObj->pc = (PCLIENT)( eventMessage->buf );
 				tcpObj->messageCallback = obj->messageCallback;
 				tcpObj->connectCallback = obj->connectCallback;
 				tcpObj->closeCallback = obj->closeCallback;
-
-				SetCPPNetworkCloseCallback( tcpObj->pc, TCP_Close, (uintptr_t)tcpObj );
-				SetCPPNetworkReadComplete( tcpObj->pc, TCP_ReadComplete, (uintptr_t)tcpObj );
-				SetCPPNetworkWriteComplete( tcpObj->pc, TCP_Write, (uintptr_t)tcpObj );
+				if( !tcpObj->ssl ) {
+					SetCPPNetworkCloseCallback( tcpObj->pc, TCP_Close, (uintptr_t)tcpObj );
+					SetCPPNetworkReadComplete( tcpObj->pc, TCP_ReadComplete, (uintptr_t)tcpObj );
+					SetCPPNetworkWriteComplete( tcpObj->pc, TCP_Write, (uintptr_t)tcpObj );
+				}
 
 
 				argv[0] = tcpNew;
@@ -974,7 +976,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	if( !opts->closeCallback.IsEmpty() )
 		this->closeCallback = opts->closeCallback;
 
-
+	this->ssl = opts->ssl;
 
 	if( toAddr )
 		pc = CPPOpenTCPClientAddrExxx( toAddr, TCP_ReadComplete, (uintptr_t)this
@@ -996,11 +998,8 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 
 	else {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
-		if( pc ) SetNetworkListenerReady( pc );
-		else lprintf( "Failed to listen at:%s", opts->address );
 
 		// gets events about ssl failures
-		SetNetworkErrorCallback( pc, sockLowError, (uintptr_t)this );
 
 		if( opts->ssl ) {
 			INDEX idx;
@@ -1012,6 +1011,10 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 					, opts->pass, opts->pass_len );
 			}
 		}
+		if( pc ) {
+			SetNetworkErrorCallback( pc, sockLowError, (uintptr_t)this );
+			SetNetworkListenerReady( pc );
+		} else lprintf( "Failed to listen at:%s", opts->address );
 
 	}
 
