@@ -166,8 +166,26 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	int argc = args.Length();
 
 	String::Utf8Value *data_;
-	if( argc > 0 ) data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) ;
-	else data_ = NULL;
+	void* data;
+	size_t datalen;
+	if( argc > 0 ) {
+		if( args[0]->IsUint8Array() ) {
+			Local<Uint8Array> arr = Local<Uint8Array>::Cast( args[0] );
+			Local<ArrayBuffer> ab = arr->Buffer();
+			data = ab->GetBackingStore()->Data();
+			datalen = ab->ByteLength();
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+			data = ab->GetBackingStore()->Data();
+			datalen = ab->ByteLength();
+		} else {
+			data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			data = *data_[0];
+			datalen = data_[0].length();
+		}
+
+	}
+	else data = NULL;
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
@@ -175,7 +193,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef DEBUG_INPUT
 	lprintf( "Parse:%.*s", data_[0].length(), *data_[0] );
 #endif
-	for( result = jsox_parse_add_data( parser->state, (argc>0)?*data_[0]:NULL, (argc>0)?data_[0].length():0 );
+	for( result = jsox_parse_add_data( parser->state, (const char*)data, datalen );
 		result > 0;
 		result = jsox_parse_add_data( parser->state, NULL, 0 )
 		) {
