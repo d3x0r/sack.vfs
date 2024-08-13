@@ -165,7 +165,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
 	int argc = args.Length();
 
-	String::Utf8Value *data_;
+	String::Utf8Value *data_ = NULL;
 	void* data;
 	size_t datalen;
 	if( argc > 0 ) {
@@ -234,7 +234,8 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 				MaybeLocal<Value> cbResult = cb->Call( context, global, 1, argv );
 				if( cbResult.IsEmpty() ) {
 					lprintf( "Callback failed." );
-					delete data_;
+					if( data_ )
+						delete data_;
 					return;
 				}
 			}
@@ -243,7 +244,8 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( result < 2 )
 			break;
 	}
-	delete data_;
+	if( data_ )
+		delete data_;
 	if( result < 0 ) {
 		PTEXT error = jsox_parse_get_error( parser->state );
 		if( error ) {

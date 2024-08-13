@@ -22,6 +22,7 @@ struct optionStrings {
 	Eternal<String>* certString;
 	Eternal<String>* caString;
 	Eternal<String>* keyString;
+	Eternal<String>* sslString;
 	Eternal<String>* pemString;
 	Eternal<String>* passString;
 
@@ -327,6 +328,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reuseAddress" ) );
 
 		check->certString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cert" ) );
+		check->sslString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ssl" ) );
 		check->caString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ca" ) );
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
 		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pem" ) );
@@ -862,6 +864,7 @@ void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 	}
 	else {
 		obj->buffer = buffer = NewArray( uint8_t, 4096 );
+		/*
 		if( !obj->server ) {
 			struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
 			(*pevt).eventType = NET_EVENT_CONNECTED;
@@ -869,6 +872,7 @@ void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 			EnqueLink( &obj->eventQueue, pevt );
 			uv_async_send( &obj->async );
 		}
+		*/
 	}
 	ReadTCP( obj->pc, (POINTER)buffer, 4096 );
 }
@@ -977,7 +981,19 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 						, TCP_Close, (uintptr_t)this
 			, TCP_Write, (uintptr_t)this
 			, TCP_Connect, (uintptr_t)this
-			, opts->delayConnect DBG_SRC );
+			, ((opts->delayConnect || opts->ssl)? OPEN_TCP_FLAG_DELAY_CONNECT:0)
+			| (( opts->ssl ) ? OPEN_TCP_FLAG_SSL_CLIENT : 0 )
+			DBG_SRC );
+		if( pc ) {
+			if( opts->ssl ) {
+				ssl_BeginClientSession( pc
+					, opts->key, opts->key_len
+					, opts->pass, opts->pass_len
+					, opts->cert_chain, opts->cert_chain_len );
+				NetworkConnectTCP( pc );
+			}
+		}
+
 	else {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
 		if( pc ) SetNetworkListenerReady( pc );
@@ -985,14 +1001,6 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 
 		// gets events about ssl failures
 		SetNetworkErrorCallback( pc, sockLowError, (uintptr_t)this );
-
-	}
-
-	if( pc ) {
-		if( opts->reuseAddr )
-			SetSocketReuseAddress( pc, TRUE );
-		if( opts->reusePort )
-			SetSocketReusePort( pc, TRUE );
 
 		if( opts->ssl ) {
 			INDEX idx;
@@ -1006,6 +1014,14 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		}
 
 	}
+
+	if( pc ) {
+		if( opts->reuseAddr )
+			SetSocketReuseAddress( pc, TRUE );
+		if( opts->reusePort )
+			SetSocketReusePort( pc, TRUE );
+	}
+
 }
 
 tcpObject::~tcpObject() {
@@ -1105,8 +1121,11 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				if( opts->Has( context, optName = strings->reusePortString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.reusePort = GETV( opts, optName )->ToBoolean( isolate )->Value();
 				} else tcpOpts.reusePort = false;
-				argBase++;
 
+				if( opts->Has( context, optName = strings->sslString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.ssl = GETV( opts, optName )->ToBoolean( isolate )->Value();
+				} else tcpOpts.ssl = false;
+				
 				if( opts->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
 					String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					tcpOpts.cert_chain = StrDup( *cert );
@@ -1136,6 +1155,7 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					tcpOpts.key_len = cert.length();
 				}
 
+				argBase++;
 
 			}
 		}
