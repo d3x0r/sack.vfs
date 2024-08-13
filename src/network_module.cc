@@ -19,6 +19,12 @@ struct optionStrings {
 	Eternal<String> *reuseAddrString;
 	Eternal<String> *reusePortString;
 
+	Eternal<String>* certString;
+	Eternal<String>* caString;
+	Eternal<String>* keyString;
+	Eternal<String>* pemString;
+	Eternal<String>* passString;
+
 	// object field for connect callback in options
 	Eternal<String> *connectString;
 };
@@ -56,6 +62,15 @@ struct tcpOptions {
 	bool addressDefault;
 	bool v6;
 	bool readStrings;
+
+	bool ssl;
+	char* cert_chain;
+	int cert_chain_len;
+	char* key;
+	int key_len;
+	char* pass;
+	int pass_len;
+
 
 	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
@@ -124,14 +139,15 @@ public:
 class tcpObject : public node::ObjectWrap {
 	static Isolate *isolate; // temporary initializing new socket...
 public:
-	LOGICAL closed;
-	PCLIENT pc;
-	POINTER buffer;  // pending read buffer?
+	LOGICAL closed = false;
+	PCLIENT pc = NULL;
+	POINTER buffer = NULL;  // pending read buffer?
+	bool ssl = false;
 	Persistent<Object> _this;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
-	bool readStrings;  // return a string instead of a buffer
-	class tcpObject *server; // if this is an accepted client, this is the server object
+	bool readStrings = false;  // return a string instead of a buffer
+	class tcpObject *server = NULL; // if this is an accepted client, this is the server object
 	//	static Persistent<Function> constructor;	
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
    // if this is a client, this is triggered when the socket completes or fails connection
@@ -309,6 +325,12 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "readStrings" ) );
 		check->reusePortString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reusePort" ) );
 		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reuseAddress" ) );
+
+		check->certString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cert" ) );
+		check->caString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ca" ) );
+		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
+		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pem" ) );
+		check->passString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "passphrase" ) );
 
 		check->connectString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "connect" ) );
 	}
@@ -897,6 +919,27 @@ void TCP_Notify( uintptr_t psv, PCLIENT pcNew ) {
 	uv_async_send( &( (tcpObject*)psv )->async );
 }
 
+static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdentifier error, ... ) {
+	class tcpObject *obj = (class tcpObject*)psv;
+	va_list args;
+	va_start( args, error );
+	lprintf( "Low error on %p %d", pc, error );
+	switch( error ) {
+	case SACK_NETWORK_ERROR_SSL_HANDSHAKE:
+		{
+			const char* buf = va_arg( args, const char* );
+			size_t buflen = va_arg( args, size_t );
+			printf( "SSL Handshake failed." );
+
+			//if( ( *pevt ).data.error.fallback_ssl )
+			ssl_EndSecure( pc, (POINTER)buf, buflen );
+		}
+
+		break;
+	}
+}
+
+
 tcpObject::tcpObject( struct tcpOptions *opts ) {
 	if( !opts ) {
 		// this is an accepting socket; no options....
@@ -912,6 +955,22 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	SOCKADDR *addr = opts->address?CreateSockAddress( opts->address, opts->port ):NULL;
 	SOCKADDR *toAddr = opts->toAddress?CreateSockAddress( opts->toAddress, opts->port ):NULL;
 
+	this->readStrings = opts->readStrings;
+
+	eventQueue = CreateLinkQueue();
+	//lprintf( "Init async handle. (wss)" );
+	async.data = this;
+
+	class constructorSet* c = getConstructors( opts->isolate );
+	uv_async_init( c->loop, &async, tcpAsyncMsg );
+	if( !opts->messageCallback.IsEmpty() )
+		this->messageCallback = opts->messageCallback;
+	if( !opts->connectCallback.IsEmpty() )
+		this->connectCallback = opts->connectCallback;
+	if( !opts->closeCallback.IsEmpty() )
+		this->closeCallback = opts->closeCallback;
+
+
 
 	if( toAddr )
 		pc = CPPOpenTCPClientAddrExxx( toAddr, TCP_ReadComplete, (uintptr_t)this
@@ -923,6 +982,10 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
 		if( pc ) SetNetworkListenerReady( pc );
 		else lprintf( "Failed to listen at:%s", opts->address );
+
+		// gets events about ssl failures
+		SetNetworkErrorCallback( pc, sockLowError, (uintptr_t)this );
+
 	}
 
 	if( pc ) {
@@ -931,20 +994,17 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		if( opts->reusePort )
 			SetSocketReusePort( pc, TRUE );
 
-		this->readStrings = opts->readStrings;
+		if( opts->ssl ) {
+			INDEX idx;
+			struct wssoptsion* opt;
+			if( opts->cert_chain ) {
+				ssl_BeginServer( pc
+					, opts->cert_chain, opts->cert_chain_len
+					, opts->key, opts->key_len
+					, opts->pass, opts->pass_len );
+			}
+		}
 
-		eventQueue = CreateLinkQueue();
-		//lprintf( "Init async handle. (wss)" );
-		async.data = this;
-
-		class constructorSet *c = getConstructors( opts->isolate );
-		uv_async_init( c->loop, &async, tcpAsyncMsg );
-		if( !opts->messageCallback.IsEmpty() )
-			this->messageCallback = opts->messageCallback;
-		if( !opts->connectCallback.IsEmpty() )
-			this->connectCallback = opts->connectCallback;
-		if( !opts->closeCallback.IsEmpty() )
-			this->closeCallback = opts->closeCallback;
 	}
 }
 
@@ -965,13 +1025,9 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
-		struct tcpOptions tcpOpts;
+		struct tcpOptions tcpOpts = {};
 		int argBase = 0;
 		tcpOpts.isolate= isolate;
-		tcpOpts.readStrings = false;
-		tcpOpts.address = NULL;
-		tcpOpts.port = 0;
-		tcpOpts.addressDefault = false;
 
 		
 		// if it was uninitialized it would fail to reset
@@ -1050,6 +1106,37 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					tcpOpts.reusePort = GETV( opts, optName )->ToBoolean( isolate )->Value();
 				} else tcpOpts.reusePort = false;
 				argBase++;
+
+				if( opts->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
+					String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					tcpOpts.cert_chain = StrDup( *cert );
+					tcpOpts.cert_chain_len = cert.length();
+					tcpOpts.ssl = true;
+				}
+
+				if( opts->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
+					String::Utf8Value ca( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					if( tcpOpts.cert_chain ) {
+						tcpOpts.cert_chain = (char*)Reallocate( tcpOpts.cert_chain, tcpOpts.cert_chain_len + ca.length() + 1 );
+						strcpy( tcpOpts.cert_chain + tcpOpts.cert_chain_len, *ca );
+						tcpOpts.cert_chain_len += ca.length();
+					} else {
+						tcpOpts.cert_chain = StrDup( *ca );
+						tcpOpts.cert_chain_len = ca.length();
+					}
+					tcpOpts.ssl = true;
+				}
+
+				if( !opts->Has( context, optName = strings->keyString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.key = NULL;
+					tcpOpts.key_len = 0;
+				} else {
+					String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+					tcpOpts.key = StrDup( *cert );
+					tcpOpts.key_len = cert.length();
+				}
+
+
 			}
 		}
 
@@ -1129,23 +1216,43 @@ void tcpObject::send( const FunctionCallbackInfo<Value>& args ) {
 	}
 	if( args[0]->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+		if( obj->ssl ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-		SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
+			ssl_Send( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
 #else
-		SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
+			ssl_Send( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
 #endif
+		} else {
+#if ( NODE_MAJOR_VERSION >= 14 )
+			SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
+			SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
+#endif
+		}
 	}
 	else if( args[0]->IsUint8Array() ) {
 		Local<Uint8Array> body = args[0].As<Uint8Array>();
 		Local<ArrayBuffer> ab = body->Buffer();
+		if( obj->ssl ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-		SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
+			ssl_Send( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
 #else
-		SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
+			ssl_Send( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
 #endif
+		} else {
+#if ( NODE_MAJOR_VERSION >= 14 )
+			SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
+			SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
+#endif
+		}
 	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		SendTCP( obj->pc, *buf, buf.length() );
+		if( obj->ssl ) {
+			ssl_Send( obj->pc, *buf, buf.length() );
+		} else {
+			SendTCP( obj->pc, *buf, buf.length() );
+		}
 	}
 	else {
 		lprintf( "Unhandled message format" );
@@ -1197,8 +1304,15 @@ void tcpObject::ssl_set( const FunctionCallbackInfo<Value>& args ) {
 	}
 	if( args.Length() && args[0]->IsBoolean() ) {
 		if( args[0]->BooleanValue( isolate ) ) {
-			// keypair, keypass, rootcert
-			ssl_BeginClientSession( obj->pc, NULL, 0, NULL, 0, NULL, 0 );
+			if( obj->server ) {
+			} else {
+				if( obj->pc ) {
+					// keypair, keypass, rootcert
+					ssl_BeginClientSession( obj->pc, NULL, 0, NULL, 0, NULL, 0 );
+				} else {
+					obj->ssl = TRUE;
+				}
+			}
 		}
 		else {
 			// passes the buffer/length here to the read callback
