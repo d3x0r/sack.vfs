@@ -681,7 +681,7 @@ static void cgiParamSave(uintptr_t psv, PTEXT name, PTEXT value){
 		SETT( cgi->cgi, name, Null( cgi->isolate ) );
 }
 
-static Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket* pipe, wssObject* wss, wscObject* wsc, wssiObject* wssi ) {
+Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket* pipe, wssObject* wss, wscObject* wsc, wssiObject* wssi ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	//wssi
 	if( wss || wsc || wssi ) {
@@ -714,7 +714,8 @@ static Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_
 			, String::NewFromUtf8( isolate, (const char*)GetText( header->value ), NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
 	}
 	optionStrings *strings = getStrings( isolate );
-	SETV( result, strings->headerString->Get( isolate ), arr );
+	if( headers )
+		SETV( result, strings->headerString->Get( isolate ), arr );
 	CTEXTSTR host = pc?ssl_GetRequestedHostName( pc ):NULL;
 	if( host )
 		SETV( result, strings->hostnameString->Get( isolate ), String::NewFromUtf8( isolate, host, v8::NewStringType::kNormal ).ToLocalChecked() );

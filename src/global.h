@@ -171,6 +171,7 @@ PTEXT isTextObject( Isolate *isolate, Local<Value> object );
 void SystemInit( Isolate* isolate, Local<Object> exports );
 void InitSystray( Isolate * isolate, Local<Object> _exports );
 
+Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket* pipe, class wssObject* wss, class wscObject* wsc, class wssiObject* wssi );
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 

@@ -18,6 +18,7 @@ struct optionStrings {
 	Eternal<String> *readStringsString;
 	Eternal<String> *reuseAddrString;
 	Eternal<String> *reusePortString;
+	Eternal<String> *connectionString;
 
 	Eternal<String>* certString;
 	Eternal<String>* caString;
@@ -329,6 +330,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->readStringsString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "readStrings" ) );
 		check->reusePortString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reusePort" ) );
 		check->reuseAddrString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "reuseAddress" ) );
+		check->connectionString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "connection" ) );
 
 		check->certString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cert" ) );
 		check->sslString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ssl" ) );
@@ -794,6 +796,10 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				SetCPPNetworkCloseCallback( tcpObj->pc, TCP_Close, (uintptr_t)tcpObj );
 				SetCPPNetworkReadComplete( tcpObj->pc, TCP_ReadComplete, (uintptr_t)tcpObj );
 				SetCPPNetworkWriteComplete( tcpObj->pc, TCP_Write, (uintptr_t)tcpObj );
+				{
+					struct optionStrings* strings = getStrings( isolate );
+					SETV( tcpNew, strings->connectionString->Get( isolate ), makeSocket( isolate, tcpObj->pc, NULL, NULL, NULL, NULL ) );
+				}
 
 				argv[0] = tcpNew;
 				if( !cb.IsEmpty() )
@@ -802,6 +808,11 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				break;
 			case NET_EVENT_CONNECTED:
 				cb = Local<Function>::New( isolate, obj->connectCallback );
+				{
+					struct optionStrings* strings = getStrings( isolate );
+					//lprintf( "Re-make connection status object.." );
+					SETV( eventMessage->_this.tcp->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, NULL, NULL ) );
+				}
 				if( !cb.IsEmpty() )
 					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, argv );
 				break;
@@ -1053,6 +1064,7 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		struct tcpOptions tcpOpts = {};
 		int argBase = 0;
 		tcpOpts.isolate= isolate;
+		struct optionStrings* strings = getStrings( isolate );
 
 		
 		// if it was uninitialized it would fail to reset
@@ -1066,7 +1078,6 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				Local<Object> opts = args[argBase]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 
 				Local<String> optName;
-				struct optionStrings* strings = getStrings( isolate );
 				// ---- get port
 				if( !opts->Has( context, optName = strings->portString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.port = 0;
@@ -1087,11 +1098,7 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				}
 				// ---- get address
 				if( !opts->Has( context, optName = strings->addressString->Get( isolate ) ).ToChecked() ) {
-					tcpOpts.addressDefault = true;
-					if( tcpOpts.v6 )
-						tcpOpts.address = StrDup( "[::]" );
-					else
-						tcpOpts.address = StrDup( "0.0.0.0" );
+					//tcpOpts.addressDefault = true;
 				} else {
 					tcpOpts.address = StrDup( *String::Utf8Value( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 				}
@@ -1105,6 +1112,14 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					tcpOpts.toAddress = StrDup( *String::Utf8Value( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
 				} else
 					tcpOpts.toAddress = NULL;
+
+				if( !tcpOpts.toAddress && !tcpOpts.address ) {
+					tcpOpts.addressDefault = true;
+					if( tcpOpts.v6 )
+						tcpOpts.address = StrDup( "[::0]" );
+					else
+						tcpOpts.address = StrDup( "0.0.0.0" );
+				}
 
 				// ---- get message callback
 				if( opts->Has( context, optName = strings->messageString->Get( isolate ) ).ToChecked() ) {
@@ -1175,6 +1190,7 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		}
 
 		Local<Object> _this = args.This();
+
 		tcpObject::isolate = isolate;
 		tcpObject* obj = new tcpObject( argc?&tcpOpts:NULL );
 		if( argc > 0 ) {
@@ -1183,6 +1199,8 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		}
 		obj->_this.Reset( isolate, _this );
 		obj->Wrap( _this );
+
+		SETV( _this, strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, NULL, NULL ) );
 
 		args.GetReturnValue().Set( _this );
 	}
