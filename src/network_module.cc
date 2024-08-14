@@ -144,6 +144,7 @@ public:
 	PCLIENT pc = NULL;
 	POINTER buffer = NULL;  // pending read buffer?
 	bool ssl = false;
+	bool allowSSLfallback = true;
 	Persistent<Object> _this;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
@@ -174,6 +175,8 @@ public:
 	static void ssl_set( const v8::FunctionCallbackInfo<Value>& args );
 	static void string_get( const FunctionCallbackInfo<Value>& args );
 	static void string_set( const FunctionCallbackInfo<Value>& args );
+	static void ssl_fallback_get( const v8::FunctionCallbackInfo<Value>& args );
+	static void ssl_fallback_set( const v8::FunctionCallbackInfo<Value>& args );
 
 	static class tcpObject* getSelf( Local<Object> _this );
 	~tcpObject();
@@ -374,6 +377,10 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		tcpTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "ssl" )
 				, FunctionTemplate::New( isolate, tcpObject::ssl_get )
 				, FunctionTemplate::New( isolate, tcpObject::ssl_set )
+			);
+		tcpTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "allowSSLfallback" )
+				, FunctionTemplate::New( isolate, tcpObject::ssl_fallback_get )
+				, FunctionTemplate::New( isolate, tcpObject::ssl_fallback_set )
 			);
 		tcpTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "readStrings" )
 			, FunctionTemplate::New( isolate, tcpObject::string_get )
@@ -927,16 +934,17 @@ static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdenti
 	class tcpObject *obj = (class tcpObject*)psv;
 	va_list args;
 	va_start( args, error );
-	lprintf( "Low error on %p %d", pc, error );
 	switch( error ) {
+	default:
+		lprintf( "Low error on %p %d", pc, error );
+		break;
 	case SACK_NETWORK_ERROR_SSL_HANDSHAKE:
-		{
+		if( obj->allowSSLfallback ) {
 			const char* buf = va_arg( args, const char* );
 			size_t buflen = va_arg( args, size_t );
-			printf( "SSL Handshake failed." );
-
-			//if( ( *pevt ).data.error.fallback_ssl )
 			ssl_EndSecure( pc, (POINTER)buf, buflen );
+		} else {
+			RemoveClient( pc );
 		}
 
 		break;
@@ -1307,6 +1315,20 @@ void udpObject::string_set( const FunctionCallbackInfo<Value>& args ) {
 	tcpObject* obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
 	if( args.Length() && args[0]->IsBoolean() ) {
 		obj->readStrings = args[0]->BooleanValue( isolate );
+	}
+}
+
+void tcpObject::ssl_fallback_get( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	args.GetReturnValue().Set( Boolean::New( isolate, obj->allowSSLfallback ) );
+}
+
+void tcpObject::ssl_fallback_set( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() && args[0]->IsBoolean() ) {
+		tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+		obj->allowSSLfallback = args[0]->BooleanValue( isolate );
 	}
 }
 
