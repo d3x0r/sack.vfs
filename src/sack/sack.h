@@ -7736,6 +7736,8 @@ NETWORK_PROC( void, SetNetworkListenerReady )( PCLIENT pListen );
 // used with OpenTCPClientAddrExx
 // use NetworkConnectTCP to begin connection
 #define OPEN_TCP_FLAG_DELAY_CONNECT 1
+// Socket expects to be SSL client; defer initial read callback until SSL is enabled.
+#define OPEN_TCP_FLAG_SSL_CLIENT 2
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
