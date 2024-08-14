@@ -49,6 +49,11 @@ tcp2.send( "Hello World" );
 | message | &lt;function&gt; | receives a buffer as a parameter.  The buffer is either a Uint8Array or a string, depending on readStrings option.  |
 | connect | &lt;function&gt; | For a server, this receives a new connection.  For a client, this will receive `undefined` or a number that is the error of the connection. |
 | close | &lt;function&gt; | called when a connection is closed.  No parameters are given. |
+| ssl | &lt;bool&gt; | Set to enable SSL on client sockets, without further certificate information. (for client) |
+| cert | &lt;string&gt; | cerficiate for server socket to use to accepted TLS connections. (for server) |
+| key | &lt;string&gt; | private key associated with cerfificate for TLS connections. (for server) |
+| ca | &lt;string&gt; | Certificate authority chain for client to use to authenticate server key (optional, unimplemented?) |
+
 
 If both `address` and `toAddress` are specified, then it is a client connection, which uses address as the address to `bind()` to.  (Untested)
 
@@ -63,6 +68,7 @@ Errors connect returns depend on the system; windows system will return windows 
 | on | (eventName, callback) | Set message or close callbacks on the socket. |
 | ssl | setter true/false | enable/disable ssl; reading this returns secure status(yes/no) of client. |
 | readStrings | setter true/false | controls whether the next read is text or a byte buffer |
+| allowSSLfallback | setter true/false | controls whether the the socket will automatically demote from TLS/SSL to raw.  If set to false, sockets with SSL that fail negotiation are closed. |
 
 #### TCP Events
 
@@ -71,6 +77,7 @@ Errors connect returns depend on the system; windows system will return windows 
 | message | (msg, remoteAddress) | called when a message is received.  msg parameter is either a string if socket was opened with `readStrings` or a TypedArray.  Second parameter is a Network.Socket object representing the source address of the message |
 | connect | (msg, remoteAddress) | called when a message is received.  msg parameter is either a string if socket was opened with `readStrings` or a TypedArray.  Second parameter is a Network.Socket object representing the source address of the message |
 | close | () | Socket has been closed. | 
+| error | (n) | error callback, used for conditions in the TLS layer to report errors. |
 
 
 Needs a good example?

@@ -253,8 +253,11 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.1(in progress)
-- 1.3.0
+- 1.3.111(in progress)
+- 1.3.11
+    - implement SSL/TLS on TCP sockets.
+    - fixes error message releasing JSOX parsed messages.
+- 1.3.0(1.3.1)
     - change version, mostly to have a cleaner version point, but there are some significant changes to this, that really obsoletes everything before
     - Add simple TCP network interface. 
 - 1.1.822
