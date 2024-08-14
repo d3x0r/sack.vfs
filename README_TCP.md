@@ -10,6 +10,8 @@ large packets will be a series of 4K buffers.
 Close() is implemented gracefully, so any sent data will still be sent, but no further data will be received.  When any pending writes
 are completed, the socket is fully closed.
 
+Addresses are strings.  "IP[:port]" format.  IPv6 IP should be enclosed in brackets;  `[::1]:80`.
+
 
 ``` js
 var sack = require( 'sack.vfs' );
@@ -25,14 +27,8 @@ tcp2.send( "Hello World" );
 
 | Construction examples |  |
 |-----|----|
-| ()  | not valid, requires either a string, or option object. |
-| ( "localhost:1234" ) | creates a UDP socket bound to localhost port 1234 |
-| ( { address: "localhost",<BR>port:1234} ) | creates a TCP socket bound to localhost port 1234 |
-| ( { address: "localhost",<BR>port:1234}, (msg,rinfo)=>{} ) | creates a TCP socket bound to localhost port 1234, and specifies a message handler callback |
+| ( { option object } )  | Option object to initialize socket with.  |
 
-  can pass a string address to listen on.  "IP[:port]" format.  IPv6 IP should be enclosed in brackets;  `[::1]:80`.
-  if address is not passed, an object with socket options must be specified.
-  final parameter can optionally be a callback which is used as the on('message') event callback.
 
 #### TCP socket creation options
 
