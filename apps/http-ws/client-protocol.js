@@ -66,7 +66,7 @@ export class Protocol extends Events {
 
 	send( msg ) {
 		const ws = this.#Protocol.ws;
-		if( ws.readyState === 1 ) {
+		if( ws && ws.readyState === 1 ) {
 			if( "object" === typeof msg ) {
 				ws.send( JSOX.stringify(msg) ); 
 			} else
