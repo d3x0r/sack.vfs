@@ -36,9 +36,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-#cmake_minimum_required(VERSION 3.13)
-# ubuntu 18 limits this to 3.10; 3.13 had a good option change.
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.13)
 message(STATUS "Using CMake version ${CMAKE_VERSION}")
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
@@ -87,12 +85,22 @@ if(NOT LIBSSH2_VERSION OR
   message(FATAL_ERROR "Unable to parse version from ${PROJECT_SOURCE_DIR}/include/libssh2.h")
 endif()
 
+option(LIBSSH2_BUILD_EXAMPLES "Build libssh2 examples" ON)
+option(LIBSSH2_BUILD_TESTING "Build libssh2 test suite" ON)
+option(LIBSSH2_BUILD_DOCS "Build libssh2 test suite" ON)
+option(LIBSSH2_SKIP_INSTALL "Skip installation" OFF)
+option(LIBSSH2_BUILD_STATIC_LIBS "Build libssh2 static libraries(default if not set)" ${BUILD_STATIC_LIBS})
+option(LIBSSH2_BUILD_SHARED_LIBS "Build libssh2 shared libraries" ${BUILD_SHARED_LIBS})
+option(LIBSSH2_BUILD_OBJECT_LIBRARY "Build static library as an object library instead of static library" OFF)
+
+if( NOT LIBSSH2_SKIP_INSTALL )
 include(GNUInstallDirs)
 install(
   FILES
     COPYING NEWS README RELEASE-NOTES
     docs/AUTHORS docs/BINDINGS.md docs/HACKING.md
   DESTINATION ${CMAKE_INSTALL_DOCDIR})
+endif() 
 
 include(PickyWarnings)
 
@@ -110,8 +118,6 @@ else()
   endif()
 endif()
 
-#option(BUILD_EXAMPLES "Build libssh2 examples" ON)
-#option(BUILD_TESTING "Build libssh2 test suite" ON)
 
 if(NOT LIBSSH2_BUILD_STATIC_LIBS AND NOT LIBSSH2_BUILD_SHARED_LIBS)
   set(LIBSSH2_BUILD_STATIC_LIBS ON)
@@ -127,7 +133,7 @@ set(LIB_SHARED "${LIB_NAME}")
 endif()
 
 # lib flavour selected for example and test programs.
-if(LIBSSH_BUILD_SHARED_LIBS)
+if(BUILD_SHARED_LIBS)
   set(LIB_SELECTED ${LIB_SHARED})
 else()
   set(LIB_SELECTED ${LIB_STATIC})
@@ -149,10 +155,6 @@ if(HIDE_SYMBOLS)
     set(LIB_SHARED_C_FLAGS "-xldscope=hidden")
     set(LIBSSH2_API "__global")
   endif()
-endif()
-
-if( UNIX ) 
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 endif()
 
 # Options
@@ -186,7 +188,6 @@ if(WIN32)
     set(HAVE_UNISTD_H 1)
     set(HAVE_INTTYPES_H 1)
     set(HAVE_SYS_TIME_H 1)
-    set(HAVE_SYS_PARAM_H 1)
     set(HAVE_GETTIMEOFDAY 1)
     set(HAVE_STRTOLL 1)
   elseif(MSVC)
@@ -212,7 +213,6 @@ check_include_files("inttypes.h" HAVE_INTTYPES_H)
 if(NOT MSVC)
   check_include_files("unistd.h" HAVE_UNISTD_H)
   check_include_files("sys/time.h" HAVE_SYS_TIME_H)
-  check_include_files("sys/param.h" HAVE_SYS_PARAM_H)  # tests
 endif()
 if(NOT WIN32)
   check_include_files("sys/select.h" HAVE_SYS_SELECT_H)
@@ -314,7 +314,7 @@ if(CRYPTO_BACKEND STREQUAL "OpenSSL" OR NOT CRYPTO_BACKEND)
     set(CRYPTO_BACKEND "OpenSSL")
     set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
     set(CRYPTO_BACKEND_INCLUDE_DIR ${OPENSSL_INCLUDE_DIR})
-    list(APPEND LIBRARIES ${OPENSSL_LIBRARIES})
+    list(APPEND LIBRARIES OpenSSL::SSL)
     list(APPEND LIBSSH2_PC_LIBS_PRIVATE "-lcrypto")
     list(APPEND LIBSSH2_PC_REQUIRES_PRIVATE "libcrypto")
 
@@ -342,23 +342,23 @@ if(CRYPTO_BACKEND STREQUAL "OpenSSL" OR NOT CRYPTO_BACKEND)
       #set(CMAKE_FIND_DEBUG_MODE OFF)
     endif()
 
-    #find_package(ZLIB)
+    find_package(ZLIB)
 
-    #if(ZLIB_FOUND)
+    if(ZLIB_FOUND)
       list(APPEND LIBRARIES ${ZLIB_LIBRARIES})
-    #  list(APPEND LIBSSH2_PC_LIBS_PRIVATE "-lz")
-    #endif()
+      list(APPEND LIBSSH2_PC_LIBS_PRIVATE "-lz")
+    endif()
   endif()
 endif()
 
 if(CRYPTO_BACKEND STREQUAL "wolfSSL" OR NOT CRYPTO_BACKEND)
 
-  find_package(wolfssl ${SPECIFIC_CRYPTO_REQUIREMENT})
+  find_package(WolfSSL ${SPECIFIC_CRYPTO_REQUIREMENT})
 
   if(WOLFSSL_FOUND)
     set(CRYPTO_BACKEND "wolfSSL")
     set(CRYPTO_BACKEND_DEFINE "LIBSSH2_WOLFSSL")
-    set(CRYPTO_BACKEND_INCLUDE_DIR ${WOLFSSL_INCLUDE_DIR} "${WOLFSSL_INCLUDE_DIR}/wolfssl")
+    set(CRYPTO_BACKEND_INCLUDE_DIR ${WOLFSSL_INCLUDE_DIRS})
     list(APPEND LIBRARIES ${WOLFSSL_LIBRARIES})
     list(APPEND LIBSSH2_PC_LIBS_PRIVATE "-lwolfssl")
     list(APPEND LIBSSH2_PC_REQUIRES_PRIVATE "wolfssl")
@@ -394,27 +394,20 @@ endif()
 
 if(CRYPTO_BACKEND STREQUAL "mbedTLS" OR NOT CRYPTO_BACKEND)
 
-  find_package(mbedTLS ${SPECIFIC_CRYPTO_REQUIREMENT})
+  find_package(MbedTLS ${SPECIFIC_CRYPTO_REQUIREMENT})
 
   if(MBEDTLS_FOUND)
     set(CRYPTO_BACKEND "mbedTLS")
     set(CRYPTO_BACKEND_DEFINE "LIBSSH2_MBEDTLS")
-    set(CRYPTO_BACKEND_INCLUDE_DIR ${MBEDTLS_INCLUDE_DIR})
+    set(CRYPTO_BACKEND_INCLUDE_DIR ${MBEDTLS_INCLUDE_DIRS})
     list(APPEND LIBRARIES ${MBEDTLS_LIBRARIES})
     list(APPEND LIBSSH2_PC_LIBS_PRIVATE "-lmbedcrypto")
+    list(APPEND LIBSSH2_PC_REQUIRES_PRIVATE "mbedcrypto")
     link_directories(${MBEDTLS_LIBRARY_DIR})
   endif()
 endif()
 
 # Detect platform-specific crypto-backends last:
-
-if( NOT CRYPTO_BACKEND )
-    set(CRYPTO_BACKEND "LibreSSL")
-    set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
-    set(CRYPTO_BACKEND_INCLUDE_DIR ../libressl/3.8.0)
-    list(APPEND LIBRARIES ssl crypto tls )
-endif()
-
 
 if(CRYPTO_BACKEND STREQUAL "WinCNG" OR NOT CRYPTO_BACKEND)
   if(WIN32)
@@ -423,6 +416,17 @@ if(CRYPTO_BACKEND STREQUAL "WinCNG" OR NOT CRYPTO_BACKEND)
     set(CRYPTO_BACKEND_INCLUDE_DIR "")
     list(APPEND LIBRARIES "crypt32" "bcrypt")
     list(APPEND LIBSSH2_PC_LIBS_PRIVATE "-lcrypt32" "-lbcrypt")
+
+    option(ENABLE_ECDSA_WINCNG "WinCNG ECDSA support (requires Windows 10 or later)" OFF)
+    add_feature_info(WinCNG ENABLE_ECDSA_WINCNG "WinCNG ECDSA support")
+    if(ENABLE_ECDSA_WINCNG)
+      add_definitions("-DLIBSSH2_ECDSA_WINCNG")
+      if(MSVC)
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /SUBSYSTEM:WINDOWS,10")
+      elseif(MINGW)
+        set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--subsystem,windows:10")
+      endif()
+    endif()
   elseif(SPECIFIC_CRYPTO_REQUIREMENT STREQUAL "REQUIRED")
     message(FATAL_ERROR "WinCNG not available")
   endif()
@@ -445,14 +449,14 @@ endfunction()
 
 add_subdirectory(src)
 
-#if(LIBSSH2_BUILD_EXAMPLES)
-#  add_subdirectory(example)
-#endif()
+if(LIBSSH2_BUILD_EXAMPLES)
+  add_subdirectory(example)
+endif()
 
-#if(LIBSSH2_BUILD_TESTING)
-#  enable_testing()
-#  add_subdirectory(tests)
-#endif()
+if(LIBSSH2_BUILD_TESTING)
+  enable_testing()
+  add_subdirectory(tests)
+endif()
 
 option(LINT "Check style while building" OFF)
 if(LINT)
@@ -464,14 +468,16 @@ if(LINT)
   endif()
 endif()
 
-IF( NOT LIBSSH2_SKIP_DOCS )
-add_subdirectory(docs)
+if( LIBSSH2_BUILD_DOCS )
+  add_subdirectory(docs)
 endif()
 
 feature_summary(WHAT ALL)
 
-set(CPACK_PACKAGE_VERSION_MAJOR ${LIBSSH2_VERSION_MAJOR})
-set(CPACK_PACKAGE_VERSION_MINOR ${LIBSSH2_VERSION_MINOR})
-set(CPACK_PACKAGE_VERSION_PATCH ${LIBSSH2_VERSION_PATCH})
-set(CPACK_PACKAGE_VERSION ${LIBSSH2_VERSION})
-include(CPack)
+if( NOT LIBSSH2_SKIP_INSTALL )
+  set(CPACK_PACKAGE_VERSION_MAJOR ${LIBSSH2_VERSION_MAJOR})
+  set(CPACK_PACKAGE_VERSION_MINOR ${LIBSSH2_VERSION_MINOR})
+  set(CPACK_PACKAGE_VERSION_PATCH ${LIBSSH2_VERSION_PATCH})
+  set(CPACK_PACKAGE_VERSION ${LIBSSH2_VERSION})
+  include(CPack)
+endif()

@@ -292,7 +292,7 @@ typedef struct _LIBSSH2_USERAUTH_KBDINT_PROMPT
 typedef struct _LIBSSH2_USERAUTH_KBDINT_RESPONSE
 {
     char *text;
-    unsigned int length;
+    unsigned int length;  /* FIXME: change type to size_t */
 } LIBSSH2_USERAUTH_KBDINT_RESPONSE;
 
 typedef struct _LIBSSH2_SK_SIG_INFO {
@@ -405,7 +405,7 @@ typedef struct _LIBSSH2_SK_SIG_INFO {
                  int flags, void **abstract)
 
 /* libssh2_session_callback_set() constants */
-enum LIBSSH2_CALLBACKS {
+enum LIBSSH2_SESSION_CALLBACKS {
 	LIBSSH2_CALLBACK_IGNORE,
 	LIBSSH2_CALLBACK_DEBUG,
 	LIBSSH2_CALLBACK_DISCONNECT,
@@ -413,12 +413,18 @@ enum LIBSSH2_CALLBACKS {
 	LIBSSH2_CALLBACK_X11,
 	LIBSSH2_CALLBACK_SEND,
 	LIBSSH2_CALLBACK_RECV,
-	LIBSSH2_CALLBACK_AUTHAGENT,
-	LIBSSH2_CALLBACK_AUTHAGENT_IDENTITIES,
-	LIBSSH2_CALLBACK_AUTHAGENT_SIGN,
-	LIBSSH2_CALLBACK_CHANNEL_EOF,
-	LIBSSH2_CALLBACK_CHANNEL_CLOSE,
-	LIBSSH2_CALLBACK_CHANNEL_DATA,
+    LIBSSH2_CALLBACK_AUTHAGENT,
+    LIBSSH2_CALLBACK_AUTHAGENT_IDENTITIES,
+    LIBSSH2_CALLBACK_AUTHAGENT_SIGN,
+};
+
+enum LIBSSH2_CHANNEL_CALLBACKS {
+    LIBSSH2_CALLBACK_CHANNEL_EOF,
+    LIBSSH2_CALLBACK_CHANNEL_CLOSE,
+    LIBSSH2_CALLBACK_CHANNEL_DATA,
+};
+
+enum LIBSSH2_LISTENER_CALLBACKS {
     LIBSSH2_CALLBACK_LISTENER_ACCEPT,
 };
 
@@ -521,7 +527,7 @@ typedef struct _LIBSSH2_POLLFD {
 /* Hostkey Types */
 #define LIBSSH2_HOSTKEY_TYPE_UNKNOWN            0
 #define LIBSSH2_HOSTKEY_TYPE_RSA                1
-#define LIBSSH2_HOSTKEY_TYPE_DSS                2
+#define LIBSSH2_HOSTKEY_TYPE_DSS                2  /* deprecated */
 #define LIBSSH2_HOSTKEY_TYPE_ECDSA_256          3
 #define LIBSSH2_HOSTKEY_TYPE_ECDSA_384          4
 #define LIBSSH2_HOSTKEY_TYPE_ECDSA_521          5
@@ -672,12 +678,12 @@ LIBSSH2_API void **libssh2_session_abstract(LIBSSH2_SESSION *session);
 typedef void (libssh2_cb_generic)(void);
 
 LIBSSH2_API libssh2_cb_generic *
-libssh2_session_callback_set2(LIBSSH2_SESSION *session, enum LIBSSH2_CALLBACKS cbtype,
+libssh2_session_callback_set2(LIBSSH2_SESSION *session, enum LIBSSH2_SESSION_CALLBACKS cbtype,
                               libssh2_cb_generic *callback);
 
 LIBSSH2_DEPRECATED(1.11.1, "Use libssh2_session_callback_set2()")
 LIBSSH2_API void *libssh2_session_callback_set(LIBSSH2_SESSION *session,
-                                               enum LIBSSH2_CALLBACKS cbtype, void *callback);
+                                               enum LIBSSH2_SESSION_CALLBACKS cbtype, void *callback);
 LIBSSH2_API int libssh2_session_banner_set(LIBSSH2_SESSION *session,
                                            const char *banner);
 #ifndef LIBSSH2_NO_DEPRECATED
@@ -872,7 +878,7 @@ LIBSSH2_API void** libssh2_channel_abstract( LIBSSH2_CHANNEL* channel );
 
 LIBSSH2_API libssh2_cb_generic*
 libssh2_channel_callback_set( LIBSSH2_CHANNEL* channel,
-    enum LIBSSH2_CALLBACKS cbtype,
+    enum LIBSSH2_CHANNEL_CALLBACKS cbtype,
     libssh2_cb_generic* callback );
 
 LIBSSH2_API LIBSSH2_CHANNEL *
@@ -894,7 +900,7 @@ libssh2_channel_forward_listen_ex(LIBSSH2_SESSION *session, const char *host,
     libssh2_channel_forward_listen_ex((session), NULL, (port), NULL, 16)
 
 LIBSSH2_API libssh2_cb_generic* libssh2_listener_callback_set( LIBSSH2_LISTENER* listener,
-	enum LIBSSH2_CALLBACKS cbtype,
+	enum LIBSSH2_LISTENER_CALLBACKS cbtype,
 	libssh2_cb_generic* callback );
 LIBSSH2_API void** libssh2_listener_abstract( LIBSSH2_LISTENER* listener );
 
@@ -1182,7 +1188,7 @@ libssh2_knownhost_init(LIBSSH2_SESSION *session);
 #define LIBSSH2_KNOWNHOST_KEY_SHIFT        18
 #define LIBSSH2_KNOWNHOST_KEY_RSA1         (1<<18)
 #define LIBSSH2_KNOWNHOST_KEY_SSHRSA       (2<<18)
-#define LIBSSH2_KNOWNHOST_KEY_SSHDSS       (3<<18)
+#define LIBSSH2_KNOWNHOST_KEY_SSHDSS       (3<<18)  /* deprecated */
 #define LIBSSH2_KNOWNHOST_KEY_ECDSA_256    (4<<18)
 #define LIBSSH2_KNOWNHOST_KEY_ECDSA_384    (5<<18)
 #define LIBSSH2_KNOWNHOST_KEY_ECDSA_521    (6<<18)

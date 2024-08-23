@@ -1276,6 +1276,11 @@ cleanup:
     return *ctx ? 0 : -1;
 }
 
+/* Force-expose internal mbedTLS function */
+#if MBEDTLS_VERSION_NUMBER >= 0x03060000
+int mbedtls_pk_load_file(const char *path, unsigned char **buf, size_t *n);
+#endif
+
 /* _libssh2_ecdsa_new_private
  *
  * Creates a new private key given a file path and password
@@ -1289,13 +1294,14 @@ _libssh2_mbedtls_ecdsa_new_private(libssh2_ecdsa_ctx **ctx,
                                    const unsigned char *pwd)
 {
     mbedtls_pk_context pkey;
-    unsigned char *data;
-    size_t data_len;
-
-    if(mbedtls_pk_load_file(filename, &data, &data_len))
-        goto cleanup;
+    unsigned char *data = NULL;
+    size_t data_len = 0;
 
     mbedtls_pk_init(&pkey);
+
+    /* FIXME: Reimplement this functionality via a public API. */
+    if(mbedtls_pk_load_file(filename, &data, &data_len))
+        goto cleanup;
 
     if(_libssh2_mbedtls_parse_eckey(ctx, &pkey, session,
                                     data, data_len, pwd) == 0)
