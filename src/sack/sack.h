@@ -15785,9 +15785,9 @@ extern "C"{
 //#include <windows.h>
 typedef struct
 {
-	TEXTSTR lpPortName;
+	CTEXTSTR lpPortName;
 	CTEXTSTR lpFriendlyName;
-							/* instance "Infrared serial port (COM4)" */
+							 /* instance "Infrared serial port (COM4)" */
 	CTEXTSTR lpTechnology;
 }LISTPORTS_PORTINFO;
 typedef LOGICAL (CPROC* ListPortsCallback)( uintptr_t psv, LISTPORTS_PORTINFO* lpPortInfo );
