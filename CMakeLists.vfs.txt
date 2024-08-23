@@ -402,7 +402,7 @@ ENDFOREACH()
 
 endif( EXISTS ${SACK_BASE} )
 
-   set( LIBRESSL_VERSION 3.8.0 )
+   set( LIBRESSL_VERSION 3.9.2 )
 	set( LIBRESSL_SKIP_INSTALL ON CACHE BOOL "" )
 	set( LIBRESSL_APPS OFF CACHE BOOL "" )
 	set( LIBRESSL_TESTS OFF CACHE BOOL "" )
@@ -549,7 +549,7 @@ if( __ANDROID__ )
 endif( __ANDROID__ )
 
 SET_TARGET_PROPERTIES(${SSL_LIBS} PROPERTIES FOLDER "LibreSSL" )
-SET_TARGET_PROPERTIES(bs_obj crypto_obj ssl_obj tls_obj PROPERTIES FOLDER "LibreSSL" )
+SET_TARGET_PROPERTIES(bs_obj crypto_obj ssl_obj tls_obj tls_compat_obj compat_obj PROPERTIES FOLDER "LibreSSL" )
 #SET_TARGET_PROPERTIES(crypto-static ssl-static tls-static PROPERTIES FOLDER "LibreSSL" )
 SET_TARGET_PROPERTIES( libssh2 PROPERTIES FOLDER "LibSSH2" )
 
