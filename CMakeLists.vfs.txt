@@ -180,6 +180,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/md5.h	
         ${SACK_BASE}/include/sha1.h	
         ${SACK_BASE}/include/sha2.h	
+	${SACK_BASE}/include/listports.h
 )
 
 if( WIN32 )
@@ -264,6 +265,7 @@ SET( EXTRA_SOURCES
         ${SACK_BASE}/src/SQLlib/optlib/optionutil_v4.c
 
 	${SACK_BASE}/src/windows_hardware_library/listhids.c
+	${SACK_BASE}/src/windows_hardware_library/listports.c
 
 	${SACK_BASE}/src/translationlib/translate.c
 	${SACK_BASE}/src/systraylib/systray.c
@@ -471,6 +473,7 @@ SET( C_SOURCES
    SET( LIBSSH2_SKIP_INSTALL ON )
    set( LIBSSH2_BUILD_SHARED_LIBS OFF )
    SET( LIBSSH2_SKIP_DOCS ON )
+	set( LIBSSH2_BUILD_DOCS OFF )
    SET( LIBSSH2_BUILD_DEBUG ON )
    set( LIBSSH2_BUILD_EXAMPLES OFF )
    set( LIBSSH2_BUILD_TESTING OFF ) 
