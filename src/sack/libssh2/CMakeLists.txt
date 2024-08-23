@@ -409,6 +409,14 @@ endif()
 
 # Detect platform-specific crypto-backends last:
 
+if( NOT CRYPTO_BACKEND )
+    set(CRYPTO_BACKEND "LibreSSL")
+    set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
+    set(CRYPTO_BACKEND_INCLUDE_DIR ../libressl/3.9.2)
+    list(APPEND LIBRARIES ssl crypto tls )
+endif()
+
+
 if(CRYPTO_BACKEND STREQUAL "WinCNG" OR NOT CRYPTO_BACKEND)
   if(WIN32)
     set(CRYPTO_BACKEND "WinCNG")
