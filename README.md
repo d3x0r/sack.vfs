@@ -254,6 +254,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.3.112(in progress)
+    - implement network error callback (SSL fallback).
+    - add null check to client websocket protocol send.
+    - add `ports` accessor on ComPort interface.
 - 1.3.111
     - fixed missing sources (added network addresses to TCP sockets)
 - 1.3.11
