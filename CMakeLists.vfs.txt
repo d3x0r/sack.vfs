@@ -340,14 +340,14 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
                                    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 )
 
-#if( CMAKE_MINIMUM_REQUIRED_VERSION STREQUAL 3.21 )
+if( CMAKE_VERSION VERSION_GREATER 3.21 )
 
 foreach( path libssh2 libssh2/cmake libssh2/include libssh2/LICENSES libssh2/src )
 	#message( "process path: ${path}" )
 	FILE( MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/${path} )
 	FILE( GLOB files RELATIVE  ${SACK_BASE}/src/contrib/libssh2 ${SACK_BASE}/src/contrib/${path}/* )
 	foreach( file ${files} )
-		message( "addfile: ${path} ${file}" )
+		#message( "addfile: ${path} ${file}" )
 		if( NOT IS_DIRECTORY ${SACK_BASE}/src/contrib/libssh2/${file} ) 
 			FILE( COPY_FILE ${SACK_BASE}/src/contrib/libssh2/${file} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/${file} ONLY_IF_DIFFERENT )
 		endif()
@@ -355,9 +355,9 @@ foreach( path libssh2 libssh2/cmake libssh2/include libssh2/LICENSES libssh2/src
 endforeach()
 #FILE( COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/local/CMakeLists.txt ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/CMakeLists.txt )
 #FILE( COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/src/local/CMakeLists.txt ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/src/CMakeLists.txt )
-#else()
-#message( "No copy rule for libssh2 updates" )
-#endif()
+else()
+message( "No copy rule for libssh2 updates" )
+endif()
 
 
 if( WIN32 )
