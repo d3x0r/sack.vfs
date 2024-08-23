@@ -258,6 +258,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
     - add null check to client websocket protocol send.
     - add `ports` accessor on ComPort interface.
     - Update LibreSSL from 3.8.0 to 3.9.2.
+    - Update libssh2 sources to current (as of 2024/8/23).
 - 1.3.111
     - fixed missing sources (added network addresses to TCP sockets)
 - 1.3.11
