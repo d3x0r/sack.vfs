@@ -1925,7 +1925,7 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
    the list for something, then p will be non-null at the end of
    the loop.
                                                                                          */
-#define LIST_FORALL( l, i, t, v )  if(((v)=(t)(uintptr_t)NULL),(l))                                                        for( ((i)=0); ((i) < ((l)->Cnt))?                                         (((v)=(t)(uintptr_t)((l)->pNode[i])),1):(((v)=(t)(uintptr_t)NULL),0); (i)++ )  if( v )
+#define LIST_FORALL( l, i, t, v )  if(((i)=0),((v)=(t)(uintptr_t)NULL),(l))                                                        for( ; ((i) < ((l)->Cnt))?                                         (((v)=(t)(uintptr_t)((l)->pNode[i])),1):(((v)=(t)(uintptr_t)NULL),0); (i)++ )  if( v )
 /* This can be used to continue iterating through a list after a
    LIST_FORALL has been interrupted.
    Parameters
@@ -2071,7 +2071,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE       EmptyDataList ( PDATALIST *ppdl );
       }
    }
    </code>                                               */
-#define DATA_FORALL( l, i, t, v )  if(((v)=(t)NULL),(l)&&((l)->Cnt != INVALID_INDEX))	   for( ((i)=0);	                         (((i) < (l)->Cnt)                                             ?(((v)=(t)((l)->data + (uintptr_t)(((l)->Size) * (i)))),1)	         :(((v)=(t)NULL),0))&&(v); (i)++ )
+#define DATA_FORALL( l, i, t, v )  if(((i)=0),((v)=(t)NULL),(l)&&((l)->Cnt != INVALID_INDEX))	   for( ;	                                               (((i) < (l)->Cnt)                                             ?(((v)=(t)((l)->data + (uintptr_t)(((l)->Size) * (i)))),1)	         :(((v)=(t)NULL),0))&&(v); (i)++ )
 /* <code>
    PDATALIST pdl;
    pdl = CreateDataList( sizeof( int ) );
@@ -8125,7 +8125,7 @@ NETWORK_PROC( void, ssl_WriteData )( struct ssl_session* session, POINTER buffer
 /*
 * Send data out ssl connection
 */
-NETWORK_PROC( LOGICAL, ssl_SendPipe )( struct ssl_session* ses, CPOINTER buffer, size_t length );
+NETWORK_PROC( LOGICAL, ssl_SendPipe )( struct ssl_session** ses, CPOINTER buffer, size_t length );
 /*
 * set the send and receive work functions for an SSL connection
 */
@@ -8142,6 +8142,10 @@ NETWORK_PROC( CTEXTSTR, ssl_GetRequestedHostName )(PCLIENT pc);
 // just closed, but new error handling allows fallback to HTTP in order to send
 // a redirect to the HTTPS address proper.
 NETWORK_PROC( void, ssl_EndSecure )(PCLIENT pc, POINTER buffer, size_t buflen );
+/*
+ For a ssl_session pipe, this is a close.
+ */
+NETWORK_PROC( void, ssl_EndSecurePipe )(struct ssl_session** session );
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, CPOINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
@@ -15766,4 +15770,44 @@ SHA2_PROC void sha512(const unsigned char *message, unsigned int len,
 #ifdef __cplusplus
 }
 #endif
+#endif
+#ifndef LISTPORTS_H
+#define LISTPORTS_H
+#ifdef SACKCOMMLIST_SOURCE
+#define SACKCOMMLIST_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define SACKCOMMLIST_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#define VERSION_LISTPORTS 0x00020000
+#ifdef __cplusplus
+extern "C"{
+#endif
+//#include <windows.h>
+typedef struct
+{
+	TEXTSTR lpPortName;
+	CTEXTSTR lpFriendlyName;
+							/* instance "Infrared serial port (COM4)" */
+	CTEXTSTR lpTechnology;
+}LISTPORTS_PORTINFO;
+typedef LOGICAL (CPROC* ListPortsCallback)( uintptr_t psv, LISTPORTS_PORTINFO* lpPortInfo );
+/* User provided callback funtion that receives the information on each
+ * serial port available.
+ * The strings provided on the LISTPORTS_INFO are not to be referenced after
+ * the callback returns; instead make copies of them for later use.
+ * If the callback returns FALSE, port enumeration is aborted.
+ */
+SACKCOMMLIST_PROC( LOGICAL, ListPorts )( ListPortsCallback lpCallback, uintptr_t psv );
+/* Lists serial ports available on the system, passing the information on
+ * each port on succesive calls to lpCallback.
+ * lpCallbackValue, treated opaquely by ListPorts(), is intended to carry
+ * information internal to the callback routine.
+ * Returns TRUE if succesful, otherwise error code can be retrieved via
+ * GetLastError().
+ */
+#ifdef __cplusplus
+}
+#endif
+#elif VERSION_LISTPORTS!=0x00020000
+#error You have included two LISTPORTS.H with different version numbers
 #endif
