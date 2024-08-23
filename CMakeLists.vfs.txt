@@ -418,7 +418,7 @@ endif( EXISTS ${SACK_BASE} )
 	if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
 		set( CMAKE_C_FLAGS ${CMAKE_C_FLAGS_ORIG} )
 	endif()
-   include_directories( ${CMAKE_BINARY_DIR} )
+   include_directories( ${CMAKE_BINARY_DIR}/include )
    include_directories( src/sack/libressl/${LIBRESSL_VERSION}/include )
    set( SSL_LIBS ssl crypto tls )
 
