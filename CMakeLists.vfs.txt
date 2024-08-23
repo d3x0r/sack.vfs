@@ -479,7 +479,7 @@ SET( C_SOURCES
    set( LIBSSH2_BUILD_TESTING OFF ) 
    SET( ENABLE_ZLIB_COMPRESSION ON )
    
-   SET( OPENSSL_ROOT_DIR ../libressl/3.8.0 )
+   SET( OPENSSL_ROOT_DIR ../libressl/3.9.2 )
    add_subdirectory( src/sack/libssh2 )
    include_directories( src/sack/libssh2/include )
    
