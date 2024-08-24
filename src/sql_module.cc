@@ -177,9 +177,8 @@ static void sqlUserAsyncMsg( uv_async_t* handle );
 
 /* This is used from external code... */
 void createSqlObject( const char *name, Isolate *isolate, Local<Object> into ) {
-	class SqlObject* obj;
-	obj = new SqlObject( name, isolate, into, emptyFunction );
-	//SqlObject::doWrap( obj, into );
+	//class SqlObject* obj =
+	new SqlObject( name, isolate, into, emptyFunction );
 }
 
 

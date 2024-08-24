@@ -22,9 +22,9 @@ struct info {
 };
 
 int GetProcessParent( int pid ) {
-	PLIST results = NULL;
 	HANDLE hToken;
-	BOOL bOpenToken = OpenProcessToken( GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken );
+	//BOOL bOpenToken = 
+	OpenProcessToken( GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken );
 
 	LUID luid;
 	LookupPrivilegeValue( NULL, SE_DEBUG_NAME, &luid );
@@ -34,7 +34,8 @@ int GetProcessParent( int pid ) {
 	tp.Privileges[0].Luid = luid;
 	tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 	// Enable the privilege
-	BOOL bAdjust = AdjustTokenPrivileges( hToken,
+	//BOOL bAdjust = 
+	AdjustTokenPrivileges( hToken,
 		FALSE,
 		&tp,
 		0, // size of the next privilege thing
@@ -69,7 +70,8 @@ int GetProcessParent( int pid ) {
 PLIST GetProcessCommandLines( const char* process ) {
 	PLIST results = NULL;
 	HANDLE hToken;
-	BOOL bOpenToken = OpenProcessToken( GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken );
+	//BOOL bOpenToken = 
+	OpenProcessToken( GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken );
 
 	LUID luid;
 	LookupPrivilegeValue( NULL, SE_DEBUG_NAME, &luid );
@@ -79,7 +81,8 @@ PLIST GetProcessCommandLines( const char* process ) {
 	tp.Privileges[0].Luid = luid;
 	tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
 	// Enable the privilege
-	BOOL bAdjust = AdjustTokenPrivileges( hToken,
+	//BOOL bAdjust = 
+	AdjustTokenPrivileges( hToken,
 		FALSE,
 		&tp,
 		0, // size of the next privilege thing
@@ -184,7 +187,6 @@ PLIST GetProcessCommandLines( const char* process ) {
 void ReleaseCommandLineResults( PLIST* ppResults ) {
 	if( !ppResults ) return;
 
-	PLIST results = ppResults[0];
 	INDEX idx;
 	struct command_line_result* result;
 	LIST_FORALL( ppResults[0], idx, struct command_line_result*, result ) {
@@ -194,7 +196,6 @@ void ReleaseCommandLineResults( PLIST* ppResults ) {
 	}
 
 	DeleteList( ppResults );
-
 }
 
 #if 0

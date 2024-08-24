@@ -746,7 +746,7 @@ Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket*
 				//lprintf( "Name info for address: %s %d", tmp, addrres );
 				SETV( result, strings->remoteNameString->Get(isolate), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
 			} else {
-				uint32_t dwError = WSAGetLastError();
+				//uint32_t dwError = WSAGetLastError();
 				if( addrres == EAI_NONAME ) {
 					SETV( result, strings->remoteNameString->Get(isolate), remote );
 				}else
@@ -759,7 +759,7 @@ Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket*
 				//lprintf( "Name info for address: %s %d", tmp, addrres );
 				SETV( result, strings->localNameString->Get( isolate ), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
 			} else {
-				uint32_t dwError = WSAGetLastError();
+				//uint32_t dwError = WSAGetLastError();
 				if( addrres == EAI_NONAME ) {
 					SETV( result, strings->localNameString->Get(isolate), local );
 				}else
@@ -889,7 +889,7 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
 		struct httpRequestEvent* eventMessage;
 		while( eventMessage = (struct httpRequestEvent*)DequeLink( &myself->eventQueue ) ) {
 			Local<Value> argv[1];
-			Local<ArrayBuffer> ab;
+			//Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
 
 			case WS_EVENT_RESPONSE:
@@ -1070,6 +1070,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 	}
 }
 
+/*
 static void handleWebSockEOF( uintptr_t psv ) {
 	wssiObject* wssiInternal = (wssiObject*)psv;
 	lprintf( "get EOF in websocket - this means, for websocket, close" );
@@ -1083,6 +1084,7 @@ static void handleWebSockClose( uintptr_t psv ) {
 	if( wssiInternal->wsPipe ) // prevent double close.
 		WebSocketPipeClose( wssiInternal->wsPipe, 1006, "Underlaying channel closed." );
 }
+*/
 
 static void wssAsyncMsg( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
@@ -1125,7 +1127,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				if( !myself->requestCallback.IsEmpty() ) {
 					class constructorSet *c = getConstructors( isolate );
 					Local<Function> cons = Local<Function>::New( isolate, c->httpConstructor );
-					MaybeLocal<Object> _http = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
+					MaybeLocal<Object> _http = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 					if( _http.IsEmpty() ) {
 						isolate->ThrowException( Exception::Error(
 							String::NewFromUtf8( isolate, TranslateText( "Internal Error request instance." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1163,7 +1165,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				//lprintf( "Dispatch open event because connect." );
 				class constructorSet *c = getConstructors( isolate );
 				Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
-				MaybeLocal<Object> _wssi = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
+				MaybeLocal<Object> _wssi = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 				if( _wssi.IsEmpty() ) {
 					isolate->ThrowException( Exception::Error(
 								String::NewFromUtf8( isolate, TranslateText( "Internal Error creating client connection instance." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1336,7 +1338,6 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 	{
 		Local<Value> argv[2];
 		while( eventMessage = (struct wscEvent*)DequeLink( &wsc->eventQueue ) ) {
-			Local<Function> cb;
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
 			case WS_EVENT_OPEN:
@@ -1830,6 +1831,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	}
 }
 
+/*
 static void Wait( void ) {
 	IdleFor( 250 );
 	return;
@@ -1840,8 +1842,8 @@ static void Wait( void ) {
 		lprintf( "slept %d", tick );
 	}
 }
+*/
 #define Wait() IdleFor( 100 )
-
 
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 	wssObject*wss = (wssObject*)psv;
@@ -2075,7 +2077,7 @@ static void webSockServerAcceptAsync( PCLIENT pc, uintptr_t psv, const char* pro
 }
 
 
-
+#if 0
 static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* protocols, const char* resource, char** protocolReply ) {
 
 	wssObject* wss = (wssObject*)psv;
@@ -2119,7 +2121,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* proto
 	}
 
 }
-
+#endif
 
 
 httpObject::httpObject() {
@@ -2524,6 +2526,7 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	DropWssEvent( pevt );
 }
 
+#if 0
 static uintptr_t catchLostEvents( PTHREAD thread ) {
 	wssObject *wss = (wssObject*)GetThreadParam( thread );
 	while( !wss->closing ) {
@@ -2538,6 +2541,7 @@ static uintptr_t catchLostEvents( PTHREAD thread ) {
 	wss->event_waker = NULL;
 	return 0;
 }
+#endif
 
 wssObject::wssObject( struct wssOptions *opts ) {
 	char tmp[256];

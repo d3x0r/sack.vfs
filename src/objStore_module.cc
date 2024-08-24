@@ -1133,7 +1133,8 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 #endif
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
 
-			size_t lengthWritten = objStore::sack_vfs_os_write( file, *data, data.length() );
+			//size_t lengthWritten = 
+			objStore::sack_vfs_os_write( file, *data, data.length() );
 			// compare lengthWritten with data.length() ?
 
 			if( dateValToUse )

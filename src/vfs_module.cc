@@ -90,7 +90,7 @@ struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
 	struct PromiseWrapper *pw = new PromiseWrapper();
 	MaybeLocal<Promise::Resolver> ml_resolver = Promise::Resolver::New( context );
 	Local<Promise::Resolver> resolver = ml_resolver.ToLocalChecked();
-	Local<Promise> pr = resolver->GetPromise();
+	//Local<Promise> pr = resolver->GetPromise();
 	Local<External> lex_pw = External::New( isolate, (void *)pw );
 	MaybeLocal<Function> prsc = Function::New( context, promiseResolveCallback, lex_pw );
 	pw->resolve.Reset( isolate, prsc.ToLocalChecked() );
@@ -134,7 +134,6 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
 		Local<Object> key = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		//Local<Object> 
-		Local<String> tmp;
 		Local<Value> keyValue = GET(key, "key" );
 		Local<Value> stepValue = GET(key, "step");
 		int step = (int)stepValue->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
@@ -263,7 +262,7 @@ void decodeFlags( int flags ) {
 	if( flags & O_CREAT ) fprintf( stderr, "create " );
 	if( flags & O_EXCL ) fprintf( stderr, "excl " );
 	if( flags & O_NONBLOCK ) fprintf( stderr, "noblock " );
-	if( flags & O_TRUNC ) fprintf( stderr, "truync " );
+	if( flags & O_TRUNC ) fprintf( stderr, "trunc " );
 	if( flags & O_APPEND ) fprintf( stderr, "append " );
 	if( flags & O_DSYNC ) fprintf( stderr, "dsync " );
 	if( flags & FASYNC ) fprintf( stderr, "fasycn " );
@@ -533,7 +532,7 @@ void logBinary( char *x, int n )
 
 void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+	//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 
 	class constructorSet* c = getConstructors( isolate );
 	Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
@@ -545,8 +544,8 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 
 
 void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
-	Isolate* isolate = args.GetIsolate();
-	int argc = args.Length();
+	//Isolate* isolate = args.GetIsolate();
+	//int argc = args.Length();
 	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 	sack_vfs_decrypt_volume( vol->vol );
 }
@@ -627,11 +626,11 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 
 
 void VolumeObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-	if( vol ) {
+	//Isolate* isolate = args.GetIsolate();
+	//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+	//if( vol ) {
 		// this is a noop.  mmap is assumed commited if the memory is written to; and the process exists and closes the handles.
-	}
+	//}
 
 }
 

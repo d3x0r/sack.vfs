@@ -172,7 +172,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					SSH2_RemoteListen* listener = (SSH2_RemoteListen*)event->data2;
 					//if( !IsQueueEmpty( &listener->activePromises ) ) 
 					{
-						lprintf( "Unhandled listener error event: %d %s", event->iData, (char*)event->data );
+						lprintf( "Unhandled listener error event: %p %d %s", listener, event->iData, (char*)event->data );
 						Local<Object> error = Object::New( isolate );
 						error->Set( isolate->GetCurrentContext()
 							, String::NewFromUtf8Literal( isolate, "message" )
@@ -232,7 +232,7 @@ static void asyncmsg( uv_async_t* handle ) {
 				{
 					if( event->data ) {
 						constructorSet* c = getConstructors( isolate );
-						Local<Value>* argv = new Local<Value>[0];
+						//Local<Value>* argv = new Local<Value>[0];
 						Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
 						MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 						Local<Object> obj = mo.ToLocalChecked();
@@ -253,7 +253,7 @@ static void asyncmsg( uv_async_t* handle ) {
 				{
 					lprintf( "Reverse connection at listener; this creates a new SSH_Channel with the specified new channel" );
 					constructorSet* c = getConstructors( isolate );
-					Local<Value>* argv = new Local<Value>[0];
+					//Local<Value>* argv = new Local<Value>[0];
 					Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
 					MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 					Local<Object> obj = mo.ToLocalChecked();
@@ -272,7 +272,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					if( event->data ) {
 						//lprintf( "Build reverse channel SSH_RemoteListen_constructor" );
 						constructorSet* c = getConstructors( isolate );
-						Local<Value>* argv = new Local<Value>[0];
+						//Local<Value>* argv = new Local<Value>[0];
 						Local<Function> cons = Local<Function>::New( isolate, c->SSH_RemoteListen_constructor );
 						MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 						Local<Object> obj = mo.ToLocalChecked();
@@ -747,7 +747,7 @@ void SSH2_Channel::Close( const v8::FunctionCallbackInfo<Value>& args ) {
 void SSH2_Channel::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	// this constructor is only called from internal code
 	Isolate* isolate = args.GetIsolate();
-	int argc = args.Length();
+	//int argc = args.Length();
 	if( args.IsConstructCall() ) {
 		SSH2_Channel* obj;
 		obj = new SSH2_Channel();
@@ -757,18 +757,15 @@ void SSH2_Channel::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	} else {
 		class constructorSet* c = getConstructors( isolate );
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Value>* argv = new Local<Value>[0];
 		Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
-		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
+		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 		if( !mo.IsEmpty() )
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
-		delete[] argv;
 	}
 }
 
 void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 	Isolate* isolate = args.GetIsolate();
-	int argc = args.Length();
 	NetworkStart();
 	if( args.IsConstructCall() ) {
 		//lprintf( "SSH2_Object::New" );
@@ -782,12 +779,10 @@ void SSH2_Object::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 		//lprintf( "SSH2_Object::New(called)" );
 		class constructorSet* c = getConstructors( isolate );
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Value> *argv = new Local<Value>[0];
 		Local<Function> cons = Local<Function>::New( isolate, c->SSH_Object_constructor );
-		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
+		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
 		if( !mo.IsEmpty() )
 			args.GetReturnValue().Set( mo.ToLocalChecked() );
-		delete[] argv;
 	}
 }
 
@@ -838,12 +833,12 @@ void SSH2_Object::Forward( const v8::FunctionCallbackInfo<Value>& args ) {
 	int remoteport = 0;
 	Isolate* isolate = args.GetIsolate();
 	
-	String::Utf8Value localHost( args.GetIsolate(), args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value localHost( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	if( args.Length() > 1 )
-		localport = args[1]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
-	String::Utf8Value remoteHost( args.GetIsolate(), args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+		localport = args[1]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	String::Utf8Value remoteHost( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	if( args.Length() > 1 )
-		remoteport = args[1]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
+		remoteport = args[1]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 
 	lprintf( " Forward is not implemented yet" );
 	//sack_ssh_direc
@@ -955,9 +950,9 @@ void SSH2_Object::Reverse( const v8::FunctionCallbackInfo<Value>&args ) {
 	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
 	int port = 0;
 	Isolate* isolate = args.GetIsolate();
-	String::Utf8Value remoteHost( args.GetIsolate(), args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value remoteHost( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	if( args.Length() > 1 )
-		port = args[1]->Int32Value( args.GetIsolate()->GetCurrentContext() ).FromMaybe( 0 );
+		port = args[1]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 	if( args.Length() > 2 ) {
 		// this is probably an option object
 		// 
@@ -1056,7 +1051,7 @@ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 			String::NewFromUtf8Literal( isolate, "Connect requires option object" ) ) );
 		return;
 	}
-	Local<Object> opts = args[0]->ToObject( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked();
+	Local<Object> opts = args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 
 	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
 	ssh->connectPromise.Reset( isolate, pr );

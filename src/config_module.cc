@@ -126,15 +126,14 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 			break;
 		case CONFIG_ARG_DATA:
 			{
-				void * arg;
-				arg = my_va_arg( args, void* );
+				//void * arg = my_va_arg( args, void* );
 				break;
 		case CONFIG_ARG_DATA_SIZE:
-			{
-				size_t arglen;
-				arglen = my_va_arg( args, size_t );
-				lprintf( "Create new typedarray...." );
-			}
+				{
+					size_t arglen;
+					arglen = my_va_arg( args, size_t );
+					lprintf( "Create new typedarray...." );
+				}
 			}
 			break;
 		case CONFIG_ARG_LOGICAL:
@@ -149,14 +148,14 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 			break;
 		case CONFIG_ARG_FRACTION:
 			{
-				PFRACTION arg;
-				arg = my_va_arg( args, PFRACTION );
+				PFRACTION arg = my_va_arg( args, PFRACTION );
+				lprintf( "need conversion to JS type for Fraction: %d/%d", arg->numerator, arg->denominator );
 			}
 			break;
 		case CONFIG_ARG_COLOR:
 			{
-				CDATA arg;
-				arg = my_va_arg( args, CDATA );
+				CDATA arg = my_va_arg( args, CDATA );
+				lprintf( "need conversion to JS type for Color: %08x", arg );
 			}
 			break;
 

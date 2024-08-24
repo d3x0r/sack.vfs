@@ -6,6 +6,7 @@
 //#define DEBUG_REVIVAL_CALLBACKS
 //#define DEBUG_REFERENCE_FOLLOW
 //#define DEBUG_SET_FIELDCB
+//#define JSOX_USE_TIMING
 
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive );
@@ -15,12 +16,12 @@ static struct timings {
 	uint64_t deltas[10];
 }timings;
 
-static void makeJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
+#if defined(JSOX_USE_TIMING)
 static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
-
+#endif
 
 class JSOXRefObject : public node::ObjectWrap {
 	
@@ -31,7 +32,6 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		Local<Context> context = isolate->GetCurrentContext();
 		int argc = args.Length();
 		if( argc == 0 ) {
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must callback to read into." ) ) );
@@ -71,10 +71,11 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 
 	Local<Object> o2 = Object::New( isolate );
 	SET_READONLY_METHOD( o2, "parse", parseJSOX );
-	//NODE_SET_METHOD( o2, "stringify", makeJSOX );
 	SET_READONLY_METHOD( o2, "setFromPrototypeMap", setFromPrototypeMap );
 	SET_READONLY_METHOD( o2, "escape", escapeJSOX );
+#if defined(JSOX_USE_TIMING)
 	//SET_READONLY_METHOD( o2, "timing", showTimings );
+#endif
 	SET_READONLY( exports, "JSOX", o2 );
 
 	{
@@ -185,7 +186,10 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 
 	}
-	else data = NULL;
+	else {
+		data = NULL;
+		datalen = 0;
+	}
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
@@ -199,8 +203,8 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		) {
 		struct jsox_value_container * val;
 		PDATALIST elements = jsox_parse_get_data( parser->state );
-		Local<Object> o;
-		Local<Value> v;// = Object::New( isolate );
+		//Local<Object> o;
+		//Local<Value> v;// = Object::New( isolate );
 
 		Local<Value> argv[1];
 		val = (struct jsox_value_container *)GetDataItem( &elements, 0 );
@@ -290,7 +294,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		class constructorSet *c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->jsoxConstructor );
-		MaybeLocal<Object> resObj = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+		MaybeLocal<Object> resObj = cons->NewInstance( context, argc, argv );
 		if(!resObj.IsEmpty() )
 			args.GetReturnValue().Set( resObj.ToLocalChecked() );
 		else
@@ -305,7 +309,7 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 	Local<Object> sub_o;
 	revive->fieldCb.Clear();
 	if( val->className ) {
-		Local<Function> cb;
+		//Local<Function> cb;
 
 		MaybeLocal<Value> mprotoDef;
 		Local<Object> protoDef;
@@ -541,7 +545,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	Local<Function> fieldCb; // save what the fieldCb was... getArray clears it.
 	Local<Value> result;
 	Local<Script> script;
-	Local<Object> sub_o;
 	class constructorSet *c = getConstructors( revive->isolate );
 	//lprintf( "Saving the callback... did it get cleared?" );
 	//lprintf("handling:%d  %.*s %.*s", val->value_type
@@ -884,7 +887,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 #ifdef DEBUG_REVIVAL_CALLBACKS
 								lprintf( "method4a?");
 #endif
-								Local<Value> args[] = { Undefined(revive->isolate), resultTmp };
 								MaybeLocal<Value> mv = cb->Call( revive->context, resultTmp, 0, NULL );
 								if( !mv.IsEmpty() )
 									result = mv.ToLocalChecked();
@@ -895,28 +897,11 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								result = resultTmp;
 							}
 							LogObject( result );
-
 						}
 						else
 						{
 							lprintf( "Threw an exception in constrcutor" );
 						}
-						// string revival can (and needs to) happen immediately.
-						if(0)
-							if( !fieldCb.IsEmpty() && fieldCb->IsFunction() ) {
-#ifdef DEBUG_REVIVAL_CALLBACKS
-								lprintf( "method4a?");
-#endif
-								Local<Value> args[] = { Undefined(revive->isolate), resultTmp };
-
-								MaybeLocal<Value> mv = fieldCb->Call( revive->context, result, 2, args );
-								if( !mv.IsEmpty() )
-									result = mv.ToLocalChecked();
-								LogObject( result );
-
-							}else {
-								lprintf( "Return" );
-							}
 					}
 				}
 				else
@@ -1042,8 +1027,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
 	Isolate* isolate = revive->isolate;
 	Local<Context> context = revive->context;
-	Local<String> stringKey;
-	Local<Value> thisKey;
 	struct jsox_value_container *val;
 	Local<Value> sub_v;
 	INDEX idx;
@@ -1421,7 +1404,6 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 
 Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 	Local<Object> o;
-	Local<Value> v;// = Object::New( revive->isolate );
 
 	struct jsox_value_container *val = (struct jsox_value_container *)GetDataItem( &msg, 0 );
 	revive->fieldName = String::NewFromUtf8Literal( revive->isolate, "" );
@@ -1481,6 +1463,7 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 
 
 
+#if defined(JSOX_USE_TIMING)
 void showTimings( const v8::FunctionCallbackInfo<Value>& args ) {
      uint32_t val;
 #define LOGVAL(n) val = ConvertTickToMicrosecond( timings.deltas[n] ); printf( #n " : %d.%03d\n", val/1000, val%1000 );
@@ -1497,6 +1480,7 @@ LOGVAL(7);
 	}
 	logTick(-1);
 }
+#endif
 
 void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
@@ -1584,7 +1568,6 @@ void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
 	}
 	const char *msg;
 	String::Utf8Value *tmp;
-	Local<Function> reviver;
 	Local<ArrayBuffer> ab;
 	size_t len;
 	if( args[0]->IsArrayBuffer() ) {
@@ -1649,7 +1632,6 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value *tmp;
-	Local<Function> reviver;
 	Local<ArrayBuffer> ab;
 	size_t len;
 	if( args[0]->IsArrayBuffer() ) {
@@ -1698,11 +1680,6 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	delete r.parser;
 }
 
-
-void makeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
-	args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
-}
-
 void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	class constructorSet *c = getConstructors( isolate );
@@ -1712,23 +1689,6 @@ void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<Context> context = isolate->GetCurrentContext();
 		class constructorSet* c = getConstructors( isolate );
 		if( c->dateNsCons.IsEmpty() ) {
-#if 0
-			Local<Script> script;
-			Local<String> string = String::NewFromUtf8Literal( isolate, "DateNS" );
-			script = Script::Compile( context, string
-#if ( NODE_MAJOR_VERSION >= 16 )
-				, new ScriptOrigin( isolate, String::NewFromUtf8Literal( isolate, "DateNSClassGetter" ) ) ).ToLocalChecked();
-#else
-				, new ScriptOrigin( String::NewFromUtf8Literal( isolate, "DateNSClassGetter" ) ) ).ToLocalChecked();
-#endif
-			MaybeLocal<Value> ml_result = script->Run( context );
-			if( !ml_result.IsEmpty() ) {
-				Local<Value> result = ml_result.ToLocalChecked();
-				Local<Function> cons = Local<Function>::Cast( result );
-				c->dateNsCons.Reset( isolate, cons );
-			} else if( !args[1].IsEmpty() ) {
-			}
-#endif
 			c->dateNsCons.Reset( isolate, args[1].As<Function>() );
 		}
 	}

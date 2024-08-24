@@ -136,31 +136,11 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 
 	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
 	static int resending;
-	static struct states {
-		int state;
-		int tick;
-		INPUT events[12];
-		INPUT eventsUp[12];
-		struct {
-			int code;
-			int wParam;
-			KBDLLHOOKSTRUCT lParam;
-		} pending[12];
-	} States[10];
-	static int lastDownSkip;
-	//static 
-	int n = 10;
-	int up = (kbhook->flags & LLKHF_UP) != 0;
-
 	if( resending ) {
 		return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
 	}
 	if( hidg.blocking ) {
 		hidg.skipEvent = 1;
-		if( 0 ) {
-			LoG( "Drop key." );
-			lastDownSkip++;
-		}
 		return 1;
 	}
 
@@ -473,8 +453,6 @@ void KeyHidObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 void KeyHidObject::lock( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	KeyHidObject* com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
 	int argc = args.Length();
 	if( argc ) {
 		if( args[0].As<Boolean>()->IsTrue() ) {

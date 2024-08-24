@@ -500,7 +500,6 @@ private:
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		static signParams threadParams[32];
-		int found = 0;
 #ifdef DEBUG_SIGNING
 		int tries = 0;
 #endif
@@ -509,7 +508,6 @@ private:
 		int n = 0;
 		int argn = 1;
 		int threads = signingThreads;
-		POINTER state = NULL;
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
@@ -664,9 +662,6 @@ private:
 				}
 			}
 		}
-		if( !found ) {
-			int a = 3;
-		}
 		return found;
 	}
 
@@ -675,15 +670,14 @@ private:
 		Local<Context> context = isolate->GetCurrentContext();
 		//SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		int found = 0;
 #ifdef DEBUG_SIGNING
 		int tries = 0;
 #endif
 		int pad1 = 0, pad2 = 0;
 		int n = 0;
 		int argn = 1;
-		int threads = signingThreads;
-		POINTER state = NULL;
+		//int threads = signingThreads;
+		//POINTER state = NULL;
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
@@ -710,7 +704,8 @@ private:
 #endif
 		SET( result, "classifier", Integer::New( isolate, params->s.classifier ) );
 		SET( result, "extent", Integer::New( isolate, params->s.extent ) );
-		char* rid = EncodeBase64Ex( params->outbuf, 256 / 8, &params->len, (const char*)1 );
+		//char* rid = 
+		EncodeBase64Ex( params->outbuf, 256 / 8, &params->len, (const char*)1 );
 		SET( result, "key", localString( isolate, params->nonce ) );
 		params->nonce = NULL;
 		SET( result, "id", localString( isolate, params->id ) );
@@ -780,7 +775,8 @@ private:
 				Local<Object> result = Object::New( isolate );
 				struct signature s;
 				//lprintf( "Signature check:%d %d", pad1, pad2 );
-				int r = signCheck( outbuf, pad1, pad2, &s );
+				//int r = 
+				signCheck( outbuf, pad1, pad2, &s );
 				//lprintf( "stat result %d %d %d", r, s.classifier, s.extent );
 				SET( result, "classifier", Integer::New( isolate, s.classifier ) );
 				SET( result, "extent", Integer::New( isolate, s.extent ) );

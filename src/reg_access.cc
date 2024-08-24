@@ -233,7 +233,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef WIN32
 			dwStatus = RegCreateKeyEx( hive,
 													  end, 0
-													 , ""
+													 , (LPSTR)""  // this is only an in...
 													 , REG_OPTION_NON_VOLATILE
 													 , KEY_ALL_ACCESS
 													 , NULL

@@ -623,14 +623,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 
 			if( opts->Has( context, optName = strings->binString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsString() )
 					bin = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			} else {
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "required option 'bin' missing." ) ) );
 			}
 			if( opts->Has( context, optName = strings->argString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsString() ) {
 					char **args2;
 					argString = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -656,12 +654,10 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 			if( opts->Has( context, optName = strings->workString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsString() )
 					work = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			}
 			if( opts->Has( context, optName = strings->envString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				Local<Object> env = GETV( opts, optName ).As<Object>();
 				readEnv( isolate, context, env, &newTask->envList );
 				//lprintf( "env params not supported(yet)" );
@@ -672,20 +668,17 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				*/
 			}
 			if( opts->Has( context, optName = strings->binaryString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsBoolean() ) {
 					newTask->binary = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->inputString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsFunction() ) {
 					newTask->inputCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					input = true;
 				}
 			}
 			if( opts->Has( context, optName = strings->inputString2->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsFunction() ) {
 					newTask->inputCallback2.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					input2 = true;
@@ -695,7 +688,6 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				firstArgIsArg = GETV( opts, optName )->TOBOOL( isolate );
 			}
 			if( opts->Has( context, optName = strings->endString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsFunction() ) {
 					newTask->endCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					end = true;
@@ -924,8 +916,7 @@ void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {
 void TaskObject::getExitCode( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)task->exitCode ) );
-		
+	args.GetReturnValue().Set( Integer::New( isolate, (int)task->exitCode ) );
 }
 
 #if _WIN32
@@ -1220,7 +1211,6 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 
 void TaskObject::getWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	char *title = GetWindowTitle( task->task );
 	Local<String> result = String::NewFromUtf8( isolate, title ).ToLocalChecked();
@@ -1353,14 +1343,6 @@ static BOOL CALLBACK enum_windows_callback( HWND handle, LPARAM lParam ) {
 	data->window_handle = handle;
 	return FALSE;
 }
-static PLIST find_main_windows( unsigned long process_id ) {
-	struct handle_data data;
-	data.handles = NULL;
-	data.process_id = process_id;
-	data.window_handle = 0;
-	EnumWindows( enum_windows_callback, (LPARAM)&data );
-	return data.handles;
-}
 static HWND find_main_window( unsigned long process_id ) {
 	struct handle_data data;
 	data.handles = NULL;
@@ -1469,7 +1451,6 @@ void TaskObject::getProcessWindowPos( const FunctionCallbackInfo<Value>& args ){
 
 void TaskObject::setProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
 	int64_t winStyles = args[1]->IsNumber() ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
 	int64_t winStylesEx = args[2]->IsNumber() ? args[2]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
 	int64_t classStyles = args[3]->IsNumber() ? args[3]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;

@@ -997,30 +997,26 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 
 	if( toAddr )
 		pc = CPPOpenTCPClientAddrExxx( toAddr, TCP_ReadComplete, (uintptr_t)this
-						, TCP_Close, (uintptr_t)this
-			, TCP_Write, (uintptr_t)this
-			, TCP_Connect, (uintptr_t)this
-			, ((opts->delayConnect || opts->ssl)? OPEN_TCP_FLAG_DELAY_CONNECT:0)
-			| (( opts->ssl ) ? OPEN_TCP_FLAG_SSL_CLIENT : 0 )
-			DBG_SRC );
-		if( pc ) {
-			if( opts->ssl ) {
-				ssl_BeginClientSession( pc
-					, opts->key, opts->key_len
-					, opts->pass, opts->pass_len
-					, opts->cert_chain, opts->cert_chain_len );
-				NetworkConnectTCP( pc );
-			}
+		                             , TCP_Close, (uintptr_t)this
+		                             , TCP_Write, (uintptr_t)this
+		                             , TCP_Connect, (uintptr_t)this
+		                             , ((opts->delayConnect || opts->ssl)? OPEN_TCP_FLAG_DELAY_CONNECT:0)
+		                               | (( opts->ssl ) ? OPEN_TCP_FLAG_SSL_CLIENT : 0 )
+		                               DBG_SRC );
+	if( pc ) {
+		if( opts->ssl ) {
+			ssl_BeginClientSession( pc
+				, opts->key, opts->key_len
+				, opts->pass, opts->pass_len
+				, opts->cert_chain, opts->cert_chain_len );
+			NetworkConnectTCP( pc );
 		}
-
-	else {
+	} else {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
 
 		// gets events about ssl failures
 
 		if( opts->ssl ) {
-			INDEX idx;
-			struct wssoptsion* opt;
 			if( opts->cert_chain ) {
 				ssl_BeginServer( pc
 					, opts->cert_chain, opts->cert_chain_len
@@ -1610,7 +1606,6 @@ static uintptr_t pingThread( PTHREAD thread ) {
 
 static void ping( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Function> cb;
 	if( args.Length() < 2 ) {
 		return;
 	}

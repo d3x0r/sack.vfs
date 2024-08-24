@@ -120,7 +120,6 @@ parseObject::~parseObject() {
 #define logTick(n) do { uint64_t tick = GetCPUTick(); if( n >= 0 ) timings.deltas[n] += tick-timings.start; timings.start = tick; } while(0)
 
 void parseObject::reset( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
 	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	json_parse_clear_state( parser->state );
 }
@@ -141,8 +140,6 @@ void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		) {
 		struct json_value_container * val;
 		PDATALIST elements = json_parse_get_data( parser->state );
-		Local<Object> o;
-		Local<Value> v;// = Object::New( isolate );
 
 		Local<Value> argv[1];
 		val = (struct json_value_container *)GetDataItem( &elements, 0 );
@@ -216,7 +213,6 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 void parseObject::reset6( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
 	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	json_parse_clear_state( parser->state );
 }
@@ -308,7 +304,6 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 void parseObject::reset6v( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
 	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
 	vesl_parse_clear_state( parser->vstate );
 }
@@ -454,7 +449,8 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 	}
 	if( revive->revive ) {
 		Local<Value> args[2] = { revive->value, result };
-		Local<Value> r = revive->reviver->Call( revive->context, revive->_this, 2, args ).ToLocalChecked();
+		//Local<Value> r = 
+		revive->reviver->Call( revive->context, revive->_this, 2, args );
 	}
 	return result;
 }
@@ -535,7 +531,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 
 Local<Value> convertMessageToJS( PDATALIST msg, struct reviver_data *revive ) {
 	Local<Object> o;
-	Local<Value> v;// = Object::New( revive->isolate );
+	//Local<Value> v;// = Object::New( revive->isolate );
 
 	struct json_value_container *val = (struct json_value_container *)GetDataItem( &msg, 0 );
 	if( val && val->contains ) {
@@ -556,8 +552,8 @@ Local<Value> convertMessageToJS( PDATALIST msg, struct reviver_data *revive ) {
 
 Local<Value> ParseJSON(  const char *utf8String, size_t len, struct reviver_data *revive ) {
 	PDATALIST parsed = NULL;
-	Local<Object> o;// = Object::New( isolate );
-	Local<Value> v;// = Object::New( isolate );
+	//Local<Object> o;// = Object::New( isolate );
+	//Local<Value> v;// = Object::New( isolate );
 	if( !json_parse_message( (char*)utf8String, len, &parsed ) )
 	{
 		//lprintf( "Failed to parse data..." );
@@ -587,7 +583,7 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 	r.isolate = Isolate::GetCurrent();
 	String::Utf8Value tmp( USE_ISOLATE(r.isolate) args[0] );
 	msg = *tmp;
-	Local<Function> reviver;
+	//Local<Function> reviver;
 	r.reviveStack = NULL;
 	r.parser = NULL;
 
@@ -692,7 +688,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
-	Local<Function> reviver;
+	//Local<Function> reviver;
 	msg = *tmp;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
@@ -710,7 +706,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	else
 		r.revive = FALSE;
 
-        //logTick(1);
+	//logTick(1);
 	r.context = r.isolate->GetCurrentContext();
 
 	args.GetReturnValue().Set( ParseJSON6( msg, tmp.length(), &r ) );
@@ -781,7 +777,7 @@ void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value tmp( USE_ISOLATE( r.isolate ) args[0] );
-	Local<Function> reviver;
+	//Local<Function> reviver;
 	msg = *tmp;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
