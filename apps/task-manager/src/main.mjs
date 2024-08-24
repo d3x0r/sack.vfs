@@ -28,7 +28,7 @@ taskConfig.local = local;
 const JSOX = sack.JSOX;
 
 async function reloadConfig() {
-	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.run.jsox" ).catch( err=>({default:null}) )).default;
+	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.run.jsox" ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
 	const config = config_run
 	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.jsox" ).catch( err=>({default:null}) )).default 
 	      || { extraModules:[]

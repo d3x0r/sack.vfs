@@ -28,7 +28,7 @@ export class Task {
 	#dependsOn = [];
 	#dependants = [];
 	#killed = false;
-	#path = process.env.PATH;
+	#path = null;
 
 	constructor(task) {
 		this.#task = task;
@@ -62,17 +62,18 @@ export class Task {
 		this.#restart = task.restart || false;
 		if( task.prePath ) {
 			if( process.platform === "win32" )
-				this.#path = task.prePath + ";" + this.#path;
+				this.#path = task.prePath + ";" + process.env.PATH;
 			else
-				this.#path = task.prePath + ":" + this.#path;
+				this.#path = task.prePath + ":" + process.env.PATH;
 
 		}
 		if( task.postPath ) {
 			if( process.platform === "win32" )
-				this.#path = this.#path + ";" + task.postPath;
+				this.#path = process.env.PATH + ";" + task.postPath;
 			else
-				this.#path = this.#path + ":" + task.postPath;
+				this.#path = process.env.PATH + ":" + task.postPath;
 		}
+
 		if( task.dependsOn ) {
 			for( let testTask of config.local.tasks ) {
 				//console.log( "testTask:", testTask, task.dependsOn );
@@ -224,7 +225,8 @@ export class Task {
 		console.log( "Starting:", this.#task.name );
 		//console.log( "Starting:", bin, this );
 		const env = Object.assign( {}, this.#task.env );
-		env.PATH = this.#path;
+		if( this.#path ) env.PATH = this.#path;
+		//env.PATH = this.#path;
 		this.#run = sack.Task( {
 		  work:this.#task.work,
 		  bin:bin,

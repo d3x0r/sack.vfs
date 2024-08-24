@@ -157,8 +157,7 @@ app.get( /.*\.jsox/, (req,res)=>{
 	const config = disk.read( filePath );
 	if( config ) {
 		res.writeHead( 200, headers );
-
-		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString() + "`);export default config;";
+		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
 		res.end( resultContent );
 		return true;
 	}else {
@@ -207,13 +206,12 @@ export function openServer( opts, cbAccept, cbConnect )
 			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
 		}
 	}
-
 	server.on( "lowError",function (error, address, buffer) {
 		if( error !== 1 && error != 6 ) 
 			console.log( "Low Error with:", error, address, buffer  );
-		if( buffer )
-			buffer = new TextDecoder().decode( buffer );
-		server.disableSSL(buffer); // resume with non SSL
+		//if( buffer )
+		//	buffer = new TextDecoder().decode( buffer );
+		server.disableSSL(); // resume with non SSL
 	} );
 
 	server.onaccept = function ( ws ) {
