@@ -152,7 +152,7 @@ wsa_errno(int err)
  * Employ a similar trick to cpython (pycore_fileutils.h) where the CRT report
  * handler is disabled while checking if a descriptor is a socket or a file
  */
-#if defined _MSC_VER && _MSC_VER >= 1900
+#if defined _MSC_VER && _MSC_VER >= 1900 && defined( _DEBUG ) && !defined( _REL_DEBUG )
 
 #include <crtdbg.h>
 #include <stdlib.h>
