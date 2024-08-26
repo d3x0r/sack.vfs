@@ -289,13 +289,12 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
 		char *dsn;
-		SqlObject* obj;
 		if( args.Length() > 0 ) {
 			if( args[0]->IsString() ) {
 				String::Utf8Value arg( USE_ISOLATE( isolate ) args[0] );
 				Local<Function> callback = ( args.Length()>1 )?Local<Function>::Cast( args[1] ):emptyFunction;
 				dsn = *arg;
-				obj = new SqlObject( dsn, isolate, args.This(), callback );
+				new SqlObject( dsn, isolate, args.This(), callback );
 			} else if( args[0]->IsObject() ){
 				//Local<Object> opts = Local<Object>::Cast( args[0] );
 				lprintf( "option object method for opening a database connection is not complete!");
@@ -309,7 +308,7 @@ void SqlObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 		}
 		else {
-			obj = new SqlObject( ":memory:", NULL, args.This(), emptyFunction );
+			new SqlObject( ":memory:", NULL, args.This(), emptyFunction );
 		}
 		args.GetReturnValue().Set( args.This() );
 	} else {
@@ -458,7 +457,7 @@ void SqlObject::escape( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 void SqlObject::unescape( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
+	//SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( args[0]->IsUndefined() ) return; // undefined is still undefined
 	if( args[0]->IsNull() ) {
 		args.GetReturnValue().Set( args[0] ); // undefined is still undefined
@@ -469,7 +468,6 @@ void SqlObject::unescape( const v8::FunctionCallbackInfo<Value>& args ) {
 	char *out = RevertEscapeBinary( (*tmp), &outlen );
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)outlen ).ToLocalChecked() );
 	Deallocate( char*, out );
-
 }
 //-----------------------------------------------------------
 
@@ -1781,10 +1779,12 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 			Local<Function> cb = myself->sql->openCallback.Get( isolate );
 			Local<Value> args[1] = {myself->sql->_this.Get( isolate )};
 			MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), args[0], 1, args );
+			if( result.IsEmpty() ) {
+				//lprintf( "Error calling open callback" );
+			}
 		}
 		else if( msg->onwhat ) {
-			struct SqlObjectUserFunction* userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( msg->onwhat );
-			Isolate* isolate = userData->isolate;
+			//struct SqlObjectUserFunction* userData = ( struct SqlObjectUserFunction* )PSSQL_GetSqliteFunctionData( msg->onwhat );
 			if( msg->mode == UserMessageModes::OnSqliteFunction )
 				callUserFunction( msg->onwhat, msg->argc, msg->argv );
 			else if( msg->mode == UserMessageModes::OnSqliteAggStep )
@@ -1902,6 +1902,7 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 				holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 				holder->buffer = _data;
 #endif
+				args[n] = arrayBuffer;
 				break;
 			}
 			case 5:
@@ -2076,6 +2077,7 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 				holder->o.SetWeak< ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 				holder->buffer = _data;
 #endif
+				args[n] = arrayBuffer;
 				break;
 			}
 			case 5:
@@ -2227,10 +2229,13 @@ static void handleCorruption( uintptr_t psv, PODBC odbc ) {
 void SqlObject::setOnCorruption( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	int argc = args.Length();
-	sql->onCorruption.Reset( isolate, Local<Function>::Cast( args[0] ) );
-	SetSQLCorruptionHandler( sql->state->odbc, handleCorruption, (uintptr_t)sql );
-
+	if( args.Length() > 0 ) {
+		sql->onCorruption.Reset( isolate, Local<Function>::Cast( args[0] ) );
+		SetSQLCorruptionHandler( sql->state->odbc, handleCorruption, (uintptr_t)sql );
+	} else {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Corruption handler requires a callback function." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	}
 }
 
 void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args ) {

@@ -842,7 +842,8 @@ void SSH2_Object::Forward( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	lprintf( " Forward is not implemented yet" );
 	//sack_ssh_direc
-	PCLIENT pcListener = sack_ssh_forward_connect( ssh->session, *localHost, localport, *remoteHost, remoteport, ForwardCallback );
+	//PCLIENT pcListener = 
+	sack_ssh_forward_connect( ssh->session, *localHost, localport, *remoteHost, remoteport, ForwardCallback );
 
 }
 
@@ -851,7 +852,7 @@ void SSH2_Object::Forward( const v8::FunctionCallbackInfo<Value>& args ) {
 //     
 
 static void NET_ReverseChannelData( uintptr_t psv, int stream, const uint8_t* data, size_t length ) {
-	PCLIENT pc= (PCLIENT)psv;
+	//PCLIENT pc= (PCLIENT)psv;
 	lprintf( "ReverseChannelData" );
 	LogBinary( data, length );
 	sack_ssh_channel_write( (ssh_channel*)psv, stream, data, length );
@@ -885,7 +886,7 @@ static void NET_ReverseChannelEOF( SSH2_Channel* channel, struct html5_web_socke
 // this is called when a Reverse() is setup to handle network.  This would be
 // that we need to connect a socket somewhere else.
 static uintptr_t NET_ReverseConnectCallback( uintptr_t psv, struct ssh_listener*listen, struct ssh_channel* channel ) {
-	struct SSH2_RemoteListen* listener = (struct SSH2_RemoteListen*)psv;
+	class SSH2_RemoteListen* listener = (class SSH2_RemoteListen*)psv;
 	sack_ssh_set_channel_data( channel, NET_ReverseChannelData );
 	//sack_ssh_set_channel_close( channel, ReverseChannelClose );
 	//sack_ssh_set_channel_eof( channel, ReverseChannelEOF );
@@ -915,6 +916,7 @@ static uintptr_t NET_ReverseConnectCallback( uintptr_t psv, struct ssh_listener*
 	return (uintptr_t)newChannel;
 }
 
+#if 0
 static uintptr_t NET_ReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort ) {
 	SSH2_Object* ssh = (SSH2_Object*)psv;
 	makeEvent( event );
@@ -933,7 +935,7 @@ static uintptr_t NET_ReverseCallback( uintptr_t psv, struct ssh_listener* listen
 	return (uintptr_t)result;
 
 }
-
+#endif
 
 // ---------  websocket interface to this... should really be in websocket module -----------
 //--------------------------- end WS interface ----------------------------
@@ -1057,17 +1059,17 @@ void SSH2_Object::Connect( const v8::FunctionCallbackInfo<Value>& args  ) {
 	ssh->connectPromise.Reset( isolate, pr );
 	ssh->activePromise = &ssh->connectPromise;
 	Local<String> optName;
-	Local<Function> connect;
+	//Local<Function> connect;
 	// requires opts
 	GET_STRING( address );
-	GET_STRING( user );
-	GET_STRING( password );
-	GET_STRING( pubKey );
-	GET_STRING( privKey );
-	GET_ARRAY_BUFFER( pubKey );
-	GET_ARRAY_BUFFER( privKey );
-	GET_TYPED_ARRAY( pubKey );
-	GET_TYPED_ARRAY( privKey );
+	//GET_STRING( user );
+	//GET_STRING( password );
+	//GET_STRING( pubKey );
+	//GET_STRING( privKey );
+	//GET_ARRAY_BUFFER( pubKey );
+	//GET_ARRAY_BUFFER( privKey );
+	//GET_TYPED_ARRAY( pubKey );
+	//GET_TYPED_ARRAY( privKey );
 	GET_BOOL( skipLogin );
 	GET_BOOL( trace );
 

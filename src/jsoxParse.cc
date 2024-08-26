@@ -1686,7 +1686,7 @@ void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 	//lprintf( "Setting protomap from external...");
 	c->fromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
 	{
-		Local<Context> context = isolate->GetCurrentContext();
+		//Local<Context> context = isolate->GetCurrentContext();
 		class constructorSet* c = getConstructors( isolate );
 		if( c->dateNsCons.IsEmpty() ) {
 			c->dateNsCons.Reset( isolate, args[1].As<Function>() );

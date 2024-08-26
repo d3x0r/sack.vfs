@@ -85,21 +85,6 @@ static void promiseRejectCallback( const v8::FunctionCallbackInfo<Value>& args )
 	lpr->Reject( args.GetIsolate()->GetCurrentContext(), args[0] );
 }
 
-
-struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
-	struct PromiseWrapper *pw = new PromiseWrapper();
-	MaybeLocal<Promise::Resolver> ml_resolver = Promise::Resolver::New( context );
-	Local<Promise::Resolver> resolver = ml_resolver.ToLocalChecked();
-	//Local<Promise> pr = resolver->GetPromise();
-	Local<External> lex_pw = External::New( isolate, (void *)pw );
-	MaybeLocal<Function> prsc = Function::New( context, promiseResolveCallback, lex_pw );
-	pw->resolve.Reset( isolate, prsc.ToLocalChecked() );
-	MaybeLocal<Function> prjc = Function::New( context, promiseRejectCallback, lex_pw );
-	pw->reject.Reset( isolate, prjc.ToLocalChecked() );
-	return pw;
-	//Local<Value> args[] = { prsc.ToLocalChecked(), prjc.ToLocalChecked() };
-}
-
 static void moduleExit( void *arg ) {
 #ifdef DEBUG_EXIT
 	fprintf( stderr, "moduleExit()\n" );
@@ -267,7 +252,7 @@ void decodeFlags( int flags ) {
 	if( flags & O_DSYNC ) fprintf( stderr, "dsync " );
 	if( flags & FASYNC ) fprintf( stderr, "fasycn " );
 	if( flags & O_DIRECT ) fprintf( stderr, "direct " );
-	/*if( flags & O_LARGEFILE )* / fprintf( stderr, "largefile %08x ", O_LARGEFILE );
+	//if( flags & O_LARGEFILE ) fprintf( stderr, "largefile %08x ", O_LARGEFILE );
 	if( flags & O_DIRECTORY ) fprintf( stderr, "directory " );
 	if( flags & O_NOFOLLOW ) fprintf( stderr, "nofollow " );
 	if( flags & O_CLOEXEC ) fprintf( stderr, "cloexec " );
@@ -1526,29 +1511,6 @@ static void postVolume( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-
-
-static void postVolumeObject( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	if( args.Length() < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique)" ) ) );
-		return;
-	}
-	
-	VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( args.This() );
-	if( obj ){
-		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		if( PostVolume( isolate, &s, obj ) ) 
-			args.GetReturnValue().Set( True(isolate) );
-		else
-			args.GetReturnValue().Set( False(isolate) );
-	}
-	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
-	}
-}
-
-
 static void finishPostClose( uv_handle_t *async ) {
 	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
 	delete unload->s;
@@ -1708,11 +1670,6 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		}
 
 	}
-}
-
-
-static void vfs_string_read( char buf, size_t maxlen, struct sack_vfs_file *file ) {
-	lprintf( "volume string read is not implemented yet." );
 }
 
 void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {

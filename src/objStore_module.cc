@@ -214,6 +214,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	return check;
 }
 
+#if 0
 static void objStoreEventHandler( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
@@ -241,9 +242,10 @@ static void objStoreEventHandler( uv_async_t* handle ) {
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
-
 }
+#endif
 
+#if 0
 static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt, ... ) {
 	//= (udpObject*)psv;
 	va_list args;
@@ -266,8 +268,7 @@ static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt,
 	EnqueLink( &_this->plqEvents, pevt );
 	uv_async_send( &_this->async );
 }
-
-
+#endif
 
 static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, ObjectStorageObject* obj ) {
 	struct objectStorageTransport* trans = new struct objectStorageTransport();
@@ -557,6 +558,9 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 			storeId = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
 			SRG_DestroyEntropy( &ctx );
 		}
+		if( storeId ) {
+			lprintf( "Sealed ID is not implemented fully..." );
+		}
 	}
 	else {
 		if( osoOpts.data ) {
@@ -595,7 +599,7 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 }
 
 void ObjectStorageObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	//Local<Context> context = isolate->GetCurrentContext();
 	//Local<Function> cb;
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
@@ -756,7 +760,6 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 	const char* filename;
 	LOGICAL result;
 	int got = 0;
-	int stepMode = 0;
 	class constructorSet* c = getConstructors( isolate );
 	do {
 		if( got == 0 ) {
@@ -769,7 +772,7 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 					result = sack_vfs_os_read_time_cursor( tlc->cursor, 1, (int)fd->Value(), &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 				} else if( from->InstanceOf( context, c->dateNsCons.Get( isolate ) ).ToChecked() ) {
 					Local<Date> fd = from.As<Date>();
-					Local<Value> ns = fd->Get( context, String::NewFromUtf8Literal( isolate, "ns" ) ).ToLocalChecked();
+					//Local<Value> ns = fd->Get( context, String::NewFromUtf8Literal( isolate, "ns" ) ).ToLocalChecked();
 
 					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 
@@ -1029,9 +1032,9 @@ void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& ar
 		struct optionStrings *strings = getStrings( isolate );
 		Local<String> optName;
 
-		Local<Object> theArray = GETV( indexDef, optName = strings->dataString->Get(isolate) ).As<Object>();
+		//Local<Object> theArray = GETV( indexDef, optName = strings->dataString->Get(isolate) ).As<Object>();
 		Local<String> name = GETV( indexDef, optName = strings->nameString->Get( isolate ) ).As<String>();
-		Local<Object> opts = GETV( indexDef, optName = strings->optsString->Get( isolate ) ).As<Object>();
+		//Local<Object> opts = GETV( indexDef, optName = strings->optsString->Get( isolate ) ).As<Object>();
 
 		String::Utf8Value fieldName( isolate,  name );
 		objStore::sack_vfs_os_file_ioctl( file, SOSFSFIO_CREATE_INDEX, *fieldName, fieldName.length() );
@@ -1264,7 +1267,7 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 
 void ObjectStorageObject::getTimeline( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	ObjectStorageObject* obj = ObjectWrap::Unwrap<ObjectStorageObject>( args.This() );
+	//ObjectStorageObject* obj = ObjectWrap::Unwrap<ObjectStorageObject>( args.This() );
 	class constructorSet* c = getConstructors( isolate );
 	Local<Value> tl_args[] = { args.This() };
 	Local<Value> timeline = c->TimelineCursorObject_constructor.Get( isolate )->CallAsConstructor( isolate->GetCurrentContext(), 1, tl_args ).ToLocalChecked();
@@ -1275,12 +1278,12 @@ void ObjectStorageObject::getTimeline( const FunctionCallbackInfo<Value>& args )
 
 
 void ObjectStorageObject::getTimelineCursor( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	
 }
 
 void ObjectStorageObject::haltVolume( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	sack_vfs_os_halt( vol->vol );
 }
@@ -1329,7 +1332,7 @@ Local<Array> makeTimes( Isolate* isolate, uint64_t* timeArray, int8_t* tzArray, 
 		timeArray[n] += ( use_tz * 900000LL ) * 1000000;
 		
 		ConvertTickToTime( ( (timeArray[n]/1000000)<<8)| (use_tz&0xFF), &st );
-		Local<Script> script;
+		//Local<Script> script;
 		char buf[64];
 		int tz;
 		int negTz = 0;
@@ -1358,9 +1361,9 @@ void ObjectStorageObject::fileGetTimes( const v8::FunctionCallbackInfo<Value>& a
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	String::Utf8Value fName( isolate, args[0] );
 
-	size_t timeCount;
-	uint64_t* timeArray;
-	int8_t* tzArray;
+	size_t timeCount = 0;
+	uint64_t* timeArray = NULL;
+	int8_t* tzArray = NULL;
 
 	if( vol->volNative ) {
 		if( !objStore::sack_vfs_os_exists( vol->vol, ( *fName ) ) ) {

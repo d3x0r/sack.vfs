@@ -714,7 +714,7 @@ static void generateEvents( Isolate *isolate, Local<Array> events ) {
 		int64_t x = ex->IsNumber() ? ex.As<Number>()->IntegerValue( context ).ToChecked() : curPos.x;
 		int64_t y = ey->IsNumber() ? ey.As<Number>()->IntegerValue( context ).ToChecked() : curPos.y;
 		int64_t b = eb->IsNumber() ? eb.As<Number>()->IntegerValue( context ).ToChecked() : old_buttons;
-		int64_t realB = b; // we destroy b with certain button combinations...
+		//int64_t realB = b; // we destroy b with certain button combinations...
 
 		//lprintf( "data: %d %d %d %d", x, y, b, old_buttons );
 		bool hasScroll1 = esh->IsNumber();
@@ -816,7 +816,7 @@ static void generateEvents( Isolate *isolate, Local<Array> events ) {
 			//lprintf( "Adding events: x:%d y:%d f:%d ex:%d md:%d t:%d", input.mi.dx, input.mi.dy, input.mi.dwFlags, input.mi.dwExtraInfo, input.mi.mouseData, input.mi.time );
 			AddDataItem( &pdlInputs, &input );
 			used_inputs++;
-		} while( ( b & ( MK_XBUTTON2 ) || ( old_buttons & MK_XBUTTON2 ) ) || hasScroll1 || hasScroll2 );
+		} while( has_x || hasScroll1 || hasScroll2 );
 	}
 	if( 0 ) {
 		for( int i = 0; i < pdlInputs->Cnt; i++ ) {
@@ -863,7 +863,7 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 	int64_t x = args[0]->IsNumber() ? args[0].As<Number>()->IntegerValue( context ).ToChecked():curPos.x;
 	int64_t y = args[1]->IsNumber() ? args[1].As<Number>()->IntegerValue( context ).ToChecked():curPos.y;
 	int64_t b = args[2]->IsNumber() ? args[2].As<Number>()->IntegerValue( context ).ToChecked():old_buttons;
-	int64_t realB = b; // we destroy b with certain button combinations...
+	//int64_t realB = b; // we destroy b with certain button combinations...
 
 	bool hasScroll1 = (args.Length() > 3)?args[3]->IsNumber():false;
 	double down_up = hasScroll1?args[3].As<Number>()->Value():0;
@@ -961,7 +961,7 @@ void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
 		inputs[used_inputs].mi.dwExtraInfo = 0;
 		hidg.buttons = old_buttons;
 		used_inputs++;
-	} while( ( b & ( MK_XBUTTON2 ) || ( old_buttons & MK_XBUTTON2 ) ) || hasScroll1 || hasScroll2 );
+	} while( has_x || hasScroll1 || hasScroll2 );
 	//lprintf( "Generating events: %d %d %d", used_inputs, inputs[0].mi.dx, inputs[0].mi.dy  );
 	SendInput( used_inputs, inputs, sizeof( INPUT ) );
 }
