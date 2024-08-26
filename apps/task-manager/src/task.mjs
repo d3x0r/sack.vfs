@@ -29,6 +29,7 @@ export class Task {
 	#dependants = [];
 	#killed = false;
 	#path = null;
+	#stopTimer = null;
 
 	constructor(task) {
 		this.#task = task;
@@ -145,10 +146,11 @@ export class Task {
 		if( !val ) this.#restart = val;
 
 		if( val && this.#task.restart ) {
+			// only enable restart if task configuration allows it
 			this.#restart = val;
-			if( val ) if( !this.running ) this.start();
-		}
-		if( val ) if( !this.running ) this.start();
+			if( this.running ) this.stop();
+			else if( !this.running ) this.start();
+		} else if( val && !this.running ) this.start();
 	}
 
 	get restart() {
@@ -193,6 +195,9 @@ export class Task {
 
 	get noKill() { return this.#task.noKill || false }
 
+	set stopTimer( val ) { this.#stopTimer = val; }
+	get stopTimer() { return this.#stopTimer; }
+
 	start() {
 		this.stopped = false;
 		if( this.running ) {
@@ -201,7 +206,7 @@ export class Task {
 		}
 		if( this.#task.work && !disk.isDir( this.#task.work ) ){
 			console.log( "Task not available (working path doesn't exist", this.#task.work );
-			this.running = 0;
+			this.running = false;
 			this.failed = true;
 			const msg = {op:"status", id:this.id, running: false, ended: this.ended, started: this.started, failed:true };
 			config.send( msg );
@@ -247,6 +252,7 @@ export class Task {
 		} );
 		//console.log( "Task:", this.#task );
 		if( this.#run ) {
+			console.log( "Start stting running to true");
 			this.running = true;
 			this.started = new Date();
 			const msg = {op:"status", id:this_.id, running: true, ended: this_.ended, started: this_.started };
@@ -287,8 +293,13 @@ export class Task {
 			this_.ended = new Date();
 			this_.running = false;
 			this_.stopping = false;
-			
-			console.log( "Task ended:", this_.name, this_.ended, this_.run.exitCode );
+			if( this_.#stopTimer !== null ) {
+				clearTimeout( this_.#stopTimer );
+				this_.#stopTimer = null;
+			}
+
+			console.log( "Task ended:", this_.name, this_.ended, this_.run.exitCode, this_.run.exitCode.toString(16) );
+			console.log( "Restart?", this_.#restart, this_.#dependants );
 			this_.#ranOnce = true;
 			this_.#run = null;
 			for( let dep of this_.#dependants ) {
@@ -297,6 +308,7 @@ export class Task {
 			}
 			if( this_.#restart ) {
 				//console.log( "doing resume timeout", this_.#task.restartDelay)
+				console.log( "this should restart?" );
 				if( this_.#task.restartDelay )
 					setTimeout( ()=>this_.start(), this_.#task.restartDelay );
 				else 
@@ -306,8 +318,8 @@ export class Task {
 			const msg = {op:"status", id:this_.id, running: false, ended: this_.ended, started: this_.started };
 			config.send( msg );
 			
-      }
-   }
+		}
+	}
 
 	#send( buffer ) {	
 		this.#log.push( buffer );
@@ -423,7 +435,7 @@ export function closeAllTasks( ws ) {
 		if( task.noKill ) return;
 		if (task.running){
 			task.restart = false;
-		  	task.stop()
+			task.stop()
 			waits.push( timeoutTaskStop( task ) );
 		} } );
 	return Promise.all( waits ).then( (waits)=>{
@@ -446,12 +458,13 @@ function timeoutTaskStop( task ) {
 					console.log ("Send to connection error:", err );
 				}
 			}
-		else console.log( "Connection is still in list but closed:", conn );
+			else console.log( "Connection is still in list but closed:", conn );
 		});
 
 	let resolve = null;
 	function tick() {
 		let del;
+		task.stopTimer = null;
 		if( (del=Date.now()-started) > 1500 ) {
 			if( task.running ) {
 				//console.log( "Still waiting for task...", task.running, task.name, Date.now() -started);
@@ -459,9 +472,8 @@ function timeoutTaskStop( task ) {
 				if( !task.killed ) {
 					console.log( "Task is stubborn - forcing kill:", task.name );
 					task.kill();
-					//resolve( false );
+					resolve( false );
 				} else console.log( "Task is stubborn - forced kill (waiting for end):", task.name );
-
 				//config.local.connections.forEach( (conn)=>
 				//	conn.ws.send( JSOX.stringify( {op:"stop", task } ) ));
 			}
@@ -469,10 +481,10 @@ function timeoutTaskStop( task ) {
 
 		if( task.running ) {
 			console.log( "Still running...", task.name, del );
-			setTimeout( tick, 300 );
+			task.stopTimer = setTimeout( tick, 300 );
 		} else resolve( true );
 	}
-	new Promise( (res,rej)=>{
+	return new Promise( (res,rej)=>{
 		resolve = res;
 		tick();
 	} );
