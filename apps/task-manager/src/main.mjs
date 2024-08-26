@@ -54,17 +54,10 @@ const server = openServer( serverOpts, accept, connect );
 server.addHandler( (req,res)=>{
 	if( req.url.startsWith( "/events")){
 		req.url = "/../.." + req.url;
-		//console.log( "added?", req );
 	}
 	return false;
 })
 
-class LogStream {
-	constructor( connectionn ) {
-		this.connection = connection; // this ahs to be part of handling log messages...
-
-	}
-}
 class Connection {
 	ws = null;
 	logStreams = [];
@@ -75,10 +68,6 @@ class Connection {
 		this.ws = ws;
 		this.address = ws.connection.remoteAddress;
 	}
-}
-
-function startTask( task ) {
-	task.start();
 }
 
 function handleStart( ws, msg, msg_ ) {
@@ -105,11 +94,9 @@ function handleRestart( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
+			console.log( "Set task restart:", task );
 			task.restart = true;
-			if( task.running )
-				task.stop();
-			else
-				task.start();
+			console.log( "Task is running alrady?", task.running );
 		}
 	} else {
 		const remote = local.systems.find( system=>system.id === msg.system );
@@ -135,8 +122,8 @@ function handleStop( ws, msg, msg_ ) {
 		const remote = local.systems.find( system=>system.id === msg.system );
 		if( remote ) remote.connection.ws.send( msg_ );
 		else {
-			ws.send( JSOX.stringify( {op:"deleteSystem", id: msg.system } ) );
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
+			ws.send( JSOX.stringify( {op:"deleteSystem", id: msg.system } ) );
 		}
 	}
 }
@@ -174,41 +161,8 @@ function handleLog( ws, msg, msg_ )
 					local.taskMap[msg.id] = [ ws ];
 			}
 		else {
+			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 			ws.send( JSOX.stringify( {op:"deleteSystem", id: msg.system } ) );
-			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
-		}
-	}
-}
-
-function handleNoLog( ws, msg, msg_ ) 
-{ 
-	if( (!("system" in msg ) ) || msg.system === local.id ){
-		const task = local.taskMap[msg.id];
-		if( !task ) {
-			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
-		} else {
-			// this adds the socket, and sends the initial log for the task..
-			task.stopLog( ws );
-			// this will generate 'log' as new messages happen.
-		} 
-	}
-	else {
-		console.log( "This probably needs a new log to track these events...." );
-		const remote = local.systems.find( system=>system.id === msg.system );
-		if( remote ) {
-				remote.connection.ws.send( msg_ );
-				// this task can wants to be on this connection.
-				delete local.taskMap[msg.id];
-				if( local.taskMap[msg.id] ) {
-					const index = local.taskMap[msg.id].findIndex( (ws)=>ws===remote.connection )
-					if( index > -1 ) local.taskMap[msg.id].splice( index, 1 );
-					if( !local.taskMap[msg.id].length )
-						delete local.taskMap[msg.id];
-				} 
-			}
-		else {
-			ws.send( JSOX.stringify( {op:"deleteSystem", id: msg.system } ) );
-			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		}
 	}
 }
