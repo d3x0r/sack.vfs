@@ -61,6 +61,7 @@ endif( MSVC )
 
 #include_directories( "../node_modules/nan" )
 
+OPTION( USE_SACK_ALLOCATOR "Use SACK custom memory allocator (debug/debug)" ON )
 
 if( NOT WIN32 )
     ADD_DEFINITIONS( -D__LINUX__ )
@@ -82,6 +83,7 @@ endif( NOT WIN32 )
 #endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
 
 
+#ADD_DEFINITIONS( -fsanitize=address )
 ADD_DEFINITIONS( -DNO_OPEN_MACRO )
 
 if( ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
@@ -499,9 +501,13 @@ add_library(${PROJECT} SHARED 	${CPP_SOURCES} ${ZLIB_SOURCE} ${C_SOURCES}  )
 
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROPERTIES 
 	COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0;SQLITE_OMIT_UTF16;SQLITE_ENABLE_COLUMN_METADATA;SQLITE_ENABLE_STAT4" )
+
 # reduces possible issues between release and debug runtimes.
-set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
-	COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+if( USE_SACK_ALLOCATOR )
+	set( MOREDEFS  "${MOREDEFS};USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+	set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
+		COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+endif( USE_SACK_ALLOCATOR )
 
 if( WIN32 )
 #  force using native CS (which are slightly slower than SACK's implementation) (test/debug option)
@@ -548,6 +554,7 @@ if( UNIX )
    target_link_libraries( ${PROJECT} odbc	 )
    if( NOT APPLE )
        target_link_libraries( ${PROJECT} uuid )
+       #target_link_libraries( ${PROJECT} asan )
    endif( NOT APPLE )
 endif( UNIX )
 
