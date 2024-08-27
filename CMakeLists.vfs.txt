@@ -528,6 +528,22 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
 			COMPILE_FLAGS "/std:c++17" )
 
+	if( WIN32 )
+		execute_process( COMMAND cmd.exe /c where clang-clx OUTPUT_VARIABLE CLANG_WHERE ERROR_VARIABLE CLANG_WHERE_ERROR )
+		#message( "VAR:${CLANG_WHERE} OR ${CLANG_WHERE_ERROR}" )
+		if( "x${CLANG_WHERE_ERROR}" STREQUAL "x" )
+			#message( "PROCESS PATH: ${CLANG_WHERE}" )
+			get_filename_component( CLANG_PATH ${CLANG_WHERE} DIRECTORY )
+			get_filename_component( CLANG_INSTALL_PATH ${CLANG_PATH} DIRECTORY )
+			#message( "CLANG_WHERE ${CLANG_WHERE} PATH:${CLANG_INSTALL_PATH} (END)" )
+			FILE( WRITE  ${CMAKE_BINARY_DIR}/Directory.build.props "<Project>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t<PropertyGroup>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t\t<LLVMInstallDir>${CLANG_INSTALL_PATH}</LLVMInstallDir>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t\t<LLVMToolsVersion>18.0.0</LLVMToolsVersion>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t</PropertyGroup>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "</Project>\n" )
+		endif()
+	endif()
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 
