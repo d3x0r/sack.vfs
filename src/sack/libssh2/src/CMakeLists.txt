@@ -183,7 +183,7 @@ if( NOT LIBSSH2_SKIP_INSTALL )
       RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
       LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
       ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-    endif()
+  endif()
   if(LIBSSH2_BUILD_SHARED_LIBS)
     install(TARGETS ${LIB_SHARED}
       EXPORT "${PROJECT_NAME}-targets"
@@ -199,7 +199,7 @@ if( NOT LIBSSH2_SKIP_INSTALL )
     NAMESPACE "${PROJECT_NAME}::"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
 
-  endif()
+endif()
 
   set(RUNTIME_DEPENDENCIES ${_RUNTIME_DEPENDENCIES} CACHE INTERNAL
       "Files that must be in the same directory as the executables at runtime.")
@@ -212,6 +212,8 @@ if( NOT LIBSSH2_SKIP_INSTALL )
   export(TARGETS ${libssh2_export} NAMESPACE "${PROJECT_NAME}::" FILE "${PROJECT_NAME}-targets.cmake")
   export(PACKAGE ${PROJECT_NAME})  # register it
 
+if( NOT LIBSSH2_SKIP_INSTALL )
+
   # Generate libssh2-config.cmake into build tree and install it with dependencies
   configure_file("${PROJECT_SOURCE_DIR}/cmake/libssh2-config.cmake.in" "${PROJECT_NAME}-config.cmake" @ONLY)
   install(
@@ -221,7 +223,6 @@ if( NOT LIBSSH2_SKIP_INSTALL )
       "${PROJECT_SOURCE_DIR}/cmake/FindMbedTLS.cmake"
       "${PROJECT_SOURCE_DIR}/cmake/FindWolfSSL.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
-
   ## Export a .pc file for client projects not using CMake
   if(LIBSSH2_PC_REQUIRES_PRIVATE)
     string(REPLACE ";" "," LIBSSH2_PC_REQUIRES_PRIVATE "${LIBSSH2_PC_REQUIRES_PRIVATE}")
@@ -255,8 +256,9 @@ if( NOT LIBSSH2_SKIP_INSTALL )
     VERSION "${LIBSSH2_VERSION_MAJOR}.${LIBSSH2_VERSION_MINOR}.${LIBSSH2_VERSION_PATCH}"
     COMPATIBILITY SameMajorVersion)
   if(LIBSSH2_BUILD_STATIC_LIBS)
-  install(
-    FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake"
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
+    install(
+      FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake"
+      DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}")
 
+  endif()
 endif()
