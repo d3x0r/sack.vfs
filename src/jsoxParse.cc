@@ -11,10 +11,12 @@
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive );
 
+#if defined( JSOX_USE_TIMING )
 static struct timings {
 	uint64_t start;
 	uint64_t deltas[10];
 }timings;
+#endif
 
 static void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSOX( const v8::FunctionCallbackInfo<Value>& args );

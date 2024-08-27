@@ -1100,7 +1100,7 @@ SSH2_RemoteListen::~SSH2_RemoteListen() {
 void SSH2_RemoteListen::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	// this constructor is only called from internal code
 	Isolate* isolate = args.GetIsolate();
-	int argc = args.Length();
+	//int argc = args.Length();
 	if( args.IsConstructCall() ) {
 		SSH2_RemoteListen* obj;
 		obj = new SSH2_RemoteListen();
