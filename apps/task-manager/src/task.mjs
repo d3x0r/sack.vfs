@@ -9,8 +9,11 @@ export const config = {
 }
 //import {pwdBare, config,send} from "./main.mjs";
 
+let pendingDepends = [];
+
 export class Task {
 	started = new Date(0);
+	starting = false;
 	ended = new Date();
 	running = false;
 	failed = false;
@@ -22,6 +25,7 @@ export class Task {
 	#log = [];
 	#task = null; // task definition
 	#run = null;  // running service instance handle
+	#exitCode = null; // set before clearing #run
 	#ws = []; // task definition
 	#restart = false;
 	#ranOnce = false;
@@ -76,13 +80,28 @@ export class Task {
 		}
 
 		if( task.dependsOn ) {
-			for( let testTask of config.local.tasks ) {
-				//console.log( "testTask:", testTask, task.dependsOn );
-				if( testTask.name === task.dependsOn ){
-					testTask.#dependants.push( this );
-					this.#dependsOn = testTask;
-					break;
+			for( let dep of task.dependsOn ) {
+				let found = false;
+				for( let testTask of config.local.tasks ) {
+					if( testTask.name === dep ){
+						testTask.#dependants.push( this );
+						this.#dependsOn.push( testTask );
+						found = true;
+						break;
+					}
 				}
+				if( !found ) {
+					pendingDepends.push( {task:this, dep} );
+				}
+			}
+		}
+		for( let p = 0; p < pendingDepends.length; p++ ) {
+			const pd = pendingDepends[p];
+			if( pd.dep === this.name ) {
+				pd.task.#dependsOn.push( this );
+				this.#dependants.push( pd.task );
+				pendingDepends.splice( p, 1 );
+				p--;
 			}
 		}
 	}
@@ -212,6 +231,12 @@ export class Task {
 			config.send( msg );
 			return;
 		}
+
+		// set starting to prevent dependancies from starting dependants
+		this.starting = true;
+		for( let dep of this.#dependsOn ) {
+			if( !dep.running ) dep.start();
+		}
 		let bin;
 		if( process.platform === "linux" ) {
 			bin = this.#task.bin; // linux will scan path for name
@@ -252,17 +277,17 @@ export class Task {
 		} );
 		//console.log( "Task:", this.#task );
 		if( this.#run ) {
-			console.log( "Start stting running to true");
 			this.running = true;
+			this.starting = false; // is running, not just starting.
 			this.started = new Date();
 			const msg = {op:"status", id:this_.id, running: true, ended: this_.ended, started: this_.started };
 			config.send( msg );
 			for( let dep of this.#dependants ) {
-				if( !dep.running ) {
-					//console.log( "Task Started, starting Dep:", dep );
+				if( !dep.running && !dep.starting ) {
+					console.log( "Task Started, starting Dep:", dep.name );
 					dep.start();
 				} else {
-					console.log( "Dependant task is still running:", dep );
+					console.log( "Dependant task is still running:", dep.name, dep.starting, dep.running );
 				}
 			}
 		}else { 
@@ -298,9 +323,10 @@ export class Task {
 				this_.#stopTimer = null;
 			}
 
-			console.log( "Task ended:", this_.name, this_.ended, this_.run.exitCode, this_.run.exitCode.toString(16) );
-			console.log( "Restart?", this_.#restart, this_.#dependants );
+			let exitCode = this_.#run?this_.#run.exitCode:this_.#exitCode;
+			console.log( "Task ended:", this_.name, this_.ended, exitCode, exitCode.toString(16) );
 			this_.#ranOnce = true;
+			this_.#exitCode = this_.#run.exitCode;
 			this_.#run = null;
 			for( let dep of this_.#dependants ) {
 				dep.stop();
@@ -319,6 +345,20 @@ export class Task {
 			config.send( msg );
 			
 		}
+		if( this.#task.multiStart ) {
+			const sameConfig = local.tasks.find( t=>t.#task === this.#task );
+			const unstarted = local.tasks.find( t=>t.#task === this.#task && !t.#run && !t.running && !t.starting );
+			if( !unstarted ) {
+				const noAutoRun = this.#task.noAutoRun;
+				this.#task.noAutoRun = true;
+				const nextTask = new Task( this.#task );
+				this.#task.noAutoRun = noAutoRun;
+				//config.tasks.push( task );
+				local.tasks.push( nextTask );
+				local.taskMap[nextTask.id] = nextTask;
+				if( local.addTask ) local.addTask( local.id, nextTask );
+			}
+		}
 	}
 
 	#send( buffer ) {	
@@ -336,6 +376,7 @@ export class Task {
 			this.#run.terminate();
 	}
 	stop() {
+		console.log( "Stop command: ", this.stopped, this.#run, this.stopped );
 		if( this.stopped ) return;
 		//console.trace( "STOPPED?", this.stopped, this.#run );
 		if( this.#run )
@@ -393,7 +434,7 @@ export class Task {
 			if( !oldTask.#dependants.find( t=>t === this )) {
 				oldTask.#dependants.push( this );
 			}
-			this.#dependsOn = oldTask;
+			this.#dependsOn.push( oldTask );
 		} else {
 			console.log( "Dependant task is not found:", dep, "for", this.name );
 		}

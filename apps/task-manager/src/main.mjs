@@ -24,6 +24,7 @@ taskConfig.pwdBare = pwdBare;
 taskConfig.send = send;
 taskConfig.config = config;
 taskConfig.local = local;
+local.addTask = addTask;
 
 const JSOX = sack.JSOX;
 
@@ -114,7 +115,6 @@ function handleStop( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
-			//task.restart = true;
 			task.restart = false;
 			task.stop();
 		}
