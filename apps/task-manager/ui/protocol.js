@@ -10,6 +10,7 @@ export const config = {
 			refresh : ()=>{},
 			reset : ()=>{},
 		systems : [],
+		systemMap : {},
 	},
 	//AddTaskList : ()=>{},
 	addTaskLog : ()=>{},
