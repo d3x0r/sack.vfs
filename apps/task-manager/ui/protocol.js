@@ -159,6 +159,7 @@ export class Protocol extends Events {
 					}
 				}
 				else {
+					config.local.tasks[msg.id] = msg.task;
 					config.local.taskData.push( msg.task );
 					protocol.on("addTask", [msg.id, msg.task] );
 				}
