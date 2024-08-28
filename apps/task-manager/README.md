@@ -53,6 +53,8 @@ Tasks to run are defined with a few fields.
 |			moveTo | object | (WIN32) specifies where to move the main window of the task to when it launches,  |
 |			style | number | (WIN32) Style to configure the main window of a task (remove border, make popup,.. )  |
 |			noInheritStdio | bool | prevent standard IO handles from being inherited.  |
+|			multiStart | bool | Once started, create a new, unstarted version of the same task. |
+| dependsOn | [string,...] | An array of names of other tasks which this depends on.  Dependant tasks are started first.  Tasks that depend on a started task are also started. |
 
 
 Console applications on windows should be configured with new group = true.  If it is part of the same group as the launcher, then the launcher would end up sending itself
@@ -88,7 +90,7 @@ for the program to run, while windows requires a full path (otherwise stdio redi
 | winsuffix | string | when run on windows, this string is appended to the bin name provided |
 | useUpstream | bool | Enables connecting to an upstream task server |
 | upstreamServer | string | "Host:port" address to connect to, with `ws://` (support wss?) |
-|	extraModules| array of {name,function} | Specifies additional modules to load before starting any tasks.  This are expected to be async functions and await resolution of each module in turn.|
+| extraModules| array of {name,function} | Specifies additional modules to load before starting any tasks.  This are expected to be async functions and await resolution of each module in turn.|
 
 
 ### Extra Module Object
@@ -111,4 +113,6 @@ be any value, the defaults were built with `go` as the entry point.
 Task managers can be aggregated by specifying an upstream server; then connecting to that upstream 
 server will indicate all statuses and tasks of all servers
 that have specified that upstream server.  There is no limit of depth.
+A circular list of upstream servers might be constructed; this is untested, but should be fairly harmless... a system
+which receives itself will end up showing itself as a tab of itself, but no deeper.
 
