@@ -356,7 +356,7 @@ export class Task {
 				//config.tasks.push( task );
 				local.tasks.push( nextTask );
 				local.taskMap[nextTask.id] = nextTask;
-				if( local.addTask ) local.addTask( local.id, nextTask );
+				if( local.addTask ) local.addTask( nextTask.id, nextTask );
 			}
 		}
 	}
