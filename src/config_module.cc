@@ -127,7 +127,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 			break;
 		case CONFIG_ARG_DATA:
 			{
-				void * arg = my_va_arg( args, void* );
+				void* arg;  arg = my_va_arg( args, void* );
 				lessn++;
 				break;
 		case CONFIG_ARG_DATA_SIZE:
