@@ -10,4 +10,5 @@ export const local = {
 	upstreamWS : null,
 	id : sack.Id(),
 	logRelays : {},
+	addTask : null,
 }

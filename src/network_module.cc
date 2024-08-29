@@ -346,8 +346,27 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	}
 	return check;
 }
-void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 
+void getOpenPorts(  Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate *isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Array> result = Array::New( isolate );
+	PDATALIST list;
+	struct listener_pid_info *info;
+	INDEX idx;
+	SackNetstat_GetListeners( &list );
+	DATA_FORALL( list, idx, struct listener_pid_info*, info ){
+		Local<Object> o = Object::New( isolate );
+		SET_READONLY( o, "port", Number::New( isolate, info->port ) );
+		SET_READONLY( o, "pid", Number::New( isolate, info->pid ) );
+		SETN( result, idx, o );
+	}
+	DeleteDataList( &list );
+	args.GetReturnValue().Set( result );
+}
+
+void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<Object> oNet = Object::New( isolate );
 	SET_READONLY( exports, "Network", oNet );
 	class constructorSet *c = getConstructors(isolate); 
@@ -366,9 +385,9 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		);
 		udpTemplate->ReadOnlyPrototype();
 
-		c->udpConstructor.Reset( isolate, udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->udpConstructor.Reset( isolate, udpTemplate->GetFunction(context).ToLocalChecked() );
 
-		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		SET_READONLY( oNet, "UDP", udpTemplate->GetFunction(context).ToLocalChecked() );
 	}
 	{
 		Local<FunctionTemplate> tcpTemplate;
@@ -392,10 +411,18 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 			, FunctionTemplate::New( isolate, tcpObject::string_set )
 		);
 		tcpTemplate->ReadOnlyPrototype();
+		Local<Function> tcpObject = tcpTemplate->GetFunction(context).ToLocalChecked();
+		c->tcpConstructor.Reset( isolate, tcpObject );
 
-		c->tcpConstructor.Reset( isolate, tcpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-
-		SET_READONLY( oNet, "TCP", tcpTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		SET_READONLY( oNet, "TCP", tcpTemplate->GetFunction(context).ToLocalChecked() );
+		tcpObject->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "ports" )
+			, getOpenPorts
+			, nullptr //Local<Function>()
+			, Local<Value>()
+			, PropertyAttribute::None
+			, SideEffectType::kHasNoSideEffect
+			, SideEffectType::kHasSideEffect
+		);
 	}
 
 	{
@@ -414,9 +441,9 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		//NODE_SET_PROTOTYPE_METHOD( addrTemplate, "toString", addrObject::toString );
 		addrTemplate->ReadOnlyPrototype();
 
-		c->addrConstructor.Reset( isolate, addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		c->addrConstructor.Reset( isolate, addrTemplate->GetFunction(context).ToLocalChecked() );
 
-		SET_READONLY( oNet, "Address", addrTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		SET_READONLY( oNet, "Address", addrTemplate->GetFunction(context).ToLocalChecked() );
 	}
 }
 

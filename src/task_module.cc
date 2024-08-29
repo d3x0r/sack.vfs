@@ -916,7 +916,7 @@ void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {
 void TaskObject::getExitCode( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	args.GetReturnValue().Set( Integer::New( isolate, (int)task->exitCode ) );
+	args.GetReturnValue().Set( Number::New( isolate, (unsigned)task->exitCode ) );
 }
 
 #if _WIN32

@@ -226,7 +226,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/typelib/http.c
 	${SACK_BASE}/src/typelib/url.c
 	
-        ${SACK_BASE}/src/commlib/sackcomm.c
+	${SACK_BASE}/src/commlib/sackcomm.c
 
 	${SACK_BASE}/src/netlib/html5.websocket/html5.websocket.common.c
 	${SACK_BASE}/src/netlib/html5.websocket/client/html5.websocket.client.c
@@ -241,33 +241,36 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/network_addresses.c
 	${SACK_BASE}/src/netlib/tcpnetwork.c
 	${SACK_BASE}/src/netlib/udpnetwork.c
-        ${SACK_BASE}/src/netlib/net_winsock2.c
+	${SACK_BASE}/src/netlib/netstat_win32.c
+	${SACK_BASE}/src/netlib/netstat_linux.c
+	${NETWORK_MORE_SOURCES}
+	${SACK_BASE}/src/netlib/net_winsock2.c
 	${SACK_BASE}/src/netlib/ping.c
 	${SACK_BASE}/src/netlib/ssl_layer.c
 	${SACK_BASE}/src/netlib/ssh_layer.c
 
-        ${SACK_BASE}/src/salty_random_generator/salty_generator.c
-        ${SACK_BASE}/src/salty_random_generator/crypt_util.c
-        ${SACK_BASE}/src/salty_random_generator/block_shuffle.c
+	${SACK_BASE}/src/salty_random_generator/salty_generator.c
+	${SACK_BASE}/src/salty_random_generator/crypt_util.c
+	${SACK_BASE}/src/salty_random_generator/block_shuffle.c
 
-        ${SACK_BASE}/src/contrib/md5lib/md5c.c
-        ${SACK_BASE}/src/contrib/sha1lib/sha1.c
-        ${SACK_BASE}/src/contrib/sha2lib/sha2.c
-        ${SACK_BASE}/src/contrib/sha3lib/sha3.c
-        ${SACK_BASE}/src/contrib/K12/lib/KangarooTwelve.c
+	${SACK_BASE}/src/contrib/md5lib/md5c.c
+	${SACK_BASE}/src/contrib/sha1lib/sha1.c
+	${SACK_BASE}/src/contrib/sha2lib/sha2.c
+	${SACK_BASE}/src/contrib/sha3lib/sha3.c
+	${SACK_BASE}/src/contrib/K12/lib/KangarooTwelve.c
 
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
-        ${SACK_BASE}/src/SQLlib/sqlstruc.h
-        ${SACK_BASE}/src/configlib/configscript.c
-        ${SACK_BASE}/src/SQLlib/sqlstub.c
-        ${SACK_BASE}/src/SQLlib/sqlwrap.c
-        ${SACK_BASE}/src/SQLlib/sqlutil.c
-        ${SACK_BASE}/src/SQLlib/guid.c
-        ${SACK_BASE}/src/SQLlib/sqlparse3.c
-        ${SACK_BASE}/src/SQLlib/optlib/getoption.c
-        ${SACK_BASE}/src/SQLlib/optlib/getoption_v4.c
-        ${SACK_BASE}/src/SQLlib/optlib/optionutil.c
-        ${SACK_BASE}/src/SQLlib/optlib/optionutil_v4.c
+	${SACK_BASE}/src/SQLlib/sqlstruc.h
+	${SACK_BASE}/src/configlib/configscript.c
+	${SACK_BASE}/src/SQLlib/sqlstub.c
+	${SACK_BASE}/src/SQLlib/sqlwrap.c
+	${SACK_BASE}/src/SQLlib/sqlutil.c
+	${SACK_BASE}/src/SQLlib/guid.c
+	${SACK_BASE}/src/SQLlib/sqlparse3.c
+	${SACK_BASE}/src/SQLlib/optlib/getoption.c
+	${SACK_BASE}/src/SQLlib/optlib/getoption_v4.c
+	${SACK_BASE}/src/SQLlib/optlib/optionutil.c
+	${SACK_BASE}/src/SQLlib/optlib/optionutil_v4.c
 
 	${SACK_BASE}/src/windows_hardware_library/listhids.c
 	${SACK_BASE}/src/windows_hardware_library/listports.c
@@ -528,6 +531,22 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
 			COMPILE_FLAGS "/std:c++17" )
 
+	if( WIN32 )
+		execute_process( COMMAND cmd.exe /c where clang-clx OUTPUT_VARIABLE CLANG_WHERE ERROR_VARIABLE CLANG_WHERE_ERROR )
+		#message( "VAR:${CLANG_WHERE} OR ${CLANG_WHERE_ERROR}" )
+		if( "x${CLANG_WHERE_ERROR}" STREQUAL "x" )
+			#message( "PROCESS PATH: ${CLANG_WHERE}" )
+			get_filename_component( CLANG_PATH ${CLANG_WHERE} DIRECTORY )
+			get_filename_component( CLANG_INSTALL_PATH ${CLANG_PATH} DIRECTORY )
+			#message( "CLANG_WHERE ${CLANG_WHERE} PATH:${CLANG_INSTALL_PATH} (END)" )
+			FILE( WRITE  ${CMAKE_BINARY_DIR}/Directory.build.props "<Project>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t<PropertyGroup>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t\t<LLVMInstallDir>${CLANG_INSTALL_PATH}</LLVMInstallDir>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t\t<LLVMToolsVersion>18.0.0</LLVMToolsVersion>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t</PropertyGroup>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "</Project>\n" )
+		endif()
+	endif()
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 

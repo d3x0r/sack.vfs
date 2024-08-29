@@ -8355,6 +8355,13 @@ NETWORK_PROC( LOGICAL, DoPingEx )( CTEXTSTR pstrHost,
 											, uintptr_t psv );
 //----- WHOIS.C -----
 NETWORK_PROC( LOGICAL, DoWhois )( CTEXTSTR pHost, CTEXTSTR pServer, PVARTEXT pvtResult );
+//----- NETSTAT ----
+struct listener_pid_info {
+	uint16_t port;
+	uint64_t pid;
+};
+// list is filled with struct listener_pid_info entries
+NETWORK_PROC( void, SackNetstat_GetListeners )( PDATALIST* ppList );
 #ifdef __cplusplus
 #  if defined( INCLUDE_SAMPLE_CPLUSPLUS_WRAPPERS )
 typedef class network *PNETWORK;
