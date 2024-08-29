@@ -516,6 +516,7 @@ endif( USE_SACK_ALLOCATOR )
 if( WIN32 )
 #  force using native CS (which are slightly slower than SACK's implementation) (test/debug option)
 #  set( MOREDEFS  "${MOREDEFS};USE_NATIVE_CRITICAL_SECTION" )
+   SET( MOREDEFS "${MOREDEFS};_WIN32_WINNT=0x601" )
 endif( WIN32 )
 
 if( UNIX )
