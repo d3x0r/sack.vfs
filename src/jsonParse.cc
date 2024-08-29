@@ -2,6 +2,9 @@
 #include "global.h"
 #include <math.h>
 
+
+//#define JSON_USE_TIMING
+
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct json_value_container *val, struct reviver_data *revive );
 
@@ -612,6 +615,8 @@ void makeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
 }
 
+#ifdef JSON_USE_TIMING
+
 void showTimings( const v8::FunctionCallbackInfo<Value>& args ) {
      uint32_t val;
 #define LOGVAL(n) val = ConvertTickToMicrosecond( timings.deltas[n] ); printf( #n " : %d.%03d\n", val/1000, val%1000 );
@@ -628,6 +633,7 @@ LOGVAL(7);
 	}
 	logTick(-1);
 }
+#endif
 
 void escapeJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
