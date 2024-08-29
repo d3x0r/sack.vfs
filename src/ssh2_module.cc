@@ -850,7 +850,7 @@ void SSH2_Object::Forward( const v8::FunctionCallbackInfo<Value>& args ) {
 // ---------  Network transparent interface       -----------
 //    but then why use this script?
 //     
-
+#if 0
 static void NET_ReverseChannelData( uintptr_t psv, int stream, const uint8_t* data, size_t length ) {
 	//PCLIENT pc= (PCLIENT)psv;
 	lprintf( "ReverseChannelData" );
@@ -885,7 +885,6 @@ static void NET_ReverseChannelEOF( SSH2_Channel* channel, struct html5_web_socke
 
 // this is called when a Reverse() is setup to handle network.  This would be
 // that we need to connect a socket somewhere else.
-#if 0
 static uintptr_t NET_ReverseConnectCallback( uintptr_t psv, struct ssh_listener*listen, struct ssh_channel* channel ) {
 	class SSH2_RemoteListen* listener = (class SSH2_RemoteListen*)psv;
 	sack_ssh_set_channel_data( channel, NET_ReverseChannelData );
@@ -916,9 +915,7 @@ static uintptr_t NET_ReverseConnectCallback( uintptr_t psv, struct ssh_listener*
 	dropEvent( event );
 	return (uintptr_t)newChannel;
 }
-#endif
 
-#if 0
 static uintptr_t NET_ReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort ) {
 	SSH2_Object* ssh = (SSH2_Object*)psv;
 	makeEvent( event );
