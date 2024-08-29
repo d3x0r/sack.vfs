@@ -27,8 +27,10 @@ public:
 private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getPorts( Local<Name> property, const PropertyCallbackInfo<Value>& info );
-	static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
-	static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+	//static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args );
+	//static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
 	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
@@ -72,11 +74,21 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "write", writeCom );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
+		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" ).As<Name>()
+			, ComObject::getRTS2
+			, ComObject::setRTS2
+			, Local<Value>()
+			, PropertyAttribute::ReadOnly
+			, SideEffectType::kHasNoSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+
+		/*
 		comTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "rts" )
 			, FunctionTemplate::New( isolate, ComObject::getRTS )
 			, FunctionTemplate::New( isolate, ComObject::setRTS )
 		);
-
+		*/
 		Local<Function> ComFunc = comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
 		/*
 		ComFunc->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "ports" )
@@ -99,7 +111,7 @@ void ComObject::Init( Local<Object> exports ) {
 			, ComObject::getPorts
 			, nullptr //Local<Function>()
 			, Local<Value>()
-			, PropertyAttribute::None
+			, PropertyAttribute::ReadOnly
 			, SideEffectType::kHasSideEffect
 			, SideEffectType::kHasSideEffect
 		);
@@ -111,7 +123,15 @@ void ComObject::Init( Local<Object> exports ) {
 }
 
 
+void ComObject::getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	//Isolate* isolate = args.GetIsolate();
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	if( obj )
+		args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
 
+}
+
+/*
 void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
@@ -119,6 +139,15 @@ void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
 
 }
+*/
+void ComObject::setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	if( obj )
+		SetCommRTS( obj->handle, obj->rts = value.As<Boolean>()->BooleanValue( isolate ) );
+}
+
+/*
 void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() > 0 ) {
@@ -127,6 +156,7 @@ void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
 			SetCommRTS( obj->handle, obj->rts = args[0].As<Boolean>()->BooleanValue( isolate ) );
 	}
 }
+*/
 
 void dont_releaseBufferBackingStore(void* data, size_t length, void* deleter_data) {
 	(void)length;
