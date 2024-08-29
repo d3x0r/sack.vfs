@@ -1,6 +1,10 @@
 
 #include "global.h"
 
+#ifdef _WIN32
+#include <Shlobj.h>
+#endif
+
 struct optionStrings {
 	Isolate *isolate;
 	//Eternal<String> *String;
@@ -1626,6 +1630,42 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 
 
 #ifdef WIN32
+
+struct folderEnvironments {
+	const GUID folderID;
+	const char* name;
+	DWORD opts;
+};
+
+
+struct folderEnvironments folders[] = {
+	{ FOLDERID_ProgramData, "ProgramData" }
+	, {FOLDERID_ProgramData, "ALLUSERSPROFILE" }
+	, {FOLDERID_ProgramFilesX64, "ProgramFiles" }
+	, {FOLDERID_ProgramFilesX86, "ProgramFiles(x86)" }
+	, {FOLDERID_ProgramFiles, "ProgramW6432" }
+	, {FOLDERID_UsersFiles, "USERPROFILE", 1/*KF_FLAG_NO_ALIAS| KF_FLAG_DONT_UNEXPAND | KF_FLAG_DEFAULT_PATH*/ }
+	//, {FOLDERID_Profile, "USERPROFILE" }  // c:/users
+	//, {FOLDERID_UserProfile, "USERPROFILE" } // c:/users
+	// 
+	//, {FOLDERID_System, "SystemRoot" }  
+	, {FOLDERID_Windows, "SystemRoot" }
+
+	, {FOLDERID_RoamingAppData, "APPDATA" }
+	, {FOLDERID_LocalAppData, "LOCALAPPDATA" }
+	, {FOLDERID_ProgramFilesCommonX64, "CommonProgramFiles" }
+	, {FOLDERID_ProgramFilesCommonX86, "CommonProgramFiles(x86)" }
+	, {FOLDERID_ProgramFilesCommon, "CommonProgramW6432" }
+
+	// this is start menu\programs
+	//, {FOLDERID_CommonPrograms, "COMMONPROGRAMS" }
+	, {FOLDERID_Public, "PUBLIC" }
+	// these are user local...
+	//, {FOLDERID_Desktop, "DESKTOP" }
+	//, {FOLDERID_StartMenu, "STARTMENU" }
+	//, {FOLDERID_AllUser, "ALLUSERSPROFILE" }
+};
+
 //HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Session Manager\Environment
 void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
 	struct variable_data {
@@ -1646,6 +1686,7 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 	DWORD valueBufferSize = 256;
 	DWORD valueSize = 256;
 	char* value = NewArray( char, valueSize );
+	PVARTEXT pvt = VarTextCreate();
 	if( RegOpenKeyEx( HKEY_LOCAL_MACHINE, "System\\CurrentControlSet\\Control\\Session Manager\\Environment", 0, KEY_READ, &hKey ) == ERROR_SUCCESS ) {
 		DWORD dwIndex = 0;
 		char name[256];
@@ -1665,7 +1706,7 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 			var->value = StrDup( value );
 			var->valueSize = valueSize;
 			AddLink( &vars, var );
-			result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
+			//result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
 			nameSize = 256;
 			valueSize = valueBufferSize;
 		}
@@ -1680,7 +1721,6 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 		DWORD nameSize = 256;
 		DWORD type;
 		DWORD lastError;
-		PVARTEXT pvt = NULL;
 		while( ( lastError = RegEnumValue( hKey, dwIndex++, name, &nameSize, NULL, &type, (LPBYTE)value, &valueSize ) ) == ERROR_SUCCESS
 			 || ( lastError == ERROR_MORE_DATA ) ) {
 			if( lastError == ERROR_MORE_DATA ) {
@@ -1693,29 +1733,174 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 			LIST_FORALL( vars, index, struct variable_data*, check ) {
 				if( !StrCaseCmp( check->name, name ) ) {
 					if( !StrCaseCmp( check->name, "PATH" ) ) {
-						if( !pvt ) pvt = VarTextCreate();
 						VarTextAddData( pvt, check->value, check->valueSize-1 );
 						VarTextAddData( pvt, ";", 1 );
 						VarTextAddData( pvt, value, valueSize );
-						result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, GetText( VarTextPeek( pvt ) ) ).ToLocalChecked() );
+						Release( check->value );
+						check->value = StrDup( GetText( VarTextPeek( pvt ) ) );
+						check->valueSize = GetTextSize( VarTextPeek( pvt ) );
+						//result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, GetText( VarTextPeek( pvt ) ) ).ToLocalChecked() );
+						break;
+					} else {
+						Release( check->value );
+						check->value = StrDup( value );
+						check->valueSize = valueSize;
+						//result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
 						break;
 					}
 					check = NULL;
 					break;
 				}
 			}
-			if( !check )
-				result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
+			if( !check ) {
+				//result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
+			}
 			nameSize = 256;
 			valueSize = valueBufferSize;
 		}
-		if( pvt ) VarTextDestroy( &pvt );
 		if( lastError != ERROR_NO_MORE_ITEMS )
 			lprintf( "Failed with %d", lastError );
 		RegCloseKey( hKey );
 	} else {
 		lprintf( "Failed to open user key?" );
 	}
+	// other misc paths...
+	{
+		NetworkStart();
+		CTEXTSTR name = GetSystemName();
+		struct variable_data* var;
+		var = NewArray( struct variable_data, 1 );
+		var->name = StrDup( "COMPUTERNAME" );
+		var->value = StrDup( name );
+		var->valueSize = StrLen( name );
+		AddLink( &vars, var );
+		//result->Set( context, String::NewFromUtf8( isolate, "COMPUTERNAME" ).ToLocalChecked(), String::NewFromUtf8( isolate, name ).ToLocalChecked() );
+	}
+
+	// USERNAME
+	// USERDOMAIN
+	// USERDOMAIN_ROAMINGPROFILE
+	// 
+	{
+		char name[256];
+		DWORD bufsize = 256;
+		GetUserName( name, &bufsize );
+		struct variable_data* var;
+		var = NewArray( struct variable_data, 1 );
+		var->name = StrDup( "USERNAME" );
+		var->value = StrDup( name );
+		var->valueSize = bufsize;
+		AddLink( &vars, var );
+		//result->Set( context, String::NewFromUtf8( isolate, "USERNAME" ).ToLocalChecked(), String::NewFromUtf8( isolate, name ).ToLocalChecked() );
+	}
+
+	// Explorer sets this variable...
+	// EFC_8412=1
+	// EFC_%lu, ExplorerPID
+
+	{
+		//CSIDL_COMMON_APPDATA
+		PWSTR value;
+		int n;	
+		for( n = 0; n < sizeof( folders ) / sizeof( struct folderEnvironments ); n++ ) {
+			HRESULT hr;
+			//id* riid;
+			if( folders[n].opts ) {
+				IShellItem* psi;
+				hr = SHGetKnownFolderItem( folders[n].folderID, KF_FLAG_DEFAULT, NULL, IID_IShellItem, (void**)&psi );
+				psi->GetDisplayName( SIGDN_DESKTOPABSOLUTEPARSING, &value );
+
+			} else {
+
+				hr = SHGetKnownFolderPath( folders[n].folderID, 0, NULL, &value );
+			}
+			// E_INVALIDARG
+			// E_ACCESSDENIED ?
+			// ERROR_FILE_NOT_FOUND 
+			// HRESULT_FROM_WIN32( ERROR_FILE_NOT_FOUND )
+			//lprintf( "Result: %x %x %x %x", hr, E_INVALIDARG, E_FAIL, HRESULT_FROM_WIN32( ERROR_FILE_NOT_FOUND ) );
+			if( hr == S_OK ) {
+				char* tmp = WcharConvert( value );
+				//lprintf( "Extra Env: %s %s", folders[n].name, tmp );
+				struct variable_data* var;
+				var = NewArray( struct variable_data, 1 );
+				var->name = StrDup( folders[n].name );
+				var->value = tmp;
+				var->valueSize = StrLen( tmp );
+				AddLink( &vars, var );
+				//result->Set( context, String::NewFromUtf8( isolate, folders[n].name ).ToLocalChecked(), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+				//Release( tmp );
+				CoTaskMemFree( value );
+			}
+		}
+	}
+	{
+		LIST_FORALL( vars, index, struct variable_data*, check ) {
+			// these are apparently broken down parts of USERPROFILE
+			if( StrCmp( check->name, "USERPROFILE" ) == 0 ) {
+				TEXTSTR start = StrChr( check->value, '\\' );
+				struct variable_data* var = NewArray( struct variable_data, 1 );
+				var->name = StrDup( "HOMEDRIVE" );
+				var->value = NewArray( char, 3 );
+				var->valueSize = 3;
+				var->value[0] = check->value[0];
+				var->value[1] = check->value[1];
+				var->value[2] = 0;
+				AddLink( &vars, var );
+
+				var = NewArray( struct variable_data, 1 );
+				var->name = StrDup( "HOMEPATH" );
+				var->value = NewArray( char, check->valueSize + 1 );
+				var->valueSize = check->valueSize - 2;
+				StrCpy( var->value, check->value + 2 );
+				AddLink( &vars, var );
+				break;
+			}
+		}
+	}
+	{
+		INDEX index1;
+		struct variable_data* check1;
+		LIST_FORALL( vars, index1, struct variable_data*, check1 ) {
+
+			LIST_FORALL( vars, index, struct variable_data*, check ) {
+				int d = StrCaseCmp( check->name, check1->name );
+				if( d > 0 ) {
+					SetLink( &vars, index1, check );
+					SetLink( &vars, index, check1 );
+					index1--;
+					break;
+				}
+			}
+		}
+		LIST_FORALL( vars, index, struct variable_data*, check ) {
+			TEXTSTR start = StrChr( check->value, '%' );
+			while( start ) {
+				TEXTSTR end = StrChr( start + 1, '%' );
+				if( end ) {
+					end[0] = 0;
+					VarTextEmpty( pvt );
+					VarTextAddData( pvt, check->value, start - check->value );
+					LIST_FORALL( vars, index1, struct variable_data*, check1 ) {
+						if( StrCaseCmp( check1->name, start + 1 ) == 0 ) {
+							VarTextAddData( pvt, check1->value, check1->valueSize );
+							VarTextAddData( pvt, end+1, check->valueSize - (end-check->value)+1 );
+							Release( check->value );
+							check->value = StrDup( GetText( VarTextPeek( pvt ) ) );
+							check->valueSize = GetTextSize( VarTextPeek( pvt ) );
+							break;
+						}
+					}
+					start = StrChr( check->value, '%' );
+				}
+			}
+
+		}
+		LIST_FORALL( vars, index, struct variable_data*, check ) {
+			result->Set( context, String::NewFromUtf8( isolate, check->name ).ToLocalChecked(), String::NewFromUtf8( isolate, check->value ).ToLocalChecked() );
+		}
+	}
+	VarTextDestroy( &pvt );
 	LIST_FORALL( vars, index, struct variable_data*, check ) {
 		Release( check->name );
 		Release( check->value );
@@ -1723,6 +1908,8 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 	}
 	DeleteList( &vars );
 	Release( value );
+
+
 	args.GetReturnValue().Set( result );
 }
 #endif
