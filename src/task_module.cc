@@ -63,6 +63,7 @@ static void GetProcessId( const FunctionCallbackInfo<Value>& args );  // get tit
 static void GetProcessParentId( const FunctionCallbackInfo<Value>& args );
 
 #if _WIN32
+static void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<Value>& args );
 static void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HWND hWnd, Local<Object> opts ); // move a task window
 static void doStyleWindow( Isolate* isolate, Local<Context> context, TaskObject* task, HWND hWnd, Local<Object> opts ); // style a task window
 
@@ -177,7 +178,7 @@ TaskObject::~TaskObject() {
 }
 
 void InitTask( Isolate *isolate, Local<Object> exports ) {
-
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> taskTemplate;
 	taskTemplate = FunctionTemplate::New( isolate, TaskObject::New );
 	taskTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.task" ) );
@@ -215,6 +216,15 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
 #ifdef _WIN32
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "env" )
+		, getEnvironmentVariables
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::None
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+
 	SET_READONLY_METHOD( taskF, "dropConsole", dropConsole );
 	SET_READONLY_METHOD( taskF, "getDisplays", TaskObject::getDisplays );
 	SET_READONLY_METHOD( taskF, "getPosition", ::getProcessWindowPos );
@@ -1613,3 +1623,106 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 	kill( id, SIGKILL );
 #endif
 }
+
+
+#ifdef WIN32
+//HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Session Manager\Environment
+void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	struct variable_data {
+		char* name;
+		char* value;
+		size_t valueSize;
+	};
+	PLIST vars = NULL;
+	struct variable_data* check;
+	INDEX index;
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Object> result = Object::New( isolate );
+
+	// read environment variables from registry, not current process
+	HKEY hKey;
+	DWORD nameSize = 256;
+	DWORD valueBufferSize = 256;
+	DWORD valueSize = 256;
+	char* value = NewArray( char, valueSize );
+	if( RegOpenKeyEx( HKEY_LOCAL_MACHINE, "System\\CurrentControlSet\\Control\\Session Manager\\Environment", 0, KEY_READ, &hKey ) == ERROR_SUCCESS ) {
+		DWORD dwIndex = 0;
+		char name[256];
+		DWORD type;
+		DWORD lastError;
+		while( (lastError = RegEnumValue( hKey, dwIndex++, name, &nameSize, NULL, &type, (LPBYTE)value, &valueSize ) ) == ERROR_SUCCESS 
+			   || ( lastError == ERROR_MORE_DATA ) ) {
+			if( lastError == ERROR_MORE_DATA ) {
+				valueBufferSize = valueSize;
+				Release( value );
+				value = NewArray( char, valueSize );
+				dwIndex--;
+				continue;
+			}
+			struct variable_data* var = NewArray( struct variable_data, 1 );
+			var->name = StrDup( name );
+			var->value = StrDup( value );
+			var->valueSize = valueSize;
+			AddLink( &vars, var );
+			result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
+			nameSize = 256;
+			valueSize = valueBufferSize;
+		}
+		if( lastError != ERROR_NO_MORE_ITEMS )
+			lprintf( "Failed with %d", lastError );
+		RegCloseKey( hKey );
+	}
+	//HKEY_CURRENT_USER\Environment
+	if( RegOpenKeyEx( HKEY_CURRENT_USER, "Environment", 0, KEY_READ, &hKey ) == ERROR_SUCCESS ) {
+		DWORD dwIndex = 0;
+		char name[256];
+		DWORD nameSize = 256;
+		DWORD type;
+		DWORD lastError;
+		PVARTEXT pvt = NULL;
+		while( ( lastError = RegEnumValue( hKey, dwIndex++, name, &nameSize, NULL, &type, (LPBYTE)value, &valueSize ) ) == ERROR_SUCCESS
+			 || ( lastError == ERROR_MORE_DATA ) ) {
+			if( lastError == ERROR_MORE_DATA ) {
+				valueBufferSize = valueSize;
+				Release( value );
+				value = NewArray( char, valueSize );
+				dwIndex--;
+				continue;
+			}
+			LIST_FORALL( vars, index, struct variable_data*, check ) {
+				if( !StrCaseCmp( check->name, name ) ) {
+					if( !StrCaseCmp( check->name, "PATH" ) ) {
+						if( !pvt ) pvt = VarTextCreate();
+						VarTextAddData( pvt, check->value, check->valueSize-1 );
+						VarTextAddData( pvt, ";", 1 );
+						VarTextAddData( pvt, value, valueSize );
+						result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, GetText( VarTextPeek( pvt ) ) ).ToLocalChecked() );
+						break;
+					}
+					check = NULL;
+					break;
+				}
+			}
+			if( !check )
+				result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
+			nameSize = 256;
+			valueSize = valueBufferSize;
+		}
+		if( pvt ) VarTextDestroy( &pvt );
+		if( lastError != ERROR_NO_MORE_ITEMS )
+			lprintf( "Failed with %d", lastError );
+		RegCloseKey( hKey );
+	} else {
+		lprintf( "Failed to open user key?" );
+	}
+	LIST_FORALL( vars, index, struct variable_data*, check ) {
+		Release( check->name );
+		Release( check->value );
+		Release( check );
+	}
+	DeleteList( &vars );
+	Release( value );
+	args.GetReturnValue().Set( result );
+}
+#endif
