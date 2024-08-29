@@ -166,11 +166,10 @@ void TLSObject::Init( Isolate *isolate, Local<Object> exports )
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> tlsTemplate;
 
-OpenSSL_add_all_algorithms();
-ERR_load_crypto_strings();
+	ssl_InitLibrary();
 
 	tlsTemplate = FunctionTemplate::New( isolate, New );
-	tlsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Volume" ) );
+	tlsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.TLS" ) );
 	tlsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -201,6 +200,8 @@ TLSObject::~TLSObject()
 {
 }
 
+#if 0
+// goes through the error stack and logs all ssl errors....
 static void flushErrors(void) {
 	int err;
 	char buf[256];
@@ -210,6 +211,7 @@ static void flushErrors(void) {
 		lprintf( "OUtstanding SSL Error:%s", buf );
 	}
 }
+#endif
 
 static void _throwError( struct info_params *params, const char *message ) {
 	PVARTEXT pvt = VarTextCreate();
@@ -299,8 +301,8 @@ static EVP_PKEY *genKey( int kBits ) {
 }
 
 void TLSObject::New( const v8::FunctionCallbackInfo<Value>& args  ) {
-	Isolate* isolate = args.GetIsolate();
-	int argc = args.Length();
+	//Isolate* isolate = args.GetIsolate();
+	//int argc = args.Length();
 	if( args.IsConstructCall() ) {
 		TLSObject* obj;
 		obj = new TLSObject( );
@@ -309,7 +311,7 @@ void TLSObject::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 		args.GetReturnValue().Set( args.This() );
 	} else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Value> *argv = new Local<Value>[0];
+		//Local<Value> *argv = new Local<Value>[0];
 		//Local<Function> cons = Local<Function>::New( isolate, constructor );
 		//MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 		//if( !mo.IsEmpty() )
@@ -467,7 +469,7 @@ void MakeCert(  struct info_params *params )
 				# define KU_DECIPHER_ONLY        0x8000
 				*/
 			{
-				X509_EXTENSION *ext = NULL;// X509_get_ext();
+				//X509_EXTENSION *ext = NULL;// X509_get_ext();
 				//ASN1_OCTET_STRING *data;
 				{
 					ASN1_STRING *data = ASN1_STRING_new();
@@ -690,6 +692,8 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
+#if 0
+// didn't end up using this function.
 static int add_ext(STACK_OF(X509_EXTENSION) *sk, int nid, char *value)
 	{
 	X509_EXTENSION *ex;
@@ -699,6 +703,7 @@ static int add_ext(STACK_OF(X509_EXTENSION) *sk, int nid, char *value)
 	sk_X509_EXTENSION_push(sk, ex);
 	return 1;
 	}
+#endif
 
 void MakeReq( struct info_params *params )
 {
@@ -1221,9 +1226,10 @@ static void SignReq( struct info_params *params )
 				//EXTENDED_KEY_USAGE
 				//
 				X509_EXTENSION *ex = X509V3_EXT_conf_nid(NULL, NULL, NID_ext_key_usage, "serverAuth,clientAuth");
-				 int result = X509_add_ext(cert, ex, -1);
+				// int result = 
+				X509_add_ext(cert, ex, -1);
 
-				  X509_EXTENSION_free(ex);
+				X509_EXTENSION_free(ex);
 				  /*
 				int _ext_usage = XKU_SSL_SERVER | XKU_SSL_CLIENT;
 				ASN1_INTEGER *ext_usage = ASN1_INTEGER_new();
@@ -1614,7 +1620,7 @@ static void DumpCert( X509 *x509 ) {
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
 				//akid->serial
-				GENERAL_NAMES *names = akid->issuer;
+				//GENERAL_NAMES *names = akid->issuer;
 				ASN1_OCTET_STRING *key = akid->keyid;
 				ASN1_INTEGER *ser = akid->serial;
 				LogBinary( key->data, key->length );
@@ -1958,7 +1964,7 @@ static Local<Value> Expiration( struct info_params *params ) {
 
 	const ASN1_TIME *before = X509_get_notAfter( x509 );
 	struct tm t;
-	char * timestring = (char*)before->data;
+	//char * timestring = (char*)before->data;
 
 	ConvertTimeString( &t, before );
 	X509_free( x509 );
@@ -1982,7 +1988,7 @@ void TLSObject::expiration( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
 	params.cert = *cert;
 	params.certlen = cert.length();
 
@@ -2142,7 +2148,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
 				//akid->serial
-				GENERAL_NAMES *names = akid->issuer;
+				//GENERAL_NAMES *names = akid->issuer;
 				ASN1_OCTET_STRING *key = akid->keyid;
 				ASN1_INTEGER *ser = akid->serial;
 				vtLogBinary( pvt, key->data, key->length );
@@ -2177,12 +2183,12 @@ static Local<Value> CertToString( struct info_params *params ) {
 					switch( namePart->type ) {
 					case GEN_DIRNAME:
 						{
-						X509_NAME *dir = namePart->d.directoryName;
+						//X509_NAME *dir = namePart->d.directoryName;
 						//int dn;
 						//for( dn = 0; dn < dir->entries; dn++ ) {
 
 						//}
-						vtprintf( pvt, "unhandled DIRNAME\n" );
+						vtprintf( pvt, "unhandled DIRNAME\n");
 						}
 						break;
 					case GEN_DNS:
@@ -2250,7 +2256,7 @@ void TLSObject::certToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
 	params.cert = *cert;
 	params.certlen = cert.length();
 

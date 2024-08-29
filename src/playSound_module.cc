@@ -11,16 +11,6 @@ struct sound_cache_entry {
 #endif
 };
 
-static struct sound_static_data {
-	PLIST sounds;
-} ssd;
-
-// ffmpeg_UnloadFile
-
-static void ended( uintptr_t sound_done ) {
-
-}
-
 static void playMedia( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		String::Utf8Value sound( args.GetIsolate(), args[0] );

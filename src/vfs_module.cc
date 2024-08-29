@@ -64,66 +64,10 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	Local<String> retval = String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
 	Release( (POINTER)data );
 	return retval;
-	/*
-	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
-	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
-	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-	PARRAY_BUFFER_HOLDER holder = GetHolder();
-	holder->s.Reset( isolate, arrayBuffer );
-	holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-	holder->buffer = (void*)data;
-	return arrayBuffer;
-	*/
 }
 
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
 	return String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
-	/*
-	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
-	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
-	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-	static const char *prior_root;
-	if( prior_root != real_root )
-	{
-		prior_root = real_root;
-		PARRAY_BUFFER_HOLDER holder = GetHolder();
-		holder->s.Reset( isolate, arrayBuffer );
-		holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-		Hold( (char*)real_root );
-		holder->buffer = (void*)real_root;
-	}
-	return arrayBuffer;
-	*/
-}
-
-
-
-static void promiseResolveCallback( const v8::FunctionCallbackInfo<Value>& args ) {
-	v8::Local<v8::External> ext = args.Data().As<v8::External>();
-	PromiseWrapper* pw = static_cast<PromiseWrapper*>(ext->Value());
-	Local<Promise::Resolver> lpr = pw->resolver.Get( args.GetIsolate() );
-	lpr->Resolve( args.GetIsolate()->GetCurrentContext(), args[0] );
-}
-static void promiseRejectCallback( const v8::FunctionCallbackInfo<Value>& args ) {
-	v8::Local<v8::External> ext = args.Data().As<v8::External>();
-	PromiseWrapper* pw = static_cast<PromiseWrapper*>(ext->Value());
-	Local<Promise::Resolver> lpr = pw->resolver.Get( args.GetIsolate() );
-	lpr->Reject( args.GetIsolate()->GetCurrentContext(), args[0] );
-}
-
-
-struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
-	struct PromiseWrapper *pw = new PromiseWrapper();
-	MaybeLocal<Promise::Resolver> ml_resolver = Promise::Resolver::New( context );
-	Local<Promise::Resolver> resolver = ml_resolver.ToLocalChecked();
-	Local<Promise> pr = resolver->GetPromise();
-	Local<External> lex_pw = External::New( isolate, (void *)pw );
-	MaybeLocal<Function> prsc = Function::New( context, promiseResolveCallback, lex_pw );
-	pw->resolve.Reset( isolate, prsc.ToLocalChecked() );
-	MaybeLocal<Function> prjc = Function::New( context, promiseRejectCallback, lex_pw );
-	pw->reject.Reset( isolate, prjc.ToLocalChecked() );
-	return pw;
-	//Local<Value> args[] = { prsc.ToLocalChecked(), prjc.ToLocalChecked() };
 }
 
 static void moduleExit( void *arg ) {
@@ -160,7 +104,6 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
 		Local<Object> key = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		//Local<Object> 
-		Local<String> tmp;
 		Local<Value> keyValue = GET(key, "key" );
 		Local<Value> stepValue = GET(key, "step");
 		int step = (int)stepValue->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
@@ -274,6 +217,34 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
+/*
+void decodeFlags2( int flags ) {
+
+	fprintf( stderr, "FD FLAGS:%08x ", flags );
+	fprintf( stderr, "%08x\n", FD_CLOEXEC );
+}
+
+
+void decodeFlags( int flags ) {
+	if( flags & O_RDONLY ) fprintf( stderr, "rdonly " );
+	if( flags & O_WRONLY ) fprintf( stderr, "wronly " );
+	if( flags & O_RDWR ) fprintf( stderr, "rdwr " );
+	if( flags & O_CREAT ) fprintf( stderr, "create " );
+	if( flags & O_EXCL ) fprintf( stderr, "excl " );
+	if( flags & O_NONBLOCK ) fprintf( stderr, "noblock " );
+	if( flags & O_TRUNC ) fprintf( stderr, "trunc " );
+	if( flags & O_APPEND ) fprintf( stderr, "append " );
+	if( flags & O_DSYNC ) fprintf( stderr, "dsync " );
+	if( flags & FASYNC ) fprintf( stderr, "fasycn " );
+	if( flags & O_DIRECT ) fprintf( stderr, "direct " );
+	//if( flags & O_LARGEFILE ) fprintf( stderr, "largefile %08x ", O_LARGEFILE );
+	if( flags & O_DIRECTORY ) fprintf( stderr, "directory " );
+	if( flags & O_NOFOLLOW ) fprintf( stderr, "nofollow " );
+	if( flags & O_CLOEXEC ) fprintf( stderr, "cloexec " );
+	fprintf( stderr, "%08x\n", O_CLOEXEC );
+}
+*/
+
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	static int runOnce = 1;
 	Isolate* isolate = Isolate::GetCurrent();
@@ -297,13 +268,45 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 		SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 	}
 #endif
+#ifdef __LINUX__
+		fcntl( 0, F_SETFD, fcntl( 0, F_GETFD ) & ~FD_CLOEXEC );
+		fcntl( 1, F_SETFD, fcntl( 1, F_GETFD ) & ~FD_CLOEXEC );
+		fcntl( 2, F_SETFD, fcntl( 2, F_GETFD ) & ~FD_CLOEXEC );
+
+/*
+		decodeFlags( fcntl( 0, F_GETFL, 0 ) );
+		decodeFlags( fcntl( 1, F_GETFL, 0 ) );
+		decodeFlags( fcntl( 2, F_GETFL, 0 ) );
+		decodeFlags2( fcntl( 0, F_GETFD, 0 ) );
+		decodeFlags2( fcntl( 1, F_GETFD, 0 ) );
+		decodeFlags2( fcntl( 2, F_GETFD, 0 ) );
+
+		fprintf( stderr, "Default handle inherit in node: %08x %08x %08x\n"
+		       , fcntl( 0, F_GETFL, 0 )
+		       , fcntl( 1, F_GETFL, 0 )
+		       , fcntl( 2, F_GETFL, 0 ) );
+*/
+#endif
 	if( runOnce ) {
+#ifdef __ANDROID__
+		{
+			//SACKSystemSetProgramPath( "" );
+			// maybe if this is set I can get the program path with the maps scanner?
+			SACKSystemSetProgramName( "node" );
+			char buf[1024];
+			getcwd( buf, 1024 );
+			SACKSystemSetWorkingPath( buf );
+			// this should have been filled by maps scan?
+			SACKSystemSetLibraryPath( TARGET_INSTALL_PREFIX );
+		}
+#endif
+
 		InvokeDeadstart();
 		MarkRootDeadstartComplete();
 
 
 		//SetAllocateLogging( TRUE );
-		//SetManualAllocateCheck( TRUE );
+		SetManualAllocateCheck( TRUE );
 		//SetAllocateDebug( FALSE );
 		//lprintf( "Do Init in modules (shouldn't do some of this)");
 		SetSystemLog( SYSLOG_FILE, stdout );
@@ -341,8 +344,6 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
-	InitWebSocket( isolate, exports );
-	InitUDPSocket( isolate, exports );
 	InitTask( isolate, exports );
 	ObjectStorageInit( isolate, exports );
 	fileMonitorInit( isolate, exports );
@@ -354,15 +355,18 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	RenderObject::Init( exports );
 	ControlObject::Init( exports );
 	InterShellObject::Init( exports );
-	InitSystray( isolate, exports );
 #endif
 
 #ifdef WIN32
 	RegObject::Init( exports );
 	KeyHidObjectInit( isolate, exports );
 	SoundInit( isolate, exports );
+	InitSystray( isolate, exports );
 #endif
+	InitWebSocket( isolate, exports );
+	InitUDPSocket( isolate, exports );
 	TLSObject::Init( isolate, exports );
+	SSH2_Object::Init( isolate, exports );
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
@@ -498,7 +502,7 @@ void logBinary( char *x, int n )
 
 void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+	//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 
 	class constructorSet* c = getConstructors( isolate );
 	Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
@@ -510,8 +514,8 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 
 
 void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
-	Isolate* isolate = args.GetIsolate();
-	int argc = args.Length();
+	//Isolate* isolate = args.GetIsolate();
+	//int argc = args.Length();
 	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 	sack_vfs_decrypt_volume( vol->vol );
 }
@@ -592,11 +596,11 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 
 
 void VolumeObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-	if( vol ) {
+	//Isolate* isolate = args.GetIsolate();
+	//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+	//if( vol ) {
 		// this is a noop.  mmap is assumed commited if the memory is written to; and the process exists and closes the handles.
-	}
+	//}
 
 }
 
@@ -729,7 +733,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = json6_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = json6_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
 						struct reviver_data r;
@@ -772,7 +776,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = json6_parse_add_data( parser, buf, newRead ));
 						result > 0; 
 						result = json6_parse_add_data(parser, NULL, 0) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
 						if( data->Cnt ) {
@@ -830,7 +834,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = jsox_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = jsox_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = jsox_parse_get_data( parser );
 						struct reviver_data r;
@@ -876,7 +880,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = jsox_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = jsox_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = jsox_parse_get_data( parser );
 						if( data->Cnt ) {
@@ -1492,29 +1496,6 @@ static void postVolume( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-
-
-static void postVolumeObject( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	if( args.Length() < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique)" ) ) );
-		return;
-	}
-	
-	VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( args.This() );
-	if( obj ){
-		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		if( PostVolume( isolate, &s, obj ) ) 
-			args.GetReturnValue().Set( True(isolate) );
-		else
-			args.GetReturnValue().Set( False(isolate) );
-	}
-	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
-	}
-}
-
-
 static void finishPostClose( uv_handle_t *async ) {
 	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
 	delete unload->s;
@@ -1594,13 +1575,14 @@ static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args 
 
 void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 {
+#if NOT_INCOMPLETE
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
 	Local<Value> argv[2] = {
 		v8::String::NewFromUtf8Literal( isolate, "ping" ), // event name
 		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};
-
+#endif
 	//node::MakeCallback(isolate, args.This(), "emit", 2, argv);
 }
 
@@ -1645,6 +1627,7 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		int whence;
 		if( args.Length() == 1 ) {
 			length = args[1]->Int32Value(isolate->GetCurrentContext()).FromMaybe(0);
+			position = 0;
 			whence = SEEK_CUR;
 		}
 		else if( args.Length() == 2 ) {
@@ -1662,12 +1645,16 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 			file->buf = NewArray( char, length );
 			file->size = length;
 		}
+		if (file->vol->volNative) {
+			sack_vfs_seek( file->file, position, whence );
+			sack_vfs_read( file->file, file->buf, file->size );
+		}
+		else {
+			sack_fseek( file->cfile, position, whence );
+			file->size = sack_fread(file->buf, file->size, 1, file->cfile);
+		}
+
 	}
-}
-
-
-static void vfs_string_read( char buf, size_t maxlen, struct sack_vfs_file *file ) {
-	lprintf( "volume string read is not implemented yet." );
 }
 
 void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {
@@ -1789,7 +1776,7 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 					sack_vfs_seek( file->file, offset, SEEK_SET );
 				else
 					sack_vfs_seek( file->file, 0, SEEK_END );
-				sack_vfs_write( file->file, *data, data.length() );
+				sack_vfs_write( file->file, *data, datalen );
 				sack_vfs_write( file->file, "\n", 1 );
 			}
 			else {
@@ -1870,7 +1857,7 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = Isolate::GetCurrent();
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( file->vol->volNative )
 		args.GetReturnValue().Set( Number::New( isolate, (double)sack_vfs_tell( file->file ) ) );
@@ -1901,6 +1888,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "trunc", truncateFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "close", closeFile );
 		// read stream methods
+		/*
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pause", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "resume", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setEncoding", openFile );
@@ -1914,6 +1902,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setDefaultEncoding", openFile );
 
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
+		*/
 
 		c->fileConstructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		//exports->Set( String::NewFromUtf8Literal( isolate, "File" ),

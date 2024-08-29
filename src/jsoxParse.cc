@@ -6,21 +6,24 @@
 //#define DEBUG_REVIVAL_CALLBACKS
 //#define DEBUG_REFERENCE_FOLLOW
 //#define DEBUG_SET_FIELDCB
+//#define JSOX_USE_TIMING
 
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive );
 
+#if defined( JSOX_USE_TIMING )
 static struct timings {
 	uint64_t start;
 	uint64_t deltas[10];
 }timings;
+#endif
 
-static void makeJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void parseJSOX( const v8::FunctionCallbackInfo<Value>& args );
 static void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args );
+#if defined(JSOX_USE_TIMING)
 static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
-
+#endif
 
 class JSOXRefObject : public node::ObjectWrap {
 	
@@ -31,7 +34,6 @@ public:
 
 	static void New( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		Local<Context> context = isolate->GetCurrentContext();
 		int argc = args.Length();
 		if( argc == 0 ) {
 			isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must callback to read into." ) ) );
@@ -71,10 +73,11 @@ void InitJSOX( Isolate *isolate, Local<Object> exports ){
 
 	Local<Object> o2 = Object::New( isolate );
 	SET_READONLY_METHOD( o2, "parse", parseJSOX );
-	//NODE_SET_METHOD( o2, "stringify", makeJSOX );
 	SET_READONLY_METHOD( o2, "setFromPrototypeMap", setFromPrototypeMap );
 	SET_READONLY_METHOD( o2, "escape", escapeJSOX );
+#if defined(JSOX_USE_TIMING)
 	//SET_READONLY_METHOD( o2, "timing", showTimings );
+#endif
 	SET_READONLY( exports, "JSOX", o2 );
 
 	{
@@ -165,9 +168,30 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( args.Holder() );
 	int argc = args.Length();
 
-	String::Utf8Value *data_;
-	if( argc > 0 ) data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) ;
-	else data_ = NULL;
+	String::Utf8Value *data_ = NULL;
+	void* data;
+	size_t datalen;
+	if( argc > 0 ) {
+		if( args[0]->IsUint8Array() ) {
+			Local<Uint8Array> arr = Local<Uint8Array>::Cast( args[0] );
+			Local<ArrayBuffer> ab = arr->Buffer();
+			data = ab->GetBackingStore()->Data();
+			datalen = ab->ByteLength();
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+			data = ab->GetBackingStore()->Data();
+			datalen = ab->ByteLength();
+		} else {
+			data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			data = *data_[0];
+			datalen = data_[0].length();
+		}
+
+	}
+	else {
+		data = NULL;
+		datalen = 0;
+	}
 	int result;
 	//Local<Function> cb = Local<Function>::New( isolate, parser->readCallback );
 	Local<Context> context = isolate->GetCurrentContext();
@@ -175,14 +199,14 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef DEBUG_INPUT
 	lprintf( "Parse:%.*s", data_[0].length(), *data_[0] );
 #endif
-	for( result = jsox_parse_add_data( parser->state, (argc>0)?*data_[0]:NULL, (argc>0)?data_[0].length():0 );
+	for( result = jsox_parse_add_data( parser->state, (const char*)data, datalen );
 		result > 0;
 		result = jsox_parse_add_data( parser->state, NULL, 0 )
 		) {
 		struct jsox_value_container * val;
 		PDATALIST elements = jsox_parse_get_data( parser->state );
-		Local<Object> o;
-		Local<Value> v;// = Object::New( isolate );
+		//Local<Object> o;
+		//Local<Value> v;// = Object::New( isolate );
 
 		Local<Value> argv[1];
 		val = (struct jsox_value_container *)GetDataItem( &elements, 0 );
@@ -216,7 +240,8 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 				MaybeLocal<Value> cbResult = cb->Call( context, global, 1, argv );
 				if( cbResult.IsEmpty() ) {
 					lprintf( "Callback failed." );
-					delete data_;
+					if( data_ )
+						delete data_;
 					return;
 				}
 			}
@@ -225,7 +250,8 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( result < 2 )
 			break;
 	}
-	delete data_;
+	if( data_ )
+		delete data_;
 	if( result < 0 ) {
 		PTEXT error = jsox_parse_get_error( parser->state );
 		if( error ) {
@@ -270,7 +296,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 		class constructorSet *c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->jsoxConstructor );
-		MaybeLocal<Object> resObj = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
+		MaybeLocal<Object> resObj = cons->NewInstance( context, argc, argv );
 		if(!resObj.IsEmpty() )
 			args.GetReturnValue().Set( resObj.ToLocalChecked() );
 		else
@@ -285,7 +311,7 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 	Local<Object> sub_o;
 	revive->fieldCb.Clear();
 	if( val->className ) {
-		Local<Function> cb;
+		//Local<Function> cb;
 
 		MaybeLocal<Value> mprotoDef;
 		Local<Object> protoDef;
@@ -337,9 +363,9 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 							//lprintf( "Return constructed object...");
 						}
 						else {
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 							lprintf( "Constructor threw exception" );
-#endif
+//#endif
 							revive->failed = TRUE;
 						}
 						//else lprintf( "constructor might have failed.");
@@ -367,9 +393,9 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 						if (!mo.IsEmpty())
 							sub_o = mo.ToLocalChecked();
 						else {
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 							lprintf( "Making a new instance threw an exception." );
-#endif
+//#endif
 							revive->failed = TRUE;
 						}
 					}
@@ -488,7 +514,7 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 }
 
 
-#if defined( _DEBUG ) && defined( DEBUG_REFERENCE_FOLLOW )
+#if ( defined( _DEBUG ) && defined( DEBUG_REFERENCE_FOLLOW ) )
 #  define LogObject(o)  LogObjectEx(revive->isolate, o DBG_SRC )
 void LogObjectEx( Isolate *isolate, Local<Value> o DBG_PASS ) {
 	if( o->IsUndefined() )
@@ -501,9 +527,12 @@ void LogObjectEx( Isolate *isolate, Local<Value> o DBG_PASS ) {
 		_lprintf(DBG_RELAY)( "Is Object %p", o );
 	else if( o->IsNumber() )
 		_lprintf( DBG_RELAY )( "Is Number(unexpected) %p", o );
-	else if( o->IsString() )
-		_lprintf( DBG_RELAY )( "Is String(unexpected) %p", o );
-	else {
+	else if( o->IsBoolean() )
+		_lprintf( DBG_RELAY )( "Is Bool(unexpected) %p", o );
+	else if( o->IsString() ){
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) o );
+		_lprintf( DBG_RELAY )( "Is String(unexpected) %p %s", o, *tmp );
+	}else {
 		String::Utf8Value tmp( USE_ISOLATE( isolate ) o );
 		_lprintf( DBG_RELAY )( "Unhandeld type.  Value:%s", *tmp );
 	}
@@ -518,7 +547,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	Local<Function> fieldCb; // save what the fieldCb was... getArray clears it.
 	Local<Value> result;
 	Local<Script> script;
-	Local<Object> sub_o;
 	class constructorSet *c = getConstructors( revive->isolate );
 	//lprintf( "Saving the callback... did it get cleared?" );
 	//lprintf("handling:%d  %.*s %.*s", val->value_type
@@ -586,13 +614,16 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				{
 					struct jsox_value_container *pathVal;
 					INDEX idx;
+					LOGICAL off_stack = FALSE; // the root object is technically on-stack... 
 					Local<Object> refObj = revive->rootObject;
+					//lprintf( "Ref Object is the root object...");
 					DATA_FORALL( val->contains, idx, struct jsox_value_container *, pathVal ) {
 						if( revive->failed ) return Undefined( revive->isolate );
 #ifdef DEBUG_REFERENCE_FOLLOW
-						lprintf( "get reference:%d  %s", idx, pathVal->string );
+						lprintf( "get reference:%d %s %d %s %u", idx, off_stack?"OFF":"ON", pathVal->value_type, pathVal->string, (uint32_t)pathVal->result_n );
 #endif
 						LogObject( refObj );
+						
 						if( pathVal->value_type == JSOX_VALUE_NUMBER ) {
 							MaybeLocal<Value> mbArrayMember = refObj->Get( revive->context, (uint32_t)pathVal->result_n );
 							if( !mbArrayMember.IsEmpty() ) {
@@ -601,6 +632,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								MaybeLocal<String> mbString = arraymember->ToString(revive->context);
 								if( !mbString.IsEmpty() ) {
 									String::Utf8Value tmp( USE_ISOLATE( revive->isolate ) mbString.ToLocalChecked() );
+									//if( StrCmp( *tmp, "[object Object]" ) == 0 )DebugBreak();
 									lprintf( "Array member is : %s", *tmp );
 								}
 #endif
@@ -609,10 +641,14 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									{
 
 										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
-										if( member->index == (uint32_t)pathVal->result_n ) {
+										if( !member ) {
+											lprintf( "Stack is %lu at %lu get %lu", revive->reviveStack->Top, idx, revive->reviveStack->Top - idx - 1 );
+										}
+										if( member && member->index == (uint32_t)pathVal->result_n ) {
 											LogObject( member->object );
 											if( member->object->IsObject() ) {
 												refObj = member->object.As<Object>();
+												off_stack = FALSE;
 												//lprintf( "Saving replacement, maybe we can re-apply a fixup?" );
 												struct reviveMemberReplacement rep;
 												rep.object = revive->refObject;
@@ -623,13 +659,13 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 
 										} else {
 											lprintf( "Referenced array member is not an object!. " );
-											DebugBreak();
 										}
 									} 
 									//else
 									//	refObj = maybeRefObj.ToLocalChecked();
 								} else {
 									LogObject( arraymember );
+									off_stack = TRUE;
 									refObj = arraymember.As<Object>();
 								}
 							}
@@ -641,6 +677,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								Local<Function> mapGetter = refObj->Get( revive->context, localStringExternal( revive->isolate, "get" ) ).ToLocalChecked().As<Function>();
 								Local<Value> args[] = { localStringExternal( revive->isolate, pathVal->string, (int)pathVal->stringLen ) };
 								val_temp = mapGetter->Call( revive->context, refObj, 1, args ).ToLocalChecked();
+								off_stack = TRUE;
 								LogObject( val_temp );
 							}
 							else {
@@ -651,20 +688,13 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								//lprintf( "path is:%s", pathVal->string);
 								{
 									// if it's in the stack, prefer that value which is more current.
-									if( idx >= revive->reviveStack->Top ) {
-										if( refObj->Has( revive->context, pathval ).ToChecked() ) {
-											val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
-										} else {
-											//lprintf( "This fell off the stack, am assuming it's the current reference object..." );
-											val_temp = revive->refObject;
-										}
-									} else {
-										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
+									struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
+									if( !off_stack && idx < revive->reviveStack->Top ) {
 #ifdef DEBUG_REFERENCE_FOLLOW
-										lprintf( "Looking at reviveStack...  %d  %.*s %p"
-												, member->nameLen
-												, member->nameLen
-												, member->name, member->name );
+										lprintf( "Looking at reviveStack...  %d %d  %.*s %p", off_stack
+											, member->nameLen
+											, member->nameLen
+											, member->name, member->name );
 #endif
 										if( ( member->nameLen == pathVal->stringLen )
 											&& ( StrCmpEx( pathVal->string, member->name, pathVal->stringLen ) == 0 )
@@ -672,35 +702,66 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 											val_temp = member->object;
 											//lprintf( "Saving replacement(2), maybe we can re-apply a fixup?" );
 											struct reviveMemberReplacement rep;
+											off_stack = FALSE;
 											rep.object = revive->refObject;
 											rep.fieldName = revive->fieldName;
 											AddDataItem( &member->pdlSubsts, &rep );
 										} else {
 											if( refObj->Has( revive->context, pathval ).ToChecked() ) {
+												off_stack = TRUE; // probably was offstack too
 												val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
 											} else {
 
 												revive->isolate->ThrowException( Exception::TypeError(
 													String::NewFromUtf8( revive->isolate, TranslateText( "bad path specified with reference" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-#ifdef DEBUG_REVIVAL_CALLBACKS
+												//#ifdef DEBUG_REVIVAL_CALLBACKS
 												lprintf( "(5)Error at high level parse - throw it to JS..." );
-#endif
+												//#endif
 												revive->failed = TRUE;
 												return Undefined( revive->isolate );
 											}
 										}
 									}
+									if( idx >= revive->reviveStack->Top || (off_stack) /*|| ( member->object != refObj )*/ ) {
+										if( refObj->Has( revive->context, pathval ).ToChecked() ) {
+#ifdef DEBUG_REFERENCE_FOLLOW
+											lprintf ( "object already has path, use that." );
+#endif
+											val_temp = refObj->Get( revive->context, pathval ).ToLocalChecked();
+											off_stack = TRUE;
+										} else {
+#ifdef DEBUG_REFERENCE_FOLLOW
+											lprintf( "This fell off the stack, am assuming it's the current reference object..." );
+#endif
+											val_temp = revive->refObject;
+											off_stack = FALSE;
+										}
+									} 
 								}
 							}
 							LogObject( val_temp );
 							if( val_temp->IsObject() ) {
 								refObj = val_temp.As<Object>();
+#ifdef DEBUG_REFERENCE_FOLLOW
+								{
+									MaybeLocal<String> mbString = refObj->ToString( revive->context );
+									String::Utf8Value tmp( USE_ISOLATE( revive->isolate ) mbString.ToLocalChecked() );
+									const char* tmp2 = *tmp;
+									if( tmp2[0] == 0 ) DebugBreak();
+									lprintf( "Changed to new object: %s", *tmp );
+									if( !mbString.IsEmpty() ) {
+										String::Utf8Value tmp( USE_ISOLATE( revive->isolate ) mbString.ToLocalChecked() );
+										//if( StrCmp( *tmp, "[object Object]" ) == 0 )DebugBreak();
+										lprintf( "Array member is : %s", *tmp );
+									}
+								}
+#endif
 							}  else {
 								revive->isolate->ThrowException( Exception::TypeError(
 									String::NewFromUtf8( revive->isolate, TranslateText( "Expected an object reference but path lookup failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 								lprintf( "(6)Error at high level parse - throw it to JS..." );
-#endif
+//#endif
 								revive->failed = TRUE;
 								return Undefined( revive->isolate );
 
@@ -828,7 +889,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 #ifdef DEBUG_REVIVAL_CALLBACKS
 								lprintf( "method4a?");
 #endif
-								Local<Value> args[] = { Undefined(revive->isolate), resultTmp };
 								MaybeLocal<Value> mv = cb->Call( revive->context, resultTmp, 0, NULL );
 								if( !mv.IsEmpty() )
 									result = mv.ToLocalChecked();
@@ -839,28 +899,11 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								result = resultTmp;
 							}
 							LogObject( result );
-
 						}
 						else
 						{
 							lprintf( "Threw an exception in constrcutor" );
 						}
-						// string revival can (and needs to) happen immediately.
-						if(0)
-							if( !fieldCb.IsEmpty() && fieldCb->IsFunction() ) {
-#ifdef DEBUG_REVIVAL_CALLBACKS
-								lprintf( "method4a?");
-#endif
-								Local<Value> args[] = { Undefined(revive->isolate), resultTmp };
-
-								MaybeLocal<Value> mv = fieldCb->Call( revive->context, result, 2, args );
-								if( !mv.IsEmpty() )
-									result = mv.ToLocalChecked();
-								LogObject( result );
-
-							}else {
-								lprintf( "Return" );
-							}
 					}
 				}
 				else
@@ -962,9 +1005,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				if( isnan(dval = d.FromMaybe( NAN ) ) ) {
 					revive->isolate->ThrowException( Exception::TypeError(
 						String::NewFromUtf8( revive->isolate, TranslateText( "Bad Number Conversion" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 					lprintf( "(8)Error at high level parse - throw it to JS..." );
-#endif
+//#endif
 					revive->failed = TRUE;
 				}
 			}
@@ -986,8 +1029,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
 	Isolate* isolate = revive->isolate;
 	Local<Context> context = revive->context;
-	Local<String> stringKey;
-	Local<Value> thisKey;
 	struct jsox_value_container *val;
 	Local<Value> sub_v;
 	INDEX idx;
@@ -1091,9 +1132,9 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				else {
 					isolate->ThrowException( Exception::Error(
 					        localString( isolate, TranslateText( "Already pending exception?" ) ) ) );
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 					lprintf( "(9)Error at high level parse - throw it to JS..." );
-#endif
+//#endif
 					revive->failed = TRUE;
 				}
 
@@ -1303,9 +1344,9 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 							}
 						}
 					} else {
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 						lprintf( "Callback threw an exception" );
-#endif
+//#endif
 						revive->failed = true;
 					}
 				}
@@ -1324,9 +1365,9 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 #endif
 						MaybeLocal<Value> r = cb->Call(revive->context, o, 2, args);
 						if (r.IsEmpty()) {
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 							lprintf("Callback threw an exception");
-#endif
+//#endif
 							revive->failed = true;
 						} else
 							sub_v = r.ToLocalChecked();
@@ -1339,9 +1380,9 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 					if( !r.IsEmpty() )
 						sub_v = r.ToLocalChecked();
 					else {
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 						lprintf( "Callback threw an exception" );
-#endif
+//#endif
 						revive->failed = true;
 					}
 				}
@@ -1365,7 +1406,6 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 
 Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 	Local<Object> o;
-	Local<Value> v;// = Object::New( revive->isolate );
 
 	struct jsox_value_container *val = (struct jsox_value_container *)GetDataItem( &msg, 0 );
 	revive->fieldName = String::NewFromUtf8Literal( revive->isolate, "" );
@@ -1425,6 +1465,7 @@ Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
 
 
 
+#if defined(JSOX_USE_TIMING)
 void showTimings( const v8::FunctionCallbackInfo<Value>& args ) {
      uint32_t val;
 #define LOGVAL(n) val = ConvertTickToMicrosecond( timings.deltas[n] ); printf( #n " : %d.%03d\n", val/1000, val%1000 );
@@ -1441,6 +1482,7 @@ LOGVAL(7);
 	}
 	logTick(-1);
 }
+#endif
 
 void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = Isolate::GetCurrent();
@@ -1474,9 +1516,9 @@ static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviv
 			PTEXT error = jsox_parse_get_error( state );
 			if( error ) {
 				revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate, GetText( error ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 				lprintf( "Error at high level parse - throw it to JS..." );
-#endif
+//#endif
 				revive->failed = TRUE;
 			} else {
 				if( result > 1 ) {
@@ -1485,9 +1527,9 @@ static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviv
 				}
 				else {
 					revive->isolate->ThrowException(Exception::Error(String::NewFromUtf8(revive->isolate, result > 1 ? "Extra data after message" : "Pending value could not complete", v8::NewStringType::kNormal ).ToLocalChecked() ));
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 					lprintf( "(2)Error at high level parse - throw it to JS..." );
-#endif
+//#endif
 					revive->failed = TRUE;
 				}
 			}
@@ -1528,7 +1570,6 @@ void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
 	}
 	const char *msg;
 	String::Utf8Value *tmp;
-	Local<Function> reviver;
 	Local<ArrayBuffer> ab;
 	size_t len;
 	if( args[0]->IsArrayBuffer() ) {
@@ -1556,9 +1597,9 @@ void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
 		else {
 			r.isolate->ThrowException( Exception::TypeError(
 				String::NewFromUtf8( r.isolate, TranslateText( "Reviver parameter is not a function." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 			lprintf( "(3)Error at high level parse - throw it to JS..." );
-#endif
+//#endif
 			r.failed = TRUE;
 			return;
 		}
@@ -1593,7 +1634,6 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	}
 	const char *msg;
 	String::Utf8Value *tmp;
-	Local<Function> reviver;
 	Local<ArrayBuffer> ab;
 	size_t len;
 	if( args[0]->IsArrayBuffer() ) {
@@ -1621,9 +1661,9 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 		else {
 			r.isolate->ThrowException( Exception::TypeError(
 				String::NewFromUtf8( r.isolate, TranslateText( "Reviver parameter is not a function." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
-#ifdef DEBUG_REVIVAL_CALLBACKS
+//#ifdef DEBUG_REVIVAL_CALLBACKS
 			lprintf( "(4)Error at high level parse - throw it to JS..." );
-#endif
+//#endif
 			r.failed = TRUE;
 			return;
 		}
@@ -1642,37 +1682,15 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	delete r.parser;
 }
 
-
-void makeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
-	args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), "undefined :) Stringify is not completed" ) );
-}
-
 void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	class constructorSet *c = getConstructors( isolate );
 	//lprintf( "Setting protomap from external...");
 	c->fromPrototypeMap.Reset( args.GetIsolate(), args[0].As<Map>() );
 	{
-		Local<Context> context = isolate->GetCurrentContext();
+		//Local<Context> context = isolate->GetCurrentContext();
 		class constructorSet* c = getConstructors( isolate );
 		if( c->dateNsCons.IsEmpty() ) {
-#if 0
-			Local<Script> script;
-			Local<String> string = String::NewFromUtf8Literal( isolate, "DateNS" );
-			script = Script::Compile( context, string
-#if ( NODE_MAJOR_VERSION >= 16 )
-				, new ScriptOrigin( isolate, String::NewFromUtf8Literal( isolate, "DateNSClassGetter" ) ) ).ToLocalChecked();
-#else
-				, new ScriptOrigin( String::NewFromUtf8Literal( isolate, "DateNSClassGetter" ) ) ).ToLocalChecked();
-#endif
-			MaybeLocal<Value> ml_result = script->Run( context );
-			if( !ml_result.IsEmpty() ) {
-				Local<Value> result = ml_result.ToLocalChecked();
-				Local<Function> cons = Local<Function>::Cast( result );
-				c->dateNsCons.Reset( isolate, cons );
-			} else if( !args[1].IsEmpty() ) {
-			}
-#endif
 			c->dateNsCons.Reset( isolate, args[1].As<Function>() );
 		}
 	}

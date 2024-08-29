@@ -100,6 +100,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 	ConfigObject *config = rule->config;
 	int argc = PARAM_COUNT(args);
 	Local<Value> *argv = new Local<Value>[argc];
+	int lessn = 0;
 	int n;
 	for( n = 0; n < argc; n++ ) {
 		switch( my_va_next_arg_type( args ) ) {
@@ -107,34 +108,41 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 			{
 				char *arg;
 				arg = my_va_arg( args, char * );
-				argv[n] = String::NewFromUtf8( config->isolate, arg, v8::NewStringType::kNormal ).ToLocalChecked();
+				argv[n - lessn] = String::NewFromUtf8( config->isolate, arg, v8::NewStringType::kNormal ).ToLocalChecked();
 			}
 			break;
 		case CONFIG_ARG_INT64:
 			{
 				uint64_t arg;
 				arg = my_va_arg( args, uint64_t );
-				argv[n] = Integer::New( config->isolate, (int32_t)arg );
+				argv[n - lessn] = Integer::New( config->isolate, (int32_t)arg );
 			}
 			break;
 		case CONFIG_ARG_FLOAT:
 			{
 				double arg;
 				arg = my_va_arg( args, double );
-				argv[n] = Number::New( config->isolate, arg );
+				argv[n - lessn] = Number::New( config->isolate, arg );
 			}
 			break;
 		case CONFIG_ARG_DATA:
 			{
-				void * arg;
-				arg = my_va_arg( args, void* );
+				void* arg;  arg = my_va_arg( args, void* );
+				lessn++;
 				break;
 		case CONFIG_ARG_DATA_SIZE:
-			{
-				size_t arglen;
-				arglen = my_va_arg( args, size_t );
-				lprintf( "Create new typedarray...." );
-			}
+				{
+					size_t arglen;
+					arglen = my_va_arg( args, size_t );
+					Local<ArrayBuffer> ab;
+#if ( NODE_MAJOR_VERSION >= 14 )
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)arg, arglen, releaseBufferBackingStore, NULL );
+					ab = ArrayBuffer::New( config->isolate, bs );
+#else
+					ab = ArrayBuffer::New( isolate, (void*)arg, arglen );
+#endif
+					argv[n- lessn] = ab;
+				}
 			}
 			break;
 		case CONFIG_ARG_LOGICAL:
@@ -142,30 +150,31 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 				LOGICAL arg;
 				arg = my_va_arg( args, LOGICAL );
 				if( arg )
-					argv[n] = True(config->isolate);
+					argv[n - lessn] = True(config->isolate);
 				else
-					argv[n] = False( config->isolate);
+					argv[n - lessn] = False( config->isolate);
 			}
 			break;
 		case CONFIG_ARG_FRACTION:
 			{
-				PFRACTION arg;
-				arg = my_va_arg( args, PFRACTION );
+				PFRACTION arg = my_va_arg( args, PFRACTION );
+				lprintf( "need conversion to JS type for Fraction: %d/%d", arg->numerator, arg->denominator );
+				lessn--;
 			}
 			break;
 		case CONFIG_ARG_COLOR:
 			{
-				CDATA arg;
-				arg = my_va_arg( args, CDATA );
+				CDATA arg = my_va_arg( args, CDATA );
+				lprintf( "need conversion to JS type for Color: %08x", arg );
+				lessn--;
 			}
 			break;
-
 		}
 	}
 	Local<Function> cb = rule->handler.Get( config->isolate );
 	Local<Value> that = config->lastValue.Get( config->isolate );
 	//Local<Value> ((Value*)psv)->ToObject( config->isolate->GetCurrentContext() ).ToLocalChecked()
-	MaybeLocal<Value> ml_result = cb->Call( config->isolate->GetCurrentContext(), that, argc, argv );
+	MaybeLocal<Value> ml_result = cb->Call( config->isolate->GetCurrentContext(), that, n-lessn, argv );
 	if (!ml_result.IsEmpty()) {
 		Local<Value> result = ml_result.ToLocalChecked();
 		config->lastValue.Reset( config->isolate, result );

@@ -1,104 +1,57 @@
-
-
-.outputSpan{
-	white-space:pre-wrap;
-	display:block;
-	word-wrap:break-word;
-	/*word-break: break-all;   excessively long words
-	 */
+.button-service-manageradd-task {
+	float:right;
 }
-[class^="frameCaption"] {
-	background-color: #1e88e5;
-	border-radius: 7px 7px 0 0;
-}
-
-[class^="formContainer"] {
-	background: #FFF !important;
-	color: #000 !important;
-	margin: 4vh 0 0 2vw;
-}
-[class^="data-grid-table"], [class^="data-grid-riw"], td, th {
-	color: #000;
-	background: #FFF;
-	border-color: #000;
-}
-.data-grid-header-row td{
-	background: #242424 !important;
-	color: #FFF;
-}
-.task-log-listbox{
- 	background-color:#000000a0;
-	color:white;
-	height:80vh;
-	min-width:60em;
-	max-width:80vw;
-	position:relative;
-	left:0;
-	right:0;
-	top:0;
-	bottom:-50;
-	overflow:auto;
-}
-
 
 .task-log-listbox {
-	width: 80vw;
-}
-.button-log {
-	background: #1e88e5;
-	height: 2.9vh;
-	margin-bottom: .7vh;
-	color:#FFF;
-
-}
-.buttonInner-log {
-	background: #1e88e5;
-}
-.button-stop {
-	background: #d9534f;
-	color:#FFF;
-	height: 2.9vh;
-	margin-bottom: .7vh;
-}
-.buttonInner-stop {
-	background: #d9534f;
-	color:#FFF;
-	padding-top: 0.73vh;
-}
-.button-start {
-	background: #28a745;
-	height: 2.9vh;
-	margin-bottom: .7vh;
-}
-.buttonInner-start {
-	background: #28a745;
-	color: #FFF;
-	padding-top: 0.73vh;
-}
-.button-restart {
-	background: #f0ad4e;
-	height: 2.9vh;
-	margin-bottom: .7vh;
-}
-.buttonInner-restart {
-	background: #f0ad4e;
-	color: #FFF;
-	padding-top: 0.73vh;
-}
-.buttonInner-log:hover, .buttonInner-start:hover, .buttonInner-stop:hover, .buttonInner-restart:hover {
-	color: #F0F000;
-	text-shadow: 1px 1px #000;
-}
-.button-log.pressed, .button-stop.pressed, .button-start.pressed, .button-restart.pressed {
-	color: #F0F000;
-	box-shadow: 2px 2px #000;
-}
-.task-running {
-	background: #28a745;
-}
-.task-stopped {
-	background: #d9534f;
+    /* make scrollable */
+    height: 80vh;
+	width:60vw;
+	overflow:auto;
+	background:black;
+	border-style:inset;
+	border-width:3px;
 }
 
-select option[value="false"] { background: red; }
-select option[value="true"] { background: green; }
+.task-running:disabled, .task-running {
+	background: #088715;
+	color:white;
+}
+.task-stopped:disabled, .task-stopped {
+	background: #c9131f;
+	color:white;
+}
+.task-failed:disabled, .task-failed {
+	background: #dd3;
+	color:black;
+}
+
+.red {
+	background: #f00;
+	color:white;
+}
+
+.yellow {
+	background: #dd0;
+	color:white;
+}
+
+.pumpkin{
+	background: #970;
+	color:white;
+
+}
+
+.blue {
+	background: blue;
+	color:white;
+}
+
+.green {
+	background: green;
+	color:white;
+}
+
+.purple {
+	background: purple;
+	color:white;
+}

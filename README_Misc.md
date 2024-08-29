@@ -13,6 +13,8 @@ Interface to the SACK System Library.  This provides some views into internal in
 |enableThreadFileSystem|  () | Enable thread-local filesystem on this thread.  No filesystems will bemounted after this call |
 |reboot|  (mode)  | (Windows Only) Reboot or shutdown the current system.  Mode can be 'reboot' or 'shutdown' or empty which defaults to reboot. |
 |dumpMemory | (verbose,filename) | Dump C allocated memory.  `verbose` and `filename` are both optional.  `verbose` enables dumping each block. `filename` dumps the log to the specified file. |
+|logMemory | (true/false) | Enable logging allocation and deallocation/releases. (when compiled with _DEBUG which is CMAKE_BUILD_TYPE Debug or RelWithDebInfo)|
+|debugMemory | (true/false) | Enable additional debug tracking of memory blocks - on release stamps with a signature, and compares the sigutures later for out of bounds or update after free happes. Similarly blocks that are allocates are definitely not 0, and are stamped with a signagure |
 |enableExitSignal | (cb) | (Windows Only) Enable a callback which can be called when process exit event is triggered.  This disables the automatic exit, so this function should invoke process.exit() (The event cannot be triggered again). |
 |hideCursor | (timeout) | (Windows Only) Enables hiding the mouse cursor if it is stationary for an amount of time. Timeout parameter is in milliseconds |
 
@@ -248,8 +250,24 @@ var val = vfs.registry.get( "HKCU/something" );
 
 # COM Ports
    (result from vfs.ComPort() )
- 
+
+Get a list of the com ports available (on windows)...
+
 ``` js
+import sack from "sack.vfs"
+const ports = sack.ComPort.ports;
+``` 
+
+
+This is the result of opening a com port object.  Com ports greater than 9 must be specified with `\\.\com#`.  Throws an error
+if the com port cannot be opened.
+
+``` js
+
+// open a com port with a reader
+const ComObject = sack.ComPort( "com1" );
+
+// this is bad syntax, but these are the methods available on the resulting object.
 ComObject = { 
      onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
@@ -391,6 +409,7 @@ to interact with the process.
  |end() | attempt to cause a task to exit.  It will first dispatch ctrl-c, ctrl-break, post a WM_QUIT message, and if the program does not end soon enough, terminates the process.  (closing pipes to task could also be implemented?)| 
  |terminate() | Terminates the task.  Terminates the process. |
  |write(buf) | Writes data to the task's stdin. |
+ |isRunning() | Tests if the process is till running. |
  |send(buf) | Writes data to the task's stdin. |
  |exitCode | After/during the `end` callback, this may be queried to get the return code of the task |
  |moveWindow(object) | (Windows only) Move the task's primary window to the specifed location.  See Move options below. |
@@ -416,17 +435,18 @@ to interact with the process.
 | impersonate | bool | (Needs work;updated compatibility... this is for a service to launch a task as a user which is now impossible(?)) |
 | hidden | bool | set windows UI flags such that the next process is created with a hidden window.  Default: false |
 | firstArgIsArg | bool | Specified if the first argument in the array or string is the first argument or is the program name.  If it the first element is the program name, set to false.  If it is the first argument set true.  Default: true |
-| newGroup | bool | create task as a new task group instead of a child of this group.  Default: false|
-| newConsole | bool | create a new console for the new task; instead of ineriting the existing console, default false |
+| newGroup | bool | (Windows)create task as a new task group instead of a child of this group.  Default: false|
+| newConsole | bool | (Windows)create a new console for the new task; instead of ineriting the existing console, default false |
 | suspend | bool | create task suspended.  Default: false |
 | useBreak | bool | set task to use ctrl-break instead of ctrl-c; if it's a window generates WM_CLOSE regardless.  default: false |
 | useSignal | bool | set task to use exit signal instead of ctrl-c or ctrl-break.  default: false |
 | noKill | bool | allow task to continue running after the parent exits.  default: false (kills children at exit) |
 | noWait | bool | Allow waiting for tasks that don't have an end() or input() callback specified.  default: true (don't wait if no callbacks) |
 | detach | bool | (Windows) option to create a detached console process (like newConsole, but no Console is created).  default: false |
-| moveTo | object | After the task is started, move its window to the specified location.  (See Move options below)
+| moveTo | object | (Windows)After the task is started, move its window to the specified location.  (See Move options below)
 | noInheritStdio | bool | prevents task from inheriting stdio pipes |
-| style | object | After the task is started, set window style bits, then, if specified, move the window |
+| style | object | (Windows)After the task is started, set window style bits, then, if specified, move the window |
+| usePty | bool | enable using pty on linux; no additional task interface(yet) |
 
 ### Task Move Options
 

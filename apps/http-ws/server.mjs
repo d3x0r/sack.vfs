@@ -7,6 +7,37 @@ import {uExpress} from "./uexpress.mjs";
 import path from "path";
 const disk = sack.Volume();
 
+const myPath = import.meta.url.split(/\/|\\/g);
+const tmpPath = myPath.slice();
+tmpPath.splice( 0, 3 );
+tmpPath.splice( tmpPath.length-1, 1 );
+const parentRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-2).join( '/' );
+
+function read( name ) {
+	try {
+		const data = sack.Volume.readAsString( name );
+		return data;
+	} catch(err) {
+		console.log( "Failed to load cert:", name );
+		return undefined;
+	}
+}
+
+function getCertChain( ) {
+	//SSLCertificateFile /etc/letsencrypt/live/d3x0r.org/fullchain.pem
+	//SSLCertificateKeyFile /etc/letsencrypt/live/d3x0r.org/privkey.pem
+
+	if( process.env.SSL_PATH ) return process.env.SSL_PATH + "/fullchain.pem"
+	return  parentRoot + "/certgen/cert-chain.pem"
+}
+function getCertKey( ) {
+	if( process.env.SSL_PATH ) return process.env.SSL_PATH + "/privkey.pem"
+	return  parentRoot + "/certgen/rootkeynopass.prv"
+}
+
+const certChain = read( getCertChain() );
+const certKey = read( getCertKey() );
+
 const encMap = {
 		'.gz':'gzip'
 };
@@ -26,7 +57,14 @@ const extMap = { '.js': 'text/javascript'
               ,'.crt':'application/x-x509-ca-cert'
               ,'.pem':'application/x-pem-file'
               ,'.wasm': 'application/wasm'
-              , '.asm': 'application/wasm' }
+              , '.asm': 'application/wasm' 
+			, '.bat':'application/x-msdownload'
+			, '.dll':'application/x-msdownload'
+			, '.exe':'application/x-msdownload'
+			, '.cmd':'application/x-msdownload'
+			, '.com':'application/x-msdownload'
+			, '.msi':'application/x-msdownload'
+		}
 
 const requests = [];
 let reqTimeout = 0;
@@ -68,24 +106,25 @@ export function getRequestHandler( serverOpts ) {
 			extname = path.extname(path.basename(filePath,extname));
 		}
 
+		if( disk.isDir( filePath ) ) {filePath += "/index.html"; extname = ".html"; }
 
 		const contentType = extMap[extname] || "text/plain";
 		//console.log( ":", extname, filePath )
 		if( disk.exists( filePath ) ) {
-			const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
-			if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 			const fc = disk.read(filePath );
 
 			if( fc ) {
+				const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
+				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 				res.writeHead(200, headers );
 				res.end( fc );
 
 				if( requests.length !== 0 )
 					clearTimeout( reqTimeout );
-				reqTimeout = setTimeout( logRequests, 100 );
+				reqTimeout = setTimeout( logRequests, 500 );
 				requests.push( req.url );
 			} else {
-				console.log( 'file exists, but reading it returned nothing?', filePath );
+				console.log( 'file exists, but reading it returned nothing?', filePath, fc );
 				return false;
 			}
 			return true;
@@ -118,8 +157,7 @@ app.get( /.*\.jsox/, (req,res)=>{
 	const config = disk.read( filePath );
 	if( config ) {
 		res.writeHead( 200, headers );
-
-		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString() + "`);export default config;";
+		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
 		res.end( resultContent );
 		return true;
 	}else {
@@ -130,17 +168,27 @@ app.get( /.*\.jsox/, (req,res)=>{
 }
 
 //exports.open = openServer;
+let eventHandler = null;
 export function openServer( opts, cbAccept, cbConnect )
 {
 	let handlers = [];
-	const serverOpts = opts || {port:process.env.PORT || 8080} ;
+	const serverOpts = opts || {};
+	if( !("port" in serverOpts )) serverOpts.port = process.env.PORT || 8080;
+	if( certChain ) 
+	{
+		serverOpts.cert = serverOpts.cert || certChain;
+		serverOpts.key = serverOpts.key || certKey;
+	}
 	const server = sack.WebSocket.Server( serverOpts )
 
 	//console.log( "serving on " + serverOpts.port, server );
 	//console.log( "with:", disk.dir() );
 
 	const reqHandler = getRequestHandler( opts );
-	server.onrequest = (req,res)=>{
+	server.onrequest = handleEvent;
+	eventHandler = handleEvent;
+
+	function handleEvent(req,res) {
 		for( let handler of handlers ) {
 			if( handler( req, res, serverOpts ) ) {
 				//console.log( "handler accepted request..." );
@@ -154,13 +202,20 @@ export function openServer( opts, cbAccept, cbConnect )
 			reqTimeout = setTimeout( logRequests, 100 );
 				
 			requests.push( "Failed request: " + req.url + " as " + lastFilePath );
-			res.writeHead( 404 );
+			res.writeHead( 404, {'Access-Control-Allow-Origin' : req.connection.headers.Origin } );
 			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
 		}
 	}
+	server.on( "lowError",function (error, address, buffer) {
+		if( error !== 1 && error != 6 ) 
+			console.log( "Low Error with:", error, address, buffer  );
+		//if( buffer )
+		//	buffer = new TextDecoder().decode( buffer );
+		server.disableSSL(); // resume with non SSL
+	} );
 
 	server.onaccept = function ( ws ) {
-			console.log( "send accept?", cbAccept );
+		//console.log( "send accept?", cbAccept );
 		if( cbAccept ) return cbAccept.call(this,ws);
 		if( process.env.DEFAULT_REJECT_WEBSOCKET == "1" )
 			this.reject();
@@ -181,6 +236,10 @@ export function openServer( opts, cbAccept, cbConnect )
 	};
 
 	const serverResult = {
+		server,
+		handleEvent( req, res ) {
+			return eventHandler( req, res );
+		},
 		setResourcePath( path ) {
 			resourcePath = path;	
 		},

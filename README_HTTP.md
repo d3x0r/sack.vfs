@@ -16,6 +16,8 @@ var response2 = sack.HTTPS.get( { ca:&lt;extra cert(s)&gt;, path:"/index.html" }
 | method | "GET"/"POST" specifies how to send the request.  If POST is used, then content should be filled in. |
 | content | This is the content to send with a POST. |
 | rejectUnauthorized | (HTTPS only) whether to accept unvalidated HTTPS certificates; true/false |
+| timeout | How long to wait for a response - 3000ms if unspecified. |
+| retries | How many times to attempt a request - 3 if unspecified. |
 | ca | (HTTPS) Additional certificate authorities to validate connection with |
 | headers | object with named values; copied to header object (no HTTP character escapes) |
 | onReply | callback to call when response is done.  If this is specified, then the request is done asynchronously; otherwise the request is synchronous and completes before the function returns |

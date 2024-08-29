@@ -15,6 +15,16 @@ void disableTaskManager( const v8::FunctionCallbackInfo<Value>& args );
 
 #endif
 
+static void logMemory( const v8::FunctionCallbackInfo<Value>& args ) {
+	if( args.Length() > 0 )
+		SetAllocateLogging( args[0]->TOBOOL( args.GetIsolate() ) );
+}
+
+static void debugMemory( const v8::FunctionCallbackInfo<Value>& args ) {
+	if( args.Length() > 0 )
+		SetAllocateDebug( args[0]->TOBOOL( args.GetIsolate() ) );
+}
+
 static void openMemory( const v8::FunctionCallbackInfo<Value>& args ) {
   Isolate* isolate = args.GetIsolate();
   int hasWhat = args.Length() > 0;
@@ -141,14 +151,12 @@ static void do_reboot( const char *mode ) {
 }
 
 static void reboot( const v8::FunctionCallbackInfo<Value>& args ) {
-  Isolate* isolate = args.GetIsolate();
-  int hasWhat = args.Length() > 0;
+	Isolate* isolate = args.GetIsolate();
 	if( args.Length() > 0 )  {
 	  String::Utf8Value mode( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		do_reboot( *mode );
 	}else 
 		do_reboot( "reboot" );
-	
 }
 
 
@@ -172,16 +180,6 @@ static void dumpMemory( const v8::FunctionCallbackInfo<Value>& args ) {
 CRITICALSECTION cs;
 volatile int xx[32];
 
-static uintptr_t  ThreadWrapper( void* pThread ){
-	while( 1 ) {
-		POINTER p = Allocate( 100 );
-		EnterCriticalSecEx( &cs DBG_SRC );
-		xx[(int)((uintptr_t)pThread)]++;
-		LeaveCriticalSecEx( &cs DBG_SRC );
-		Deallocate( POINTER, p );
-	}
-	return 0;
-}
 
 namespace sack {
 	namespace timers {
@@ -222,6 +220,7 @@ static void testCritSec( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 #ifdef _WIN32
+#if 0
 static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
@@ -229,7 +228,8 @@ static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 	si.cb = sizeof( STARTUPINFO );
 	memset( &pi, 0, sizeof( PROCESS_INFORMATION ) );
 
-	BOOL a = CreateProcess( NULL, "taskkill.exe /?"
+	BOOL a = CreateProcess( NULL
+		, (LPSTR)"taskkill.exe /?" // is an in variable only
 		, NULL, NULL, TRUE
 		, 0
 		//                            | CREATE_NO_WINDOW
@@ -241,6 +241,7 @@ static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 		, &pi );
 	printf( "Status:%d  %d", a, GetLastError() );
 }
+#endif
 
 static int exitEvent( uintptr_t psv ) {
 	class constructorSet* c = (class constructorSet*)psv;
@@ -516,13 +517,15 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "allowSpawn", allowSpawn );
   NODE_SET_METHOD( systemInterface, "disallowSpawn", disallowSpawn );
   NODE_SET_METHOD( systemInterface, "openMemory", openMemory );
+  NODE_SET_METHOD( systemInterface, "logMemory", logMemory );
+  NODE_SET_METHOD( systemInterface, "debugMemory", debugMemory );
   NODE_SET_METHOD( systemInterface, "createMemory", createMemory );
   NODE_SET_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
   NODE_SET_METHOD( systemInterface, "reboot", reboot );
   NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
   NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
 #ifdef _WIN32
-  SET_READONLY_METHOD( systemInterface, "createConsole", create );
+  //SET_READONLY_METHOD( systemInterface, "createConsole", create );
   SET_READONLY_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
   SET_READONLY_METHOD( systemInterface, "hideCursor", hideCursor );
   SET_READONLY_METHOD( systemInterface, "isElevated", isElevated );

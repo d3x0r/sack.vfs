@@ -4,8 +4,7 @@ import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
 
 export class Protocol extends Events {
-	//static ws = null;
-	static debug = true;
+	static debug = false;
 	protocol = null;
 	#Protocol = Protocol; // this is the proper class container of the implemented protocol
 	get debug() {
@@ -31,6 +30,12 @@ export class Protocol extends Events {
 		ThisProtocol.ws.onopen = (evt)=>Protocol.onopen.call( this_, evt) ;
 		return ThisProtocol.ws;
 	}
+
+	get ready() {
+		if( this.#Protocol.ws )
+			if( this.#Protocol.ws.readyState == 1 ) return true;
+		return false;
+	}
 	
 	connect() {
 		return Protocol.connect( this.protocol, this );
@@ -39,6 +44,7 @@ export class Protocol extends Events {
 	static onopen( evt ) {
 		const ThisProtocol = Object.getPrototypeOf( this ).constructor;
 		ThisProtocol.on( "open", true );
+		this.on( "open", true );
 	}
 
 	static onclose( evt ){
@@ -47,7 +53,7 @@ export class Protocol extends Events {
 		const event = this.on( "close", [evt.code, evt.reason] );
 		Protocol.ws = null;
 		if( evt.code === 1000 ) this.connect();
-		else setTimeout( this.connect, 5000 );
+		else setTimeout( this.connect.bind(this), 5000 );
 	}
 
 	static onmessage( evt ) {
@@ -60,7 +66,7 @@ export class Protocol extends Events {
 
 	send( msg ) {
 		const ws = this.#Protocol.ws;
-		if( ws.readyState === 1 ) {
+		if( ws && ws.readyState === 1 ) {
 			if( "object" === typeof msg ) {
 				ws.send( JSOX.stringify(msg) ); 
 			} else

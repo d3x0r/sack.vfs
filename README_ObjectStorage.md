@@ -43,7 +43,7 @@ sack.ObjectStorage.
 
 | Object Storage constructor arguments | Description  |
 |----|----|
-| filename | Filename to use for object storage database.  If the filename includes '@' the part before the '@' is treated as a mount name; ie. 'vfsMount@object.store'. |
+| filename/Database | Filename to use for object storage database.  Optionally this can be a `sack.DB()` instance, which will then use SQL for storage.  If the filename includes '@' the part before the '@' is treated as a mount name; ie. 'vfsMount@object.store'. |
 | options | an object passed with configuration options for the volume |
 
 

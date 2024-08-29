@@ -1,0 +1,67 @@
+<html>
+<head>
+<title>Folding Terminal</title>
+</head>
+
+<body>
+	<div id="terminal">
+		<div id="terminalScreen"></div>
+		<input id="terminalInput"></input>
+	</div>
+
+</body>
+
+<script type="module">
+
+import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
+
+
+const local = {
+ 	ws: null
+}
+
+// this starts a local connection
+function connect() {
+	// this works generally to replace the http source with a ws source preserving the port.
+	// "Tasks" 
+  	const ws = new WebSocket(location.protocol.replace( "http", "ws" )+"//"+location.host+"/", "FoldingTerminal");
+	local.ws = ws;
+        
+        terminalInput.addEventListener( "change", (evt)=>{
+        	ws.send( '{op:input, input:'+JSOX.stringify( terminalInput.value +'\n' )+'}' );
+        } );
+        
+	ws.onopen = function() {
+        	//ws.send( '{op:run, bin:"cat"}' );
+        	ws.send( '{op:run, bin:"cmd.exe"}' );
+	};
+	ws.onmessage = function (evt) { 
+  		const received_msg = evt.data; 
+		processMessage( JSOX.parse( received_msg ) );
+	};
+	ws.onclose = function(evt) { 
+		// evt has 'code' and 'reason'
+		setTimeout( ()=>connect(), 5000 );  // reconnect after 5 seconds.
+		// websocket is closed. 
+	};
+
+	function processMessage( msg ) {
+		switch( msg.op ) {
+                case "end":
+                	// task ended...
+                        
+                	break;
+                case "data":
+                	const newLine = document.createElement( "div" );
+                        newLine.className = "terminal-line";
+                        newLine.textContent = msg.data;
+                	terminalScreen.appendChild( newLine );
+                	break;
+                
+		default:
+			console.log( "Unhandled operation:", msg.op, "with details:", msg );
+		}
+	}
+}
+connect();
+</script>

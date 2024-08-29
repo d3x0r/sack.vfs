@@ -500,7 +500,6 @@ private:
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		static signParams threadParams[32];
-		int found = 0;
 #ifdef DEBUG_SIGNING
 		int tries = 0;
 #endif
@@ -509,7 +508,6 @@ private:
 		int n = 0;
 		int argn = 1;
 		int threads = signingThreads;
-		POINTER state = NULL;
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
@@ -664,9 +662,6 @@ private:
 				}
 			}
 		}
-		if( !found ) {
-			int a = 3;
-		}
 		return found;
 	}
 
@@ -675,15 +670,14 @@ private:
 		Local<Context> context = isolate->GetCurrentContext();
 		//SRGObject *srg = ObjectWrap::Unwrap<SRGObject>( args.This() );
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		int found = 0;
 #ifdef DEBUG_SIGNING
 		int tries = 0;
 #endif
 		int pad1 = 0, pad2 = 0;
 		int n = 0;
 		int argn = 1;
-		int threads = signingThreads;
-		POINTER state = NULL;
+		//int threads = signingThreads;
+		//POINTER state = NULL;
 		while( argn < args.Length() ) {
 			if( args[argn]->IsNumber() ) {
 				if( n ) {
@@ -710,7 +704,8 @@ private:
 #endif
 		SET( result, "classifier", Integer::New( isolate, params->s.classifier ) );
 		SET( result, "extent", Integer::New( isolate, params->s.extent ) );
-		char* rid = EncodeBase64Ex( params->outbuf, 256 / 8, &params->len, (const char*)1 );
+		//char* rid = 
+		EncodeBase64Ex( params->outbuf, 256 / 8, &params->len, (const char*)1 );
 		SET( result, "key", localString( isolate, params->nonce ) );
 		params->nonce = NULL;
 		SET( result, "id", localString( isolate, params->id ) );
@@ -758,9 +753,9 @@ private:
 			SRG_ResetEntropy( signEntropy );
 			SRG_FeedEntropy( signEntropy, (const uint8_t*)*buf, buf.length() );
 			{
-				size_t len;
+				size_t len = 0;
 				uint8_t outbuf[32];
-				uint8_t *bytes;
+				uint8_t *bytes = NULL;
 				if( !args[1]->IsUndefined() ) {
 					String::Utf8Value hash( USE_ISOLATE( isolate ) args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					id = *hash;
@@ -780,7 +775,8 @@ private:
 				Local<Object> result = Object::New( isolate );
 				struct signature s;
 				//lprintf( "Signature check:%d %d", pad1, pad2 );
-				int r = signCheck( outbuf, pad1, pad2, &s );
+				//int r = 
+				signCheck( outbuf, pad1, pad2, &s );
 				//lprintf( "stat result %d %d %d", r, s.classifier, s.extent );
 				SET( result, "classifier", Integer::New( isolate, s.classifier ) );
 				SET( result, "extent", Integer::New( isolate, s.extent ) );
@@ -791,6 +787,197 @@ private:
 			EnqueLink( &signingEntropies, signEntropy );
 		}
 	}
+
+	static void md5( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
+
+		char* content = NULL;
+		size_t contentLen = 0;
+
+		if( args[0]->IsString() ) {
+			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
+			content = *buf;
+			contentLen = buf.length();
+			
+		} else if( args[0]->IsUint8Array() ) {
+			Local<Uint8Array> body = args[0].As<Uint8Array>();
+			Local<ArrayBuffer> bodybuf = body->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			content = (char*)bodybuf->GetBackingStore()->Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
+#else
+			content = (char*)bodybuf->GetContents().Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
+#endif
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			content = (char*)ab->GetBackingStore()->Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
+			content = (char*)ab->GetContents().Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+#endif
+		}
+		
+		MD5_CTX ctx;
+		uint8_t *bytes = NewArray( uint8_t, 16 );
+		MD5Init( &ctx );
+		MD5Update( &ctx, (unsigned char*)content, contentLen );
+		MD5Final( bytes, &ctx );
+
+		
+		Local<ArrayBuffer> ab;
+#if ( NODE_MAJOR_VERSION >= 14 )
+		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)bytes, 16, releaseBufferBackingStore, NULL );
+		ab = ArrayBuffer::New( isolate, bs );
+#else
+						ab =
+							ArrayBuffer::New( isolate
+								, (void*)bytes
+								, 16 );
+		PARRAY_BUFFER_HOLDER holder = GetHolder();
+		holder->o.Reset( isolate, ab );
+		holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+		holder->buffer = bytes;
+#endif
+
+
+		args.GetReturnValue().Set( ab );
+		
+	}
+	static void sha1( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
+
+		char* content = NULL;
+		size_t contentLen = 0;
+
+		if( args[0]->IsString() ) {
+			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
+			content = *buf;
+			contentLen = buf.length();
+
+		} else if( args[0]->IsUint8Array() ) {
+			Local<Uint8Array> body = args[0].As<Uint8Array>();
+			Local<ArrayBuffer> bodybuf = body->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			content = (char*)bodybuf->GetBackingStore()->Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
+#else
+			content = (char*)bodybuf->GetContents().Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
+#endif
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			content = (char*)ab->GetBackingStore()->Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
+			content = (char*)ab->GetContents().Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+#endif
+		}
+
+		sha1_ctx ctx;
+		uint8_t* bytes = NewArray( uint8_t, SHA1HashSize );
+		SHA1Reset( &ctx );
+		SHA1Input( &ctx, (const uint8_t*)content, contentLen );
+		SHA1Result( &ctx, bytes );
+
+
+		Local<ArrayBuffer> ab;
+#if ( NODE_MAJOR_VERSION >= 14 )
+		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)bytes, SHA1HashSize, releaseBufferBackingStore, NULL );
+		ab = ArrayBuffer::New( isolate, bs );
+#else
+		ab =
+			ArrayBuffer::New( isolate
+				, (void*)bytes
+				, SHA1HashSize );
+		PARRAY_BUFFER_HOLDER holder = GetHolder();
+		holder->o.Reset( isolate, ab );
+		holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+		holder->buffer = bytes;
+#endif
+
+		args.GetReturnValue().Set( ab );
+
+		//lprintf( "SHA1 not completed..." );
+	}
+	static void sha256( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
+
+		char* content = NULL;
+		size_t contentLen = 0;
+
+		if( args[0]->IsString() ) {
+			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
+			content = *buf;
+			contentLen = buf.length();
+
+		} else if( args[0]->IsUint8Array() ) {
+			Local<Uint8Array> body = args[0].As<Uint8Array>();
+			Local<ArrayBuffer> bodybuf = body->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+			content = (char*)bodybuf->GetBackingStore()->Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
+#else
+			content = (char*)bodybuf->GetContents().Data();
+			contentLen = bodybuf->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
+#endif
+		} else if( args[0]->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+#if ( NODE_MAJOR_VERSION >= 14 )
+			content = (char*)ab->GetBackingStore()->Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
+#else
+			content = (char*)ab->GetContents().Data();
+			contentLen = ab->ByteLength();
+			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
+#endif
+		}
+
+		sha256_ctx ctx;
+		uint8_t* bytes = NewArray( uint8_t, SHA256_DIGEST_SIZE );
+		sha256_init( &ctx );
+		sha256_update( &ctx, (const uint8_t*)content, contentLen );
+		sha256_final( &ctx, bytes );
+
+
+		Local<ArrayBuffer> ab;
+#if ( NODE_MAJOR_VERSION >= 14 )
+		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)bytes, SHA256_DIGEST_SIZE, releaseBufferBackingStore, NULL );
+		ab = ArrayBuffer::New( isolate, bs );
+#else
+		ab =
+			ArrayBuffer::New( isolate
+				, (void*)bytes
+				, SHA256_DIGEST_SIZE );
+
+		PARRAY_BUFFER_HOLDER holder = GetHolder();
+		holder->o.Reset( isolate, ab );
+		holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+		holder->buffer = bytes;
+#endif
+
+
+		args.GetReturnValue().Set( ab );
+	}
+
 };
 
 int SRGObject::signingThreads = 1;
@@ -828,6 +1015,9 @@ void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 	SET_READONLY_METHOD( f, "sign", SRGObject::srg_sign );
 	SET_READONLY_METHOD( f, "setSigningThreads", SRGObject::setThraads );
 	SET_READONLY_METHOD( f, "verify", SRGObject::srg_verify );
+	SET_READONLY_METHOD( f, "md5", SRGObject::md5 );
+	SET_READONLY_METHOD( f, "sha1", SRGObject::sha1 );
+	SET_READONLY_METHOD( f, "sha256", SRGObject::sha256 );
 
 }
 

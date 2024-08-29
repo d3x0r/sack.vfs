@@ -171,10 +171,15 @@ function initPrototypes()
 		                , { external:false, name:null, cb:function() { console.log( "BIGINT TOSTR"); return this + 'n' } } );
 	const useQuote = '"';
 	function getIdentifier(s) {
-		if( !s.length ) return useQuote+useQuote;
+		if( ( "string" === typeof s ) && s === '' ) return useQuote+useQuote;
+		if( ( "number" === typeof s ) && !isNaN( s ) ) {
+			return ["'",s.toString(),"'"].join('');
+		}
 		// should check also for if any non ident in string...
+		if( s.includes( "\u{FEFF}" ) ) return (useQuote + escape(s) +useQuote);
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
-			|| /([0-9\-])/.test(s[0]) ) ?(useQuote + escape(s) +useQuote):s )
+			|| /([0-9-])/.test(s[0])
+			|| /((\n|\r|\t)|[ #\[\]{}()<>!+*/.:,-])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
 	}
 
 	pushToProto( ArrayBuffer.prototype, { external:true, name:"ab"
@@ -445,15 +450,15 @@ sack.JSOX.stringifier = function() {
 	}
 
 	function getIdentifier(s) {
-		if( "number" === typeof s && !isNaN( s ) ) {
-			return ["'",s.toString(),"'"].join();
+		if( ( "string" === typeof s ) && s === '' ) return useQuote+useQuote;
+		if( ( "number" === typeof s ) && !isNaN( s ) ) {
+			return ["'",s.toString(),"'"].join('');
 		}
-		if( !s.length ) return useQuote+useQuote;
 		// should check also for if any non ident in string...
-		if( s.includes( "\u{FEFF}" ) ) return (useQuote + JSOX.escape(s) +useQuote);
+		if( s.includes( "\u{FEFF}" ) ) return (useQuote + escape(s) +useQuote);
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
-			|| /([0-9\-])/.test(s[0])
-			|| /((\n|\r|\t)|[ \#\{\}\(\)\<\>\!\+\-\*\/\.\:\, ])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
+			|| /([0-9-])/.test(s[0])
+			|| /((\n|\r|\t)|[ #\[\]{}()<>!+*/.:,-])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
 	}
 
 
@@ -699,7 +704,7 @@ sack.JSOX.stringifier = function() {
 				var protoConverter = (value !== undefined && value !== null)
 					&& ( localToProtoTypes.get( Object.getPrototypeOf( value ) )
 					|| toProtoTypes.get( Object.getPrototypeOf( value ) )
-									|| toProtoTypesByName.get( Object.getPrototypeOf( value ).constructor.name )
+									|| ( Object.getPrototypeOf(value) && toProtoTypesByName.get( Object.getPrototypeOf( value ).constructor.name ))
 					|| null )
 				var objectConverter = !protoConverter && (value !== undefined && value !== null)
 					&& ( localToObjectTypes.get( Object.keys( value ).toString() )
@@ -766,7 +771,6 @@ sack.JSOX.stringifier = function() {
 				case "bigint":
 					return value + 'n';
 				case "string":
-				case "number":
 					{
 						let c = '';
 						//console.log( "outputting string result:", value, c );
@@ -782,13 +786,12 @@ sack.JSOX.stringifier = function() {
 							return c + objectConverter.name + value;
 						return c + value;//useQuote+JSOX.escape( value )+useQuote;
 					}
+				case "number":
 				case "boolean":
-				case "null":
-
-					// If the value is a boolean or null, convert it to a string. Note:
+				//case "null":
+					// If the value is a number, boolean or null, convert it to a string. Note:
 					// typeof null does not produce "null". The case is included here in
 					// the remote chance that this gets fixed someday.
-
 					return String(value);
 
 					// If the type is "object", we might be dealing with an object or an array or
