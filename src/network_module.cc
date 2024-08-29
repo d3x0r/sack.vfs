@@ -419,7 +419,7 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 			, getOpenPorts
 			, nullptr //Local<Function>()
 			, Local<Value>()
-			, PropertyAttribute::None
+			, PropertyAttribute::ReadOnly
 			, SideEffectType::kHasNoSideEffect
 			, SideEffectType::kHasSideEffect
 		);
