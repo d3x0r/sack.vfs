@@ -8,10 +8,12 @@
 static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct json_value_container *val, struct reviver_data *revive );
 
+#ifdef JSON_USE_TIMING
 static struct timings {
 	uint64_t start;
 	uint64_t deltas[10];
 }timings;
+#endif
 
 static void makeJSON( const v8::FunctionCallbackInfo<Value>& args );
 static void escapeJSON( const v8::FunctionCallbackInfo<Value>& args );
@@ -23,7 +25,9 @@ static void parseJSON6( const v8::FunctionCallbackInfo<Value>& args );
 
 static void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args );
 
+#ifdef JSON_USE_TIMING
 static void showTimings( const v8::FunctionCallbackInfo<Value>& args );
+#endif
 
 class parseObject : public node::ObjectWrap {
 	struct json_parse_state *state;
