@@ -26,6 +26,7 @@ struct optionStrings {
 	Eternal<String>* sslString;
 	Eternal<String>* pemString;
 	Eternal<String>* passString;
+	Eternal<String>* allowSSLfallbackString;
 
 	// object field for connect callback in options
 	Eternal<String> *connectString;
@@ -56,7 +57,7 @@ struct tcpOptions {
 	bool reuseAddr;
 	bool reusePort;
 	bool delayConnect;
-
+	bool allowSSLfallback;
 	// client side options (else is server)
 	int toPort;
 	char *toAddress;
@@ -203,6 +204,8 @@ struct networkEvent {
 	CPOINTER buf;
 	size_t buflen;
 	SOCKADDR *from;
+	int done;
+	PTHREAD waiter;
 };
 
 typedef struct networkEvent NET_EVENT;
@@ -338,7 +341,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
 		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pem" ) );
 		check->passString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "passphrase" ) );
-
+		check->allowSSLfallbackString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "allowSSLfallback" ) );
 		check->connectString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "connect" ) );
 	}
 	return check;
@@ -497,6 +500,8 @@ static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, S
 		(*pevt).buflen = buflen;
 		(*pevt)._this.udp = _this;
 		(*pevt).from = DuplicateAddress( from );
+		(*pevt).waiter = NULL;
+
 		EnqueLink( &_this->eventQueue, pevt );
 		uv_async_send( &_this->async );
 		doUDPRead( _this->pc, (POINTER)buffer, 4096 );
@@ -510,6 +515,7 @@ static void CPROC Closed( uintptr_t psv ) {
 	struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
 	(*pevt).eventType = NET_EVENT_CLOSE;
 	(*pevt)._this.udp = _this;
+	(*pevt).waiter = NULL;
 	EnqueLink( &_this->eventQueue, pevt );
 	uv_async_send( &_this->async );
 }
@@ -785,8 +791,9 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				Local<Function> cons = Local<Function>::New( isolate, c->tcpConstructor );
 				Local<Object> tcpNew = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 				tcpObject* tcpObj = tcpObject::getSelf( tcpNew );
-				tcpObj->ssl = obj->ssl;
 				tcpObj->server = obj;
+				tcpObj->ssl = obj->ssl;
+				tcpObj->allowSSLfallback = obj->allowSSLfallback;
 				tcpObj->readStrings = obj->readStrings;
 				tcpObj->pc = (PCLIENT)( eventMessage->buf );
 				tcpObj->messageCallback = obj->messageCallback;
@@ -856,7 +863,11 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
 			}
-			DeleteFromSet( NET_EVENT, l.networkEvents, eventMessage );
+			eventMessage->done = TRUE;
+			if( eventMessage->waiter )
+				WakeThread( eventMessage->waiter );
+			else
+				DeleteFromSet( NET_EVENT, l.networkEvents, eventMessage );
 		}
 	}
 	{
@@ -877,6 +888,7 @@ void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 		memcpy( (POINTER)(*pevt).buf, buffer, length );
 		(*pevt).buflen = length;
 		(*pevt)._this.tcp = obj;
+		(*pevt).waiter = NULL;
 		EnqueLink( &obj->eventQueue, pevt );
 		uv_async_send( &obj->async );
 	}
@@ -906,6 +918,7 @@ void TCP_Connect( uintptr_t psv, int error ) {
 		(*pevt).error = error;
 	}
 	(*pevt)._this.tcp = obj;
+	(*pevt).waiter = NULL;
 	EnqueLink( &obj->eventQueue, pevt );
 	uv_async_send( &obj->async );
 }
@@ -923,6 +936,7 @@ void TCP_Close( uintptr_t psv ) {
 	struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
 	(*pevt).eventType = NET_EVENT_CLOSE;
 	(*pevt)._this.tcp = obj;
+	(*pevt).waiter = NULL;
 	EnqueLink( &obj->eventQueue, pevt );
 	uv_async_send( &obj->async );
 	
@@ -937,24 +951,35 @@ void TCP_Notify( uintptr_t psv, PCLIENT pcNew ) {
 	( *pevt ).eventType = NET_EVENT_CONNECT;
 	( *pevt )._this.tcp = (tcpObject*)psv;
 	( *pevt ).buf = (CPOINTER)pcNew;
+	( *pevt ).done = 0;
+	( *pevt ).waiter = MakeThread();
 	EnqueLink( &( (tcpObject*)psv )->eventQueue, pevt );
 	uv_async_send( &( (tcpObject*)psv )->async );
+	while( !(*pevt).done ) {		
+		WakeableSleep( 100 );
+	}
+	DeleteFromSet( NET_EVENT, l.networkEvents, pevt );
+	//lprintf( "Notified of connect; waited for callback...");
 }
 
 static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdentifier error, ... ) {
 	class tcpObject *obj = (class tcpObject*)psv;
 	va_list args;
 	va_start( args, error );
+	//lprintf( "Low Error: %p %d", obj, error );
+	// auto handling callback...
 	switch( error ) {
 	default:
 		lprintf( "Low error on %p %d", pc, error );
 		break;
 	case SACK_NETWORK_ERROR_SSL_HANDSHAKE:
 		if( obj->allowSSLfallback ) {
+			//lprintf( "Fallback SSL" );
 			const char* buf = va_arg( args, const char* );
 			size_t buflen = va_arg( args, size_t );
 			ssl_EndSecure( pc, (POINTER)buf, buflen );
 		} else {
+			//lprintf( "Close Socket... (should get an event?)");
 			RemoveClient( pc );
 		}
 
@@ -979,7 +1004,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	SOCKADDR *toAddr = opts->toAddress?CreateSockAddress( opts->toAddress, opts->port ):NULL;
 
 	this->readStrings = opts->readStrings;
-
+	this->allowSSLfallback = opts->allowSSLfallback;
 	eventQueue = CreateLinkQueue();
 	//lprintf( "Init async handle. (wss)" );
 	async.data = this;
@@ -1025,6 +1050,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 			}
 		}
 		if( pc ) {
+			SetCPPNetworkCloseCallback( pc, TCP_Close, (uintptr_t)this );
 			SetNetworkErrorCallback( pc, sockLowError, (uintptr_t)this );
 			SetNetworkListenerReady( pc );
 		} else lprintf( "Failed to listen at:%s", opts->address );
@@ -1145,7 +1171,11 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				if( opts->Has( context, optName = strings->sslString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.ssl = GETV( opts, optName )->ToBoolean( isolate )->Value();
 				} else tcpOpts.ssl = false;
-				
+
+				if( opts->Has( context, optName = strings->allowSSLfallbackString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.allowSSLfallback = GETV( opts, optName )->ToBoolean( isolate )->Value();
+				} else tcpOpts.allowSSLfallback = TRUE;
+
 				if( opts->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
 					String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					tcpOpts.cert_chain = StrDup( *cert );
