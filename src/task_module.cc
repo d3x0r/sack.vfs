@@ -78,6 +78,14 @@ static void getProcessWindowPos( const FunctionCallbackInfo<Value>& args );
 static void setProcessWindowPos( const FunctionCallbackInfo<Value>& args );
 static void dropConsole( const FunctionCallbackInfo<Value>& args );
 #endif
+
+static void getProgramName( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getProgramPath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getProgramDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getCommonDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getModulePath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+
 //v8::Persistent<v8::Function> TaskObject::constructor;
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
@@ -219,12 +227,54 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY_METHOD( taskF, "parentId", ::GetProcessParentId );
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
+
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programName" )
+		, getProgramName
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programPath" )
+		, getProgramPath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programDataPath" )
+		, getProgramDataPath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "commonDataPath" )
+		, getCommonDataPath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "modulePath" )
+		, getModulePath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+
 #ifdef _WIN32
 	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "env" )
 		, getEnvironmentVariables
 		, nullptr //Local<Function>()
 		, Local<Value>()
-		, PropertyAttribute::None
+		, PropertyAttribute::ReadOnly
 		, SideEffectType::kHasNoSideEffect
 		, SideEffectType::kHasSideEffect
 	);
@@ -1628,6 +1678,51 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 #endif
 }
 
+void getProgramName( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, GetProgramName() ).ToLocalChecked() );
+}
+
+void getProgramPath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, GetProgramPath() ).ToLocalChecked() );
+}
+
+void getProgramDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+#ifdef _WIN32
+	char *filepath = ExpandPath( "*" );
+#else
+	char* filepath = ExpandPath( ";" );
+#endif
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, filepath ).ToLocalChecked() );
+	Release( filepath );
+}
+
+void getCommonDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+#ifdef _WIN32
+	char* filepath = ExpandPath( "*/.." );
+#else
+	char* filepath = ExpandPath( ";/.." );
+#endif
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, filepath ).ToLocalChecked() );
+	Release( filepath );
+}
+
+void getDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	char* filepath = ExpandPath( "," );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, filepath ).ToLocalChecked() );
+	Release( filepath );
+}
+
+void getModulePath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	char* filepath = ExpandPath( "@" );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, filepath ).ToLocalChecked() );
+	Release( filepath );
+}
 
 #ifdef WIN32
 
