@@ -30,6 +30,7 @@ struct optionStrings {
 
 	// object field for connect callback in options
 	Eternal<String> *connectString;
+	Eternal<String>* readyString;
 };
 
 struct udpOptions {
@@ -76,6 +77,7 @@ struct tcpOptions {
 
 
 	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
+	Persistent<Function, CopyablePersistentTraits<Function>> readyCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
 };
@@ -161,6 +163,7 @@ public:
    //    a server will also never get messages.
    //    But the newly accepted socket can also just have their callbacks set.
 	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
+	Persistent<Function, CopyablePersistentTraits<Function>> readyCallback;
 	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
 	struct networkEvent *eventMessage; // probably use the same queue?
 
@@ -191,6 +194,7 @@ enum networkEvents {
 	NET_EVENT_CLOSE,
 	NET_EVENT_CONNECT,  // server accepcted connection - connect callback
 	NET_EVENT_CONNECTED,  // client connected - connect callback
+	NET_EVENT_FIRST_READ,  // This socket is now able to write and read
 	NET_EVENT_CONNECT_ERROR, // client failed connect - connect callback
 };
 
@@ -343,6 +347,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->passString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "passphrase" ) );
 		check->allowSSLfallbackString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "allowSSLfallback" ) );
 		check->connectString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "connect" ) );
+		check->readyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ready" ) );
 	}
 	return check;
 }
@@ -848,7 +853,12 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 					SETV( eventMessage->_this.tcp->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, NULL, NULL ) );
 				}
 				if( !cb.IsEmpty() )
-					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, argv );
+					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, NULL );
+				break;
+			case NET_EVENT_FIRST_READ:
+				cb = Local<Function>::New( isolate, obj->readyCallback );
+				if( !cb.IsEmpty() )
+					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, NULL );
 				break;
 			case NET_EVENT_CONNECT_ERROR:
 				cb = Local<Function>::New( isolate, obj->connectCallback );
@@ -921,15 +931,13 @@ void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 	}
 	else {
 		obj->buffer = buffer = NewArray( uint8_t, 4096 );
-		/*
 		if( !obj->server ) {
 			struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
-			(*pevt).eventType = NET_EVENT_CONNECTED;
+			(*pevt).eventType = NET_EVENT_FIRST_READ;
 			(*pevt)._this.tcp = obj;
 			EnqueLink( &obj->eventQueue, pevt );
 			uv_async_send( &obj->async );
 		}
-		*/
 	}
 	ReadTCP( obj->pc, (POINTER)buffer, 4096 );
 }
@@ -1042,6 +1050,8 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		this->messageCallback = opts->messageCallback;
 	if( !opts->connectCallback.IsEmpty() )
 		this->connectCallback = opts->connectCallback;
+	if( !opts->readyCallback.IsEmpty() )
+		this->readyCallback = opts->readyCallback;
 	if( !opts->closeCallback.IsEmpty() )
 		this->closeCallback = opts->closeCallback;
 
@@ -1178,6 +1188,10 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				if( opts->Has( context, optName = strings->connectString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.connectCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 				}
+				// ---- get ready callback
+				if( opts->Has( context, optName = strings->readyString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.readyCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+				}
 				// ---- get close callback
 				if( opts->Has( context, optName = strings->closeString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.closeCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
@@ -1293,7 +1307,10 @@ void tcpObject::on( const FunctionCallbackInfo<Value>& args ) {
 			if( cb->IsFunction() )
 				obj->connectCallback.Reset( isolate, cb );
 		}
-		else if( StrCmp( *event, "close" ) == 0 ) {
+		else if( StrCmp( *event, "ready" ) == 0 ) {
+			if( cb->IsFunction() )
+				obj->readyCallback.Reset( isolate, cb );
+		} else if( StrCmp( *event, "close" ) == 0 ) {
 			if( cb->IsFunction() )
 				obj->closeCallback.Reset( isolate, cb );
 		}
