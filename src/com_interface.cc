@@ -74,7 +74,7 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "write", writeCom );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
-		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" ).As<Name>()
+		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" )
 			, ComObject::getRTS2
 			, ComObject::setRTS2
 			, Local<Value>()
@@ -227,7 +227,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::Utf8Value fName( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				portName = StrDup( *fName );
 			} else {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify port name to open." ) ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify port name to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 				return;
 			}
 			// Invoked as constructor: `new MyObject(...)`
