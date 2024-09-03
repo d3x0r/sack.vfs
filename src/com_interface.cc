@@ -74,6 +74,7 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "write", writeCom );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
+#if ( NODE_MAJOR_VERSION >= 22 )
 		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" )
 			, ComObject::getRTS2
 			, ComObject::setRTS2
@@ -82,13 +83,23 @@ void ComObject::Init( Local<Object> exports ) {
 			, SideEffectType::kHasNoSideEffect
 			, SideEffectType::kHasSideEffect
 		);
-
-		/*
+#elif ( NODE_MAJOR_VERSION >= 18 )
+		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" )
+			, ComObject::getRTS2
+			, ComObject::setRTS2
+			, Local<Value>()
+			, PropertyAttribute::ReadOnly
+			, AccessControl::DEFAULT
+			, SideEffectType::kHasNoSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+#else
+		
 		comTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "rts" )
 			, FunctionTemplate::New( isolate, ComObject::getRTS )
 			, FunctionTemplate::New( isolate, ComObject::setRTS )
 		);
-		*/
+#endif
 		Local<Function> ComFunc = comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
 		/*
 		ComFunc->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "ports" )
