@@ -174,6 +174,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	let handlers = [];
 	const serverOpts = opts || {};
 	if( !("port" in serverOpts )) serverOpts.port = process.env.PORT || 8080;
+	if( !("resourcePath" in serverOpts ) ) serverOpts.resourcePath = "."
 	if( certChain ) 
 	{
 		serverOpts.cert = serverOpts.cert || certChain;
@@ -191,11 +192,9 @@ export function openServer( opts, cbAccept, cbConnect )
 	function handleEvent(req,res) {
 		for( let handler of handlers ) {
 			if( handler( req, res, serverOpts ) ) {
-				//console.log( "handler accepted request..." );
 				return true;
 			}
 		}
-
 		if( !reqHandler( req,res ) ) {
 			if( requests.length !== 0 )
 				clearTimeout( reqTimeout );
