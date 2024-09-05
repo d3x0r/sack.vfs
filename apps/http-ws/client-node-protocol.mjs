@@ -24,6 +24,7 @@ export class Protocol extends Events {
 		this.ws.onmessage = (msg)=>this.onmessage(msg) ;
 		this.ws.onclose = (code,reason)=>this.onclose(code,reason) ;
 		this.ws.onopen = (msg)=>this.onopen.call( evt) ;
+		this.ws.onerror = (msg)=>this.onerror.call( evt) ;
 		return this.ws;
 	}
 	
@@ -31,6 +32,9 @@ export class Protocol extends Events {
 		this.on( "open", true );
 	}
 
+	onerror( evt ) {
+		this.on( "error", evt );
+	}
 	onclose( evt ){
 		Protocol.debug && console.log( "close?", this, evt );
 		this.on( "close", [evt.code, evt.reason] );
