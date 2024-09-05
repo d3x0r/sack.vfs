@@ -7504,6 +7504,11 @@ typedef void (CPROC*cppCloseCallback)(uintptr_t);
 typedef void (CPROC*cppWriteComplete)(uintptr_t, CPOINTER buffer, size_t len );
 typedef void (CPROC*cppNotifyCallback)(uintptr_t, PCLIENT newClient);
 typedef void (CPROC*cppConnectCallback)(uintptr_t, int);
+enum NetworkAddressFlags {
+	NETWORK_ADDRESS_FLAG_PREFER_NONE = 0,
+	NETWORK_ADDRESS_FLAG_PREFER_V6 = 1,
+	NETWORK_ADDRESS_FLAG_PREFER_V4 = 2,
+};
 enum SackNetworkErrorIdentifier {
 	SACK_NETWORK_ERROR_,
  // error during control information exchange over TLS
@@ -7601,6 +7606,15 @@ NETWORK_PROC( SOCKADDR *, SetNonDefaultPort )( SOCKADDR *pAddr, uint16_t nDefaul
  *
  */
 NETWORK_PROC( SOCKADDR *, CreateSockAddress )( CTEXTSTR name, uint16_t nDefaultPort );
+#define CreateSockAddress(name,port) CreateSockAddressV2( name, port, NETWORK_ADDRESS_FLAG_PREFER_NONE )
+/*
+ * this is the preferred method to create an address
+ * name may be "* / *" with a slash, then the address result will be a unix socket (if supported)
+ * name may have an options ":port" port number associated, if there is no port, then the default
+ * port is used.
+ *  flags controls whether to prefer V4 or V6 lookups.
+ */
+NETWORK_PROC( SOCKADDR *, CreateSockAddressV2 )( CTEXTSTR name, uint16_t nDefaultPort, enum NetworkAddressFlags flags );
 /*
  * set (*data) and (*datalen) to a binary buffer representation of the sockete address.
  */
@@ -7609,7 +7623,9 @@ NETWORK_PROC( void, GetNetworkAddressBinary )( SOCKADDR *addr, uint8_t **data, s
  * create a socket address form data and datalen binary buffer representation of the sockete address.
  */
 NETWORK_PROC( SOCKADDR *, MakeNetworkAddressFromBinary )( uintptr_t *data, size_t datalen );
+NETWORK_PROC( SOCKADDR*, CreateRemoteV2 )( CTEXTSTR lpName, uint16_t nHisPort, enum NetworkAddressFlags flags );
 NETWORK_PROC( SOCKADDR *, CreateRemote )( CTEXTSTR lpName,uint16_t nHisPort);
+#define CreateRemote(name,port) CreateRemoteV2( name, port, NETWORK_ADDRESS_FLAG_PREFER_NONE )
 NETWORK_PROC( SOCKADDR *, CreateLocal )(uint16_t nMyPort);
 NETWORK_PROC( int, GetAddressParts )( SOCKADDR *pAddr, uint32_t *pdwIP, uint16_t *pwPort );
  // release a socket resource that has been created by an above routine
@@ -7738,6 +7754,8 @@ NETWORK_PROC( void, SetNetworkListenerReady )( PCLIENT pListen );
 #define OPEN_TCP_FLAG_DELAY_CONNECT 1
 // Socket expects to be SSL client; defer initial read callback until SSL is enabled.
 #define OPEN_TCP_FLAG_SSL_CLIENT 2
+#define OPEN_TCP_FLAG_PREFER_V6  4
+#define OPEN_TCP_FLAG_PREFER_V4  8
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
@@ -10210,6 +10228,10 @@ typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
 // options used for WebSocketOpen
 enum WebSocketOptions {
 	WS_DELAY_OPEN = 1,
+ // address type to prefer when opening socket (match TCP options)
+	WS_PREFER_V6 = 4,
+ // address type to prefer when opening socket
+	WS_PREFER_V4 = 8,
 };
 //enum WebSockClientOptions {
 //   WebSockClientOption_Protocols
