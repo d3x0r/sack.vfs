@@ -141,6 +141,8 @@ struct optionStrings {
 	Eternal<String> *timeoutString;
 	Eternal<String> *retriesString;
 	Eternal<String>* pipeString;
+	Eternal<String>* preferV4String;
+	Eternal<String>* preferV6String;
 };
 
 static PLIST strings;
@@ -192,6 +194,8 @@ struct wscOptions {
 	bool keep_alive;
 	bool resolveName;
 	bool getMAC;
+	bool preferV4;
+	bool preferV6;
 };
 
 struct pendingSend {
@@ -376,6 +380,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->versionString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "version" ) );
 		check->onReplyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "onReply" ) );
 		check->agentString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "agent" ) );
+		check->preferV4String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "preferV4" ) );
+		check->preferV6String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "preferV6" ) );
 		
 	}
 	return check;
@@ -3411,7 +3417,7 @@ wscObject::wscObject( wscOptions *opts ) {
 	//lprintf( "Init async handle. (wsc) %p", &async );
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
 
-	pc = WebSocketOpen( opts->url, WS_DELAY_OPEN
+	pc = WebSocketOpen( opts->url,(enum WebSocketOptions)((int) WS_DELAY_OPEN | (opts->preferV4?(int)WS_PREFER_V4:0)| (opts->preferV6?(int)WS_PREFER_V6:0))
 		, webSockClientOpen
 		, webSockClientEvent, webSockClientClosed, webSockClientError, (uintptr_t)this, opts->protocol );
 	if( pc ) {
@@ -3481,6 +3487,16 @@ void parseWscOptions( struct wscOptions *wscOpts, Isolate *isolate, Local<Object
 		wscOpts->pass = StrDup( *rootCa );
 				wscOpts->pass_len = rootCa.length();
 	}
+
+	if( !opts->Has( context, optName = strings->preferV4String->Get( isolate ) ).ToChecked() ) {
+		wscOpts->preferV4 = false;
+	} else
+		wscOpts->preferV4 = ( GETV( opts, optName )->TOBOOL( isolate ) );
+
+	if( !opts->Has( context, optName = strings->preferV6String->Get( isolate ) ).ToChecked() ) {
+		wscOpts->preferV6 = false;
+	} else
+		wscOpts->preferV6 = ( GETV( opts, optName )->TOBOOL( isolate ) );
 
 	if( !opts->Has( context, optName = strings->resolveString->Get( isolate ) ).ToChecked() ) {
 		wscOpts->resolveName = false;
