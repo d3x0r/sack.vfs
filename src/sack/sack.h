@@ -10012,6 +10012,7 @@ struct HTTPRequestOptions {
 	int timeout;
  // defaults to 3 retries if set to 0.
 	int retries;
+	enum NetworkAddressFlags addrFlags;
  //optionally this can be used to specify the certain, if not set, uses parameter, which will otherwise be NULL.
 	const char* certChain;
 	LOGICAL rejectUnauthorized;
@@ -10020,15 +10021,19 @@ struct HTTPRequestOptions {
 	// if set, will be called when content buffer has been sent.
 	void ( *writeComplete )( uintptr_t userData );
 	uintptr_t userData;
+ // did get a connect state, so connectError is not checked... (timeout before connect complete?)
+	LOGICAL connected;
+  // feedback to application if there was an error connecting.
+	int connectError;
 };
 typedef struct HttpState *HTTPState;
 enum ProcessHttpResult{
 	HTTP_STATE_RESULT_NOTHING = 0,
 	HTTP_STATE_RESULT_CONTENT = 200,
-    HTTP_STATE_RESULT_CONTINUE = 100,
+	HTTP_STATE_RESULT_CONTINUE = 100,
 	HTTP_STATE_INTERNAL_SERVER_ERROR=500,
 	HTTP_STATE_RESOURCE_NOT_FOUND=404,
-   HTTP_STATE_BAD_REQUEST=400,
+	HTTP_STATE_BAD_REQUEST=400,
 };
 /* Creates an empty http state, the next operation should be
    AddHttpData.                                              */
@@ -10190,7 +10195,7 @@ struct url_data
 	CTEXTSTR resource_file;
 	CTEXTSTR resource_extension;
 	CTEXTSTR resource_anchor;
-   // list of struct url_cgi_data *
+	// list of struct url_cgi_data *
 	PLIST cgi_parameters;
 };
 HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( const char *url );

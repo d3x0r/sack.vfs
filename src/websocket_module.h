@@ -44,6 +44,7 @@ public:
 	PLIST opening;
 	PLIST requests;
 	uv_async_t async = {}; // keep this instance around for as long as we might need to do the periodic callback
+	class constructorSet *c;
 
 	/* 
 	* The following are the holders for event callbacks.
