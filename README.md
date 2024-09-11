@@ -253,7 +253,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.114(in progress)
+- 1.3.115(in progress)
+- 1.3.114
+    - minimize published package.
 - 1.3.113
     - Fix sack source; tcp network async event selection on windows for connect() sockets.
 - 1.3.112
