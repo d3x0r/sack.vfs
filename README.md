@@ -253,12 +253,16 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.112(in progress)
+- 1.3.113(in progress)
+- 1.3.112
     - implement network error callback (SSL fallback).
     - add null check to client websocket protocol send.
     - add `ports` accessor on ComPort interface.
     - Update LibreSSL from 3.8.0 to 3.9.2.
     - Update libssh2 sources to current (as of 2024/8/23).
+    - add `ports` accessor on TCP interface to get list of open ports and their processes.
+    - Improve network stability on windows and linux (SACK).
+    - try to auto handle ENETUNREACH, EHOSTUNREACH by trying to resolve IPV4 when IPv6 fails.  Added options to prefer V4 or v6 IP addresses.
 - 1.3.111
     - fixed missing sources (added network addresses to TCP sockets)
 - 1.3.11
