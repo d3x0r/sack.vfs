@@ -15,14 +15,20 @@ function loopBack( that, to ) {
 export class Protocol extends Events {
 	protocol = null;
 	server = null;
+	#opts = null;
+	static #WS = null;
 	/** 
 	 * @param {object} opts - options for the protocol
 	 */ 
 	constructor( opts ) {
 		super();
+		this.#opts = opts|| { resourcePath:"ui", port:Number(process.env.PORT)||4321 };
 		// resource path is from current working directory (where it ran from)
 		if( opts && opts.protocol ) Protocol.protocol = opts.portocol;
-		this.server = openServer( opts || { resourcePath:"ui", port:Number(process.env.PORT)||4321 }
+		if( "WS" in opts ) {
+			Protocol.#WS = opts.WS;
+		}
+		this.server = openServer( this.#opts 
 					, loopBack( this, this.#accept ), loopBack( this, this.#connect ) );
 		//this.on( "close", )
 	}
@@ -46,7 +52,7 @@ export class Protocol extends Events {
 	}
 
 	#connect(ws) {
-		const myWS = new WS( ws );
+		const myWS = Protocol.#WS?new Protocol.#WS(ws) : new WS( ws );
 		const this_ = this;
 		//console.log( "--------------- NEW CONNECTION ------------------" );
 		const results = this.on( "connect", [ws, myWS] );
@@ -121,7 +127,7 @@ export class Protocol extends Events {
 
 
 
-class WS extends Events{
+export class WS extends Events{
 	ws = null;
 	constructor(ws){
 		super();
