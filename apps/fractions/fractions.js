@@ -49,6 +49,9 @@ module.exports = exports = class Fraction {
 			return new Fraction( this.numerator*f.denominator, this.denominator*f.numerator ).reduce();
 		}
 	}
+	scale(n) {
+		return n * this.numerator / this.denominator;
+	}
 	reduce() {
 		// GCD from https://stackoverflow.com/questions/17445231/js-how-to-find-the-greatest-common-divisor
 		let a = this.numerator<0?-this.numerator:this.numerator;
