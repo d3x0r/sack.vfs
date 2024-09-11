@@ -140,7 +140,7 @@ function hookJSOX( serverOpts, server ) {
 const app = uExpress();
 server.addHandler( app.handle );
 
-app.get( /.*\.jsox/, (req,res)=>{
+app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
 
 	console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
 	const headers = {
