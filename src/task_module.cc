@@ -1,6 +1,10 @@
 
 #include "global.h"
 
+#ifdef _WIN32
+#include <Shlobj.h>
+#endif
+
 struct optionStrings {
 	Isolate *isolate;
 	//Eternal<String> *String;
@@ -63,6 +67,7 @@ static void GetProcessId( const FunctionCallbackInfo<Value>& args );  // get tit
 static void GetProcessParentId( const FunctionCallbackInfo<Value>& args );
 
 #if _WIN32
+static void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<Value>& args );
 static void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HWND hWnd, Local<Object> opts ); // move a task window
 static void doStyleWindow( Isolate* isolate, Local<Context> context, TaskObject* task, HWND hWnd, Local<Object> opts ); // style a task window
 
@@ -73,6 +78,14 @@ static void getProcessWindowPos( const FunctionCallbackInfo<Value>& args );
 static void setProcessWindowPos( const FunctionCallbackInfo<Value>& args );
 static void dropConsole( const FunctionCallbackInfo<Value>& args );
 #endif
+
+static void getProgramName( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getProgramPath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getProgramDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getCommonDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+static void getModulePath( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+
 //v8::Persistent<v8::Function> TaskObject::constructor;
 
 static struct optionStrings *getStrings( Isolate *isolate ) {
@@ -177,7 +190,7 @@ TaskObject::~TaskObject() {
 }
 
 void InitTask( Isolate *isolate, Local<Object> exports ) {
-
+	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> taskTemplate;
 	taskTemplate = FunctionTemplate::New( isolate, TaskObject::New );
 	taskTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.task" ) );
@@ -214,7 +227,58 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY_METHOD( taskF, "parentId", ::GetProcessParentId );
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
+
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programName" )
+		, getProgramName
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programPath" )
+		, getProgramPath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programDataPath" )
+		, getProgramDataPath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "commonDataPath" )
+		, getCommonDataPath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "modulePath" )
+		, getModulePath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+
 #ifdef _WIN32
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "env" )
+		, getEnvironmentVariables
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
+
 	SET_READONLY_METHOD( taskF, "dropConsole", dropConsole );
 	SET_READONLY_METHOD( taskF, "getDisplays", TaskObject::getDisplays );
 	SET_READONLY_METHOD( taskF, "getPosition", ::getProcessWindowPos );
@@ -623,14 +687,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 
 			if( opts->Has( context, optName = strings->binString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsString() )
 					bin = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			} else {
 				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "required option 'bin' missing." ) ) );
 			}
 			if( opts->Has( context, optName = strings->argString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsString() ) {
 					char **args2;
 					argString = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -656,12 +718,10 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 			if( opts->Has( context, optName = strings->workString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsString() )
 					work = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			}
 			if( opts->Has( context, optName = strings->envString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				Local<Object> env = GETV( opts, optName ).As<Object>();
 				readEnv( isolate, context, env, &newTask->envList );
 				//lprintf( "env params not supported(yet)" );
@@ -672,20 +732,17 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				*/
 			}
 			if( opts->Has( context, optName = strings->binaryString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsBoolean() ) {
 					newTask->binary = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
 			if( opts->Has( context, optName = strings->inputString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsFunction() ) {
 					newTask->inputCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					input = true;
 				}
 			}
 			if( opts->Has( context, optName = strings->inputString2->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsFunction() ) {
 					newTask->inputCallback2.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					input2 = true;
@@ -695,7 +752,6 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				firstArgIsArg = GETV( opts, optName )->TOBOOL( isolate );
 			}
 			if( opts->Has( context, optName = strings->endString->Get( isolate ) ).ToChecked() ) {
-				Local<Value> val;
 				if( GETV( opts, optName )->IsFunction() ) {
 					newTask->endCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 					end = true;
@@ -924,8 +980,7 @@ void TaskObject::isRunning( const v8::FunctionCallbackInfo<Value>& args ) {
 void TaskObject::getExitCode( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)task->exitCode ) );
-		
+	args.GetReturnValue().Set( Number::New( isolate, (unsigned)task->exitCode ) );
 }
 
 #if _WIN32
@@ -1220,7 +1275,6 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 
 void TaskObject::getWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	char *title = GetWindowTitle( task->task );
 	Local<String> result = String::NewFromUtf8( isolate, title ).ToLocalChecked();
@@ -1353,14 +1407,6 @@ static BOOL CALLBACK enum_windows_callback( HWND handle, LPARAM lParam ) {
 	data->window_handle = handle;
 	return FALSE;
 }
-static PLIST find_main_windows( unsigned long process_id ) {
-	struct handle_data data;
-	data.handles = NULL;
-	data.process_id = process_id;
-	data.window_handle = 0;
-	EnumWindows( enum_windows_callback, (LPARAM)&data );
-	return data.handles;
-}
 static HWND find_main_window( unsigned long process_id ) {
 	struct handle_data data;
 	data.handles = NULL;
@@ -1469,7 +1515,6 @@ void TaskObject::getProcessWindowPos( const FunctionCallbackInfo<Value>& args ){
 
 void TaskObject::setProcessWindowStyles( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
 	int64_t winStyles = args[1]->IsNumber() ? args[1]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
 	int64_t winStylesEx = args[2]->IsNumber() ? args[2]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
 	int64_t classStyles = args[3]->IsNumber() ? args[3]->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( -1 ) : -1;
@@ -1632,3 +1677,334 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 	kill( id, SIGKILL );
 #endif
 }
+
+void getProgramName( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, GetProgramName() ).ToLocalChecked() );
+}
+
+void getProgramPath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, GetProgramPath() ).ToLocalChecked() );
+}
+
+void getProgramDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+#ifdef _WIN32
+	char *filepath = ExpandPath( "*" );
+#else
+	char* filepath = ExpandPath( ";" );
+#endif
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, filepath ).ToLocalChecked() );
+	Release( filepath );
+}
+
+void getCommonDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+#ifdef _WIN32
+	char* filepath = ExpandPath( "*/.." );
+#else
+	char* filepath = ExpandPath( ";/.." );
+#endif
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, filepath ).ToLocalChecked() );
+	Release( filepath );
+}
+
+void getDataPath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	char* filepath = ExpandPath( "," );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, filepath ).ToLocalChecked() );
+	Release( filepath );
+}
+
+void getModulePath( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	char* filepath = ExpandPath( "@" );
+	args.GetReturnValue().Set( String::NewFromUtf8( isolate, filepath ).ToLocalChecked() );
+	Release( filepath );
+}
+
+#ifdef WIN32
+
+struct folderEnvironments {
+	const GUID folderID;
+	const char* name;
+	DWORD opts;
+};
+
+
+struct folderEnvironments folders[] = {
+	{ FOLDERID_ProgramData, "ProgramData" }
+	, {FOLDERID_ProgramData, "ALLUSERSPROFILE" }
+	, {FOLDERID_ProgramFilesX64, "ProgramFiles" }
+	, {FOLDERID_ProgramFilesX86, "ProgramFiles(x86)" }
+	, {FOLDERID_ProgramFiles, "ProgramW6432" }
+	, {FOLDERID_UsersFiles, "USERPROFILE", 1/*KF_FLAG_NO_ALIAS| KF_FLAG_DONT_UNEXPAND | KF_FLAG_DEFAULT_PATH*/ }
+	//, {FOLDERID_Profile, "USERPROFILE" }  // c:/users
+	//, {FOLDERID_UserProfile, "USERPROFILE" } // c:/users
+	// 
+	//, {FOLDERID_System, "SystemRoot" }  
+	, {FOLDERID_Windows, "SystemRoot" }
+
+	, {FOLDERID_RoamingAppData, "APPDATA" }
+	, {FOLDERID_LocalAppData, "LOCALAPPDATA" }
+	, {FOLDERID_ProgramFilesCommonX64, "CommonProgramFiles" }
+	, {FOLDERID_ProgramFilesCommonX86, "CommonProgramFiles(x86)" }
+	, {FOLDERID_ProgramFilesCommon, "CommonProgramW6432" }
+
+	// this is start menu\programs
+	//, {FOLDERID_CommonPrograms, "COMMONPROGRAMS" }
+	, {FOLDERID_Public, "PUBLIC" }
+	// these are user local...
+	//, {FOLDERID_Desktop, "DESKTOP" }
+	//, {FOLDERID_StartMenu, "STARTMENU" }
+	//, {FOLDERID_AllUser, "ALLUSERSPROFILE" }
+};
+
+//HKEY_LOCAL_MACHINE\System\CurrentControlSet\Control\Session Manager\Environment
+void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	struct variable_data {
+		char* name;
+		char* value;
+		size_t valueSize;
+	};
+	PLIST vars = NULL;
+	struct variable_data* check;
+	INDEX index;
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Object> result = Object::New( isolate );
+
+	// read environment variables from registry, not current process
+	HKEY hKey;
+	DWORD nameSize = 256;
+	DWORD valueBufferSize = 256;
+	DWORD valueSize = 256;
+	char* value = NewArray( char, valueSize );
+	PVARTEXT pvt = VarTextCreate();
+	if( RegOpenKeyEx( HKEY_LOCAL_MACHINE, "System\\CurrentControlSet\\Control\\Session Manager\\Environment", 0, KEY_READ, &hKey ) == ERROR_SUCCESS ) {
+		DWORD dwIndex = 0;
+		char name[256];
+		DWORD type;
+		DWORD lastError;
+		while( (lastError = RegEnumValue( hKey, dwIndex++, name, &nameSize, NULL, &type, (LPBYTE)value, &valueSize ) ) == ERROR_SUCCESS 
+			   || ( lastError == ERROR_MORE_DATA ) ) {
+			if( lastError == ERROR_MORE_DATA ) {
+				valueBufferSize = valueSize;
+				Release( value );
+				value = NewArray( char, valueSize );
+				dwIndex--;
+				continue;
+			}
+			struct variable_data* var = NewArray( struct variable_data, 1 );
+			var->name = StrDup( name );
+			var->value = StrDup( value );
+			var->valueSize = valueSize;
+			AddLink( &vars, var );
+			//result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
+			nameSize = 256;
+			valueSize = valueBufferSize;
+		}
+		if( lastError != ERROR_NO_MORE_ITEMS )
+			lprintf( "Failed with %d", lastError );
+		RegCloseKey( hKey );
+	}
+	//HKEY_CURRENT_USER\Environment
+	if( RegOpenKeyEx( HKEY_CURRENT_USER, "Environment", 0, KEY_READ, &hKey ) == ERROR_SUCCESS ) {
+		DWORD dwIndex = 0;
+		char name[256];
+		DWORD nameSize = 256;
+		DWORD type;
+		DWORD lastError;
+		while( ( lastError = RegEnumValue( hKey, dwIndex++, name, &nameSize, NULL, &type, (LPBYTE)value, &valueSize ) ) == ERROR_SUCCESS
+			 || ( lastError == ERROR_MORE_DATA ) ) {
+			if( lastError == ERROR_MORE_DATA ) {
+				valueBufferSize = valueSize;
+				Release( value );
+				value = NewArray( char, valueSize );
+				dwIndex--;
+				continue;
+			}
+			LIST_FORALL( vars, index, struct variable_data*, check ) {
+				if( !StrCaseCmp( check->name, name ) ) {
+					if( !StrCaseCmp( check->name, "PATH" ) ) {
+						VarTextAddData( pvt, check->value, check->valueSize-1 );
+						VarTextAddData( pvt, ";", 1 );
+						VarTextAddData( pvt, value, valueSize );
+						Release( check->value );
+						check->value = StrDup( GetText( VarTextPeek( pvt ) ) );
+						check->valueSize = GetTextSize( VarTextPeek( pvt ) );
+						//result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, GetText( VarTextPeek( pvt ) ) ).ToLocalChecked() );
+						break;
+					} else {
+						Release( check->value );
+						check->value = StrDup( value );
+						check->valueSize = valueSize;
+						//result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
+						break;
+					}
+					check = NULL;
+					break;
+				}
+			}
+			if( !check ) {
+				//result->Set( context, String::NewFromUtf8( isolate, name ).ToLocalChecked(), String::NewFromUtf8( isolate, value ).ToLocalChecked() );
+			}
+			nameSize = 256;
+			valueSize = valueBufferSize;
+		}
+		if( lastError != ERROR_NO_MORE_ITEMS )
+			lprintf( "Failed with %d", lastError );
+		RegCloseKey( hKey );
+	} else {
+		lprintf( "Failed to open user key?" );
+	}
+	// other misc paths...
+	{
+		NetworkStart();
+		CTEXTSTR name = GetSystemName();
+		struct variable_data* var;
+		var = NewArray( struct variable_data, 1 );
+		var->name = StrDup( "COMPUTERNAME" );
+		var->value = StrDup( name );
+		var->valueSize = StrLen( name );
+		AddLink( &vars, var );
+		//result->Set( context, String::NewFromUtf8( isolate, "COMPUTERNAME" ).ToLocalChecked(), String::NewFromUtf8( isolate, name ).ToLocalChecked() );
+	}
+
+	// USERNAME
+	// USERDOMAIN
+	// USERDOMAIN_ROAMINGPROFILE
+	// 
+	{
+		char name[256];
+		DWORD bufsize = 256;
+		GetUserName( name, &bufsize );
+		struct variable_data* var;
+		var = NewArray( struct variable_data, 1 );
+		var->name = StrDup( "USERNAME" );
+		var->value = StrDup( name );
+		var->valueSize = bufsize;
+		AddLink( &vars, var );
+		//result->Set( context, String::NewFromUtf8( isolate, "USERNAME" ).ToLocalChecked(), String::NewFromUtf8( isolate, name ).ToLocalChecked() );
+	}
+
+	// Explorer sets this variable...
+	// EFC_8412=1
+	// EFC_%lu, ExplorerPID
+
+	{
+		//CSIDL_COMMON_APPDATA
+		PWSTR value;
+		int n;	
+		for( n = 0; n < sizeof( folders ) / sizeof( struct folderEnvironments ); n++ ) {
+			HRESULT hr;
+			//id* riid;
+			if( folders[n].opts ) {
+				IShellItem* psi;
+				hr = SHGetKnownFolderItem( folders[n].folderID, KF_FLAG_DEFAULT, NULL, IID_IShellItem, (void**)&psi );
+				psi->GetDisplayName( SIGDN_DESKTOPABSOLUTEPARSING, &value );
+
+			} else {
+
+				hr = SHGetKnownFolderPath( folders[n].folderID, 0, NULL, &value );
+			}
+			// E_INVALIDARG
+			// E_ACCESSDENIED ?
+			// ERROR_FILE_NOT_FOUND 
+			// HRESULT_FROM_WIN32( ERROR_FILE_NOT_FOUND )
+			//lprintf( "Result: %x %x %x %x", hr, E_INVALIDARG, E_FAIL, HRESULT_FROM_WIN32( ERROR_FILE_NOT_FOUND ) );
+			if( hr == S_OK ) {
+				char* tmp = WcharConvert( value );
+				//lprintf( "Extra Env: %s %s", folders[n].name, tmp );
+				struct variable_data* var;
+				var = NewArray( struct variable_data, 1 );
+				var->name = StrDup( folders[n].name );
+				var->value = tmp;
+				var->valueSize = StrLen( tmp );
+				AddLink( &vars, var );
+				//result->Set( context, String::NewFromUtf8( isolate, folders[n].name ).ToLocalChecked(), String::NewFromUtf8( isolate, tmp ).ToLocalChecked() );
+				//Release( tmp );
+				CoTaskMemFree( value );
+			}
+		}
+	}
+	{
+		LIST_FORALL( vars, index, struct variable_data*, check ) {
+			// these are apparently broken down parts of USERPROFILE
+			if( StrCmp( check->name, "USERPROFILE" ) == 0 ) {
+				TEXTSTR start = StrChr( check->value, '\\' );
+				struct variable_data* var = NewArray( struct variable_data, 1 );
+				var->name = StrDup( "HOMEDRIVE" );
+				var->value = NewArray( char, 3 );
+				var->valueSize = 3;
+				var->value[0] = check->value[0];
+				var->value[1] = check->value[1];
+				var->value[2] = 0;
+				AddLink( &vars, var );
+
+				var = NewArray( struct variable_data, 1 );
+				var->name = StrDup( "HOMEPATH" );
+				var->value = NewArray( char, check->valueSize + 1 );
+				var->valueSize = check->valueSize - 2;
+				StrCpy( var->value, check->value + 2 );
+				AddLink( &vars, var );
+				break;
+			}
+		}
+	}
+	{
+		INDEX index1;
+		struct variable_data* check1;
+		LIST_FORALL( vars, index1, struct variable_data*, check1 ) {
+
+			LIST_FORALL( vars, index, struct variable_data*, check ) {
+				int d = StrCaseCmp( check->name, check1->name );
+				if( d > 0 ) {
+					SetLink( &vars, index1, check );
+					SetLink( &vars, index, check1 );
+					index1--;
+					break;
+				}
+			}
+		}
+		LIST_FORALL( vars, index, struct variable_data*, check ) {
+			TEXTSTR start = StrChr( check->value, '%' );
+			while( start ) {
+				TEXTSTR end = StrChr( start + 1, '%' );
+				if( end ) {
+					end[0] = 0;
+					VarTextEmpty( pvt );
+					VarTextAddData( pvt, check->value, start - check->value );
+					LIST_FORALL( vars, index1, struct variable_data*, check1 ) {
+						if( StrCaseCmp( check1->name, start + 1 ) == 0 ) {
+							VarTextAddData( pvt, check1->value, check1->valueSize );
+							VarTextAddData( pvt, end+1, check->valueSize - (end-check->value)+1 );
+							Release( check->value );
+							check->value = StrDup( GetText( VarTextPeek( pvt ) ) );
+							check->valueSize = GetTextSize( VarTextPeek( pvt ) );
+							break;
+						}
+					}
+					start = StrChr( check->value, '%' );
+				}
+			}
+
+		}
+		LIST_FORALL( vars, index, struct variable_data*, check ) {
+			result->Set( context, String::NewFromUtf8( isolate, check->name ).ToLocalChecked(), String::NewFromUtf8( isolate, check->value ).ToLocalChecked() );
+		}
+	}
+	VarTextDestroy( &pvt );
+	LIST_FORALL( vars, index, struct variable_data*, check ) {
+		Release( check->name );
+		Release( check->value );
+		Release( check );
+	}
+	DeleteList( &vars );
+	Release( value );
+
+
+	args.GetReturnValue().Set( result );
+}
+#endif

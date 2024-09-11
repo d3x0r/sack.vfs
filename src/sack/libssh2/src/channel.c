@@ -711,7 +711,7 @@ LIBSSH2_API void** libssh2_listener_abstract( LIBSSH2_LISTENER* listener ) {
     return &listener->abstract;
 }
 
-LIBSSH2_API libssh2_cb_generic* libssh2_listener_callback_set( LIBSSH2_LISTENER* listener, enum LIBSSH2_CALLBACKS callback, libssh2_cb_generic* f ) {
+LIBSSH2_API libssh2_cb_generic* libssh2_listener_callback_set( LIBSSH2_LISTENER* listener, enum LIBSSH2_LISTENER_CALLBACKS callback, libssh2_cb_generic* f ) {
     libssh2_cb_generic* oldFunc = NULL;
     switch( callback ) {
     case LIBSSH2_CALLBACK_LISTENER_ACCEPT:
@@ -3095,7 +3095,7 @@ void** libssh2_channel_abstract( LIBSSH2_CHANNEL* channel ) {
 
 libssh2_cb_generic*
 libssh2_channel_callback_set( LIBSSH2_CHANNEL *channel,
-                              enum LIBSSH2_CALLBACKS cbtype,
+                              enum LIBSSH2_CHANNEL_CALLBACKS cbtype,
                               libssh2_cb_generic* callback)
 {
     libssh2_cb_generic* oldcb;

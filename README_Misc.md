@@ -250,8 +250,24 @@ var val = vfs.registry.get( "HKCU/something" );
 
 # COM Ports
    (result from vfs.ComPort() )
- 
+
+Get a list of the com ports available (on windows)...
+
 ``` js
+import sack from "sack.vfs"
+const ports = sack.ComPort.ports;
+``` 
+
+
+This is the result of opening a com port object.  Com ports greater than 9 must be specified with `\\.\com#`.  Throws an error
+if the com port cannot be opened.
+
+``` js
+
+// open a com port with a reader
+const ComObject = sack.ComPort( "com1" );
+
+// this is bad syntax, but these are the methods available on the resulting object.
 ComObject = { 
      onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.

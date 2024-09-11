@@ -140,7 +140,7 @@ function hookJSOX( serverOpts, server ) {
 const app = uExpress();
 server.addHandler( app.handle );
 
-app.get( /.*\.jsox/, (req,res)=>{
+app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
 
 	console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
 	const headers = {
@@ -157,8 +157,7 @@ app.get( /.*\.jsox/, (req,res)=>{
 	const config = disk.read( filePath );
 	if( config ) {
 		res.writeHead( 200, headers );
-
-		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString() + "`);export default config;";
+		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
 		res.end( resultContent );
 		return true;
 	}else {
@@ -175,6 +174,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	let handlers = [];
 	const serverOpts = opts || {};
 	if( !("port" in serverOpts )) serverOpts.port = process.env.PORT || 8080;
+	if( !("resourcePath" in serverOpts ) ) serverOpts.resourcePath = "."
 	if( certChain ) 
 	{
 		serverOpts.cert = serverOpts.cert || certChain;
@@ -192,11 +192,9 @@ export function openServer( opts, cbAccept, cbConnect )
 	function handleEvent(req,res) {
 		for( let handler of handlers ) {
 			if( handler( req, res, serverOpts ) ) {
-				//console.log( "handler accepted request..." );
 				return true;
 			}
 		}
-
 		if( !reqHandler( req,res ) ) {
 			if( requests.length !== 0 )
 				clearTimeout( reqTimeout );
@@ -207,13 +205,12 @@ export function openServer( opts, cbAccept, cbConnect )
 			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
 		}
 	}
-
 	server.on( "lowError",function (error, address, buffer) {
 		if( error !== 1 && error != 6 ) 
 			console.log( "Low Error with:", error, address, buffer  );
-		if( buffer )
-			buffer = new TextDecoder().decode( buffer );
-		server.disableSSL(buffer); // resume with non SSL
+		//if( buffer )
+		//	buffer = new TextDecoder().decode( buffer );
+		server.disableSSL(); // resume with non SSL
 	} );
 
 	server.onaccept = function ( ws ) {

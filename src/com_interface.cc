@@ -1,10 +1,6 @@
 
 #include "global.h"
 
-static struct local {
-	int data;
-
-} l;
 
 struct msgbuf {
 	int closeEvent;
@@ -30,9 +26,11 @@ public:
 
 private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
-
-	static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
-	static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void getPorts( Local<Name> property, const PropertyCallbackInfo<Value>& info );
+	static void getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+	//static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args );
+	//static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
 	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
@@ -57,6 +55,11 @@ void ComObjectInit( Local<Object> exports ) {
 	ComObject::Init( exports );
 }
 
+void test( Local<Name> property,
+	const PropertyCallbackInfo<Value>& info ) {
+}
+
+
 void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<Context> context = isolate->GetCurrentContext();
@@ -71,31 +74,100 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "write", writeCom );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 
+#if ( NODE_MAJOR_VERSION >= 22 )
+		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" )
+			, ComObject::getRTS2
+			, ComObject::setRTS2
+			, Local<Value>()
+			, PropertyAttribute::ReadOnly
+			, SideEffectType::kHasNoSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+#elif ( NODE_MAJOR_VERSION >= 18 )
+		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" )
+			, ComObject::getRTS2
+			, ComObject::setRTS2
+			, Local<Value>()
+			, PropertyAttribute::ReadOnly
+			, AccessControl::DEFAULT
+			, SideEffectType::kHasNoSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+#else
+		
 		comTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "rts" )
 			, FunctionTemplate::New( isolate, ComObject::getRTS )
 			, FunctionTemplate::New( isolate, ComObject::setRTS )
 		);
+#endif
+		Local<Function> ComFunc = comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
+		/*
+		ComFunc->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "ports" )
+			, Function::New( context, ComObject::getPorts ).FromMaybe( Local<Function>() )
+			, Local<Function>()
+			, PropertyAttribute::ReadOnly );
+			*/
+		// PropertyCallbackInfo
+		//Object::DefineAccessor
+		/*
+		Handle<i::AccessorInfo> info =
+			MakeAccessorInfo( i_isolate, name, getter, setter, data, settings,
+				is_special_data_property, replace_on_access );
+		*/
+		//info->set_getter_side_effect_type( getter_side_effect_type );
+		//info->set_setter_side_effect_type( setter_side_effect_type );
 
+		
+		ComFunc->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "ports" )
+			, ComObject::getPorts
+			, nullptr //Local<Function>()
+			, Local<Value>()
+			, PropertyAttribute::ReadOnly
+			, SideEffectType::kHasSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+		
 
 		class constructorSet *c = getConstructors( isolate );
-		c->comConstructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
-		SET( exports, "ComPort", comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
+		c->comConstructor.Reset( isolate, ComFunc );
+		SET( exports, "ComPort", ComFunc );
 }
 
 
+void ComObject::getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	//Isolate* isolate = args.GetIsolate();
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	if( obj )
+		args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
+
+}
+
+/*
 void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
+	//Isolate* isolate = args.GetIsolate();
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	if( obj )
+		args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
+
+}
+*/
+void ComObject::setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
-	args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
-
+	if( obj )
+		SetCommRTS( obj->handle, obj->rts = value.As<Boolean>()->BooleanValue( isolate ) );
 }
+
+/*
 void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() > 0 ) {
 		ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
-		SetCommRTS( obj->handle, obj->rts = args[0].As<Boolean>()->BooleanValue( isolate ) );
+		if( obj )
+			SetCommRTS( obj->handle, obj->rts = args[0].As<Boolean>()->BooleanValue( isolate ) );
 	}
 }
+*/
 
 void dont_releaseBufferBackingStore(void* data, size_t length, void* deleter_data) {
 	(void)length;
@@ -166,7 +238,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				String::Utf8Value fName( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 				portName = StrDup( *fName );
 			} else {
-				isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Must specify port name to open." ) ) );
+				isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Must specify port name to open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 				return;
 			}
 			// Invoked as constructor: `new MyObject(...)`
@@ -292,4 +364,52 @@ void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 		uv_async_send( &com->async );
 	}
 
+}
+
+
+struct port_info {
+	size_t portLen;
+	size_t nameLen;
+	size_t techLen;
+	TEXTCHAR buf[];
+};
+
+static LOGICAL portCallback( uintptr_t psv, LISTPORTS_PORTINFO* lpPortInfo ) {
+	size_t portLen = StrLen( lpPortInfo->lpPortName );
+	size_t nameLen = StrLen( lpPortInfo->lpFriendlyName );
+	size_t techLen = StrLen( lpPortInfo->lpTechnology );
+
+	struct port_info *pi = NewPlus( struct port_info, portLen+nameLen+techLen );
+	pi->portLen = portLen;
+	pi->nameLen = nameLen;
+	pi->techLen = techLen;
+	MemCpy( pi->buf, lpPortInfo->lpPortName, portLen );
+	MemCpy( pi->buf+portLen, lpPortInfo->lpFriendlyName, nameLen );
+	MemCpy( pi->buf+portLen+nameLen, lpPortInfo->lpTechnology, techLen );
+	PLIST* ppList = (PLIST*)psv;
+	AddLink( ppList, pi );
+	return TRUE;
+}
+
+void ComObject::getPorts( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
+	//( const v8::FunctionCallbackInfo<Value>& args ) {
+	PLIST list = NULL;
+	ListPorts( portCallback, (uintptr_t)&list );
+	INDEX idx;
+	struct port_info *pi;
+
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Array> jsList = Array::New( isolate );
+
+	LIST_FORALL( list, idx, struct port_info*, pi ) {
+		Local<Object> info = Object::New( isolate );
+		SET( info, "port", String::NewFromUtf8( isolate, pi->buf, v8::NewStringType::kNormal, pi->portLen ).ToLocalChecked() );
+		SET( info, "name", String::NewFromUtf8( isolate, pi->buf+pi->portLen, v8::NewStringType::kNormal, pi->nameLen ).ToLocalChecked() );
+		SET( info, "technology", String::NewFromUtf8( isolate, pi->buf+pi->portLen+pi->nameLen, v8::NewStringType::kNormal, pi->techLen ).ToLocalChecked() );
+		SETN( jsList, idx, info );
+		Deallocate( struct port_info*, pi );
+	}
+	//lprintf( "Returning %d ports", idx );
+	args.GetReturnValue().Set( jsList );	
 }

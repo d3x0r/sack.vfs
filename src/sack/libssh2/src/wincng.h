@@ -71,8 +71,25 @@
 #define LIBSSH2_RSA_SHA1 1
 #define LIBSSH2_RSA_SHA2 1
 #define LIBSSH2_DSA 1
-#define LIBSSH2_ECDSA 0
 #define LIBSSH2_ED25519 0
+
+/*
+ * Conditionally enable ECDSA support.
+ *
+ * ECDSA support requires the use of
+ *
+ *   BCryptDeriveKey(..., BCRYPT_KDF_RAW_SECRET, ... )
+ *
+ * This functionality is only available as of Windows 10. To maintain
+ * backward compatibility, ECDSA support is therefore disabled
+ * by default and needs to be explicitly enabled using a build
+ * flag.
+ */
+#ifdef LIBSSH2_ECDSA_WINCNG
+#define LIBSSH2_ECDSA 1
+#else
+#define LIBSSH2_ECDSA 0
+#endif
 
 #include "crypto_config.h"
 
@@ -115,6 +132,11 @@ struct _libssh2_wincng_ctx {
     BCRYPT_ALG_HANDLE hAlgRC4_NA;
     BCRYPT_ALG_HANDLE hAlg3DES_CBC;
     BCRYPT_ALG_HANDLE hAlgDH;
+    BCRYPT_ALG_HANDLE hAlgChacha20;
+#if LIBSSH2_ECDSA
+    BCRYPT_ALG_HANDLE hAlgECDH[3];  /* indexed by libssh2_curve_type */
+    BCRYPT_ALG_HANDLE hAlgECDSA[3]; /* indexed by libssh2_curve_type */
+#endif
     volatile int hasAlgDHwithKDF; /* -1=no, 0=maybe, 1=yes */
 };
 
@@ -281,6 +303,63 @@ typedef struct __libssh2_wincng_key_ctx {
 #define _libssh2_dsa_free(dsactx) \
     _libssh2_wincng_dsa_free(dsactx)
 
+
+/*
+ * Windows CNG backend: ECDSA functions
+ */
+
+typedef enum {
+    LIBSSH2_EC_CURVE_NISTP256 = 0,
+    LIBSSH2_EC_CURVE_NISTP384 = 1,
+    LIBSSH2_EC_CURVE_NISTP521 = 2,
+} libssh2_curve_type;
+
+typedef struct __libssh2_wincng_ecdsa_ctx {
+    BCRYPT_KEY_HANDLE handle;
+    libssh2_curve_type curve;
+} _libssh2_wincng_ecdsa_key;
+
+#define libssh2_ecdsa_ctx _libssh2_wincng_ecdsa_key
+
+#if LIBSSH2_ECDSA
+#define _libssh2_ec_key _libssh2_wincng_ecdsa_key
+#endif
+
+void
+_libssh2_wincng_ecdsa_free(libssh2_ecdsa_ctx* ctx);
+
+#define _libssh2_ecdsa_create_key(session, privkey, pubkey_octal, \
+                                  pubkey_octal_len, curve) \
+    _libssh2_wincng_ecdh_create_key(session, privkey, pubkey_octal, \
+                                    pubkey_octal_len, curve)
+
+#define _libssh2_ecdsa_curve_name_with_octal_new(ctx, k, k_len, curve) \
+    _libssh2_wincng_ecdsa_curve_name_with_octal_new(ctx, k, k_len, curve)
+
+#define _libssh2_ecdh_gen_k(k, privkey, server_pubkey, server_pubkey_len) \
+    _libssh2_wincng_ecdh_gen_k(k, privkey, server_pubkey, server_pubkey_len)
+
+#define _libssh2_ecdsa_verify(ctx, r, r_len, s, s_len, m, m_len) \
+    _libssh2_wincng_ecdsa_verify(ctx, r, r_len, s, s_len, m, m_len)
+
+#define _libssh2_ecdsa_new_private(ctx, session, filename, passphrase) \
+    _libssh2_wincng_ecdsa_new_private(ctx, session, filename, passphrase)
+
+#define _libssh2_ecdsa_new_private_frommemory(ctx, session, filedata, \
+                                              filedata_len, passphrase) \
+    _libssh2_wincng_ecdsa_new_private_frommemory(ctx, session, filedata, \
+                                                 filedata_len, passphrase)
+
+#define _libssh2_ecdsa_sign(session, ctx, hash, hash_len, sign, sign_len) \
+    _libssh2_wincng_ecdsa_sign(session, ctx, hash, hash_len, sign, sign_len)
+
+#define _libssh2_ecdsa_get_curve_type(ctx) \
+    _libssh2_wincng_ecdsa_get_curve_type(ctx)
+
+#define _libssh2_ecdsa_free(ecdsactx) \
+    _libssh2_wincng_ecdsa_free(ecdsactx)
+
+
 /*
  * Windows CNG backend: Key functions
  */
@@ -336,6 +415,7 @@ struct _libssh2_wincng_cipher_type {
 #define _libssh2_cipher_aes128    { &_libssh2_wincng.hAlgAES_CBC, 16, 1, 0 }
 #define _libssh2_cipher_arcfour   { &_libssh2_wincng.hAlgRC4_NA, 16, 0, 0 }
 #define _libssh2_cipher_3des      { &_libssh2_wincng.hAlg3DES_CBC, 24, 1, 0 }
+#define _libssh2_cipher_chacha20  { &_libssh2_wincng.hAlgChacha20, 24, 1, 0 }
 
 /*
  * Windows CNG backend: Cipher functions
@@ -398,7 +478,7 @@ struct _libssh2_wincng_bignum {
    diffie-hellman-group-exchange-sha1 */
 #define LIBSSH2_DH_GEX_MINGROUP     2048
 #define LIBSSH2_DH_GEX_OPTGROUP     4096
-#define LIBSSH2_DH_GEX_MAXGROUP     8192
+#define LIBSSH2_DH_GEX_MAXGROUP     4096
 
 #define LIBSSH2_DH_MAX_MODULUS_BITS 16384
 
@@ -460,10 +540,10 @@ int
 _libssh2_wincng_bignum_set_word(_libssh2_bn *bn, ULONG word);
 ULONG
 _libssh2_wincng_bignum_bits(const _libssh2_bn *bn);
-void
+int
 _libssh2_wincng_bignum_from_bin(_libssh2_bn *bn, ULONG len,
                                 const unsigned char *bin);
-void
+int
 _libssh2_wincng_bignum_to_bin(const _libssh2_bn *bn, unsigned char *bin);
 void
 _libssh2_wincng_bignum_free(_libssh2_bn *bn);

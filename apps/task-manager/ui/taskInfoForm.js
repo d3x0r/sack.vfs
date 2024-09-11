@@ -14,14 +14,14 @@ export class TaskInfoEditor extends Popup {
 			this.on( "close", true );
 			this.remove();
 		})
-    this.hide();
+		this.hide();
 		// injects...
 		const styles = [popups.utils.addStyleSheetSrc( this, "/css/styles.css" )
 		  ,popups.utils.addStyleSheetSrc( this, "/css/task-config.css" )];
-    Promise.all( styles ).then( ()=>{
-      this.show();
-      this.center();
-    })
+		Promise.all( styles ).then( ()=>{
+			this.show();
+			this.center();
+		})
 		const task = Object.assign( {}, task_ );
 		const taskOpts = {
 			moveToEnable : false,
@@ -80,13 +80,13 @@ export class TaskInfoEditor extends Popup {
 		})
 
 		if( task_) {
-      this.create = popups.makeButton( buttonFrame, "Save", ()=>{
-        processForm(false);
-				this.on( "close", true );
-        this.remove();
-      } )
-      this.create.tooltip = "Update this current task with the new settings";
-    }
+			this.create = popups.makeButton( buttonFrame, "Save", ()=>{
+				processForm(false);
+						this.on( "close", true );
+				this.remove();
+			} )
+			this.create.tooltip = "Update this current task with the new settings";
+		}
 
 		this.saveAs = popups.makeButton( buttonFrame, "Save As", ()=>{
 			const form = popups.simpleForm( "Save As", "Name", task.name, (name)=>{
@@ -199,6 +199,8 @@ export class TaskInfoEditor extends Popup {
 					this.args.moveRowDown( row );
 				}}},
 				{name: "", className: "-arg-delete", type :{ suffix:" red", text:"X", click:(row)=>{
+					const arg = this.argVal.findIndex( (arg)=>arg===row );
+					if( arg >= 0 ) this.argVal.splice( arg, 1 );
 					this.args.deleteRow( row );
 				}}},
 			],
@@ -220,6 +222,8 @@ export class TaskInfoEditor extends Popup {
 				{field:"key", name:"Key", className: "env-key", type:{edit:true} },
 				{field:"val", name:"Value", className: "env-value", type:{edit:true} },
 				{name: "", className: "-env-delete", type :{suffix:" red",  text:"X", click:(row)=>{
+					const envKey = this.envKeys.findIndex( (key)=>key===row );
+					if( envKey >= 0 ) this.envKeys.splice( envKey, 1 );
 					this.env.deleteRow( row );
 				}}},
 			],

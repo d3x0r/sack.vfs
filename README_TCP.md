@@ -29,6 +29,12 @@ tcp2.send( "Hello World" );
 |-----|----|
 | ( { option object } )  | Option object to initialize socket with.  |
 
+#### TCP Object Methods
+
+| Construction examples |  |
+|-----|----|
+| ports | getter | Get a list of listening ports and associated process identifiers.  |
+
 
 #### TCP socket creation options
 
@@ -49,6 +55,10 @@ tcp2.send( "Hello World" );
 | cert | &lt;string&gt; | cerficiate for server socket to use to accepted TLS connections. (for server) |
 | key | &lt;string&gt; | private key associated with cerfificate for TLS connections. (for server) |
 | ca | &lt;string&gt; | Certificate authority chain for client to use to authenticate server key (optional, unimplemented?) |
+| allowSSLfallback | true/false | controls whether the the socket will automatically demote from TLS/SSL to raw.  If set to false, sockets with SSL that fail negotiation are closed. |
+| ready | callback () | is called when a socket is ready; this is alternative method to specify the callback to .on( "ready", ... ) |
+| message | callback (buffer) | is called when a socket receives a message; this is alternative method to specify the callback to .on( "message", ... ) |
+| close | callback () | is called when a socket is closed;  |
 
 
 If both `address` and `toAddress` are specified, then it is a client connection, which uses address as the address to `bind()` to.  (Untested)
@@ -57,7 +67,7 @@ Errors connect returns depend on the system; windows system will return windows 
 
 #### TCP socket methods
 
-| UDP Socket Methods | Arguments | Description  |
+| TCP Socket Methods | Arguments | Description  |
 |-----|-----|-----|
 | send | (message [,address]) | Send a message, message can be an ArrayBuffer or string,   if second parameter is passed it should be an sack.Network.Address object. |
 | close | () | Close the socket. |
@@ -70,8 +80,9 @@ Errors connect returns depend on the system; windows system will return windows 
 
 | TCP Events |  |  |
 |----|----|----|
-| message | (msg, remoteAddress) | called when a message is received.  msg parameter is either a string if socket was opened with `readStrings` or a TypedArray.  Second parameter is a Network.Socket object representing the source address of the message |
-| connect | (msg, remoteAddress) | called when a message is received.  msg parameter is either a string if socket was opened with `readStrings` or a TypedArray.  Second parameter is a Network.Socket object representing the source address of the message |
+| message | (msg) | called when a message is received.  msg parameter is either a string if socket was opened with `readStrings` or a TypedArray.  Second parameter is a Network.Socket object representing the source address of the message |
+| connect | () | called when a connection happens. This allows setting additional event handlers on the socket, but the socket is not fully connected.  |
+| ready | () | Socket is now ready to send data.  Connect is called when 
 | close | () | Socket has been closed. | 
 | error | (n) | error callback, used for conditions in the TLS layer to report errors. |
 

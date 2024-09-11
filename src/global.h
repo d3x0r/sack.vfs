@@ -244,6 +244,11 @@ class constructorSet {
 	uv_loop_t* loop;
 	Persistent<Function> exitCallback;
 	uv_async_t exitAsync; // different modules might have different signal registrations
+
+#ifdef _WIN32
+	uv_async_t serviceAsync; // keep this instance around for as long as we might need to do the periodic callback
+#endif
+
 #ifdef INCLUDE_GUI
 	uv_async_t psiLocal_async;
 	int eventLoopEnables = 0;

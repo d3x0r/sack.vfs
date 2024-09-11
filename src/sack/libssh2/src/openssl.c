@@ -155,7 +155,7 @@ int _libssh2_hmac_update(libssh2_hmac_ctx *ctx,
 #ifdef USE_OPENSSL_3
     return EVP_MAC_update(*ctx, data, datalen);
 #elif defined(HAVE_OPAQUE_STRUCTS)
-/* FIXME: upstream bug as of v5.6.0: datalen is int instead of size_t */
+/* FIXME: upstream bug as of v5.7.0: datalen is int instead of size_t */
 #if defined(LIBSSH2_WOLFSSL)
     return HMAC_Update(*ctx, data, (int)datalen);
 #else /* !LIBSSH2_WOLFSSL */
@@ -1056,7 +1056,13 @@ _libssh2_cipher_crypt(_libssh2_cipher_ctx * ctx,
                decrypt: verify tag, if applicable
                in!=NULL is equivalent to EVP_CipherUpdate
                in==NULL is equivalent to EVP_CipherFinal */
-#ifdef HAVE_OPAQUE_STRUCTS
+#if defined(LIBSSH2_WOLFSSL) && LIBWOLFSSL_VERSION_HEX < 0x05007000
+            /* Workaround for wolfSSL bug fixed in v5.7.0:
+               https://github.com/wolfSSL/wolfssl/pull/7143 */
+            unsigned char buf2[EVP_MAX_BLOCK_LENGTH];
+            int outb;
+            ret = EVP_CipherFinal(*ctx, buf2, &outb);
+#elif defined(HAVE_OPAQUE_STRUCTS)
             ret = EVP_Cipher(*ctx, NULL, NULL, 0); /* final */
 #else
             ret = EVP_Cipher(ctx, NULL, NULL, 0); /* final */
@@ -1671,8 +1677,8 @@ gen_publickey_from_dsa(LIBSSH2_SESSION* session, libssh2_dsa_ctx *dsa,
     BIGNUM * pub_key = NULL;
 
     EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_FFC_P, &p_bn);
-    EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_FFC_G, &q);
-    EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_FFC_Q, &g);
+    EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_FFC_Q, &q);
+    EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_FFC_G, &g);
     EVP_PKEY_get_bn_param(dsa, OSSL_PKEY_PARAM_PUB_KEY, &pub_key);
 #else
     const BIGNUM * p_bn;
@@ -5120,6 +5126,16 @@ _libssh2_dh_dtor(_libssh2_dh_ctx *dhctx)
     *dhctx = NULL;
 }
 
+int
+_libssh2_bn_from_bin(_libssh2_bn *bn, size_t len, const unsigned char *val)
+{
+    if(!BN_bin2bn(val, (int)len, bn)) {
+        return -1;
+    }
+
+    return 0;
+}
+
 /* _libssh2_supported_key_sign_algorithms
  *
  * Return supported key hash algo upgrades, see crypto.h
@@ -5134,8 +5150,12 @@ _libssh2_supported_key_sign_algorithms(LIBSSH2_SESSION *session,
     (void)session;
 
 #if LIBSSH2_RSA_SHA2
-    if(key_method_len == 7 &&
-       memcmp(key_method, "ssh-rsa", key_method_len) == 0) {
+    if((key_method_len == 7 &&
+        memcmp(key_method, "ssh-rsa", key_method_len) == 0) ||
+       (key_method_len == 28 &&
+        memcmp(key_method, "ssh-rsa-cert-v01@openssh.com",
+               key_method_len) == 0)
+       ) {
         return "rsa-sha2-512,rsa-sha2-256"
 #if LIBSSH2_RSA_SHA1
             ",ssh-rsa"

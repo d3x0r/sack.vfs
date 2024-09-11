@@ -113,6 +113,10 @@
 #define TRUE 1
 #endif
 
+#ifndef UINT32_MAX
+#define UINT32_MAX 0xffffffffU
+#endif
+
 #if (defined(__GNUC__) || defined(__clang__)) && \
     defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) && \
     !defined(LIBSSH2_NO_FMT_CHECKS)
@@ -423,12 +427,6 @@ typedef struct packet_authagent_state_t
     uint32_t packet_size;
     LIBSSH2_CHANNEL *channel;
 } packet_authagent_state_t;
-
-typedef enum
-{
-    libssh2_requires_size_decryption = (1 << 0),
-    libssh2_requires_size_field_in_packet = (1 << 1)
-} libssh2_crypt_flags;
 
 struct _LIBSSH2_PACKET
 {
@@ -1000,6 +998,9 @@ struct _LIBSSH2_KEX_METHOD
     int (*exchange_keys) (LIBSSH2_SESSION * session,
                           key_exchange_state_low_t * key_state);
 
+    void (*cleanup) (LIBSSH2_SESSION * session,
+                     key_exchange_state_low_t * key_state);
+
     long flags;
 };
 
@@ -1040,14 +1041,21 @@ struct _LIBSSH2_CRYPT_METHOD
     int iv_len;
     int secret_len;
 
+    /* length of the authentication tag */
+    int auth_len;
+
     long flags;
 
     int (*init) (LIBSSH2_SESSION * session,
                  const LIBSSH2_CRYPT_METHOD * method, unsigned char *iv,
                  int *free_iv, unsigned char *secret, int *free_secret,
                  int encrypt, void **abstract);
-    int (*crypt) (LIBSSH2_SESSION * session, unsigned char *block,
-                  size_t blocksize, void **abstract, int firstlast);
+    int (*get_len) (LIBSSH2_SESSION * session, unsigned int seqno,
+                    unsigned char *data, size_t data_size, unsigned int *len,
+                    void **abstract);
+    int (*crypt) (LIBSSH2_SESSION * session, unsigned int seqno,
+                  unsigned char *block, size_t blocksize, void **abstract,
+                  int firstlast);
     int (*dtor) (LIBSSH2_SESSION * session, void **abstract);
 
     _libssh2_cipher_type(algo);
@@ -1059,6 +1067,8 @@ struct _LIBSSH2_CRYPT_METHOD
 #define LIBSSH2_CRYPT_FLAG_INTEGRATED_MAC            1
 /* Crypto method does not encrypt the packet length */
 #define LIBSSH2_CRYPT_FLAG_PKTLEN_AAD                2
+/* Crypto method must encrypt and decrypt entire messages */
+#define LIBSSH2_CRYPT_FLAG_REQUIRES_FULL_PACKET      4
 
 /* Convenience macros for accessing crypt flags */
 /* Local crypto flags */

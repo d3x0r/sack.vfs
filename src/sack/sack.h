@@ -1925,7 +1925,7 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE     ForAllLinks    ( PLIST *pList, ForP
    the list for something, then p will be non-null at the end of
    the loop.
                                                                                          */
-#define LIST_FORALL( l, i, t, v )  if(((v)=(t)(uintptr_t)NULL),(l))                                                        for( ((i)=0); ((i) < ((l)->Cnt))?                                         (((v)=(t)(uintptr_t)((l)->pNode[i])),1):(((v)=(t)(uintptr_t)NULL),0); (i)++ )  if( v )
+#define LIST_FORALL( l, i, t, v )  if(((i)=0),((v)=(t)(uintptr_t)NULL),(l))                                                        for( ; ((i) < ((l)->Cnt))?                                         (((v)=(t)(uintptr_t)((l)->pNode[i])),1):(((v)=(t)(uintptr_t)NULL),0); (i)++ )  if( v )
 /* This can be used to continue iterating through a list after a
    LIST_FORALL has been interrupted.
    Parameters
@@ -2071,7 +2071,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE       EmptyDataList ( PDATALIST *ppdl );
       }
    }
    </code>                                               */
-#define DATA_FORALL( l, i, t, v )  if(((v)=(t)NULL),(l)&&((l)->Cnt != INVALID_INDEX))	   for( ((i)=0);	                         (((i) < (l)->Cnt)                                             ?(((v)=(t)((l)->data + (uintptr_t)(((l)->Size) * (i)))),1)	         :(((v)=(t)NULL),0))&&(v); (i)++ )
+#define DATA_FORALL( l, i, t, v )  if(((i)=0),((v)=(t)NULL),(l)&&((l)->Cnt != INVALID_INDEX))	   for( ;	                                               (((i) < (l)->Cnt)                                             ?(((v)=(t)((l)->data + (uintptr_t)(((l)->Size) * (i)))),1)	         :(((v)=(t)NULL),0))&&(v); (i)++ )
 /* <code>
    PDATALIST pdl;
    pdl = CreateDataList( sizeof( int ) );
@@ -7504,6 +7504,11 @@ typedef void (CPROC*cppCloseCallback)(uintptr_t);
 typedef void (CPROC*cppWriteComplete)(uintptr_t, CPOINTER buffer, size_t len );
 typedef void (CPROC*cppNotifyCallback)(uintptr_t, PCLIENT newClient);
 typedef void (CPROC*cppConnectCallback)(uintptr_t, int);
+enum NetworkAddressFlags {
+	NETWORK_ADDRESS_FLAG_PREFER_NONE = 0,
+	NETWORK_ADDRESS_FLAG_PREFER_V6 = 1,
+	NETWORK_ADDRESS_FLAG_PREFER_V4 = 2,
+};
 enum SackNetworkErrorIdentifier {
 	SACK_NETWORK_ERROR_,
  // error during control information exchange over TLS
@@ -7601,6 +7606,15 @@ NETWORK_PROC( SOCKADDR *, SetNonDefaultPort )( SOCKADDR *pAddr, uint16_t nDefaul
  *
  */
 NETWORK_PROC( SOCKADDR *, CreateSockAddress )( CTEXTSTR name, uint16_t nDefaultPort );
+#define CreateSockAddress(name,port) CreateSockAddressV2( name, port, NETWORK_ADDRESS_FLAG_PREFER_NONE )
+/*
+ * this is the preferred method to create an address
+ * name may be "* / *" with a slash, then the address result will be a unix socket (if supported)
+ * name may have an options ":port" port number associated, if there is no port, then the default
+ * port is used.
+ *  flags controls whether to prefer V4 or V6 lookups.
+ */
+NETWORK_PROC( SOCKADDR *, CreateSockAddressV2 )( CTEXTSTR name, uint16_t nDefaultPort, enum NetworkAddressFlags flags );
 /*
  * set (*data) and (*datalen) to a binary buffer representation of the sockete address.
  */
@@ -7609,7 +7623,9 @@ NETWORK_PROC( void, GetNetworkAddressBinary )( SOCKADDR *addr, uint8_t **data, s
  * create a socket address form data and datalen binary buffer representation of the sockete address.
  */
 NETWORK_PROC( SOCKADDR *, MakeNetworkAddressFromBinary )( uintptr_t *data, size_t datalen );
+NETWORK_PROC( SOCKADDR*, CreateRemoteV2 )( CTEXTSTR lpName, uint16_t nHisPort, enum NetworkAddressFlags flags );
 NETWORK_PROC( SOCKADDR *, CreateRemote )( CTEXTSTR lpName,uint16_t nHisPort);
+#define CreateRemote(name,port) CreateRemoteV2( name, port, NETWORK_ADDRESS_FLAG_PREFER_NONE )
 NETWORK_PROC( SOCKADDR *, CreateLocal )(uint16_t nMyPort);
 NETWORK_PROC( int, GetAddressParts )( SOCKADDR *pAddr, uint32_t *pdwIP, uint16_t *pwPort );
  // release a socket resource that has been created by an above routine
@@ -7738,6 +7754,8 @@ NETWORK_PROC( void, SetNetworkListenerReady )( PCLIENT pListen );
 #define OPEN_TCP_FLAG_DELAY_CONNECT 1
 // Socket expects to be SSL client; defer initial read callback until SSL is enabled.
 #define OPEN_TCP_FLAG_SSL_CLIENT 2
+#define OPEN_TCP_FLAG_PREFER_V6  4
+#define OPEN_TCP_FLAG_PREFER_V4  8
 #ifdef __cplusplus
 /* <combine sack::network::tcp::OpenTCPClientAddrExx@SOCKADDR *@cReadComplete@cCloseCallback@cWriteComplete@cConnectCallback>
    \ \                                                                                                                        */
@@ -8125,7 +8143,7 @@ NETWORK_PROC( void, ssl_WriteData )( struct ssl_session* session, POINTER buffer
 /*
 * Send data out ssl connection
 */
-NETWORK_PROC( LOGICAL, ssl_SendPipe )( struct ssl_session* ses, CPOINTER buffer, size_t length );
+NETWORK_PROC( LOGICAL, ssl_SendPipe )( struct ssl_session** ses, CPOINTER buffer, size_t length );
 /*
 * set the send and receive work functions for an SSL connection
 */
@@ -8142,6 +8160,10 @@ NETWORK_PROC( CTEXTSTR, ssl_GetRequestedHostName )(PCLIENT pc);
 // just closed, but new error handling allows fallback to HTTP in order to send
 // a redirect to the HTTPS address proper.
 NETWORK_PROC( void, ssl_EndSecure )(PCLIENT pc, POINTER buffer, size_t buflen );
+/*
+ For a ssl_session pipe, this is a close.
+ */
+NETWORK_PROC( void, ssl_EndSecurePipe )(struct ssl_session** session );
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, CPOINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
@@ -8351,6 +8373,13 @@ NETWORK_PROC( LOGICAL, DoPingEx )( CTEXTSTR pstrHost,
 											, uintptr_t psv );
 //----- WHOIS.C -----
 NETWORK_PROC( LOGICAL, DoWhois )( CTEXTSTR pHost, CTEXTSTR pServer, PVARTEXT pvtResult );
+//----- NETSTAT ----
+struct listener_pid_info {
+	uint16_t port;
+	uint64_t pid;
+};
+// list is filled with struct listener_pid_info entries
+NETWORK_PROC( void, SackNetstat_GetListeners )( PDATALIST* ppList );
 #ifdef __cplusplus
 #  if defined( INCLUDE_SAMPLE_CPLUSPLUS_WRAPPERS )
 typedef class network *PNETWORK;
@@ -9983,6 +10012,7 @@ struct HTTPRequestOptions {
 	int timeout;
  // defaults to 3 retries if set to 0.
 	int retries;
+	enum NetworkAddressFlags addrFlags;
  //optionally this can be used to specify the certain, if not set, uses parameter, which will otherwise be NULL.
 	const char* certChain;
 	LOGICAL rejectUnauthorized;
@@ -9991,15 +10021,19 @@ struct HTTPRequestOptions {
 	// if set, will be called when content buffer has been sent.
 	void ( *writeComplete )( uintptr_t userData );
 	uintptr_t userData;
+ // did get a connect state, so connectError is not checked... (timeout before connect complete?)
+	LOGICAL connected;
+  // feedback to application if there was an error connecting.
+	int connectError;
 };
 typedef struct HttpState *HTTPState;
 enum ProcessHttpResult{
 	HTTP_STATE_RESULT_NOTHING = 0,
 	HTTP_STATE_RESULT_CONTENT = 200,
-    HTTP_STATE_RESULT_CONTINUE = 100,
+	HTTP_STATE_RESULT_CONTINUE = 100,
 	HTTP_STATE_INTERNAL_SERVER_ERROR=500,
 	HTTP_STATE_RESOURCE_NOT_FOUND=404,
-   HTTP_STATE_BAD_REQUEST=400,
+	HTTP_STATE_BAD_REQUEST=400,
 };
 /* Creates an empty http state, the next operation should be
    AddHttpData.                                              */
@@ -10161,7 +10195,7 @@ struct url_data
 	CTEXTSTR resource_file;
 	CTEXTSTR resource_extension;
 	CTEXTSTR resource_anchor;
-   // list of struct url_cgi_data *
+	// list of struct url_cgi_data *
 	PLIST cgi_parameters;
 };
 HTTP_EXPORT struct url_data * HTTPAPI SACK_URLParse( const char *url );
@@ -10199,6 +10233,10 @@ typedef uintptr_t ( *web_socket_http_request )(PCLIENT pc, uintptr_t psv);
 // options used for WebSocketOpen
 enum WebSocketOptions {
 	WS_DELAY_OPEN = 1,
+ // address type to prefer when opening socket (match TCP options)
+	WS_PREFER_V6 = 4,
+ // address type to prefer when opening socket
+	WS_PREFER_V4 = 8,
 };
 //enum WebSockClientOptions {
 //   WebSockClientOption_Protocols
@@ -15766,4 +15804,44 @@ SHA2_PROC void sha512(const unsigned char *message, unsigned int len,
 #ifdef __cplusplus
 }
 #endif
+#endif
+#ifndef LISTPORTS_H
+#define LISTPORTS_H
+#ifdef SACKCOMMLIST_SOURCE
+#define SACKCOMMLIST_PROC(type,name) EXPORT_METHOD type CPROC name
+#else
+#define SACKCOMMLIST_PROC(type,name) IMPORT_METHOD type CPROC name
+#endif
+#define VERSION_LISTPORTS 0x00020000
+#ifdef __cplusplus
+extern "C"{
+#endif
+//#include <windows.h>
+typedef struct
+{
+	CTEXTSTR lpPortName;
+	CTEXTSTR lpFriendlyName;
+							 /* instance "Infrared serial port (COM4)" */
+	CTEXTSTR lpTechnology;
+}LISTPORTS_PORTINFO;
+typedef LOGICAL (CPROC* ListPortsCallback)( uintptr_t psv, LISTPORTS_PORTINFO* lpPortInfo );
+/* User provided callback funtion that receives the information on each
+ * serial port available.
+ * The strings provided on the LISTPORTS_INFO are not to be referenced after
+ * the callback returns; instead make copies of them for later use.
+ * If the callback returns FALSE, port enumeration is aborted.
+ */
+SACKCOMMLIST_PROC( LOGICAL, ListPorts )( ListPortsCallback lpCallback, uintptr_t psv );
+/* Lists serial ports available on the system, passing the information on
+ * each port on succesive calls to lpCallback.
+ * lpCallbackValue, treated opaquely by ListPorts(), is intended to carry
+ * information internal to the callback routine.
+ * Returns TRUE if succesful, otherwise error code can be retrieved via
+ * GetLastError().
+ */
+#ifdef __cplusplus
+}
+#endif
+#elif VERSION_LISTPORTS!=0x00020000
+#error You have included two LISTPORTS.H with different version numbers
 #endif

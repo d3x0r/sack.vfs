@@ -2148,7 +2148,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
 				//akid->serial
-				GENERAL_NAMES *names = akid->issuer;
+				//GENERAL_NAMES *names = akid->issuer;
 				ASN1_OCTET_STRING *key = akid->keyid;
 				ASN1_INTEGER *ser = akid->serial;
 				vtLogBinary( pvt, key->data, key->length );
@@ -2183,7 +2183,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 					switch( namePart->type ) {
 					case GEN_DIRNAME:
 						{
-						X509_NAME *dir = namePart->d.directoryName;
+						//X509_NAME *dir = namePart->d.directoryName;
 						//int dn;
 						//for( dn = 0; dn < dir->entries; dn++ ) {
 
