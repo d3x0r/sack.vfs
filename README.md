@@ -253,7 +253,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.113(in progress)
+- 1.3.114(in progress)
+- 1.3.113
+    - Fix sack source; tcp network async event selection on windows for connect() sockets.
 - 1.3.112
     - implement network error callback (SSL fallback).
     - add null check to client websocket protocol send.
