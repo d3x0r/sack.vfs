@@ -141,6 +141,7 @@ function hookJSOX( serverOpts, server ) {
 const app = uExpress();
 server.addHandler( app.handle );
 
+	server.app = app;
 app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
 
 	console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
@@ -172,6 +173,7 @@ class Server extends Events {
 	handlers = [];
 	resourcePath = ".";
 	npmPath = ".";
+	app = null;
 	constructor( server, serverOpts, reqHandler ) {
 		super();
 		this.reqHandler = reqHandler;
