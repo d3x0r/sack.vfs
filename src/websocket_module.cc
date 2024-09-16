@@ -1034,7 +1034,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 						holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 						holder->buffer = eventMessage->buf;
 						argv[0] = ab;
-
+						Hold( eventMessage->buf );
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
 						// buf will deallocate when the arraybuffer does.
 					}
@@ -1043,9 +1043,9 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 						argv[0] = buf.ToLocalChecked();
 						//lprintf( "Message:', %s", eventMessage->buf );
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
-						Deallocate( CPOINTER, eventMessage->buf );
 					}
 				}
+				Deallocate( CPOINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_CLOSE:
 				argv[0] = Integer::New( isolate, eventMessage->code );
