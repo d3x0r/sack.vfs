@@ -1938,6 +1938,7 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
 {
+	//class wssObject *wss = (class wssObject*)psv;
 	class wssiObjectReference *wssiRef = (class wssiObjectReference*)psv;
 	class wssiObject *wssi = wssiRef->wssi;
 	if( wssi ) {
