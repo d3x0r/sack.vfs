@@ -253,7 +253,13 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.115(in progress)
+- 1.3.116(in progress)
+- 1.3.115
+    - Make HTTP response parser more pessimistic about line endings.
+    - Fixed memory double deallocation with multiple onmessage handlers registered.
+    - respect command line parameter option to open port in example HTTP server.
+    - revised image loader to just return promises (http-ws).
+    - removed some noisy logging.
 - 1.3.114
     - minimize published package.
 - 1.3.113

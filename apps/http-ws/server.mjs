@@ -3,6 +3,7 @@
 //const path = require( "path" );
 
 import {sack} from "../../vfs_module.mjs";
+import {Events} from "../events/events.mjs";
 import {uExpress} from "./uexpress.mjs";
 import path from "path";
 const disk = sack.Volume();
@@ -140,6 +141,7 @@ function hookJSOX( serverOpts, server ) {
 const app = uExpress();
 server.addHandler( app.handle );
 
+	server.app = app;
 app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
 
 	console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
@@ -167,6 +169,52 @@ app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
 } ) 
 }
 
+class Server extends Events {
+	handlers = [];
+	resourcePath = ".";
+	npmPath = ".";
+	app = null;
+	constructor( server, serverOpts, reqHandler ) {
+		super();
+		this.reqHandler = reqHandler;
+		this.serverOpts = serverOpts;
+		this.server = server;
+	}
+		server = null;
+		//handleEvent( req, res ) {
+		//	return eventHandler( req, res );
+		//}
+		setResourcePath( path ) {
+			resourcePath = path;	
+		}
+		addHandler( handler ) {
+			this.handlers.push( handler );
+		}
+		removeHandler( handler ) {
+			const index = this.handlers.findIndex( h=>h===handler );
+			if( index >= 0 )
+				handlers.splice( index, 1 );
+		}
+
+	handleEvent(req,res) {
+		for( let handler of this.handlers ) {
+			if( handler( req, res, this.serverOpts ) ) {
+				return true;
+			}
+		}
+		if( !this.reqHandler( req,res ) ) {
+			if( requests.length !== 0 )
+				clearTimeout( reqTimeout );
+			reqTimeout = setTimeout( logRequests, 100 );
+				
+			requests.push( "Failed request: " + req.url + " as " + lastFilePath );
+			res.writeHead( 404, {'Access-Control-Allow-Origin' : req.connection.headers.Origin } );
+			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
+		}
+	}
+
+}
+
 //exports.open = openServer;
 let eventHandler = null;
 export function openServer( opts, cbAccept, cbConnect )
@@ -181,30 +229,13 @@ export function openServer( opts, cbAccept, cbConnect )
 		serverOpts.key = serverOpts.key || certKey;
 	}
 	const server = sack.WebSocket.Server( serverOpts )
-
 	//console.log( "serving on " + serverOpts.port, server );
 	//console.log( "with:", disk.dir() );
 
-	const reqHandler = getRequestHandler( opts );
-	server.onrequest = handleEvent;
-	eventHandler = handleEvent;
+	const srvr = new Server( server, serverOpts, getRequestHandler( opts ) );
 
-	function handleEvent(req,res) {
-		for( let handler of handlers ) {
-			if( handler( req, res, serverOpts ) ) {
-				return true;
-			}
-		}
-		if( !reqHandler( req,res ) ) {
-			if( requests.length !== 0 )
-				clearTimeout( reqTimeout );
-			reqTimeout = setTimeout( logRequests, 100 );
-				
-			requests.push( "Failed request: " + req.url + " as " + lastFilePath );
-			res.writeHead( 404, {'Access-Control-Allow-Origin' : req.connection.headers.Origin } );
-			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
-		}
-	}
+	server.onrequest = srvr.handleEvent.bind( srvr );
+
 	server.on( "lowError",function (error, address, buffer) {
 		if( error !== 1 && error != 6 ) 
 			console.log( "Low Error with:", error, address, buffer  );
@@ -216,6 +247,11 @@ export function openServer( opts, cbAccept, cbConnect )
 	server.onaccept = function ( ws ) {
 		//console.log( "send accept?", cbAccept );
 		if( cbAccept ) return cbAccept.call(this,ws);
+		if( srvr.on( "accept", ws ) ) {
+			this.accept();
+			return;
+		}
+		
 		if( process.env.DEFAULT_REJECT_WEBSOCKET == "1" )
 			this.reject();
 		else
@@ -225,33 +261,19 @@ export function openServer( opts, cbAccept, cbConnect )
 	server.onconnect = function (ws) {
 		if( cbConnect ) return cbConnect.call(this,ws);
 		ws.nodelay = true;
-		ws.onmessage = function( msg ) {
-			// echo message.
-			ws.send( msg );
-		};
-		ws.onclose = function() {
-			console.log( "Remote closed" );
-		};
+		if( !srvr.on( "connect", ws ) ) {
+			ws.onmessage = function( msg ) {
+				// echo message.
+				// ws.send( msg );
+				parser.write( msg );
+			};
+			ws.onclose = function() {
+				console.log( "Remote closed" );
+			};
+		}
 	};
 
-	const serverResult = {
-		server,
-		handleEvent( req, res ) {
-			return eventHandler( req, res );
-		},
-		setResourcePath( path ) {
-			resourcePath = path;	
-		},
-		addHandler( handler ) {
-			handlers.push( handler );
-		},
-		removeHandler( handler ) {
-			const index = handlers.findIndex( h=>h===handler );
-			if( index >= 0 )
-				handlers.splice( index, 1 );
-		}
-	}
-	hookJSOX( serverOpts, serverResult );
-	return serverResult;
+	hookJSOX( serverOpts, srvr );
+	return srvr;
 }
 

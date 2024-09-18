@@ -122,7 +122,7 @@ class DbStorage {
 		} else	cb( undefined );
 	}
 	writeRaw( opts, obj ) {
-		console.log( "Write Raw:", opts, obj );
+		//console.log( "Write Raw:", opts, obj );
 		if( this.#psql ) 
 			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj,obj );
 		else if( this.#mysql ) {
@@ -531,7 +531,7 @@ class ObjectStorage {
 					this_.stored.set( obj, container.id );
 					if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
 					this_.cached.set( container.id, container.data );
-					console.log( "3CACHE IS SET HERE ------------------------- ", obj)
+					//console.log( "3CACHE IS SET HERE ------------------------- ", obj)
 					this_.cachedContainer.set( container.id, container );
 						
 					var stringifier;
@@ -562,7 +562,7 @@ class ObjectStorage {
 					this_.storage.writeRaw( opts, storage );
 					if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
 					this_.cached.set( container.id, container.data );
-					console.log( "2CACHE IS SET HERE ------------------------- ", obj)
+					//console.log( "2CACHE IS SET HERE ------------------------- ", obj)
 					this_.cachedContainer.set( container.id, container );
 				}catch(err) { console.log( "WRITE RAW?", this_ )}
 				//console.log( "OUTPUT:", storage );

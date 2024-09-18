@@ -1078,7 +1078,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 
 		// gets events about ssl failures
 
-		if( opts->ssl ) {
+		if( pc && opts->ssl ) {
 			if( opts->cert_chain ) {
 				ssl_BeginServer( pc
 					, opts->cert_chain, opts->cert_chain_len
