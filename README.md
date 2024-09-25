@@ -254,6 +254,8 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.3.116(in progress)
+    - Set blank headers object if the request had no headers, instead of not setting headers to a value.
+    - Fix getting server name extension for TLS connections to be ready in time for 'connect' event.
 - 1.3.115
     - Make HTTP response parser more pessimistic about line endings.
     - Fixed memory double deallocation with multiple onmessage handlers registered.

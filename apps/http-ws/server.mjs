@@ -221,7 +221,7 @@ export function openServer( opts, cbAccept, cbConnect )
 {
 	let handlers = [];
 	const serverOpts = opts || {};
-	if( !("port" in serverOpts )) serverOpts.port = process.env.PORT || 8080;
+	if( !("port" in serverOpts )) serverOpts.port = Number(process.env.PORT)||(process.argv.length > 2?Number(process.argv[2]):0) || 8080;
 	if( !("resourcePath" in serverOpts ) ) serverOpts.resourcePath = "."
 	if( certChain ) 
 	{
