@@ -730,8 +730,8 @@ Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket*
 			, String::NewFromUtf8( isolate, (const char*)GetText( header->value ), NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
 	}
 	optionStrings *strings = getStrings( isolate );
-	if( headers )
-		SETV( result, strings->headerString->Get( isolate ), arr );
+	// set empty headers if none
+	SETV( result, strings->headerString->Get( isolate ), arr );
 	CTEXTSTR host = pc?ssl_GetRequestedHostName( pc ):NULL;
 	if( host )
 		SETV( result, strings->hostnameString->Get( isolate ), String::NewFromUtf8( isolate, host, v8::NewStringType::kNormal ).ToLocalChecked() );
@@ -1956,6 +1956,7 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 
 static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char *reason )
 {
+	//class wssObject *wss = (class wssObject*)psv;
 	class wssiObjectReference *wssiRef = (class wssiObjectReference*)psv;
 	class wssiObject *wssi = wssiRef->wssi;
 	if( wssi ) {
