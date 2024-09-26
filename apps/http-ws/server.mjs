@@ -221,7 +221,7 @@ export function openServer( opts, cbAccept, cbConnect )
 {
 	let handlers = [];
 	const serverOpts = opts || {};
-	if( !("port" in serverOpts )) serverOpts.port = process.env.PORT || 8080;
+	if( !("port" in serverOpts )) serverOpts.port = Number(process.env.PORT)||(process.argv.length > 2?Number(process.argv[2]):0) || 8080;
 	if( !("resourcePath" in serverOpts ) ) serverOpts.resourcePath = "."
 	if( certChain ) 
 	{
@@ -259,13 +259,19 @@ export function openServer( opts, cbAccept, cbConnect )
 	};
 
 	server.onconnect = function (ws) {
-		if( cbConnect ) return cbConnect.call(this,ws);
+		try {
+			if( cbConnect ) return cbConnect.call(this,ws);
+		}catch( err){
+			console.log( "onconnect callback failed (C++ isn't so good at catching exceptions...):", err );
+			return;
+		}
 		ws.nodelay = true;
 		if( !srvr.on( "connect", ws ) ) {
 			ws.onmessage = function( msg ) {
 				// echo message.
 				// ws.send( msg );
-				parser.write( msg );
+				// parser.write( msg );
+				// no message callback defined
 			};
 			ws.onclose = function() {
 				console.log( "Remote closed" );

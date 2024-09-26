@@ -1266,7 +1266,7 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		}
 		obj->_this.Reset( isolate, _this );
 		obj->Wrap( _this );
-
+		//lprintf( "Makes a connection socket here with just tcp object?");
 		SETV( _this, strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, NULL, NULL ) );
 
 		args.GetReturnValue().Set( _this );

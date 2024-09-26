@@ -399,6 +399,34 @@ handle inheritance.  (Many handles created by SACK have inheritance disabled by 
 | getTitle( processId ) | (Windows) returns the title of the window associated with a process.
 | getPosition( processId ) | (Windows) returns an object with the current window x,y, width, height |
 | setPosition( processId, { x,y,width,height} ) | (Windows) Set the position of a window associated with the process ID. |
+| modulePath | where sack-[vfs/gui].node loaded from |
+| dataPath | where shared data is for the module |
+| commonDataPath| global common data? like ProgramData on home, ~/.freedom Collective on linus |
+| programDataPath| Program specific datapath? |
+| programPath | The path of the program that is running |
+| programName | the name (minus.exe) of the program that is running |
+
+
+``` js
+import {sack} from "sack.vfs"
+
+console.log( "Program:", sack.Task.programName );
+console.log( "Program Path:", sack.Task.programPath );
+console.log( "Program Data:", sack.Task.programDataPath );
+console.log( "Common(global) Data:", sack.Task.commonDataPath );
+console.log( "Module Path:", sack.Task.modulePath );
+console.log( "Data Path:", sack.Task.dataPath );
+
+/***** OUTPUT *****
+Program: node
+Program Path: C:\Users\d3x0r\AppData\Local\nvs\default
+Program Data: C:\ProgramData\Freedom Collective\node
+Common(global) Data: C:\ProgramData\Freedom Collective
+Module Path: M:\javascript\vfs\native\build\RelWithDebInfo
+Data Path: C:\Users\d3x0r\AppData\Local\nvs
+******************/
+
+```
 
 
 Having created a task instance with `sack.Task( {...} );` the following methods are available

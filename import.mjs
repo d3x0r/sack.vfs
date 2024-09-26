@@ -221,11 +221,10 @@ export function resolve( specifier, context, nextResolve ) {
 		};	
 		
 	}
-	if( forceModule ) {
-		console.log( "Return forced module:" );
-		return nextResolve( specifier, {
-				format: "module"
-			} );
+	if( forceModule && context.format !== "module") {
+		//console.log( "Return forced module:", specifier, context );
+		return nextResolve( specifier, Object.assign( {}, context, { format: "module" } ) );
+		
 	}
 	// nextResolve( specifier, {modified options} );
 	return nextResolve( specifier, context );
