@@ -5,3 +5,4 @@ console.log( "Program Path:", sack.Task.programPath );
 console.log( "Program Data:", sack.Task.programDataPath );
 console.log( "Common(global) Data:", sack.Task.commonDataPath );
 console.log( "Module Path:", sack.Task.modulePath );
+console.log( "Data Path:", sack.Task.dataPath );
