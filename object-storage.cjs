@@ -7,7 +7,7 @@ module.exports = function( sack ) {
 
 const _debug = false;
 const _debug_dangling = false;
-const _debug_output = _debug || true;
+const _debug_output = _debug || false;
 const _debug_object_convert = _debug || false;
 const _debug_ll = false; // remote receive message logging.
 const _debug_map = false;
@@ -470,7 +470,7 @@ class ObjectStorage {
 						stringifier = this_.stringifier;
 					}
 					container.encoding = true;
-					console.log( "Setting root container mode....(object already contained)");
+					//console.log( "Setting root container mode....(object already contained)");
 					rootContainer = true;
 					storage = stringifier.stringify( container );
 					container.encoding = false;
@@ -965,15 +965,15 @@ class ObjectStorage {
 			}
 
 		//const isRoot = (rootObjectContainer === obj);
-		
-		if(obj instanceof Promise ) {
-			//_debug_object_convert && 
+		if( _debug_object_convert )
+			if(obj instanceof Promise ) {
 				console.log( "This is still a pending object reference(?)", obj );
-		}
+			}
 		//  see if we alread stored this... (or are currently storing this.) (back references container)
 		//console.log( "this?", obj, rootObjectContainer );
 
 		var exist = !rootObjectSet && rootObjectContainer && storage.stored.get( obj );
+		//console.log( "Exist after promise?", exist );
 		_debug_object_convert && console.log( "THIS GOT CALLED?", obj, Object.getPrototypeOf( obj ), exist );
 		if( exist ) {
 			//console.trace( "Is it this sort of exist?", exist );
@@ -999,8 +999,7 @@ class ObjectStorage {
 					console.trace( "Deep remote reference.", rootObjectSet, obj, exist );
 					//return '~or"'+exist+'"';
 				} else {
-					//_debug_object_convert && 
-					console.log( "not a stored object, encode itself." );
+					_debug_object_convert && console.log( "not a stored object, encode itself." );
 				}
 			}
 		}
