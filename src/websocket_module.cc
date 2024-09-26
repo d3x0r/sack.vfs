@@ -3127,7 +3127,7 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		wssiObject *obj = new wssiObject();
 		class constructorSet *c = getConstructors( isolate );
-		Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
+		//Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
 		obj->c = c;
 		obj->isolate = isolate;
 		//class constructorSet *c = getConstructors(isolate);
@@ -3634,11 +3634,12 @@ void wscObject::New(const FunctionCallbackInfo<Value>& args){
 		wscOpts.deflate = false;
 
 		Local<Object> _this = args.This();
-		wscObject* obj;
 		//try {
 			wscOpts._this = _this;
 			wscOpts.c = getConstructors(isolate);
-			obj = new wscObject( &wscOpts );
+			// new object internally binds to _this, and we don't need 'obj'
+			//wscObject* obj = 
+				new wscObject( &wscOpts );
 		//}
 		//catch( const char *ex1 ) {
 		//	isolate->ThrowException( Exception::Error(

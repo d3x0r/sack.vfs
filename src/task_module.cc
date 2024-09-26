@@ -268,6 +268,14 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 		, SideEffectType::kHasNoSideEffect
 		, SideEffectType::kHasSideEffect
 	);
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "dataPath" )
+		, getDataPath
+		, nullptr //Local<Function>()
+		, Local<Value>()
+		, PropertyAttribute::ReadOnly
+		, SideEffectType::kHasNoSideEffect
+		, SideEffectType::kHasSideEffect
+	);
 
 #ifdef _WIN32
 	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "env" )
@@ -1933,7 +1941,7 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 		LIST_FORALL( vars, index, struct variable_data*, check ) {
 			// these are apparently broken down parts of USERPROFILE
 			if( StrCmp( check->name, "USERPROFILE" ) == 0 ) {
-				TEXTSTR start = StrChr( check->value, '\\' );
+				//TEXTSTR start = StrChr( check->value, '\\' );
 				struct variable_data* var = NewArray( struct variable_data, 1 );
 				var->name = StrDup( "HOMEDRIVE" );
 				var->value = NewArray( char, 3 );
