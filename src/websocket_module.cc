@@ -694,6 +694,7 @@ static void cgiParamSave(uintptr_t psv, PTEXT name, PTEXT value){
 		SETT( cgi->cgi, name, Null( cgi->isolate ) );
 }
 
+// shared with network_module.cc
 Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket* pipe, wssObject* wss, wscObject* wsc, wssiObject* wssi ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	//wssi
@@ -991,7 +992,7 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
 	}
 }
 
-static void wssiAsyncMsg( uv_async_t* handle ) {
+static void wssiAsyncMsg_( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
@@ -1048,6 +1049,7 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 				Deallocate( CPOINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_CLOSE:
+				//lprintf( "Send wssi close");
 				argv[0] = Integer::New( isolate, eventMessage->code );
 				if( eventMessage->buf ) {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
@@ -1078,13 +1080,19 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 			DropWssiEvent( eventMessage );
 		}
 	}
+}
+
+static void wssiAsyncMsg( uv_async_t* handle ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	wssiAsyncMsg_(handle);
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
-}
 
+}
 /*
 static void handleWebSockEOF( uintptr_t psv ) {
 	wssiObject* wssiInternal = (wssiObject*)psv;
@@ -1101,7 +1109,7 @@ static void handleWebSockClose( uintptr_t psv ) {
 }
 */
 
-static void wssAsyncMsg( uv_async_t* handle ) {
+static void wssAsyncMsg_( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	wssObject* myself = (wssObject*)handle->data;
@@ -1215,7 +1223,6 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 				
 				AddLink( &myself->opening, wssiInternal );
 				eventMessage->result = wssiInternal;
-
 				SETV( wssi, strings->connectionString->Get(isolate), socket = makeSocket( isolate, eventMessage->pc, wssiInternal->wsPipe, NULL, NULL, wssiInternal ) );
 				SETV( wssi, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
 
@@ -1334,6 +1341,12 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 		}
 		myself->last_count_handled = handled;
 	}
+}
+
+static void wssAsyncMsg( uv_async_t* handle ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope(isolate);
+	wssAsyncMsg_( handle );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
@@ -1341,7 +1354,7 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	}
 }
 
-static void wscAsyncMsg( uv_async_t* handle ) {
+static void wscAsyncMsg_( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
@@ -1441,15 +1454,19 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 			DropWscEvent( eventMessage );
 		}
 	}
+}
+
+
+static void wscAsyncMsg( uv_async_t* handle ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope(isolate);
+	wscAsyncMsg_( handle );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
-
-
-
 
 static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssiObject* obj ) {
 	if( !obj->acceptEventMessage ) {
@@ -1869,6 +1886,7 @@ static void Wait( void ) {
 
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 	wssObject*wss = (wssObject*)psv;
+	lprintf( "websocket server open event");
 	while( !wss->eventQueue )
 		Relinquish();
 	INDEX idx;
@@ -1896,7 +1914,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		lprintf( "Open event send...%p", &wssi->async );
 #endif
 		if( MakeThread() == wssi->c->thread ) {
-			wssiAsyncMsg( &wssi->async );
+			wssiAsyncMsg_( &wssi->async );
 		}
 		else
 			uv_async_send( &wssi->async );
@@ -1920,7 +1938,7 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 	wss->closing = 1;
 	EnqueLink( &wss->eventQueue, pevt );
 	if( (*pevt).waiter == wss->c->thread ) {
-		wssAsyncMsg( &wss->async );
+		wssAsyncMsg_( &wss->async );
 	}
 	else {
 #ifdef DEBUG_EVENTS
@@ -1990,7 +2008,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 			(*pevt)._this = wss;
 			EnqueLink( &wss->eventQueue, pevt );
 			if( (*pevt).waiter == wss->c->thread ) {
-				wssAsyncMsg( &wss->async );
+				wssAsyncMsg_( &wss->async );
 			}
 			else {
 #ifdef DEBUG_EVENTS
@@ -2079,7 +2097,7 @@ static void webSockServerAcceptAsync( PCLIENT pc, uintptr_t psv, const char* pro
 
 	EnqueLink( &wss->eventQueue, pevt );
 	if( ( *pevt ).waiter == wss->c->thread ) {
-		wssAsyncMsg( &wss->async );
+		wssAsyncMsg_( &wss->async );
 	} else {
 #ifdef DEBUG_EVENTS
 		lprintf( "socket server accept %p", &wss->async );
@@ -2125,7 +2143,7 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* proto
 
 	EnqueLink( &wss->eventQueue, pevt );
 	if( ( *pevt ).waiter == wss->c->thread ) {
-		wssAsyncMsg( &wss->async );
+		wssAsyncMsg_( &wss->async );
 	} else {
 #ifdef DEBUG_EVENTS
 		lprintf( "socket server accept %p", &wss->async );
@@ -2396,7 +2414,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					EnqueLink(&obj->wss->eventQueue, pevt);
 					//lprintf( "Send Request" );
 					if( (*pevt).waiter == obj->wss->c->thread ) {
-						wssAsyncMsg( &obj->wss->async );
+						wssAsyncMsg_( &obj->wss->async );
 					} else {
 #ifdef DEBUG_EVENTS
 						lprintf( "socket HTTP Parse Send %p", &obj->wss->async);
@@ -2445,7 +2463,7 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	(*pevt).waiter = MakeThread();
 	EnqueLink( &wss->eventQueue, pevt );
 	if( (*pevt).waiter == wss->c->thread ) {
-		wssAsyncMsg( &wss->async );
+		wssAsyncMsg_( &wss->async );
 	}
 	else {
 #ifdef DEBUG_EVENTS
@@ -3392,22 +3410,27 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	//lprintf( "Never got web socket client closed, right? just error?");
 	wsc->readyState = CLOSED;
 
-	if( wsc->c->thread == MakeThread() ) {
-		if( wsc->closeCallbacks )
-			lprintf( "Should send this directly to the callbacks..." );
-		return;
-	}
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
 	(*pevt).code = code;
 	(*pevt).buf = StrDup(reason);
 	(*pevt).buflen = StrLen( reason );
-	EnqueLink( &wsc->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Close Request %p", &wsc->async );
 #endif
-	uv_async_send( &wsc->async );
+	if( wsc->c->thread == MakeThread() ) {
+		if( wsc->closeCallbacks ) {
+			EnqueLink( &wsc->eventQueue, pevt );
+			wscAsyncMsg_( (uv_async_t*)&wsc->async );
+			lprintf( "Should send this directly to the (close)callbacks..." );
+		}
+		return;
+	}
+	else {
+		EnqueLink( &wsc->eventQueue, pevt );
+		uv_async_send( &wsc->async );
+	}
 	wsc->pc = NULL;
 }
 
