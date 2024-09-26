@@ -7,7 +7,8 @@ This is a shell static web resource server, and websocket endpoint.
 
 
 ``` js
-import {openServer} from "/node_modules/sack.vfs/apps/server.mjs";
+import {openServer} from "/node_modules/sack.vfs/apps/http-ws/server.mjs";
+//import {openServer} from "sack.vfs/http-ws";
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs";  
 
 const server = openServer( { /* options */ }, accept, connect );
@@ -172,7 +173,7 @@ Includes a simple router which can be applied to a server mentioned above.
 Supports only most basic express-like interface.  Route matching can be done by String or RexExp.
 
 ``` js
-import {uExpress} from "sack.vfs/apps/http-ws/uexpress.mjs"
+import {uExpress} from "sack.vfs/http-ws/uexpress.mjs"
 
 const app = uExpress();
 app.get( "/Token", (req,res)=>{

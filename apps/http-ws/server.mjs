@@ -259,13 +259,19 @@ export function openServer( opts, cbAccept, cbConnect )
 	};
 
 	server.onconnect = function (ws) {
-		if( cbConnect ) return cbConnect.call(this,ws);
+		try {
+			if( cbConnect ) return cbConnect.call(this,ws);
+		}catch( err){
+			console.log( "onconnect callback failed (C++ isn't so good at catching exceptions...):", err );
+			return;
+		}
 		ws.nodelay = true;
 		if( !srvr.on( "connect", ws ) ) {
 			ws.onmessage = function( msg ) {
 				// echo message.
 				// ws.send( msg );
-				parser.write( msg );
+				// parser.write( msg );
+				// no message callback defined
 			};
 			ws.onclose = function() {
 				console.log( "Remote closed" );
