@@ -170,6 +170,12 @@ public:
 	*/
 	static void getReadyState( const FunctionCallbackInfo<Value>& args );
 
+	/**
+	 * add additional certificates to a server, switched on hostname
+	 *  (host,cert,key,keypadd)
+	*/
+	static void addHost( const FunctionCallbackInfo<Value>& args );
+
 	~wssObject();
 };
 

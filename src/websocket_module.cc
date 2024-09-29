@@ -1129,22 +1129,26 @@ static void wssAsyncMsg_( uv_async_t* handle ) {
 				if( !myself->errorLowCallback.IsEmpty() ) {
 					argv[0] = Integer::New( isolate, eventMessage->data.error.error );
 					argv[1] = makeSocket( isolate, eventMessage->pc, NULL, myself, NULL, NULL );
-					if( eventMessage->data.error.buffer ) {
+					if( eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
+						if( eventMessage->data.error.buffer ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
-							eventMessage->data.error.buflen, dontReleaseBufferBackingStore, NULL );
-						argv[2] = ArrayBuffer::New( isolate, bs );
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
+								eventMessage->data.error.buflen, dontReleaseBufferBackingStore, NULL );
+							argv[2] = ArrayBuffer::New( isolate, bs );
 #else
-					if( eventMessage->data.error.buffer )
-						argv[2] = ArrayBuffer::New( isolate,
-						(void*)eventMessage->data.error.buffer,
-							eventMessage->data.error.buflen );
+						if( eventMessage->data.error.buffer )
+							argv[2] = ArrayBuffer::New( isolate,
+							(void*)eventMessage->data.error.buffer,
+								eventMessage->data.error.buflen );
 #endif
+						} else
+							argv[2] = Null( isolate );
+					} else if( eventMessage->data.error.error == SACK_NETWORK_ERROR_HOST_NOT_FOUND ) {
+						argv[2] = String::NewFromUtf8( isolate, eventMessage->data.error.buffer, v8::NewStringType::kNormal, eventMessage->data.error.buflen ).ToLocalChecked();
 					} else
 						argv[2] = Null( isolate );
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 				}
-
 			} else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
@@ -2549,6 +2553,10 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 		(*pevt).data.error.buflen = va_arg( args, size_t );
 		(*pevt).data.error.fallback_ssl = 0; // make sure this is cleared.
 		break;
+	case SACK_NETWORK_ERROR_HOST_NOT_FOUND:
+		(*pevt).data.error.buffer = va_arg( args, const char * );
+		(*pevt).data.error.buflen = va_arg( args, size_t );
+		break;
 	}
 	(*pevt).pc = pc;
 	(*pevt)._this = wss;
@@ -2961,6 +2969,20 @@ void wssObject::close( const FunctionCallbackInfo<Value>& args ) {
 	}
 	webSockServerCloseEvent( obj );
 }
+
+void wssObject::addHost( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
+	if( args.Length() == 4 ) {
+		String::Utf8Value hosts( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value cert( isolate,  args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value key( isolate,  args[3]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value keypass( isolate,  args[3]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+		ssl_setupHostCert( obj->pc, *hosts, *cert, cert.length(), *key, key.length(), *keypass, keypass.length() );
+	}
+}
+
 
 void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();

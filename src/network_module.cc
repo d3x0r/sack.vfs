@@ -182,6 +182,11 @@ public:
 	static void string_set( const FunctionCallbackInfo<Value>& args );
 	static void ssl_fallback_get( const v8::FunctionCallbackInfo<Value>& args );
 	static void ssl_fallback_set( const v8::FunctionCallbackInfo<Value>& args );
+	/**
+	 * add additional certificates to a server, switched on hostname
+	 *  (host,cert,key,keypadd)
+	*/
+	static void addHost( const FunctionCallbackInfo<Value>& args );
 
 	static class tcpObject* getSelf( Local<Object> _this );
 	~tcpObject();
@@ -401,6 +406,7 @@ void InitUDPSocket( Isolate *isolate, Local<Object> exports ) {
 		tcpTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "close", tcpObject::close );
 		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "on", tcpObject::on );
+		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "addHost", tcpObject::addHost );
 		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "send", tcpObject::send );
 		NODE_SET_PROTOTYPE_METHOD( tcpTemplate, "ssl", tcpObject::on );
 		tcpTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "ssl" )
@@ -1322,6 +1328,20 @@ void tcpObject::close( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
 	RemoveClient( obj->pc );
+}
+
+
+void tcpObject::addHost( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( args.This() );
+	if( args.Length() == 4 ) {
+		String::Utf8Value hosts( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value cert( isolate,  args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value key( isolate,  args[3]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value keypass( isolate,  args[3]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+		ssl_setupHostCert( obj->pc, *hosts, *cert, cert.length(), *key, key.length(), *keypass, keypass.length() );
+	}
 }
 
 void tcpObject::send( const FunctionCallbackInfo<Value>& args ) {
