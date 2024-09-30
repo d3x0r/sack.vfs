@@ -253,7 +253,10 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
+- 1.3.118(in progress)
 - 1.3.117(in progress)
+    - Make TLS hostname checks less optional.  Add hooks to TCP for TLS host specification.
+    - Make default server module check for SSL_HOST environment when SSL_PATH is specified for certificate chain.
 - 1.3.116
     - Set blank headers object if the request had no headers, instead of not setting headers to a value.
     - Fix getting server name extension for TLS connections to be ready in time for 'connect' event.
