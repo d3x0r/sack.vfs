@@ -169,6 +169,8 @@ struct wssOptions {
 	int key_len;
 	char *pass;
 	int pass_len;
+	char *host; // host names to match; for the root/default cert (hostlist also has this.)
+	int hostlen;
 	bool deflate;
 	bool deflate_allow;
 	bool apply_masking;
@@ -2672,20 +2674,32 @@ wssObject::wssObject( struct wssOptions *opts ) {
 			INDEX idx;
 			struct wssHostOption* opt;
 			if( opts->cert_chain ) {
-				ssl_BeginServer( pc
+				//lprintf( "Setup first socket?" );
+				ssl_BeginServer_v2( pc
 					, opts->cert_chain, opts->cert_chain_len
 					, opts->key, opts->key_len
-					, opts->pass, opts->pass_len );
+					, opts->pass, opts->pass_len, opts->host );
 			}
 			LIST_FORALL( opts->hostList, idx, struct wssHostOption*, opt ) {
-				if( opt )
-				ssl_BeginServer_v2( pc
-					, opt->cert_chain, opt->cert_chain_len
-					, opt->key, opt->key_len
-					, opt->pass, opt->pass_len
-					, opt->host
-				);
+				if( opt ) {
+					lprintf( "Setup another host?");
+					ssl_BeginServer_v2( pc
+						, opt->cert_chain, opt->cert_chain_len
+						, opt->key, opt->key_len
+						, opt->pass, opt->pass_len
+						, opt->host
+					);
+					/*
+					ssl_setupHostCert( pc, opt->host
+						, opt->cert_chain, opt->cert_chain_len
+						, opt->key, opt->key_len
+						, opt->pass, opt->pass_len
+						 );
+					*/
+				}
 			}
+		} else {
+			//lprintf( "No SSL" );
 		}
 		SetWebSocketAcceptAsyncCallback( pc, webSockServerAcceptAsync );
 		readyState = LISTENING;
@@ -2817,6 +2831,11 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->pass = StrDup( *cert );
 		wssOpts->pass_len = cert.length();
 	}
+	if( opts->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value address( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		wssOpts->host = StrDup( *address );
+		wssOpts->hostlen = address.length();
+	}
 
 	if( wssOpts->key || wssOpts->cert_chain ) {
 		wssOpts->ssl = 1;
@@ -2862,12 +2881,13 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	if( opts->Has( context, optName = strings->hostsString->Get( isolate ) ).ToChecked() ) {
 		Local<Value> val = GETV( opts, optName );
 		if( val->IsArray() ) {
-		Local<Array> hosts = GETV( opts, optName ).As<Array>();
-		uint32_t o;
-		for( o = 0; o < hosts->Length(); o++ ) {
-			Local<Object> host = GETV( hosts, o ).As<Object>();
-			ParseWssHostOption( strings, wssOpts, isolate, host );
-		}
+			wssOpts->ssl = 1;
+			Local<Array> hosts = GETV( opts, optName ).As<Array>();
+			uint32_t o;
+			for( o = 0; o < hosts->Length(); o++ ) {
+				Local<Object> host = GETV( hosts, o ).As<Object>();
+				ParseWssHostOption( strings, wssOpts, isolate, host );
+			}
 		}
 	}
 
