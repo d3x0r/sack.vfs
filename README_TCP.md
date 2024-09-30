@@ -52,9 +52,12 @@ tcp2.send( "Hello World" );
 | connect | &lt;function&gt; | For a server, this receives a new connection.  For a client, this will receive `undefined` or a number that is the error of the connection. |
 | close | &lt;function&gt; | called when a connection is closed.  No parameters are given. |
 | ssl | &lt;bool&gt; | Set to enable SSL on client sockets, without further certificate information. (for client) |
+| host | &lt;string&gt; | Host name(s) that match the default cerfiticate; names separated by '~' |
 | cert | &lt;string&gt; | cerficiate for server socket to use to accepted TLS connections. (for server) |
 | key | &lt;string&gt; | private key associated with cerfificate for TLS connections. (for server) |
+| passphrase | &lt;string&gt; | password for private key. |
 | ca | &lt;string&gt; | Certificate authority chain for client to use to authenticate server key (optional, unimplemented?) |
+| hosts | [ {/*host option*/}] | Array of host definitions; includes members `host`, `cert`, `key`, `passphrase`.  |
 | allowSSLfallback | true/false | controls whether the the socket will automatically demote from TLS/SSL to raw.  If set to false, sockets with SSL that fail negotiation are closed. |
 | ready | callback () | is called when a socket is ready; this is alternative method to specify the callback to .on( "ready", ... ) |
 | message | callback (buffer) | is called when a socket receives a message; this is alternative method to specify the callback to .on( "message", ... ) |
@@ -72,6 +75,7 @@ Errors connect returns depend on the system; windows system will return windows 
 | send | (message [,address]) | Send a message, message can be an ArrayBuffer or string,   if second parameter is passed it should be an sack.Network.Address object. |
 | close | () | Close the socket. |
 | on | (eventName, callback) | Set message or close callbacks on the socket. |
+| addCert | (hosts, cert, privateKey, passPhrase ) | Add a cerficate option to a socket.  Similar to specifying this in options for socket creation; but can add certificates after socket creation. |
 | ssl | setter true/false | enable/disable ssl; reading this returns secure status(yes/no) of client. |
 | readStrings | setter true/false | controls whether the next read is text or a byte buffer |
 | allowSSLfallback | setter true/false | controls whether the the socket will automatically demote from TLS/SSL to raw.  If set to false, sockets with SSL that fail negotiation are closed. |
@@ -84,8 +88,16 @@ Errors connect returns depend on the system; windows system will return windows 
 | connect | () | called when a connection happens. This allows setting additional event handlers on the socket, but the socket is not fully connected.  |
 | ready | () | Socket is now ready to send data.  Connect is called when 
 | close | () | Socket has been closed. | 
-| error | (n) | error callback, used for conditions in the TLS layer to report errors. |
+| error | (n [,...]) | error callback, used for conditions in the TLS layer to report errors.  Depending on the error, may be additional parameters.  |
 
+
+#### TCP Error Codes
+
+| Code | Description |
+|----|----|
+| 7 | host name mismatch.  Additional parameter is host name requested |
+| 6 | TLS handshake failed.  Additional parameter is initial buffer that failed negotiation.  Passing this buffer to disableSSL() allows non-TLS fallback to parse message |
+| 1-5 | Various low level TLS errors... (they don't occur very often?) |
 
 Needs a good example?
 

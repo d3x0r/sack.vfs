@@ -26,6 +26,8 @@ struct optionStrings {
 	Eternal<String>* sslString;
 	Eternal<String>* pemString;
 	Eternal<String>* passString;
+	Eternal<String>* hostString;
+	Eternal<String>* hostsString;
 	Eternal<String>* allowSSLfallbackString;
 
 	// object field for connect callback in options
@@ -48,6 +50,16 @@ struct udpOptions {
 	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
 };
 
+struct tcpHostOption {
+	char* host;
+	int hostlen;
+	char* cert_chain;
+	int cert_chain_len;
+	char* key;
+	int key_len;
+	char* pass;
+	int pass_len;
+};
 
 struct tcpOptions {
 	Isolate *isolate;
@@ -74,6 +86,8 @@ struct tcpOptions {
 	int key_len;
 	char* pass;
 	int pass_len;
+	char* host;
+	PLIST hostList;
 
 
 	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
@@ -350,6 +364,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
 		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pem" ) );
 		check->passString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "passphrase" ) );
+		check->hostString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "host" ) );
+		check->hostsString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hosts" ) );
 		check->allowSSLfallbackString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "allowSSLfallback" ) );
 		check->connectString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "connect" ) );
 		check->readyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ready" ) );
@@ -1086,10 +1102,20 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 
 		if( pc && opts->ssl ) {
 			if( opts->cert_chain ) {
-				ssl_BeginServer( pc
+				ssl_BeginServer_v2( pc
 					, opts->cert_chain, opts->cert_chain_len
 					, opts->key, opts->key_len
-					, opts->pass, opts->pass_len );
+					, opts->pass, opts->pass_len, opts->host );
+				{
+					struct tcpHostOption* host;
+					INDEX idx;
+					LIST_FORALL( opts->hostList, idx, struct tcpHostOption*, host ) {
+						ssl_setupHostCert( pc, host->host
+						             , host->cert_chain, host->cert_chain_len
+						             , host->key, host->key_len
+						             , host->pass, host->pass_len );
+					}
+				}
 			}
 		}
 		if( pc ) {
@@ -1112,6 +1138,61 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 tcpObject::~tcpObject() {
 	if( !closed )
 		RemoveClient( pc );
+}
+
+
+static void ParseTcpHostOption( struct optionStrings* strings
+	, struct tcpOptions* tcpOpts
+	, Isolate* isolate, Local<Object> hostOpt ) {
+
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<String> optName;
+	struct tcpHostOption* newOpt = NewArray( struct tcpHostOption, 1 );
+
+	if( hostOpt->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value address( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		newOpt->host = StrDup( *address );
+		newOpt->hostlen = address.length();
+	}
+
+	if( hostOpt->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		newOpt->cert_chain = StrDup( *cert );
+		newOpt->cert_chain_len = cert.length();
+	}
+
+	if( hostOpt->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value ca( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		if( newOpt->cert_chain ) {
+			newOpt->cert_chain = (char*)Reallocate( newOpt->cert_chain, newOpt->cert_chain_len + ca.length() + 1 );
+			strcpy( newOpt->cert_chain + newOpt->cert_chain_len, *ca );
+			newOpt->cert_chain_len += ca.length();
+		} else {
+			newOpt->cert_chain = StrDup( *ca );
+			newOpt->cert_chain_len = ca.length();
+		}
+	}
+
+	if( !hostOpt->Has( context, optName = strings->keyString->Get( isolate ) ).ToChecked() ) {
+		newOpt->key = NULL;
+		newOpt->key_len = 0;
+	} else {
+		String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		newOpt->key = StrDup( *cert );
+		newOpt->key_len = cert.length();
+	}
+
+	if( !hostOpt->Has( context, optName = strings->passString->Get( isolate ) ).ToChecked() ) {
+		newOpt->pass = NULL;
+		newOpt->pass_len = 0;
+	} else {
+		String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		newOpt->pass = StrDup( *cert );
+		newOpt->pass_len = cert.length();
+	}
+
+	AddLink( &tcpOpts->hostList, newOpt );
+
 }
 
 void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -1223,6 +1304,21 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					tcpOpts.allowSSLfallback = GETV( opts, optName )->ToBoolean( isolate )->Value();
 				} else tcpOpts.allowSSLfallback = TRUE;
 
+				if( opts->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.host = StrDup( *String::Utf8Value( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
+				}
+				if( opts->Has( context, optName = strings->hostsString->Get( isolate ) ).ToChecked() ) {
+					Local<Value> val = GETV( opts, optName );
+					if( val->IsArray() ) {
+						Local<Array> hosts = GETV( opts, optName ).As<Array>();
+						uint32_t o;
+						for( o = 0; o < hosts->Length(); o++ ) {
+							Local<Object> host = GETV( hosts, o ).As<Object>();
+							ParseTcpHostOption( strings, &tcpOpts, isolate, host );
+						}
+					}
+				}
+
 				if( opts->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
 					String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 					tcpOpts.cert_chain = StrDup( *cert );
@@ -1269,6 +1365,20 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 		if( argc > 0 ) {
 			Deallocate( char*, tcpOpts.address );
 			Deallocate( char*, tcpOpts.toAddress );
+		}
+		Deallocate( char*, tcpOpts.host );
+		{
+			struct tcpHostOption* opt;
+			INDEX idx;
+
+			LIST_FORALL( tcpOpts.hostList, idx, struct tcpHostOption*, opt ) {
+				Deallocate( char*, opt->host );
+				Deallocate( char*, opt->cert_chain );
+				Deallocate( char*, opt->key );
+				Deallocate( char*, opt->pass );
+				Deallocate( struct tcpHostOption*, opt );
+			}
+			DeleteList( &tcpOpts.hostList );
 		}
 		obj->_this.Reset( isolate, _this );
 		obj->Wrap( _this );
