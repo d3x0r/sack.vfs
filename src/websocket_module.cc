@@ -1146,7 +1146,10 @@ static void wssAsyncMsg_( uv_async_t* handle ) {
 						} else
 							argv[2] = Null( isolate );
 					} else if( eventMessage->data.error.error == SACK_NETWORK_ERROR_HOST_NOT_FOUND ) {
-						argv[2] = String::NewFromUtf8( isolate, eventMessage->data.error.buffer, v8::NewStringType::kNormal, eventMessage->data.error.buflen ).ToLocalChecked();
+						if( eventMessage->data.error.buffer )
+							argv[2] = String::NewFromUtf8( isolate, eventMessage->data.error.buffer, v8::NewStringType::kNormal, eventMessage->data.error.buflen ).ToLocalChecked();
+						else
+							argv[2] = Null( isolate );
 					} else
 						argv[2] = Null( isolate );
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
@@ -2728,9 +2731,15 @@ static void ParseWssHostOption( struct optionStrings *strings
 	struct wssHostOption* newOpt = NewArray( struct wssHostOption, 1 );
 
 	if( hostOpt->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value address( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		newOpt->host = StrDup( *address );
-		newOpt->hostlen = address.length();
+		Local<Value> opt = GETV( hostOpt, optName );
+		if( opt->IsString() ) {
+			String::Utf8Value address( USE_ISOLATE( isolate ) opt->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			newOpt->host = StrDup( *address );
+			newOpt->hostlen = address.length();
+		} else if( opt->IsNull() ) {
+			newOpt->host = NULL;
+			newOpt->hostlen = 0;
+		}
 	}
 
 	if( hostOpt->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
@@ -2832,9 +2841,15 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->pass_len = cert.length();
 	}
 	if( opts->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value address( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		wssOpts->host = StrDup( *address );
-		wssOpts->hostlen = address.length();
+		Local<Value> opt = GETV( opts, optName );
+		if( opt->IsString() ) {
+			String::Utf8Value address( USE_ISOLATE( isolate ) opt->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			wssOpts->host = StrDup( *address );
+			wssOpts->hostlen = address.length();
+		} else if( opt->IsNull() ) {
+			wssOpts->host = NULL;
+			wssOpts->hostlen = 0;
+		}
 	}
 
 	if( wssOpts->key || wssOpts->cert_chain ) {

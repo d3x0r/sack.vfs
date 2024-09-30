@@ -522,6 +522,7 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 				cb = Local<Function>::New( isolate, obj->closeCallback );
 				if( !cb.IsEmpty() )
 					cb->Call( context, eventMessage->_this.udp->_this.Get( isolate ), 0, argv );
+				//lprintf( "Close async handle: %p",(uv_handle_t*)&obj->async );
 				uv_close( (uv_handle_t*)&obj->async, NULL );
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
@@ -836,6 +837,7 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 		while( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) {
 			Local<Function> cb;
 			Local<Object> ab;
+			//lprintf( "Handle posted message?%d", eventMessage->eventType );
 			switch( eventMessage->eventType ) {
 			case NET_EVENT_CONNECT:
 			{
@@ -918,10 +920,12 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				cb = Local<Function>::New( isolate, obj->closeCallback );
 				if( !cb.IsEmpty() )
 					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, argv );
+				//lprintf( "Close async handle: %p",(uv_handle_t*)&obj->async );
 				uv_close( (uv_handle_t*)&obj->async, NULL );
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
 			}
+			//lprintf( "Done with event %d, wake thread %p", eventMessage->eventType, eventMessage->waiter );
 			eventMessage->done = TRUE;
 			if( eventMessage->waiter )
 				WakeThread( eventMessage->waiter );
@@ -996,6 +1000,7 @@ void TCP_Close( uintptr_t psv ) {
 	(*pevt).waiter = NULL;
 	EnqueLink( &obj->eventQueue, pevt );
 	uv_async_send( &obj->async );
+	//lprintf( "Close Happened to socket %p %p", psv, &obj->async );
 	
 	obj->pc = NULL;
 }
@@ -1028,6 +1033,15 @@ static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdenti
 	switch( error ) {
 	default:
 		lprintf( "Low error on %p %d", pc, error );
+		break;
+	case SACK_NETWORK_ERROR_HOST_NOT_FOUND:
+		{
+			const char* buf = va_arg( args, const char* );
+			size_t buflen = va_arg( args, size_t );
+			SOCKADDR *sa1 = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
+			SOCKADDR *sa2 = (SOCKADDR*)GetNetworkLong( pc, GNL_LOCAL_ADDRESS );
+			//lprintf( "Request for host (not configured for this host): %p %p %p", pc, sa1, sa2 );
+		}
 		break;
 	case SACK_NETWORK_ERROR_SSL_HANDSHAKE:
 		if( obj->allowSSLfallback ) {
@@ -1067,6 +1081,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	async.data = this;
 
 	class constructorSet* c = getConstructors( opts->isolate );
+	//lprintf( "Init async handle: %p",(uv_handle_t*)&async );
 	uv_async_init( c->loop, &async, tcpAsyncMsg );
 	if( !opts->messageCallback.IsEmpty() )
 		this->messageCallback = opts->messageCallback;
@@ -1148,11 +1163,14 @@ static void ParseTcpHostOption( struct optionStrings* strings
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<String> optName;
 	struct tcpHostOption* newOpt = NewArray( struct tcpHostOption, 1 );
-
+	MemSet( newOpt, 0, sizeof( *newOpt ) );
 	if( hostOpt->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value address( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		newOpt->host = StrDup( *address );
-		newOpt->hostlen = address.length();
+		Local<Value> opt = GETV( hostOpt, optName );
+		if( opt->IsString() ) {
+			String::Utf8Value address( USE_ISOLATE( isolate ) opt->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			newOpt->host = StrDup( *address );
+			newOpt->hostlen = address.length();
+		}
 	}
 
 	if( hostOpt->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
