@@ -185,6 +185,8 @@ void TLSObject::Init( Isolate *isolate, Local<Object> exports )
 	SET( i, "validate", Function::New( context, validate ).ToLocalChecked() );
 	SET( i, "expiration", Function::New( context, expiration ).ToLocalChecked() );
 	SET( i, "certToString", Function::New( context, certToString ).ToLocalChecked() );
+	SET( i, "hosts", Function::New( context, getHosts ).ToLocalChecked() );
+
 
 	//constructor.Reset( isolate, tlsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "TLS", i );
@@ -2026,6 +2028,132 @@ void  vtLogBinary( PVARTEXT pvt, uint8_t* buffer, size_t size  )
 	}
 }
 
+void TLSObject::getHosts( const v8::FunctionCallbackInfo<Value>& args ) {
+
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Array> result = Array::New( isolate );
+	int resultIndex = 0;
+	int argc = args.Length();
+	if( !argc ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Missing required certificate data." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+
+	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
+
+	X509* x509 = NULL;
+
+	BIO* keybuf = BIO_new( BIO_s_mem() );
+
+	BIO_write( keybuf, *cert, cert.length() );
+	if( !PEM_read_bio_X509( keybuf, &x509, NULL, NULL ) ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "getHosts: failed to parse cert." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		BIO_free( keybuf );
+		args.GetReturnValue().Set( Undefined( isolate ) );
+
+		return;
+	}
+	BIO_free( keybuf );
+
+	//X509_NAME* name = X509_get_subject_name( x509 );
+
+	{
+		int extCount = X509_get_ext_count( x509 );
+		int n;
+		for( n = 0; n < extCount; n++ ) {
+			X509_EXTENSION* ext = X509_get_ext( x509, n );
+			ASN1_OBJECT* o = X509_EXTENSION_get_object( ext );
+			ASN1_STRING* v = (ASN1_STRING*)X509V3_EXT_d2i( ext );
+			int nid = OBJ_obj2nid( o );
+			//V_ASN1_OCTET_STRING
+			//vtprintf( pvt, "extension: %d %d  %s  %s  %d\n", X509_EXTENSION_get_critical( ext ) > 0 ? "critical" : "",
+			//	nid, OBJ_nid2ln( nid ), OBJ_nid2sn( nid ), v->type );
+			if( nid == NID_subject_alt_name ) {
+				const GENERAL_NAMES* names = (const GENERAL_NAMES*)v;
+				int n;
+				for( n = 0; n < sk_GENERAL_NAME_num( names ); n++ ) {
+					GENERAL_NAME* namePart = sk_GENERAL_NAME_value( names, n );
+					switch( namePart->type ) {
+					case GEN_DIRNAME:
+					{
+						//X509_NAME *dir = namePart->d.directoryName;
+						//int dn;
+						//for( dn = 0; dn < dir->entries; dn++ ) {
+
+						//}
+						lprintf( "unhandled DIRNAME\n" );
+					}
+					break;
+					case GEN_DNS:
+					{
+						ASN1_IA5STRING* string = namePart->d.dNSName;
+						//vtLogBinary( pvt, string->data, string->length + 1 );
+						//lprintf( pvt, "DNS:%s\n", string->data );
+						result->Set( context, resultIndex++, String::NewFromUtf8( isolate, (const char*)string->data, v8::NewStringType::kNormal, string->length ).ToLocalChecked() );
+					}
+					break;
+					case GEN_EDIPARTY:
+						lprintf( "unhandled EDIPARTY\n" );
+						break;
+					case GEN_OTHERNAME:
+						lprintf( "unhandled OTHERNAME\n" );
+						break;
+					case GEN_RID:
+						lprintf( "unhandled RID\n" );
+						break;
+					case GEN_URI:
+					{
+						ASN1_IA5STRING* name = namePart->d.uniformResourceIdentifier;
+						//vtLogBinary( pvt, name->data, name->length );
+						result->Set( context, resultIndex++, String::NewFromUtf8( isolate, (const char*)name->data, v8::NewStringType::kNormal, name->length ).ToLocalChecked() );
+					}
+					break;
+					case GEN_X400:
+						lprintf( "unhandled X400\n" );
+						break;
+					case GEN_EMAIL:
+					{
+						//ASN1_STRING* string = namePart->d.rfc822Name;
+						//vtLogBinary( pvt, string->data, string->length );
+						//vtprintf( pvt, "EMAIL:%*.*s", string->length, string->length, string->data );
+					}
+					break;
+					case GEN_IPADD:
+					{
+						SOCKADDR* addr = AllocAddr();
+						ASN1_OCTET_STRING* ip = namePart->d.iPAddress;
+
+						//LogBinary( ip->data, ip->length );
+						if( ip->length == 4 ) {
+							addr->sa_family = AF_INET;
+							memcpy( addr->sa_data+2, ip->data, ip->length );
+							( ( *(uintptr_t*)( ( (uintptr_t)( addr ) ) - 2 * sizeof( uintptr_t ) ) ) = sizeof( struct sockaddr_in ) );
+						} else if( ip->length == 16 ) {
+							addr->sa_family = AF_INET6;
+							memcpy( addr->sa_data+6, ip->data, ip->length );
+							( ( *(uintptr_t*)( ( (uintptr_t)( addr ) ) - 2 * sizeof( uintptr_t ) ) ) = sizeof( struct sockaddr_in6 ) );
+						} else {
+							lprintf( "unhandled GEN_IPADD length\n" );
+						}
+						const char *address = GetAddrString( addr );
+						result->Set( context, resultIndex++, String::NewFromUtf8( isolate, (const char*)address, v8::NewStringType::kNormal ).ToLocalChecked() );
+						ReleaseAddress( addr );
+						//Release( address );
+						//vtprintf( pvt, "unhandled IPADD\n" );
+					}
+						break;
+					}
+				}
+			}
+		}
+	}
+	X509_free( x509 );
+
+	args.GetReturnValue().Set( result );
+}
 
 static Local<Value> CertToString( struct info_params *params ) {
 

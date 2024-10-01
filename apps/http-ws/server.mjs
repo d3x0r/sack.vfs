@@ -28,10 +28,10 @@ function getCertChain( ) {
 	//SSLCertificateFile /etc/letsencrypt/live/d3x0r.org/fullchain.pem
 	//SSLCertificateKeyFile /etc/letsencrypt/live/d3x0r.org/privkey.pem
 	if( process.env.SSL_PATH ) {
-		if( !process.env.SSL_HOST ) {
-			console.log( "ssl host name not specified..." )
-			return null;
-		}
+		//if( !process.env.SSL_HOST ) {
+		//	console.log( "ssl host name not specified..." )
+		//	return null;
+		//}
 		return process.env.SSL_PATH + "/fullchain.pem"
 	}
 	return  parentRoot + "/certgen/cert-chain.pem"
@@ -48,6 +48,11 @@ function getCertKey( ) {
 }
 
 const certChain = read( getCertChain() );
+if( !process.env.SSL_HOST ) {
+	process.env.SSL_HOST = sack.TLS.hosts( certChain ).join("~");
+	console.log( "Host not specified, using certificate hosts:", process.env.SSL_HOST );
+}
+//console.log( "certChain loaded?", sack.TLS.hosts( certChain ) );
 const certKey = read( getCertKey() );
 
 const encMap = {

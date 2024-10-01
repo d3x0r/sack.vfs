@@ -465,6 +465,7 @@ public:
 	static void validate( const v8::FunctionCallbackInfo<Value>& args );
 	static void expiration( const v8::FunctionCallbackInfo<Value>& args );
 	static void certToString( const v8::FunctionCallbackInfo<Value>& args );
+	static void getHosts( const v8::FunctionCallbackInfo<Value>& args );
 
 
 	~TLSObject();
