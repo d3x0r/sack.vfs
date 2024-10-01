@@ -2,6 +2,13 @@
 # Http-ws application
 
 This is a shell static web resource server, and websocket endpoint.
+Environment variables `SSL_PATH` and `SSL_HOST` are used to enable HTTPS.  `SSL_PATH` specifies
+the root directory to find 'fullchain.pem' and 'privkey.pem' which are standard names Lets Encrypt 
+uses at this time.  `SSL_HOST` specifies a list of tilde(~) separated names in the certificate.  
+
+More advanced configurations are possible, the server can specify multiple hosts strings each with
+their own certificates and keys.  The server will switch to use one that matches the server requested
+in the initial TLS request; otherwise the connection will be terminated.
 
 ## Usage
 
