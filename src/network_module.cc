@@ -837,7 +837,7 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 		while( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) {
 			Local<Function> cb;
 			Local<Object> ab;
-			//lprintf( "Handle posted message?%d", eventMessage->eventType );
+			lprintf( "Handle posted message?%d %p", eventMessage->eventType, &obj->async );
 			switch( eventMessage->eventType ) {
 			case NET_EVENT_CONNECT:
 			{
@@ -947,7 +947,7 @@ void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 		struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
 		(*pevt).eventType = NET_EVENT_READ;
 		(*pevt).buf = NewArray( uint8_t*, length );
-		//lprintf( "Send buffer %p", (*pevt).buf );
+		lprintf( "Send buffer %p", (*pevt).buf );
 		memcpy( (POINTER)(*pevt).buf, buffer, length );
 		(*pevt).buflen = length;
 		(*pevt)._this.tcp = obj;
@@ -971,6 +971,7 @@ void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 void TCP_Connect( uintptr_t psv, int error ) {
 	tcpObject *obj = (tcpObject*)psv;
 	struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
+	//lprintf( "Got connect?  If we don't... should we get a close? %p", psv );
 	if( !error ) {
 		(*pevt).eventType = NET_EVENT_CONNECTED;
 	}
@@ -980,6 +981,7 @@ void TCP_Connect( uintptr_t psv, int error ) {
 	}
 	(*pevt)._this.tcp = obj;
 	(*pevt).waiter = NULL;
+	//lprintf( "Enque connect: %p", &obj->async );
 	EnqueLink( &obj->eventQueue, pevt );
 	uv_async_send( &obj->async );
 }
@@ -998,6 +1000,7 @@ void TCP_Close( uintptr_t psv ) {
 	(*pevt).eventType = NET_EVENT_CLOSE;
 	(*pevt)._this.tcp = obj;
 	(*pevt).waiter = NULL;
+	//lprintf( "!!! Enque close: %p %p", (void*)psv, &obj->async );
 	EnqueLink( &obj->eventQueue, pevt );
 	uv_async_send( &obj->async );
 	//lprintf( "Close Happened to socket %p %p", psv, &obj->async );
@@ -1015,6 +1018,7 @@ void TCP_Notify( uintptr_t psv, PCLIENT pcNew ) {
 	( *pevt ).buf = (CPOINTER)pcNew;
 	( *pevt ).done = 0;
 	( *pevt ).waiter = MakeThread();
+	//lprintf( "Server connect event: %p %p %p", (void*)psv, pcNew, & (*pevt )._this.tcp->async );
 	EnqueLink( &( (tcpObject*)psv )->eventQueue, pevt );
 	uv_async_send( &( (tcpObject*)psv )->async );
 	while( !(*pevt).done ) {		
@@ -1028,7 +1032,7 @@ static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdenti
 	class tcpObject *obj = (class tcpObject*)psv;
 	va_list args;
 	va_start( args, error );
-	//lprintf( "Low Error: %p %d", obj, error );
+	//lprintf( "Low Error: %p %p %p %d", pc, obj->pc, obj, error );
 	// auto handling callback...
 	switch( error ) {
 	default:
@@ -1050,7 +1054,8 @@ static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdenti
 			size_t buflen = va_arg( args, size_t );
 			ssl_EndSecure( pc, (POINTER)buf, buflen );
 		} else {
-			//lprintf( "Close Socket... (should get an event?)");
+			//lprintf( "Close Socket... (won't get event, connect never actually issued)");
+			// this gets blocked by being 'InUse', so should wait until we return to do this close again...
 			RemoveClient( pc );
 		}
 
