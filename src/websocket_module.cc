@@ -1218,9 +1218,13 @@ static void wssAsyncMsg_( uv_async_t* handle ) {
 				wssiInternal->resolveMac = myself->resolveMac;
 				struct html5_web_socket* ws = ( !eventMessage->_this->pc ) ? (struct html5_web_socket*)eventMessage->pc : NULL;
 				if( ws ) {
+					//lprintf( "(pipe)Next calls looked in accept with server's psv_on");
+					WebSocketPipeSetOnPSV( ws, (uintptr_t)wssiInternal );
 					wssiInternal->wsPipe = ws;
 					wssiInternal->pc = NULL;
 				} else {
+					//lprintf( "(pc)Next calls looked in accept with server's psv_on");
+					WebSocketSetOnPSV( eventMessage->pc, (uintptr_t)wssiInternal );
 					wssiInternal->pc = eventMessage->pc;
 					wssiInternal->wsPipe = NULL;
 				}
@@ -1894,20 +1898,23 @@ static void Wait( void ) {
 #define Wait() IdleFor( 100 )
 
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
-	wssObject*wss = (wssObject*)psv;
-	lprintf( "websocket server open event");
+	wssiObject* wssi = (wssiObject*)psv;
+	wssObject*wss = wssi->server;
+	//lprintf( "websocket server open event (with new psv) %p %p", wssi, wss);
 	while( !wss->eventQueue )
 		Relinquish();
 	INDEX idx;
 	struct html5_web_socket *ws = ( !wss->pc )?(struct html5_web_socket*)pc:NULL;
 	if( ws ) pc = NULL;
-	wssiObject *wssi;
-	LIST_FORALL( wss->opening, idx, wssiObject*, wssi ) {
-		if( wssi->pc == pc && wssi->wsPipe == ws ) {
+	wssiObject *wssi_check;
+	LIST_FORALL( wss->opening, idx, wssiObject*, wssi_check ) {
+		if( wssi_check->pc == pc && wssi_check->wsPipe == ws ) {
+			//lprintf( "Found - and is also %p %p", wssi_check, psv );
 			SetLink( &wss->opening, idx, NULL );
 			break;
 		}
 	}
+	
 	if( wssi && !wssi->thrown ) {
 		struct wssiEvent *pevt = GetWssiEvent();
 		if( wssi->protocolResponse ) {
@@ -1931,8 +1938,10 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		// it as a refernence, in case the JS object changes
 		return (uintptr_t)wssi->wssiRef;
 	}
-	if( !wssi )
+	if( !wssi ) {
 		lprintf( "FAILED TO HAVE WSSI to open." );
+		return 0;
+	}
 	wssi->readyState = wsReadyStates::OPEN;
 	return (uintptr_t)wssi->wssiRef;
 }
@@ -1968,6 +1977,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	//class wssObject *wss = (class wssObject*)psv;
 	class wssiObjectReference *wssiRef = (class wssiObjectReference*)psv;
 	class wssiObject *wssi = wssiRef->wssi;
+	//lprintf( "Close happened %p %p", wssiRef, wssi );
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
 		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
@@ -2113,7 +2123,6 @@ static void webSockServerAcceptAsync( PCLIENT pc, uintptr_t psv, const char* pro
 #endif		
 		uv_async_send( &wss->async );
 	}
-
 	//while( !( *pevt ).done )
 	//	Wait();
 	//if( ( *pevt ).data.request.protocol != protocols )
@@ -2685,7 +2694,7 @@ wssObject::wssObject( struct wssOptions *opts ) {
 			}
 			LIST_FORALL( opts->hostList, idx, struct wssHostOption*, opt ) {
 				if( opt ) {
-					lprintf( "Setup another host?");
+					//lprintf( "Setup another host?");
 					ssl_BeginServer_v2( pc
 						, opt->cert_chain, opt->cert_chain_len
 						, opt->key, opt->key_len
@@ -3183,8 +3192,9 @@ wssiObject::wssiObject( ) {
 }
 
 wssiObject::~wssiObject() {
+	delete this->wssiRef;
 	if( !closed ) {
-		lprintf( "destruct, try to generate WebSockClose" );
+		//lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 		if( wsPipe ) {
 			WebSocketPipeSocketClose( wsPipe );
