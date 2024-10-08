@@ -837,7 +837,7 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 		while( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) {
 			Local<Function> cb;
 			Local<Object> ab;
-			lprintf( "Handle posted message?%d %p", eventMessage->eventType, &obj->async );
+			//lprintf( "Handle posted message?%d %p", eventMessage->eventType, &obj->async );
 			switch( eventMessage->eventType ) {
 			case NET_EVENT_CONNECT:
 			{

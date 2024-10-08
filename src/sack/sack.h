@@ -10043,6 +10043,7 @@ struct HTTPRequestOptions {
 	LOGICAL connected;
   // feedback to application if there was an error connecting.
 	int connectError;
+	const char *hostname;
 };
 typedef struct HttpState *HTTPState;
 enum ProcessHttpResult{

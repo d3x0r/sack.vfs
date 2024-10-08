@@ -402,7 +402,7 @@ public:
 	bool ssl;
 	int port;
 	char *hostname;
-	const char *method = "GET";
+	const char *method = StrDup( "GET" );
 	const char* content = NULL;
 	size_t contentLen = 0;
 	const char* httpVersion = NULL;
@@ -413,17 +413,17 @@ public:
 	char *path = NULL;
 	char *agent = NULL;
 
-	bool rejectUnauthorized;
-	bool preferV4;
-	bool preferV6;
-	bool firstDispatchDone;
-	bool dataDispatch;
-	bool endDispatch;
+	bool rejectUnauthorized = true;
+	bool preferV4 = false;
+	bool preferV6 = false;
+	bool firstDispatchDone = false;
+	bool dataDispatch = false;
+	bool endDispatch = false;
 
-	bool finished;
-	PTHREAD waiter;
+	bool finished = false;
+	PTHREAD waiter = NULL;
 
-	PTEXT result;
+	PTEXT result = NULL;
 	HTTPState state;
 	// if set, will be called when content buffer has been sent.
 	//void ( *writeComplete )(void );
@@ -4040,7 +4040,7 @@ httpRequestObject::httpRequestObject():_this() {
 	ssl = false;
 	port = 0;
 	hostname = NULL;
-	method = "GET";
+	method = StrDup( "GET" );
 	ca = NULL;
 	path = NULL;
 	rejectUnauthorized = true;
@@ -4160,7 +4160,7 @@ static uintptr_t DoRequest( PTHREAD thread ) {
 		WakeThread(req->waiter);
 	}
 
-    return 0;
+	return 0;
 }
 
 void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, bool secure ) {
@@ -4292,6 +4292,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->url = url;
 		opts->rejectUnauthorized = httpRequest->rejectUnauthorized;
 		opts->address = address;
+		opts->hostname = httpRequest->hostname;
 		opts->ssl = httpRequest->ssl;
 		opts->headers = httpRequest->headers;
 		opts->httpVersion = httpRequest->httpVersion;
