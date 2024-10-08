@@ -7523,6 +7523,8 @@ enum SackNetworkErrorIdentifier {
 	SACK_NETWORK_ERROR_HTTP_CHUNK,
  // command parsing resulted in invalid command.  (HTTPS request to HTTP)
 	SACK_NETWORK_ERROR_HTTP_UNSUPPORTED,
+ // host name could not be resolved
+	SACK_NETWORK_ERROR_HOST_NOT_FOUND,
 };
 typedef void (CPROC*cErrorCallback)(uintptr_t psvError, PCLIENT pc, enum SackNetworkErrorIdentifier error, ... );
 NETWORK_PROC( void, SetNetworkWriteComplete )( PCLIENT, cWriteComplete );
@@ -7630,6 +7632,17 @@ NETWORK_PROC( SOCKADDR *, CreateLocal )(uint16_t nMyPort);
 NETWORK_PROC( int, GetAddressParts )( SOCKADDR *pAddr, uint32_t *pdwIP, uint16_t *pwPort );
  // release a socket resource that has been created by an above routine
 NETWORK_PROC( void, ReleaseAddress )(SOCKADDR *lpsaAddr);
+NETWORK_PROC( SOCKADDR*, AllocAddrEx )( DBG_VOIDPASS );
+#define AllocAddr() AllocAddrEx( DBG_VOIDSRC )
+#define IN_SOCKADDR_LENGTH sizeof(struct sockaddr_in)
+#define IN6_SOCKADDR_LENGTH sizeof(struct sockaddr_in6)
+// this might have to be like sock_addr_len_t
+#define SOCKADDR_LENGTH(sa) ( (int)*(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) )
+#ifdef __MAC__
+#  define SET_SOCKADDR_LENGTH(sa,size) ( ( ( *(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) ) = size ), ( sa->sa_len = size ) )
+#else
+#  define SET_SOCKADDR_LENGTH(sa,size) ( ( *(uintptr_t*)( ( (uintptr_t)(sa) ) - 2*sizeof(uintptr_t) ) ) = size )
+#endif
 // result with TRUE if equal, else FALSE
 NETWORK_PROC( LOGICAL, CompareAddress )(SOCKADDR *sa1, SOCKADDR *sa2 );
 #define SA_COMPARE_FULL 1
@@ -8131,6 +8144,11 @@ NETWORK_PROC( LOGICAL, ssl_BeginServer_v2 )( PCLIENT pc, CPOINTER cert, size_t c
 	, CPOINTER keypair, size_t keylen
 	, CPOINTER keypass, size_t keypasslen
 	, char* hosts );
+struct ssl_session;
+// add more certificates to a server socket that it can use to resolve host requests
+NETWORK_PROC( struct ssl_hostContext*, ssl_setupHostCert )( PCLIENT pc, CTEXTSTR host, CTEXTSTR cert, size_t certlen, CTEXTSTR keypair, size_t keylen, CTEXTSTR keypass, size_t keypasslen );
+// add more certificates to a server socket that it can use to resolve host requests (uses internal)
+NETWORK_PROC( struct ssl_hostContext*, ssl_setupHost )( struct ssl_session* session, CTEXTSTR host, CTEXTSTR cert, size_t certlen, CTEXTSTR keypair, size_t keylen, CTEXTSTR keypass, size_t keypasslen );
 /*
 * Get the SSL session for a client
 */
@@ -10427,6 +10445,10 @@ HTML5_WEBSOCKET_PROC( uintptr_t, WebSocketGetServerData )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( void, WebSocketPipeAccept )( struct html5_web_socket* socket, char *protocols, int yesno );
 // when using async accept - this is used to accept the socket.
 HTML5_WEBSOCKET_PROC( void, WebSocketAccept )( PCLIENT pc, char *protocols, int yesno );
+HTML5_WEBSOCKET_PROC( void, WebSocketPipeSetConnectPSV )( struct html5_web_socket* pipe, uintptr_t psvNew );
+HTML5_WEBSOCKET_PROC( void, WebSocketPipeSetOnPSV )( struct html5_web_socket* pipe, uintptr_t psvNew );
+HTML5_WEBSOCKET_PROC( void, WebSocketSetConnectPSV )( PCLIENT pc, uintptr_t psvNew );
+HTML5_WEBSOCKET_PROC( void, WebSocketSetOnPSV )( PCLIENT pc, uintptr_t psvNew );
 HTML5_WEBSOCKET_NAMESPACE_END
 USE_HTML5_WEBSOCKET_NAMESPACE
 #endif

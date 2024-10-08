@@ -62,6 +62,8 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
      signcert( {options} ) - uses a certificate to sign a certificate request
      validate( {options} ) - validate a certificate against a certificate chain.
      expiration( certificate ) - gets the expiration of a certificate as a Date().     
+     certToString( certificate ) - dump information about cert into a string (may not be 100% of information)
+     hosts( certificate ) - gets the list of server names of a certificate as an array of strings.
   }
 ```
 

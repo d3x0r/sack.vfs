@@ -169,6 +169,8 @@ struct wssOptions {
 	int key_len;
 	char *pass;
 	int pass_len;
+	char *host; // host names to match; for the root/default cert (hostlist also has this.)
+	int hostlen;
 	bool deflate;
 	bool deflate_allow;
 	bool apply_masking;
@@ -1129,22 +1131,29 @@ static void wssAsyncMsg_( uv_async_t* handle ) {
 				if( !myself->errorLowCallback.IsEmpty() ) {
 					argv[0] = Integer::New( isolate, eventMessage->data.error.error );
 					argv[1] = makeSocket( isolate, eventMessage->pc, NULL, myself, NULL, NULL );
-					if( eventMessage->data.error.buffer ) {
+					if( eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
+						if( eventMessage->data.error.buffer ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
-							eventMessage->data.error.buflen, dontReleaseBufferBackingStore, NULL );
-						argv[2] = ArrayBuffer::New( isolate, bs );
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
+								eventMessage->data.error.buflen, dontReleaseBufferBackingStore, NULL );
+							argv[2] = ArrayBuffer::New( isolate, bs );
 #else
-					if( eventMessage->data.error.buffer )
-						argv[2] = ArrayBuffer::New( isolate,
-						(void*)eventMessage->data.error.buffer,
-							eventMessage->data.error.buflen );
+						if( eventMessage->data.error.buffer )
+							argv[2] = ArrayBuffer::New( isolate,
+							(void*)eventMessage->data.error.buffer,
+								eventMessage->data.error.buflen );
 #endif
+						} else
+							argv[2] = Null( isolate );
+					} else if( eventMessage->data.error.error == SACK_NETWORK_ERROR_HOST_NOT_FOUND ) {
+						if( eventMessage->data.error.buffer )
+							argv[2] = String::NewFromUtf8( isolate, eventMessage->data.error.buffer, v8::NewStringType::kNormal, eventMessage->data.error.buflen ).ToLocalChecked();
+						else
+							argv[2] = Null( isolate );
 					} else
 						argv[2] = Null( isolate );
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 				}
-
 			} else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
@@ -1209,9 +1218,13 @@ static void wssAsyncMsg_( uv_async_t* handle ) {
 				wssiInternal->resolveMac = myself->resolveMac;
 				struct html5_web_socket* ws = ( !eventMessage->_this->pc ) ? (struct html5_web_socket*)eventMessage->pc : NULL;
 				if( ws ) {
+					//lprintf( "(pipe)Next calls looked in accept with server's psv_on");
+					WebSocketPipeSetOnPSV( ws, (uintptr_t)wssiInternal );
 					wssiInternal->wsPipe = ws;
 					wssiInternal->pc = NULL;
 				} else {
+					//lprintf( "(pc)Next calls looked in accept with server's psv_on");
+					WebSocketSetOnPSV( eventMessage->pc, (uintptr_t)wssiInternal );
 					wssiInternal->pc = eventMessage->pc;
 					wssiInternal->wsPipe = NULL;
 				}
@@ -1885,20 +1898,23 @@ static void Wait( void ) {
 #define Wait() IdleFor( 100 )
 
 static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
-	wssObject*wss = (wssObject*)psv;
-	lprintf( "websocket server open event");
+	wssiObject* wssi = (wssiObject*)psv;
+	wssObject*wss = wssi->server;
+	//lprintf( "websocket server open event (with new psv) %p %p", wssi, wss);
 	while( !wss->eventQueue )
 		Relinquish();
 	INDEX idx;
 	struct html5_web_socket *ws = ( !wss->pc )?(struct html5_web_socket*)pc:NULL;
 	if( ws ) pc = NULL;
-	wssiObject *wssi;
-	LIST_FORALL( wss->opening, idx, wssiObject*, wssi ) {
-		if( wssi->pc == pc && wssi->wsPipe == ws ) {
+	wssiObject *wssi_check;
+	LIST_FORALL( wss->opening, idx, wssiObject*, wssi_check ) {
+		if( wssi_check->pc == pc && wssi_check->wsPipe == ws ) {
+			//lprintf( "Found - and is also %p %p", wssi_check, psv );
 			SetLink( &wss->opening, idx, NULL );
 			break;
 		}
 	}
+	
 	if( wssi && !wssi->thrown ) {
 		struct wssiEvent *pevt = GetWssiEvent();
 		if( wssi->protocolResponse ) {
@@ -1922,8 +1938,10 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		// it as a refernence, in case the JS object changes
 		return (uintptr_t)wssi->wssiRef;
 	}
-	if( !wssi )
+	if( !wssi ) {
 		lprintf( "FAILED TO HAVE WSSI to open." );
+		return 0;
+	}
 	wssi->readyState = wsReadyStates::OPEN;
 	return (uintptr_t)wssi->wssiRef;
 }
@@ -1959,6 +1977,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	//class wssObject *wss = (class wssObject*)psv;
 	class wssiObjectReference *wssiRef = (class wssiObjectReference*)psv;
 	class wssiObject *wssi = wssiRef->wssi;
+	//lprintf( "Close happened %p %p", wssiRef, wssi );
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
 		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
@@ -2104,7 +2123,6 @@ static void webSockServerAcceptAsync( PCLIENT pc, uintptr_t psv, const char* pro
 #endif		
 		uv_async_send( &wss->async );
 	}
-
 	//while( !( *pevt ).done )
 	//	Wait();
 	//if( ( *pevt ).data.request.protocol != protocols )
@@ -2549,6 +2567,10 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 		(*pevt).data.error.buflen = va_arg( args, size_t );
 		(*pevt).data.error.fallback_ssl = 0; // make sure this is cleared.
 		break;
+	case SACK_NETWORK_ERROR_HOST_NOT_FOUND:
+		(*pevt).data.error.buffer = va_arg( args, const char * );
+		(*pevt).data.error.buflen = va_arg( args, size_t );
+		break;
 	}
 	(*pevt).pc = pc;
 	(*pevt)._this = wss;
@@ -2664,20 +2686,32 @@ wssObject::wssObject( struct wssOptions *opts ) {
 			INDEX idx;
 			struct wssHostOption* opt;
 			if( opts->cert_chain ) {
-				ssl_BeginServer( pc
+				//lprintf( "Setup first socket?" );
+				ssl_BeginServer_v2( pc
 					, opts->cert_chain, opts->cert_chain_len
 					, opts->key, opts->key_len
-					, opts->pass, opts->pass_len );
+					, opts->pass, opts->pass_len, opts->host );
 			}
 			LIST_FORALL( opts->hostList, idx, struct wssHostOption*, opt ) {
-				if( opt )
-				ssl_BeginServer_v2( pc
-					, opt->cert_chain, opt->cert_chain_len
-					, opt->key, opt->key_len
-					, opt->pass, opt->pass_len
-					, opt->host
-				);
+				if( opt ) {
+					//lprintf( "Setup another host?");
+					ssl_BeginServer_v2( pc
+						, opt->cert_chain, opt->cert_chain_len
+						, opt->key, opt->key_len
+						, opt->pass, opt->pass_len
+						, opt->host
+					);
+					/*
+					ssl_setupHostCert( pc, opt->host
+						, opt->cert_chain, opt->cert_chain_len
+						, opt->key, opt->key_len
+						, opt->pass, opt->pass_len
+						 );
+					*/
+				}
 			}
+		} else {
+			//lprintf( "No SSL" );
 		}
 		SetWebSocketAcceptAsyncCallback( pc, webSockServerAcceptAsync );
 		readyState = LISTENING;
@@ -2706,9 +2740,15 @@ static void ParseWssHostOption( struct optionStrings *strings
 	struct wssHostOption* newOpt = NewArray( struct wssHostOption, 1 );
 
 	if( hostOpt->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value address( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		newOpt->host = StrDup( *address );
-		newOpt->hostlen = address.length();
+		Local<Value> opt = GETV( hostOpt, optName );
+		if( opt->IsString() ) {
+			String::Utf8Value address( USE_ISOLATE( isolate ) opt->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			newOpt->host = StrDup( *address );
+			newOpt->hostlen = address.length();
+		} else if( opt->IsNull() ) {
+			newOpt->host = NULL;
+			newOpt->hostlen = 0;
+		}
 	}
 
 	if( hostOpt->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
@@ -2809,6 +2849,17 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 		wssOpts->pass = StrDup( *cert );
 		wssOpts->pass_len = cert.length();
 	}
+	if( opts->Has( context, optName = strings->hostString->Get( isolate ) ).ToChecked() ) {
+		Local<Value> opt = GETV( opts, optName );
+		if( opt->IsString() ) {
+			String::Utf8Value address( USE_ISOLATE( isolate ) opt->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			wssOpts->host = StrDup( *address );
+			wssOpts->hostlen = address.length();
+		} else if( opt->IsNull() ) {
+			wssOpts->host = NULL;
+			wssOpts->hostlen = 0;
+		}
+	}
 
 	if( wssOpts->key || wssOpts->cert_chain ) {
 		wssOpts->ssl = 1;
@@ -2854,12 +2905,13 @@ static void ParseWssOptions( struct wssOptions *wssOpts, Isolate *isolate, Local
 	if( opts->Has( context, optName = strings->hostsString->Get( isolate ) ).ToChecked() ) {
 		Local<Value> val = GETV( opts, optName );
 		if( val->IsArray() ) {
-		Local<Array> hosts = GETV( opts, optName ).As<Array>();
-		uint32_t o;
-		for( o = 0; o < hosts->Length(); o++ ) {
-			Local<Object> host = GETV( hosts, o ).As<Object>();
-			ParseWssHostOption( strings, wssOpts, isolate, host );
-		}
+			wssOpts->ssl = 1;
+			Local<Array> hosts = GETV( opts, optName ).As<Array>();
+			uint32_t o;
+			for( o = 0; o < hosts->Length(); o++ ) {
+				Local<Object> host = GETV( hosts, o ).As<Object>();
+				ParseWssHostOption( strings, wssOpts, isolate, host );
+			}
 		}
 	}
 
@@ -2961,6 +3013,20 @@ void wssObject::close( const FunctionCallbackInfo<Value>& args ) {
 	}
 	webSockServerCloseEvent( obj );
 }
+
+void wssObject::addHost( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
+	if( args.Length() == 4 ) {
+		String::Utf8Value hosts( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value cert( isolate,  args[1]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value key( isolate,  args[3]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+		String::Utf8Value keypass( isolate,  args[3]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+
+		ssl_setupHostCert( obj->pc, *hosts, *cert, cert.length(), *key, key.length(), *keypass, keypass.length() );
+	}
+}
+
 
 void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
@@ -3126,8 +3192,9 @@ wssiObject::wssiObject( ) {
 }
 
 wssiObject::~wssiObject() {
+	delete this->wssiRef;
 	if( !closed ) {
-		lprintf( "destruct, try to generate WebSockClose" );
+		//lprintf( "destruct, try to generate WebSockClose" );
 		RemoveClient( pc );
 		if( wsPipe ) {
 			WebSocketPipeSocketClose( wsPipe );

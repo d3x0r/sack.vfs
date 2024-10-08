@@ -27,16 +27,32 @@ function read( name ) {
 function getCertChain( ) {
 	//SSLCertificateFile /etc/letsencrypt/live/d3x0r.org/fullchain.pem
 	//SSLCertificateKeyFile /etc/letsencrypt/live/d3x0r.org/privkey.pem
-
-	if( process.env.SSL_PATH ) return process.env.SSL_PATH + "/fullchain.pem"
+	if( process.env.SSL_PATH ) {
+		//if( !process.env.SSL_HOST ) {
+		//	console.log( "ssl host name not specified..." )
+		//	return null;
+		//}
+		return process.env.SSL_PATH + "/fullchain.pem"
+	}
 	return  parentRoot + "/certgen/cert-chain.pem"
 }
 function getCertKey( ) {
-	if( process.env.SSL_PATH ) return process.env.SSL_PATH + "/privkey.pem"
+	if( process.env.SSL_PATH ) {
+		if( !process.env.SSL_HOST ) {
+			console.log( "ssl host name not specified..." )
+			return null;
+		}
+		return process.env.SSL_PATH + "/privkey.pem"
+	}
 	return  parentRoot + "/certgen/rootkeynopass.prv"
 }
 
 const certChain = read( getCertChain() );
+if( !process.env.SSL_HOST ) {
+	process.env.SSL_HOST = sack.TLS.hosts( certChain ).join("~");
+	console.log( "Host not specified, using certificate hosts:", process.env.SSL_HOST );
+}
+//console.log( "certChain loaded?", sack.TLS.hosts( certChain ) );
 const certKey = read( getCertKey() );
 
 const encMap = {
@@ -225,8 +241,15 @@ export function openServer( opts, cbAccept, cbConnect )
 	if( !("resourcePath" in serverOpts ) ) serverOpts.resourcePath = "."
 	if( certChain ) 
 	{
-		serverOpts.cert = serverOpts.cert || certChain;
-		serverOpts.key = serverOpts.key || certKey;
+		if( !serverOpts.hosts ) serverOpts.hosts = [];
+		serverOpts.hosts.push( {
+			host: process.env.SSL_HOST || "localhost",
+			cert : serverOpts.cert || certChain,
+			key : serverOpts.key || certKey
+	
+		});
+		//serverOpts.cert = serverOpts.cert || certChain;
+		//serverOpts.key = serverOpts.key || certKey;
 	}
 	const server = sack.WebSocket.Server( serverOpts )
 	//console.log( "serving on " + serverOpts.port, server );
@@ -238,8 +261,12 @@ export function openServer( opts, cbAccept, cbConnect )
 
 	server.on( "lowError",function (error, address, buffer) {
 		if( error !== 1 && error != 6 ) 
-			console.log( "Low Error with:", error, address, buffer  );
-		//if( buffer )
+			if( error === 7 ) {
+				console.log( "Requested host not found:", address.remoteAddress, "requested:", buffer );
+				return;
+			}
+			else console.log( "Low Error with:", error, address, buffer  );
+			//if( buffer )
 		//	buffer = new TextDecoder().decode( buffer );
 		server.disableSSL(); // resume with non SSL
 	} );
