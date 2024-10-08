@@ -1040,10 +1040,11 @@ static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdenti
 		break;
 	case SACK_NETWORK_ERROR_HOST_NOT_FOUND:
 		{
-			const char* buf = va_arg( args, const char* );
-			size_t buflen = va_arg( args, size_t );
-			SOCKADDR *sa1 = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
-			SOCKADDR *sa2 = (SOCKADDR*)GetNetworkLong( pc, GNL_LOCAL_ADDRESS );
+			// address that's not found...
+			//const char* buf = va_arg( args, const char* );
+			//size_t buflen = va_arg( args, size_t );
+			//SOCKADDR *sa1 = (SOCKADDR*)GetNetworkLong( pc, GNL_REMOTE_ADDRESS );
+			//SOCKADDR *sa2 = (SOCKADDR*)GetNetworkLong( pc, GNL_LOCAL_ADDRESS );
 			//lprintf( "Request for host (not configured for this host): %p %p %p", pc, sa1, sa2 );
 		}
 		break;
