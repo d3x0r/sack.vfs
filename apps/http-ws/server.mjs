@@ -48,10 +48,11 @@ function getCertKey( ) {
 }
 
 const certChain = read( getCertChain() );
-if( !process.env.SSL_HOST ) {
-	process.env.SSL_HOST = sack.TLS.hosts( certChain ).join("~");
-	console.log( "Host not specified, using certificate hosts:", process.env.SSL_HOST );
-}
+if( certChain )
+	if( !process.env.SSL_HOST ) {
+		process.env.SSL_HOST = sack.TLS.hosts( certChain ).join("~");
+		console.log( "Host not specified, using certificate hosts:", process.env.SSL_HOST );
+	}
 //console.log( "certChain loaded?", sack.TLS.hosts( certChain ) );
 const certKey = read( getCertKey() );
 
