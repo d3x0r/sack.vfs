@@ -176,6 +176,7 @@
     "build-gui-debug-run1": "npx cmake-js build -D",
     "build-gui-debug-run2": "npx cmake-js build -D",
     "build-gui-reldeb-config-windows": "npx cmake-js -t ClangCL --CDMAKE_GUI=1 --config RelWithDebInfo configure",
+    "build-gui-reldeb-run1": "npx cmake-js build --config RelWithDebInfo",
     "build-vfs": "node build.mjs && npm run build-vfs-run1",
     "build-vfs-linux": "npm run build-vfs-config && npm run build-vfs-run1",
     "build-vfs-debug-linux": "npm run build-vfs-debug-config && npm run build-vfs-debug-run1",
