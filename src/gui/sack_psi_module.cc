@@ -315,7 +315,7 @@ void enableEventLoop( class constructorSet *c ) {
 		c->eventLoopRegistered = TRUE;
 		MemSet( &c->psiLocal_async, 0, sizeof( &c->psiLocal_async ) );
 		uv_async_init( c->loop, &c->psiLocal_async, asyncmsg );
-		uv_unref( (uv_handle_t*)c->psiLocal_async );
+		uv_unref( (uv_handle_t*)&c->psiLocal_async );
 	}
 	c->eventLoopEnables++;
 }
