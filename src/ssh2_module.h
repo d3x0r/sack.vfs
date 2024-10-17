@@ -219,7 +219,10 @@ struct SSH2_Global {
 	PLIST rootThreads;
 };
 
-static struct SSH2_Global global;
+#ifndef SSH2_MODULE_CPP
+extern
+#endif
+struct SSH2_Global global;
 
 #define getEvent() GetFromSet( SSH2_EVENT, &global.eventSet )
 #define makeEvent(name) SSH2_EVENT* name = getEvent()
