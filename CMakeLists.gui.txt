@@ -36,6 +36,11 @@ if( MSVC )
   SET( CMAKE_C_FLAGS_RELEASE  "${CMAKE_C_FLAGS_RELEASE}  /GS-" )
   SET( CMAKE_C_FLAGS_RELWITHDEBINFO  "${CMAKE_C_FLAGS_RELWITHDEBINFO} /GS-" )
 
+  string( REPLACE "/RTC1" "" CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELWITHDEBINFO} )
+  string( REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} )
+  string( REPLACE "/MDd" "/MD" CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELWITHDEBINFO} )
+  string( REPLACE "/MDd" "/MD" CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} )
+
   string( REPLACE "/Ob1" "/Ob2" CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} )
   string( REPLACE "/Ob1" "/Ob2" CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELWITHDEBINFO} )
 
@@ -210,12 +215,16 @@ if( WIN32 )
 		src/reg_access.cc
 		src/playSound_module.cc
 		src/win32/commandline.cc
+		src/win32/window_shell.cc
+		src/gui/sack_systray.cc
 		)
 elseif( UNIX )
 	set( MORE_MODULE_SOURCES 
 		src/linux/commandline.cc
 	)
 endif( WIN32 )
+
+
 
 set( GUI_SOURCES src/gui/sack_psi_module.cc
 	src/gui/sack_systray.cc
@@ -271,7 +280,7 @@ if( UNIX )
 	)
 else( UNIX )
   #target_link_libraries( ${PROJECT} tls ssl crypto )
-  target_link_libraries( ${PROJECT} tls-25 ssl-52 crypto-49 bcrypt )
+  target_link_libraries( ${PROJECT} tls ssl crypto bcrypt )
 	set( VFSLIB sack_vfs.pp )
 endif( UNIX )
 
