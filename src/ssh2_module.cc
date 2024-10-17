@@ -1,6 +1,6 @@
+#define SSH2_MODULE_CPP
 
 #include "global.h"
-
 
 #include "websocket_module.h"
 

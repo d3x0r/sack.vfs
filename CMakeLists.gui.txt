@@ -36,6 +36,11 @@ if( MSVC )
   SET( CMAKE_C_FLAGS_RELEASE  "${CMAKE_C_FLAGS_RELEASE}  /GS-" )
   SET( CMAKE_C_FLAGS_RELWITHDEBINFO  "${CMAKE_C_FLAGS_RELWITHDEBINFO} /GS-" )
 
+  string( REPLACE "/RTC1" "" CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELWITHDEBINFO} )
+  string( REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} )
+  string( REPLACE "/MDd" "/MD" CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELWITHDEBINFO} )
+  string( REPLACE "/MDd" "/MD" CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} )
+
   string( REPLACE "/Ob1" "/Ob2" CMAKE_CXX_FLAGS_RELWITHDEBINFO ${CMAKE_CXX_FLAGS_RELWITHDEBINFO} )
   string( REPLACE "/Ob1" "/Ob2" CMAKE_C_FLAGS_RELWITHDEBINFO ${CMAKE_C_FLAGS_RELWITHDEBINFO} )
 
@@ -114,7 +119,7 @@ endif( NOT EXISTS GIT_REPO )
 if( EXISTS NEED_LIBRESSL AND NOT NEED_LIBRESSL )
   SET( SACK_EXTRA_DEFS ${SACK_EXTRA_DEFS} -DNEED_LIBRESSL=0 )
 else( EXISTS NEED_LIBRESSL AND NOT NEED_LIBRESSL )
-  SET( SACK_EXTRA_DEFS ${SACK_EXTRA_DEFS} -DNEED_LIBRESSL=0 )
+  SET( SACK_EXTRA_DEFS ${SACK_EXTRA_DEFS} -DNEED_LIBRESSL=1 )
 endif( EXISTS NEED_LIBRESSL AND NOT NEED_LIBRESSL )
 
 if( EXISTS NEED_ZLIB AND NOT NEED_ZLIB )
@@ -148,7 +153,9 @@ ExternalProject_Add( sack
 		-DCMAKE_BINARY_DIR:PATH=${CMAKE_BINARY_DIR} 
 		-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 		-DINCLUDE_EXTRAS=1 -DINCLUDE_VULKAN=0
-     -DLIBRESSL_SKIP_INSTALL=OFF
+     -DLIBRESSL_SKIP_INSTALL=0
+     -DLIBRESSL_APPS=0
+     -DLIBRESSL_TESTS=0
       ${SACK_EXTRA_DEFS}
 )
 
@@ -208,12 +215,16 @@ if( WIN32 )
 		src/reg_access.cc
 		src/playSound_module.cc
 		src/win32/commandline.cc
+		src/win32/window_shell.cc
+		src/gui/sack_systray.cc
 		)
 elseif( UNIX )
 	set( MORE_MODULE_SOURCES 
 		src/linux/commandline.cc
 	)
 endif( WIN32 )
+
+
 
 set( GUI_SOURCES src/gui/sack_psi_module.cc
 	src/gui/sack_systray.cc
@@ -246,6 +257,7 @@ add_library(${PROJECT} SHARED
 	src/system_module.cc
 	src/text_object.cc
 	src/config_module.cc
+	src/ssh2_module.cc
 	${MORE_MODULE_SOURCES}
 	${GUI_SOURCES}	
         )
@@ -268,7 +280,7 @@ if( UNIX )
 	)
 else( UNIX )
   #target_link_libraries( ${PROJECT} tls ssl crypto )
-  target_link_libraries( ${PROJECT} tls-25 ssl-52 crypto-49 bcrypt )
+  target_link_libraries( ${PROJECT} tls ssl crypto bcrypt )
 	set( VFSLIB sack_vfs.pp )
 endif( UNIX )
 

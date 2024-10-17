@@ -3,7 +3,7 @@
 
 struct render_private_data {
 	PLIST renderers;
-} global;
+} render_global;
 
 struct optionStrings {
 	Isolate* isolate;
@@ -157,7 +157,7 @@ static void asyncmsg( uv_async_t* handle ) {
 void RenderObject::sigint( void ) {
 	RenderObject *r;
 	INDEX idx;
-	LIST_FORALL( global.renderers, idx, RenderObject *, r ){
+	LIST_FORALL( render_global.renderers, idx, RenderObject *, r ){
 		r->do_close();
 	}
 }
@@ -214,7 +214,7 @@ void RenderObject::Init( Local<Object> exports ) {
 	}
 
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
-	AddLink( &global.renderers, this );
+	AddLink( &render_global.renderers, this );
 	if( title )
 		r = OpenDisplayAboveSizedAt( DISPLAY_ATTRIBUTE_LAYERED, w, h, x, y, over ? over->r : NULL );
 	else
@@ -228,7 +228,7 @@ void RenderObject::setRenderer(PRENDERER r) {
 }
 
 RenderObject::~RenderObject() {
-	DeleteLink( &global.renderers, this );
+	DeleteLink( &render_global.renderers, this );
 }
 
 	void RenderObject::New( const FunctionCallbackInfo<Value>& args ) {

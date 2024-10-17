@@ -38,6 +38,13 @@
 #include <construct.h>
 #include <configscript.h>
 #include <filemon.h>
+#include <sack_ssh.h>
+#include <listhids.h>
+#include <listports.h>
+#include <md5.h>
+#include <sha1.h>
+#include <sha2.h>
+
 #else
 #  if defined( NODE_WANT_INTERNALS )
 #    include "../../../deps/sack/sack.h"
