@@ -164,6 +164,7 @@
     "build-gui": "node build.mjs release gui && npm run build-gui-run1 && node build.mjs release gui && npm run build-gui-run1",
     "build-gui-debug": "node build.mjs debug gui && npm run build-gui-run1 && node build.mjs debug gui && npm run build-gui-run1",
     "build-gui-reldeb": "node build.mjs reldeb gui && npm run build-gui-run1 && node build.mjs reldeb gui && npm run build-gui-run1",
+    "build-gui-reldeb-config": "npx cmake-js --CDMAKE_GUI=1 --config RelWithDebInfo $cmake_js_extra_flags configure",
     "build-gui-linux": "npm run build-gui-config && npm run build-gui-run1 && npm run build-gui-config && npm run build-gui-run2",
     "build-gui-config": "npx cmake-js --CDMAKE_GUI=1 --config Release $cmake_js_extra_flags configure",
     "build-gui-config-windows": "npx cmake-js -t ClangCL --CDMAKE_GUI=1 --config Release $cmake_js_extra_flags configure",
