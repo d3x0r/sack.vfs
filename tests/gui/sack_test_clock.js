@@ -1,6 +1,6 @@
 
 var sack = require( "../.." );
-
+console.log( "Something?", sack )
 sack.Sqlite.so( "SACK/PSI/Clock Control/Default to high resolution time?", 0 );
 
 var f = sack.PSI.Frame( "test", -1, -1, 600, 600 );
@@ -21,4 +21,9 @@ var clock = f.Control( "Basic Clock Widget", 0, 130, 500, 500 );
 clock.analog();
 
 f.show();
+
+function tick() {
+	setTimeout( tick, 50000 );
+}
+tick();
 
