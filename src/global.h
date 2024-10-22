@@ -82,7 +82,11 @@
 #endif
 
 
-
+#if NODE_MAJOR_VERSION >= 23 
+#define PERSISTENT_FUNCTION Persistent<Function>
+#else
+#define PERSISTENT_FUNCTION Persistent<Function, CopyablePersistentTraits<Function>>
+#endif
 
 #if NODE_MAJOR_VERSION >= 10
 #  define USE_ISOLATE(i)   (i),
@@ -429,9 +433,9 @@ class WebSockClientObject : public node::ObjectWrap {
 public:
 	//static Persistent<Function> constructor;
 
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	PERSISTENT_FUNCTION closeCallback; //
+	PERSISTENT_FUNCTION errorCallback; //
+	PERSISTENT_FUNCTION readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
 
@@ -542,8 +546,8 @@ class JSOXObject : public node::ObjectWrap {
 public:
 	struct jsox_parse_state *state;
 	//static Persistent<Function> constructor;
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> reviver; // on begin() save reviver function here
+	PERSISTENT_FUNCTION readCallback; //
+	PERSISTENT_FUNCTION reviver; // on begin() save reviver function here
 	Persistent<Map> fromPrototypeMap;
 	Persistent<Map> promiseFromPrototypeMap;
 	PLIST prototypes; // revivde prototypes by class

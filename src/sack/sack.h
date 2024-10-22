@@ -870,60 +870,49 @@ namespace sack {
 // drop out these debug relay paramters for managed code...
 // we're going to have the full call frame managed and known...
 #if !defined( _DEBUG ) && !defined( _DEBUG_INFO )
-#  if defined( __LINUX__ ) && !defined( __PPCCPP__ )
-//#warning "Setting DBG_PASS and DBG_FORWARD to be ignored."
-#  else
-//#pragma pragnoteonly("Setting DBG_PASS and DBG_FORWARD to be ignored"  )
-#  endif
-#define DBG_AVAILABLE   0
+#  define DBG_AVAILABLE   0
 /* in NDEBUG mode, pass nothing */
-#define DBG_SRC
+#  define DBG_SRC
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
-#define DBG_VOIDSRC
+#  define DBG_VOIDSRC
 /* <combine sack::DBG_PASS>
    \#define DBG_LEADSRC in NDEBUG mode, declare (void) */
 /* <combine sack::DBG_PASS>
    \ \                      */
-#define DBG_VOIDPASS    void
+#  define DBG_VOIDPASS    void
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
-#define DBG_PASS
+#  define DBG_PASS
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
-#define DBG_RELAY
+#  define DBG_RELAY
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_NULL */
-#define DBG_NULL
+#  define DBG_NULL
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
-#define DBG_VOIDRELAY
+#  define DBG_VOIDRELAY
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
-#define DBG_FILELINEFMT
+#  define DBG_FILELINEFMT
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing */
-#define DBG_FILELINEFMT_MIN
+#  define DBG_FILELINEFMT_MIN
 /* <combine sack::DBG_PASS>
    in NDEBUG mode, pass nothing
    Example
    printf( DBG_FILELINEFMT ": extra message" DBG_PASS ); */
-#define DBG_VARSRC
+#  define DBG_VARSRC
 #else
-	// these DBG_ formats are commented out from duplication in sharemem.h
-#  if defined( __LINUX__ ) && !defined( __PPCCPP__ )
-//#warning "Setting DBG_PASS and DBG_FORWARD to work."
-#  else
-//#pragma pragnoteonly("Setting DBG_PASS and DBG_FORWARD to work"  )
-#  endif
 // used to specify whether debug information is being passed - can be referenced in compiled code
-#define DBG_AVAILABLE   1
+#  define DBG_AVAILABLE   1
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_SRC */
-#define DBG_SRC         FILELINE_SRC
+#  define DBG_SRC         FILELINE_SRC
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_VOIDSRC */
-#define DBG_VOIDSRC     FILELINE_VOIDSRC
+#  define DBG_VOIDSRC     FILELINE_VOIDSRC
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_VOIDPASS */
 #define DBG_VOIDPASS    FILELINE_VOIDPASS
@@ -1075,25 +1064,25 @@ namespace sack {
    paramter f( DBG_RELAY ) would fail; on expansion this would
    be f( , pFile, nLine ); (note the extra comma, with no
    parameter would be a syntax error.                            */
-#define DBG_PASS        FILELINE_PASS
+#  define DBG_PASS        FILELINE_PASS
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_RELAY */
-#define DBG_RELAY       FILELINE_RELAY
+#  define DBG_RELAY       FILELINE_RELAY
 /* <combine sack::DBG_PASS>
 	  in _DEBUG mode, pass FILELINE_NULL */
-#define DBG_NULL        FILELINE_NULL
+#  define DBG_NULL        FILELINE_NULL
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_VOIDRELAY */
-#define DBG_VOIDRELAY   FILELINE_VOIDRELAY
+#  define DBG_VOIDRELAY   FILELINE_VOIDRELAY
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_FILELINEFMT */
-#define DBG_FILELINEFMT FILELINE_FILELINEFMT
+#  define DBG_FILELINEFMT FILELINE_FILELINEFMT
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_FILELINEFMT_MIN */
-#define DBG_FILELINEFMT_MIN FILELINE_FILELINEFMT_MIN
+#  define DBG_FILELINEFMT_MIN FILELINE_FILELINEFMT_MIN
 /* <combine sack::DBG_PASS>
    in _DEBUG mode, pass FILELINE_VARSRC */
-#define DBG_VARSRC      FILELINE_VARSRC
+#  define DBG_VARSRC      FILELINE_VARSRC
 #endif
 /* cannot declare _0 since that overloads the
    vector library definition for origin (0,0,0,0,...) */
@@ -7886,7 +7875,7 @@ NETWORK_PROC( PCLIENT, OpenTCPClientExEx )( CTEXTSTR, uint16_t, cReadComplete,
 #define OpenTCPClientEx( addr,port,read,close,write ) OpenTCPClientExEx( addr,port,read,close,write DBG_SRC )
 /* Do the connect to
 */
-int NetworkConnectTCPEx( PCLIENT pc DBG_PASS );
+NETWORK_PROC( int, NetworkConnectTCPEx )( PCLIENT pc DBG_PASS );
 #define NetworkConnectTCP( pc ) NetworkConnectTCPEx( pc DBG_SRC )
 /* Drain is an operation on a TCP socket to just drop the next X
    bytes. They are ignored and not stored into any user buffer.

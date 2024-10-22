@@ -14,7 +14,7 @@ public:
 	char *name;
 
 	Persistent<Object> this_;
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	Persistent<Function> readCallback; //
 	//uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	//PLINKQUEUE readQueue;
 	LOGICAL blocking = FALSE;
@@ -35,7 +35,7 @@ private:
 class MouseObject : public node::ObjectWrap {
 public:
 	Persistent<Object> this_;
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	Persistent<Function> readCallback; //
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
@@ -490,8 +490,7 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	else
 	*/
 	if( args[0]->IsFunction() ) {
-		Local<Function> arg0 = Local<Function>::Cast( args[0] );
-		com->readCallback = Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
+		com->readCallback.Reset( isolate, Local<Function>::Cast(args[0]));
 	}
 	else {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Unhandled parameter value to keyboard reader." ) ) );

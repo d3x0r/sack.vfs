@@ -34,7 +34,9 @@ if( MSVC )
   add_definitions( -wd4197 -wd4090 )
 
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP8")
-  if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
+  if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 23 )
+	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++20")
+  elseif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
 	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
   else( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
 	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++14")
@@ -370,6 +372,9 @@ endif()
 
 if( WIN32 )
 	set( PPCTOOL c:/tools/ppc.exe )
+	if( NOT EXISTS ${PPCTOOL} )
+		set( PPCTOOL c:/general/tools/ppc.exe )
+	endif( NOT EXISTS ${PPCTOOL} )
 elseif( APPLE )
 	set( PPCTOOL /usr/local/bin/ppc )
 else()
@@ -531,8 +536,14 @@ set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
    # so picky about not setting c++17 for C files - who cares?
+  if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 23 )
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "/std:c++20" )
+
+  elseif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
 	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
 			COMPILE_FLAGS "/std:c++17" )
+  endif()
 
 	if( WIN32 )
 		execute_process( COMMAND cmd.exe /c where clang-clx OUTPUT_VARIABLE CLANG_WHERE ERROR_VARIABLE CLANG_WHERE_ERROR )
@@ -556,8 +567,13 @@ endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 if( CMAKE_COMPILER_IS_GNUCC )
 
+  if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 23 )
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "-std=c++20" )
+  elseif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
 	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
 			COMPILE_FLAGS "-std=c++17" )
+  endif()
 
    set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation")
 endif( CMAKE_COMPILER_IS_GNUCC )

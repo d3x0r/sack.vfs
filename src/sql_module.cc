@@ -100,7 +100,7 @@ public:
 	static void getRequire( const v8::FunctionCallbackInfo<Value>& args );
 	static void setRequire( const v8::FunctionCallbackInfo<Value>& args );
 	static void OnOpen( uintptr_t psv, PODBC odbc );
-	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
+	Persistent<Function> openCallback; //
 	v8::Persistent<v8::Function> onCorruption;
 	Persistent<Object> _this;
 
@@ -126,10 +126,10 @@ public:
 	static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args );
 	static void findOptionNode( const v8::FunctionCallbackInfo<Value>& args );
 	static void getOptionNode( const v8::FunctionCallbackInfo<Value>& args );
-	static void writeOptionNode( v8::Local<v8::String> field,
+	static void writeOptionNode( v8::Local<v8::Name> field,
 		v8::Local<v8::Value> val,
 		const PropertyCallbackInfo<void>&info );
-	static void readOptionNode( v8::Local<v8::String> field,
+	static void readOptionNode( v8::Local<v8::Name> field,
 		const PropertyCallbackInfo<v8::Value>& info );
 
 	~OptionTreeObject();
@@ -744,7 +744,10 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						snprintf( buf, 64, "new Date('%s')", jsval->string );
 						script = Script::Compile( isolate->GetCurrentContext()
 							, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
-#if ( NODE_MAJOR_VERSION >= 16 )
+#if ( NODE_MAJOR_VERSION >= 23 )
+							, new ScriptOrigin( String::NewFromUtf8(isolate, "DateFormatter"
+								, NewStringType::kInternalized).ToLocalChecked())
+#elif ( NODE_MAJOR_VERSION >= 16 )
 							, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter"
 						                                  , NewStringType::kInternalized ).ToLocalChecked() )
 #else
@@ -1266,7 +1269,11 @@ void OptionTreeObject::Init(  ) {
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "eo", enumOptionNodes );
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "fo", findOptionNode );
 	NODE_SET_PROTOTYPE_METHOD( optionTemplate, "go", getOptionNode );
+#if NODE_MAJOR_VERSION >= 23
+	Local<ObjectTemplate> proto = optionTemplate->InstanceTemplate();
+#else
 	Local<Template> proto = optionTemplate->InstanceTemplate();
+#endif
 
 	proto->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "value" )
 			, readOptionNode
@@ -1491,7 +1498,7 @@ void OptionTreeObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& a
 	EnumOptionsEx( oto->odbc, oto->node, invokeCallback, (uintptr_t)&callbackArgs );
 }
 
-void OptionTreeObject::readOptionNode( v8::Local<v8::String> field,
+void OptionTreeObject::readOptionNode( v8::Local<v8::Name> field,
                               const PropertyCallbackInfo<v8::Value>& info ) {
 	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.This() );
 	char *buffer;
@@ -1502,7 +1509,7 @@ void OptionTreeObject::readOptionNode( v8::Local<v8::String> field,
 	info.GetReturnValue().Set( String::NewFromUtf8( info.GetIsolate(), buffer, v8::NewStringType::kNormal ).ToLocalChecked() );
 }
 
-void OptionTreeObject::writeOptionNode( v8::Local<v8::String> field,
+void OptionTreeObject::writeOptionNode( v8::Local<v8::Name> field,
                               v8::Local<v8::Value> val,
                               const PropertyCallbackInfo<void>&info ) {
 	String::Utf8Value tmp( USE_ISOLATE( info.GetIsolate() ) val );

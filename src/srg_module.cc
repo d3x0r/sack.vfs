@@ -10,7 +10,7 @@ public:
 	size_t seedLen;
 	struct random_context *entropy;
 	//static v8::Persistent<v8::Function> constructor;
-	Persistent<Function, CopyablePersistentTraits<Function>> *seedCallback;
+	PERSISTENT_FUNCTION *seedCallback;
 	Isolate *isolate;
 	Persistent<Array> seedArray;
 	static PLINKQUEUE signingEntropies;
@@ -18,7 +18,7 @@ public:
 public:
 
 	static void Init( Isolate *isolate, Local<Object> exports );
-	SRGObject( Persistent<Function, CopyablePersistentTraits<Function>> *callback );
+	SRGObject( PERSISTENT_FUNCTION *callback );
 	SRGObject( const char *seed, size_t seedLen );
 	SRGObject();
 
@@ -140,7 +140,7 @@ private:
 			if( argc > 0 ) {
 				if( args[0]->IsFunction() ) {
 					Local<Function> arg0 = Local<Function>::Cast( args[0] );
-					obj = new SRGObject( new Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 ) );
+					obj = new SRGObject( new PERSISTENT_FUNCTION( isolate, arg0 ) );
 				}
 				else {
 					String::Utf8Value seed( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -1021,7 +1021,7 @@ void SRGObject::Init( Isolate *isolate, Local<Object> exports )
 
 }
 
-SRGObject::SRGObject( Persistent<Function, CopyablePersistentTraits<Function>> *callback ) {
+SRGObject::SRGObject( PERSISTENT_FUNCTION *callback ) {
 	this->MakeEntropy = SRG_CreateEntropy4;
 	this->seedBuf = NULL;
 	this->seedLen = 0;

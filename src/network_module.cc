@@ -47,7 +47,7 @@ struct udpOptions {
 	bool addressDefault;
 	bool v6;
 	bool readStrings;
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
+	PERSISTENT_FUNCTION messageCallback;
 };
 
 struct tcpHostOption {
@@ -90,10 +90,10 @@ struct tcpOptions {
 	PLIST hostList;
 
 
-	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
-	Persistent<Function, CopyablePersistentTraits<Function>> readyCallback;
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
+	PERSISTENT_FUNCTION connectCallback;
+	PERSISTENT_FUNCTION readyCallback;
+	PERSISTENT_FUNCTION messageCallback;
+	PERSISTENT_FUNCTION closeCallback;
 };
 
 
@@ -135,8 +135,8 @@ public:
 	PLINKQUEUE eventQueue;
 	bool readStrings;  // return a string instead of a buffer
 //	static Persistent<Function> constructor;
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
+	PERSISTENT_FUNCTION messageCallback;
+	PERSISTENT_FUNCTION closeCallback;
 	struct networkEvent *eventMessage;
 
 public:
@@ -169,16 +169,16 @@ public:
 	bool readStrings = false;  // return a string instead of a buffer
 	class tcpObject *server = NULL; // if this is an accepted client, this is the server object
 	//	static Persistent<Function> constructor;	
-	Persistent<Function, CopyablePersistentTraits<Function>> messageCallback;
+	PERSISTENT_FUNCTION messageCallback;
    // if this is a client, this is triggered when the socket completes or fails connection
    // if this is a server, this is a newly accepted connection
 	//    messageCallback and closeCallback are automatically copied
    //    a server listen socket(normally) can't close (should check for disconnecting network)
    //    a server will also never get messages.
    //    But the newly accepted socket can also just have their callbacks set.
-	Persistent<Function, CopyablePersistentTraits<Function>> connectCallback;
-	Persistent<Function, CopyablePersistentTraits<Function>> readyCallback;
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback;
+	PERSISTENT_FUNCTION connectCallback;
+	PERSISTENT_FUNCTION readyCallback;
+	PERSISTENT_FUNCTION closeCallback;
 	struct networkEvent *eventMessage; // probably use the same queue?
 
 public:
@@ -599,7 +599,7 @@ udpObject::udpObject( struct udpOptions *opts ) {
 		uv_async_init( c->loop, &async, udpAsyncMsg );
 		doUDPRead( pc, (POINTER)buffer, 4096 );
 		if( !opts->messageCallback.IsEmpty() )
-			this->messageCallback = opts->messageCallback;
+			this->messageCallback.Reset( opts->isolate, opts->messageCallback );
 	}
 
 }
@@ -852,9 +852,9 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				tcpObj->allowSSLfallback = obj->allowSSLfallback;
 				tcpObj->readStrings = obj->readStrings;
 				tcpObj->pc = (PCLIENT)( eventMessage->buf );
-				tcpObj->messageCallback = obj->messageCallback;
-				tcpObj->connectCallback = obj->connectCallback;
-				tcpObj->closeCallback = obj->closeCallback;
+				tcpObj->messageCallback.Reset( isolate, obj->messageCallback );
+				tcpObj->connectCallback.Reset( isolate, obj->connectCallback );
+				tcpObj->closeCallback.Reset( isolate, obj->closeCallback );
 
 				SetCPPNetworkCloseCallback( tcpObj->pc, TCP_Close, (uintptr_t)tcpObj );
 				SetCPPNetworkReadComplete( tcpObj->pc, TCP_ReadComplete, (uintptr_t)tcpObj );
@@ -1090,13 +1090,13 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	//lprintf( "Init async handle: %p",(uv_handle_t*)&async );
 	uv_async_init( c->loop, &async, tcpAsyncMsg );
 	if( !opts->messageCallback.IsEmpty() )
-		this->messageCallback = opts->messageCallback;
+		this->messageCallback.Reset( isolate, opts->messageCallback );
 	if( !opts->connectCallback.IsEmpty() )
-		this->connectCallback = opts->connectCallback;
+		this->connectCallback.Reset(isolate, opts->connectCallback );
 	if( !opts->readyCallback.IsEmpty() )
-		this->readyCallback = opts->readyCallback;
+		this->readyCallback.Reset(isolate, opts->readyCallback );
 	if( !opts->closeCallback.IsEmpty() )
-		this->closeCallback = opts->closeCallback;
+		this->closeCallback.Reset(isolate, opts->closeCallback );
 
 	this->ssl = opts->ssl;
 

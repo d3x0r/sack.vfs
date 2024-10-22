@@ -440,8 +440,8 @@ public:
 
 
 	Persistent<Object> resultObject;
-	Persistent<Function, CopyablePersistentTraits<Function>> resultCallback;
-	Persistent<Function, CopyablePersistentTraits<Function>> cbError;
+	Persistent<Function> resultCallback;
+	Persistent<Function> cbError;
 
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
@@ -525,7 +525,7 @@ public:
 
 class callbackFunction {
 public:
-	Persistent<Function, CopyablePersistentTraits<Function>> callback; //
+	Persistent<Function> callback; //
 };
 
 // web sock server instance Object  (a connection from a remote)

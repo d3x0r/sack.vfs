@@ -14,7 +14,7 @@ public:
 	char* name;
 	//static Persistent<Function> constructor;
 	bool rts = 1;
-	Persistent<Function, CopyablePersistentTraits<Function>>* readCallback; //
+	Persistent<Function>* readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
 
@@ -307,7 +307,7 @@ void ComObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	Local<Function> arg0 = Local<Function>::Cast( args[0] );
-	com->readCallback = new Persistent<Function,CopyablePersistentTraits<Function>>(isolate,arg0);
+	com->readCallback = new Persistent<Function>(isolate,arg0);
 }
 
 void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {

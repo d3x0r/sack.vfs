@@ -33,7 +33,7 @@ class parseObject : public node::ObjectWrap {
 	struct json_parse_state *state;
 	struct vesl_parse_state *vstate;
 public:
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	Persistent<Function> readCallback; //
 
 public:
 
@@ -197,8 +197,7 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
 		Local<Function> arg0 = Local<Function>::Cast( args[0] );
-		Persistent<Function> cb( isolate, arg0 );
-		obj->readCallback = cb;
+		obj->readCallback.Reset( isolate, arg0 );
 
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
@@ -289,8 +288,7 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
 		Local<Function> arg0 = Local<Function>::Cast( args[0] );
-		Persistent<Function> cb( isolate, arg0 );
-		obj->readCallback = cb;
+		obj->readCallback.Reset( isolate, arg0 );
 
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );
@@ -380,8 +378,7 @@ void parseObject::New6v( const v8::FunctionCallbackInfo<Value>& args ) {
 		// Invoked as constructor: `new MyObject(...)`
 		parseObject* obj = new parseObject();
 		Local<Function> arg0 = Local<Function>::Cast( args[0] );
-		Persistent<Function> cb( isolate, arg0 );
-		obj->readCallback = cb;
+		obj->readCallback.Reset( isolate, arg0 );
 
 		obj->Wrap( args.This() );
 		args.GetReturnValue().Set( args.This() );

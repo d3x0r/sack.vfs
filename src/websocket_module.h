@@ -50,12 +50,12 @@ public:
 	* The following are the holders for event callbacks.
 	* These are the callbacks that are called when the event occurs.
 	*/
-	Persistent<Function, CopyablePersistentTraits<Function>> openCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> acceptCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> requestCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> errorCloseCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> errorLowCallback; //
+	PERSISTENT_FUNCTION openCallback; //
+	PERSISTENT_FUNCTION acceptCallback; //
+	PERSISTENT_FUNCTION requestCallback; //
+	PERSISTENT_FUNCTION closeCallback; //
+	PERSISTENT_FUNCTION errorCloseCallback; //
+	PERSISTENT_FUNCTION errorLowCallback; //
 	/*
 	* this is the general async callback event being served
 	* it somces from 

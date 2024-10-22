@@ -11,13 +11,13 @@ class TaskObject : public node::ObjectWrap {
 public:
 	PTASK_INFO task;
 	Persistent<Object> _this;
-	Persistent<Function, CopyablePersistentTraits<Function>> endCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> inputCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> inputCallback2; //
+	PERSISTENT_FUNCTION endCallback; //
+	PERSISTENT_FUNCTION inputCallback; //
+	PERSISTENT_FUNCTION inputCallback2; //
 #if _WIN32
-	Persistent<Function, CopyablePersistentTraits<Function>> cbMove; // temporary value for move window
+	PERSISTENT_FUNCTION cbMove; // temporary value for move window
 	Persistent<Object> moveOpts; // if style is used with move, style is applied first and then move.
-	Persistent<Function, CopyablePersistentTraits<Function>> cbStyle; // temporary value for style window
+	PERSISTENT_FUNCTION cbStyle; // temporary value for style window
 #endif
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	bool binary;
