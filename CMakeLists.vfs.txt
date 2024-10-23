@@ -12,6 +12,12 @@ if( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
 	SET( __ANDROID__ ON )
 endif( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
 
+OPTION( HOST_NWJS "Target is hosted in NWJS which isn't quite node. " ${HOST_NWJS} )
+
+IF( HOST_NWJS )
+   ADD_DEFINITIONS( -DHOST_NWJS )
+ENDIF( HOST_NWJS )
+
 ## Compute node version...
 string(REPLACE "." ";" VERSION_LIST ${NODE_RUNTIMEVERSION})
 list(GET VERSION_LIST 0 NODE_VERSION_MAJOR)
@@ -33,6 +39,8 @@ if( MSVC )
 # 4090 - 'function': different 'volatile' qualifiers (usually don't care)
   add_definitions( -wd4197 -wd4090 )
 
+
+
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP8")
   if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 23 )
 	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++20")
@@ -40,7 +48,7 @@ if( MSVC )
 	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
   else( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
 	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++14")
-  endif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
+  endif( )
   SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP8")
 
   SET( CMAKE_CXX_FLAGS_RELEASE  "${CMAKE_CXX_FLAGS_RELEASE}  /GS-" )
@@ -457,8 +465,15 @@ elseif( UNIX )
 endif( WIN32 )
 
 
+if( HOST_NWJS )
+  set( NWJS_CPP_SOURCES 	nw.js/win_delay_load_hook.cc )
+#  STRING( REPLACE "/DELAYLOAD:NODE.EXE" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}" )
+else()
+endif( HOST_NWJS )
+  set( NODE_LIBS ${CMAKE_JS_LIB} )
 
 SET( CPP_SOURCES
+	${NWJS_CPP_SOURCES}
 	src/vfs_module.cc
 	src/objStore_module.cc
 	src/thread_module.cc
@@ -584,7 +599,7 @@ set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_E
 #	add_dependencies( ${PROJECT} dossl )
 #endif( USE_SYSTEM_SSL )
 
-target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${CMAKE_JS_LIB} libssh2 )
+target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${NODE_LIBS} libssh2 )
 if( WIN32 )
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
 endif( WIN32 )
