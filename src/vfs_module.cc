@@ -388,7 +388,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 			, forceNextModule_get
 			, forceNextModule_set
 			, Local<Value>()
-			, PropertyAttribute::ReadOnly
+			, PropertyAttribute::None
 			, SideEffectType::kHasSideEffect
 			, SideEffectType::kHasSideEffect
 		);
