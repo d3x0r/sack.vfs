@@ -140,7 +140,7 @@ export async function load(urlin, context, defaultLoad) {
 			};
 		}
 	} else {
-		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, forceModule, exten );
+		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, sack.import.forceNextModule, forceModule, exten );
 		if( ( sack.import.forceNextModule || forceModule ) && exten === ".js" ) context.format="module";
 	}
 	return defaultLoad(urlin, context, defaultLoad);
@@ -191,32 +191,32 @@ export function initialize( data ) {
 }
 
 export function resolve( specifier, context, nextResolve ) {
-	debug_ && console.log( "resolve continue?", specifier, context );		
+	debug_ && console.log( "resolve continue?", specifier, context );
 	if( specifier.startsWith( "http:" ) || specifier.startsWith( "https:" ) || specifier.startsWith( "module:" )  ) {
 		return {
 	      shortCircuit: true,
 	      url: context.parentURL ?
-        	new URL(specifier, context.parentURL).href :
+	        new URL(specifier, context.parentURL).href :
 	        new URL(specifier).href,
 	    };	
 		return {
 			shortCircuit: true,
 			url: parentURL ?
-        			new URL(specifier, context.parentURL).href :
+		                new URL(specifier, context.parentURL).href :
 				new URL(specifier).href,
 		};	
 	} else if( specifier.endsWith( ".jsox" ) ){
 		return {
 			shortCircuit: true,
 			url: context.parentURL ?
-        			new URL(specifier, context.parentURL).href :
+		                new URL(specifier, context.parentURL).href :
 				new URL(specifier).href,
 		};	
 	} else if( specifier.endsWith( ".json6" ) ){
 		return {
 			shortCircuit: true,
 			url: context.parentURL ?
-        			new URL(specifier, context.parentURL).href :
+		                new URL(specifier, context.parentURL).href :
 				new URL(specifier).href,
 		};	
 		
