@@ -948,7 +948,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 		break;
 	case JSOX_VALUE_BIGINT:
 		script = Script::Compile( revive->context, String::NewFromUtf8( revive->isolate, val->string, NewStringType::kNormal, (int)val->stringLen ).ToLocalChecked()
-#if ( NODE_MAJOR_VERSION >= 23 )
+#if ( V8_MAJOR_VERSION >= 13 || ( V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 9 ) )
 			, new ScriptOrigin(String::NewFromUtf8Literal(revive->isolate, "BigIntFormatter"))).ToLocalChecked();
 #elif ( NODE_MAJOR_VERSION >= 16 )
 			, new ScriptOrigin( revive->isolate, String::NewFromUtf8Literal( revive->isolate, "BigIntFormatter" ) ) ).ToLocalChecked();

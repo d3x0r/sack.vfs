@@ -81,8 +81,8 @@
 
 #endif
 
-
-#if NODE_MAJOR_VERSION >= 23 
+// probably didn't need the copyable persistent trait thing anyway?
+#if V8_MAJOR_VERSION >= 13 || ( V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 9 )
 #define PERSISTENT_FUNCTION Persistent<Function>
 #else
 #define PERSISTENT_FUNCTION Persistent<Function, CopyablePersistentTraits<Function>>
