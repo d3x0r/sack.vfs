@@ -217,6 +217,19 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
+
+
+static bool forceNextModule = false;
+static void forceNextModule_get( Local<Name> property, const v8::PropertyCallbackInfo<Value>& args ) {
+	args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), forceNextModule ) );
+
+}
+
+static void forceNextModule_set( Local<Name> property, Local<Value> value, const v8::PropertyCallbackInfo<void>& args ) {
+	forceNextModule = value->BooleanValue( args.GetIsolate() );
+}
+
+
 /*
 void decodeFlags2( int flags ) {
 
@@ -367,6 +380,23 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	InitUDPSocket( isolate, exports );
 	TLSObject::Init( isolate, exports );
 	SSH2_Object::Init( isolate, exports );
+
+
+	{
+		Local<Object> importObject = Object::New( isolate );
+		importObject->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "forceNextModule" )
+			, forceNextModule_get
+			, forceNextModule_set
+			, Local<Value>()
+			, PropertyAttribute::None
+			, SideEffectType::kHasSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+
+		//SET_READONLY_METHOD( importObject, "forceNextModule", forceNextModule );
+		SET_READONLY( exports, "import", importObject );
+	}
+
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );

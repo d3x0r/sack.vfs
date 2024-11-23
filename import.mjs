@@ -105,7 +105,7 @@ export async function load(urlin, context, defaultLoad) {
 				if( result.statusCode === 200  ) {
 					debug_ && console.log( "Got back success...", !forceModule, !forceHttpModule, ( !forceModule && !forceHttpModule && exten===".js" )?"commonjs":"module", result.content.substr(0, 40) )
 					res( {
-						format:( !forceModule && !forceHttpModule && exten===".js" )?"commonjs":"module",
+						format:( !sack.import.forceNextModule && !forceModule && !forceHttpModule && exten===".js" )?"commonjs":"module",
 						source:result.content,
 						shortCircuit:true,
 					} );
@@ -140,8 +140,8 @@ export async function load(urlin, context, defaultLoad) {
 			};
 		}
 	} else {
-		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, forceModule, exten );
-		if( forceModule && exten === ".js" ) context.format="module";
+		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, sack.import.forceNextModule, forceModule, exten );
+		if( ( sack.import.forceNextModule || forceModule ) && exten === ".js" ) context.format="module";
 	}
 	return defaultLoad(urlin, context, defaultLoad);
 
@@ -191,37 +191,37 @@ export function initialize( data ) {
 }
 
 export function resolve( specifier, context, nextResolve ) {
-	debug_ && console.log( "resolve continue?", specifier, context );		
+	debug_ && console.log( "resolve continue?", specifier, context );
 	if( specifier.startsWith( "http:" ) || specifier.startsWith( "https:" ) || specifier.startsWith( "module:" )  ) {
 		return {
 	      shortCircuit: true,
 	      url: context.parentURL ?
-        	new URL(specifier, context.parentURL).href :
+	        new URL(specifier, context.parentURL).href :
 	        new URL(specifier).href,
 	    };	
 		return {
 			shortCircuit: true,
 			url: parentURL ?
-        			new URL(specifier, context.parentURL).href :
+		                new URL(specifier, context.parentURL).href :
 				new URL(specifier).href,
 		};	
 	} else if( specifier.endsWith( ".jsox" ) ){
 		return {
 			shortCircuit: true,
 			url: context.parentURL ?
-        			new URL(specifier, context.parentURL).href :
+		                new URL(specifier, context.parentURL).href :
 				new URL(specifier).href,
 		};	
 	} else if( specifier.endsWith( ".json6" ) ){
 		return {
 			shortCircuit: true,
 			url: context.parentURL ?
-        			new URL(specifier, context.parentURL).href :
+		                new URL(specifier, context.parentURL).href :
 				new URL(specifier).href,
 		};	
 		
 	}
-	if( forceModule && context.format !== "module") {
+	if( ( sack.import.forceNextModule || forceModule ) && context.format !== "module") {
 		//console.log( "Return forced module:", specifier, context );
 		return nextResolve( specifier, Object.assign( {}, context, { format: "module" } ) );
 		
@@ -240,6 +240,9 @@ if( version[0] >= 21 || ( version[0] >= 20 && version[1] >= 6 ) ) {
 	//module.register( "sack.vfs/import.mjs", fileURL );
 	module.register( "sack.vfs/import.mjs", fileURL.href );
 }
+
+export function forceNextModule( yesno ) { sack.import.forceNextModule = yesno }
+
 
 /*
 {
