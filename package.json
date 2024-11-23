@@ -194,7 +194,7 @@
     "build-vfs-reldeb": "node build.mjs reldeb && npm run build-vfs-reldeb-run1",
     "build-vfs-reldeb-config": "npx cmake-js --CDMAKE_GUI=0 --config RelWithDebInfo configure",
     "build-vfs-reldeb-run1": "npx cmake-js build --config RelWithDebInfo",
-    "build": "npx cmake-js configure && npx cmake-js build",
+    "build": "npm run build-vfs",
     "link": "npm link @d3x0r/bloomnhash @d3x0r/popups @d3x0r/slab-array @d3x0r/srg jsox sack.vfs"
   }
 }

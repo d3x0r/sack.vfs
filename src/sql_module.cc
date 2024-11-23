@@ -744,7 +744,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						snprintf( buf, 64, "new Date('%s')", jsval->string );
 						script = Script::Compile( isolate->GetCurrentContext()
 							, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
-#if ( NODE_MAJOR_VERSION >= 23 )
+#if ( V8_MAJOR_VERSION >= 13 || ( V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 9 ) )
 							, new ScriptOrigin( String::NewFromUtf8(isolate, "DateFormatter"
 								, NewStringType::kInternalized).ToLocalChecked())
 #elif ( NODE_MAJOR_VERSION >= 16 )

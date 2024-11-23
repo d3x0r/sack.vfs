@@ -7,10 +7,16 @@ set_property(GLOBAL PROPERTY USE_FOLDERS On)
 project (sack_vfs)
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
-
+set(FORCE_C20 ON )
 if( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
 	SET( __ANDROID__ ON )
 endif( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
+
+#OPTION( HOST_NWJS "Target is hosted in NWJS which isn't quite node. " ${HOST_NWJS} )
+
+IF( HOST_NWJS )
+   ADD_DEFINITIONS( -DHOST_NWJS )
+ENDIF( HOST_NWJS )
 
 ## Compute node version...
 string(REPLACE "." ";" VERSION_LIST ${NODE_RUNTIMEVERSION})
@@ -23,6 +29,7 @@ list(GET VERSION_LIST 2 NODE_VERSION_PATCH)
 
 if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
 	add_definitions( -Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion -Wno-unused-parameter )
+	add_definitions( -Wno-deprecated-volatile)
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 
@@ -33,6 +40,8 @@ if( MSVC )
 # 4090 - 'function': different 'volatile' qualifiers (usually don't care)
   add_definitions( -wd4197 -wd4090 )
 
+
+
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP8")
   if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 23 )
 	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++20")
@@ -40,7 +49,7 @@ if( MSVC )
 	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
   else( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
 	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++14")
-  endif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
+  endif( )
   SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP8")
 
   SET( CMAKE_CXX_FLAGS_RELEASE  "${CMAKE_CXX_FLAGS_RELEASE}  /GS-" )
@@ -53,15 +62,6 @@ if( MSVC )
 
 endif( MSVC )
 
-
-#if( GNUC )
-#  SET( CMAKE_CXX_FLAGS_DEBUG  "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG" )
-#  SET( CMAKE_C_FLAGS_DEBUG  "${CMAKE_C_FLAGS_DEBUG}  -D_DEBUG" )
-#  SET( CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -D_DEBUG" )
-#  SET( CMAKE_C_FLAGS_RELWITHDEBINFO  "${CMAKE_C_FLAGS_RELWITHDEBINFO}  -D_DEBUG" )
-#endif( GNUC )
-
-#include_directories( "../node_modules/nan" )
 
 OPTION( USE_SACK_ALLOCATOR "Use SACK custom memory allocator (debug/debug)" ON )
 
@@ -344,10 +344,17 @@ set( C_SOURCES
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 			COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 		)			
+
+if( MSVC )
+	set( EXTRA_DEPENDS COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack )
+else()
+	set( EXTRA_DEPENDS DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack )
+endif( )
+
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
-				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                                   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
+	${EXTRA_DEPENDS}
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
 if( CMAKE_VERSION VERSION_GREATER 3.21 )
@@ -396,12 +403,13 @@ if( EXISTS ${PPCTOOL} )
   set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.h ${EXTRA_HEADERS} )
 
   add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
-  			#COMMAND cmake -E echo ${AMALG_COMMAND}
-   			 COMMAND ${AMALG_COMMAND}
-                        #COMMAND cmake -E echo ${AMALG_COMMAND2}
-   			COMMAND ${AMALG_COMMAND2}
-                   DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
-				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+		#COMMAND cmake -E echo ${AMALG_COMMAND}
+		${EXTRA_DEPENDS}
+		COMMAND ${AMALG_COMMAND}
+		#COMMAND cmake -E echo ${AMALG_COMMAND2}
+		COMMAND ${AMALG_COMMAND2}
+		DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
+		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
   SET_TARGET_PROPERTIES(doit PROPERTIES FOLDER "SACK Amalgamator" )
@@ -457,8 +465,16 @@ elseif( UNIX )
 endif( WIN32 )
 
 
+if( HOST_NWJS )
+  set( NWJS_CPP_SOURCES 	nw.js/win_delay_load_hook.cc )
+#  STRING( REPLACE "/DELAYLOAD:NODE.EXE" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}" )
+  set( NODE_LIBS ${NODE_LIBS};C:/Users/d3x0r/.cmake-js/node-x64/v22.7.0/win-x64/node.lib;C:/Users/d3x0r/.cmake-js/node-x64/v22.7.0/win-x64/nw.lib )
+else()
+endif( HOST_NWJS )
+  set( NODE_LIBS ${NODE_LIBS};${CMAKE_JS_LIB} )
 
 SET( CPP_SOURCES
+	${NWJS_CPP_SOURCES}
 	src/vfs_module.cc
 	src/objStore_module.cc
 	src/thread_module.cc
@@ -536,7 +552,7 @@ set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
    # so picky about not setting c++17 for C files - who cares?
-  if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 23 )
+  if( FORCE_C20  OR ( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 23 ) )
 	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
 			COMPILE_FLAGS "/std:c++20" )
 
@@ -584,7 +600,7 @@ set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_E
 #	add_dependencies( ${PROJECT} dossl )
 #endif( USE_SYSTEM_SSL )
 
-target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${CMAKE_JS_LIB} libssh2 )
+target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${NODE_LIBS} libssh2 )
 if( WIN32 )
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
 endif( WIN32 )

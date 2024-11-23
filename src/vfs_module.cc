@@ -297,7 +297,7 @@ void decodeFlags( int flags ) {
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	static int runOnce = 1;
-	Isolate* isolate = Isolate::GetCurrent();
+	Isolate* isolate = context->GetIsolate();// Isolate::GetCurrent();
 #ifdef _WIN32
 	{
 #if 0
@@ -2086,6 +2086,18 @@ FileObject::~FileObject() {
 #if ( NODE_MAJOR_VERSION > 9 )
 //-----------------------------------------------------------
 //https://nodejs.org/docs/latest-v10.x/api/addons.html#addons_context_aware_addons
+
+#if 0
+extern "C" __declspec(dllexport) void node_register_module_v127(v8::Local<v8::Object> exports, v8::Local<v8::Value> module, v8::Local<v8::Context> context); extern "C" { static node::node_module _module = { 127, 0, 0, "M:\\javascript\\sack.vfs\\src\\vfs_module.cc", 0, (node::addon_context_register_func)(node_register_module_v127), "sack_vfs", 0, 0 }; static void __cdecl _register_sack_vfs(void); namespace {
+	struct _register_sack_vfs_ {
+		_register_sack_vfs_() {
+			_register_sack_vfs();
+		};
+	} _register_sack_vfs_v_;
+} static void __cdecl _register_sack_vfs(void) {
+	node_module_register(&_module);
+} } void node_register_module_v127(v8::Local<v8::Object> exports, v8::Local<v8::Value> module, v8::Local<v8::Context> context)
+#endif
 #  if !defined( NODE_WANT_INTERNALS )
 	NODE_MODULE_INIT( /*Local<Object> exports,
 		Local<Value>Module,
