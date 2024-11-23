@@ -218,9 +218,11 @@ static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
 
+static PLIST moduleList = NULL;
 
 static bool forceNextModule = false;
 static void forceNextModule_get( Local<Name> property, const v8::PropertyCallbackInfo<Value>& args ) {
+
 	args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), forceNextModule ) );
 
 }
@@ -229,6 +231,41 @@ static void forceNextModule_set( Local<Name> property, Local<Value> value, const
 	forceNextModule = value->BooleanValue( args.GetIsolate() );
 }
 
+static void forceNextModule_add( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value module( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	AddLink( &moduleList, SegCreateFromCharLen( *module, module.length() ) );
+}
+
+
+static void forceNextModule_drop( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value module( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	INDEX idx, nidx = INVALID_INDEX;
+	PTEXT s;
+	LIST_FORALL( moduleList, idx, PTEXT, s ) {
+		if( TextIs( s, *module ) ) {
+			nidx = idx;
+			continue;
+		}
+		if( nidx != INVALID_INDEX ) {
+			SetLink( &moduleList, nidx++, s );
+			SetLink( &moduleList, idx, NULL );
+		}
+	}
+}
+
+static void forceNextModule_list( Local<Name> property, const v8::PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Array> a = Array::New( isolate );
+	INDEX idx;
+	PTEXT s;
+	LIST_FORALL( moduleList, idx, PTEXT, s ) {
+		SETN( a, idx, String::NewFromUtf8( isolate, GetText(s), v8::NewStringType::kNormal, GetTextSize(s) ).ToLocalChecked() );
+	}
+	args.GetReturnValue().Set( a );
+}
 
 /*
 void decodeFlags2( int flags ) {
@@ -389,6 +426,17 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 			, forceNextModule_set
 			, Local<Value>()
 			, PropertyAttribute::None
+			, SideEffectType::kHasSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+		SET_READONLY_METHOD( importObject, "force", forceNextModule_add );
+		SET_READONLY_METHOD( importObject, "forget", forceNextModule_drop );
+		//SET_READONLY_METHOD( importObject, "modules", forceNextModule_list );
+		importObject->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "modules" )
+			, forceNextModule_list
+			, nullptr
+			, Local<Value>()
+			, PropertyAttribute::ReadOnly
 			, SideEffectType::kHasSideEffect
 			, SideEffectType::kHasSideEffect
 		);

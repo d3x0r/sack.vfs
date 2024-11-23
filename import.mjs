@@ -139,9 +139,12 @@ export async function load(urlin, context, defaultLoad) {
 			   shortCircuit:true,
 			};
 		}
+	} else if( sack.import.modules.find( (m)=>urlin.endsWith( m ) ) ) {
+		//console.log( "Setting format to module here...");
+		context.format="module";
 	} else {
-		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, sack.import.forceNextModule, forceModule, exten );
-		if( ( sack.import.forceNextModule || forceModule ) && exten === ".js" ) context.format="module";
+		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, forceModule, exten );
+		if( forceModule && exten === ".js" ) context.format="module";
 	}
 	return defaultLoad(urlin, context, defaultLoad);
 
@@ -221,7 +224,11 @@ export function resolve( specifier, context, nextResolve ) {
 		};	
 		
 	}
-	if( ( sack.import.forceNextModule || forceModule ) && context.format !== "module") {
+	//console.log( "Force is:", sack.import.forceNextModule, context.format );
+	if( sack.import.modules.find( (m)=>specifier.endsWith( m ) ) ) {
+		//console.log( "Setting format to module here...", specifier, context );
+		context.format="module";
+	} else if( forceModule && context.format !== "module") {
 		//console.log( "Return forced module:", specifier, context );
 		return nextResolve( specifier, Object.assign( {}, context, { format: "module" } ) );
 		
