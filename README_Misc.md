@@ -457,6 +457,7 @@ to interact with the process.
 | bin | string | program to run |
 | args | string or [ string [, string]...] | an argument or array of arguments to pass to the program |
 | firstArgIsArg | bool | If false, first argument in `args` is program name and not an argument (POSIX exec); default is true, and the first argument in `args` is the first argument |
+| firstArgIsArg | bool | Specified if the first argument in the array or string is the first argument or is the program name.  If it the first element is the program name, set to false.  If it is the first argument set true.  Default: true |
 | env | object | key:value pairs to write to the environment before launching the process |
 | binary | bool | if true, buffer to input callback will be an ArrayBuffer else it will be a string |
 | input | callback(buffer) | A callback function which will receive output from the task.  This only receives, and, when specified, redirects the stdoutput stream. | 
@@ -464,7 +465,6 @@ to interact with the process.
 | end | callback() | This callback will be triggered when the task exits. |
 | impersonate | bool | (Needs work;updated compatibility... this is for a service to launch a task as a user which is now impossible(?)) |
 | hidden | bool | set windows UI flags such that the next process is created with a hidden window.  Default: false |
-| firstArgIsArg | bool | Specified if the first argument in the array or string is the first argument or is the program name.  If it the first element is the program name, set to false.  If it is the first argument set true.  Default: true |
 | newGroup | bool | (Windows)create task as a new task group instead of a child of this group.  Default: false|
 | newConsole | bool | (Windows)create a new console for the new task; instead of ineriting the existing console, default false |
 | suspend | bool | create task suspended.  Default: false |
@@ -477,6 +477,7 @@ to interact with the process.
 | noInheritStdio | bool | prevents task from inheriting stdio pipes |
 | style | object | (Windows)After the task is started, set window style bits, then, if specified, move the window |
 | usePty | bool | enable using pty on linux; no additional task interface(yet) |
+| admin | bool | (Windows)Run as administrator |
 
 ### Task Move Options
 
