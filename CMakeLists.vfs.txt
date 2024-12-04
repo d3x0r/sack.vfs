@@ -149,6 +149,7 @@ set( INCLUDES
  )
 
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
+FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc "// clang-format off\n" )
 
 
 foreach( DEF ${DEFINITIONS} )
