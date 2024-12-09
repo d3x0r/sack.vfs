@@ -49,15 +49,158 @@ function textString(self) {
 }
 
 
+export class TextFlags {
+
+	static OPS = {
+      NOOP : 0
+			/* this segment clears to the end of the line.  Its content is then added to the output */
+			CLEAR_END_OF_LINE : 1
+        ,CLEAR_START_OF_LINE: 2/* clear from the current cursor to the start of line 2*/
+
+        ,/* clear the current line; 3 */
+		 CLEAR_LINE:3
+		,/* clear to the end of the page from this line;4 */
+		 CLEAR_END_OF_PAGE:4
+        ,/* clear from this line to the start of the page;5 */
+		 CLEAR_START_OF_PAGE:5
+		,/* clear the entire vieable page (pushes all content to history)
+         set cursor home ;6*/
+		 CLEAR_PAGE:6
+		,/* sets option to not show text at all until next color. ;7*/
+		 CONCEAL:7
+        ,/* background is how many to delete. ;8*/
+		 DELETE_CHARS:8
+        ,/* format.x, y are start/end of region -1,-1 clears. ;9*/
+		 SET_SCROLL_REGION:9
+        ,/* this works as a transaction...;10 */
+		 GET_CURSOR:10
+		,/* responce to getcursor...;11 */
+		 SET_CURSOR:11
+		,/* clear page, home page... result in page break...;12 */
+		 PAGE_BREAK:12
+		,/* break between paragraphs - kinda same as lines...
+		 since lines are as long as possible... ;13 */
+		PARAGRAPH_BREAK:13
+		,/* Justify line(s if wrapped) to the right
+		  This attribute should be passed through to renderer;14*/
+        JUSTIFY_RIGHT:14
+		,/* Justify line(s if wrapped) to the center
+		This attribute should be passed through to renderer;15*/
+        JUSTIFY_CENTER:15
+	};
+
+	is_quote = false;
+	is_squote = false;
+	is_bracket = false;
+	is_brace = false;
+	is_tag = false;
+
+	format_rel = true;   // uses relative (tabs, spaces) positioning
+	format_abs = false;  // uses absolute (x,y) positioning
+	
+	binary = false;  // content is a Uint8Array instead?
+	no_return = false; // a segment by default does a newline before itself....
+
+	flags = {
+
+	   prior_foreground : true,
+		prior_background : true,
+		default_foreground : false,
+		default_background : false,
+	
+
+      /* the foreground color of this segment (0-16 standard console text [ANSI text]) */
+		 foreground : 0,
+      /* the background color of this segment (0-16 standard console text [ANSI text]) */
+		 background : 0,
+      /* a bit indicating the text should blink if supported */
+		 blink : false,
+      /* a bit indicating the foreground and background color should be reversed */
+		reverse : false,
+		// usually highly is bolder, perhaps it's
+      // a highlighter effect and changes the background
+		 highlight : false,
+		// this is double height modifications to the font...
+		 tall : false,
+      // this is thicker characters...
+		 bold : false,
+      // draw a line under the text...
+		 underline : false,
+		// strike through - if able, draw a line right
+		// through the middle of the text... maybe
+		// it's a wiggly scribble line?  maybe that
+      // could be extended again?
+		 strike : false,
+      // text is drawn wide (printer kinda font?)
+		 wide : false,
+       // this is pretty common......
+		 italic : false,
+		// --
+		// these flags are free, but since we already have text segments
+		// and I'm bringing in consoles, perhaps we should consider using
+		// this to describe captions, but provide the api layer for CTEXTSTR
+		// --
+		// position data remains constant.
+		// text is mounted at the top/left of the
+		// first character... (unless center, then
+		// the position specifies the middle of the text
+		// draw vertical instead of horizontal
+		 bVertical:false,
+		// draw opposite/upside down from normal
+		// vertical/down, right/left upside down if not centered
+		// if centered, the text pivots around position.
+		 bInvert:false,
+		// 0 = default alignment 1 = left, 2 = center 3 = right
+		// 0 is not set, the flag set in the lower 32 bit flags
+		// is not needed any longer.... anything non zero
+		// is that operation to apply.
+		 bAlign:0,
+      /* format op indicates one of the enum FORMAT_OPS applies to this segment */
+		 format_op : TextFlags.OPS.NOOP,
+
+	};
+	
+	position = {};
+
+	constructor( flags ) {
+		const coords = {};
+		const offset = {};
+		Object.defineProperty( coords, "x_", { writable:true, enumerable:false, value: 0 } );
+		Object.defineProperty( coords, "y_", { writable:true, enumerable:false, value: 0 } );
+		Object.defineProperty( coords, "x", { set(v) { coords.x_ = v; }, get(){ return coords.x_ }, enumerable:true } );
+		Object.defineProperty( coords, "y", { set(v) { coords.y_ = v; }, get(){ return coords.y_ }, enumerable:true } );
+		Object.defineProperty( offset, "tabs", { set(v) { coords.x_ = v; }, get(){ return coords.x_ }, enumerable:true } );
+		Object.defineProperty( offset, "spaces", { set(v) { coords.y_ = v; }, get(){ return coords.y_ }, enumerable:true } );
+	
+		Object.defineProperty( this.position, "coords", { value:coords, enumerable:true } );
+		Object.defineProperty( this.position, "offset", { value:offset, enumerable:true } );
+
+
+		["binary", "no_return", "is_quote","is_squote","is_bracket","is_brace","is_tag"].forEach( f=>this[f] = flags[f] );
+		if( flags.format_abs ) {
+			this.format_abs = true;
+			this.format_rel = false;
+			this.position.coords.x = flags.x;
+			this.position.coords.y = flags.y;
+		} else if( flags.format_rel ) {
+			this.format_abs = false;
+			this.format_rel = true;
+			this.position.offset.tabs = flags.tabs||0;
+			this.position.offset.spaces = flags.spaces||0;
+		}
+		for( let f in this.flags ) this.flags[f] = flags[f];
+	}
+}
+
 export class Text {
 
-		tabs= 0;
-		spaces = 0;
-		flags= null; // this is actually a whole object if we want to get technical.
-		 text= "";
-		 next= null;
-		 pred= null;
-		 indirect= null;
+	tabs= 0;
+	spaces = 0;
+	flags= null; // this is actually a whole object if we want to get technical.
+	text= "";
+	next= null;
+	pred= null;
+	indirect= null;
 
 		 append(seg) { if (seg) { var end = this; while (end.next) end = end.next; seg.pred = this; end.next = seg; } return seg; }
 		 break() { var result; if (result = this.next) { this.next = null; result.pred = null; return result } return null; }
@@ -80,7 +223,8 @@ export class Text {
 		this.tabs= def && def.tabs || 0
 		this.spaces= def && def.spaces || 0;
 		this.text= (def && def.text === null) ? null : def && def.text || def || ""
-
+		if( "flags" in def )
+			this.flags = new TextFlags( def.flags );
 	}
         
         
@@ -306,3 +450,5 @@ export class Text {
 }
 }
 
+Object.seal( TextFlags.OPS );
+Object.freeze( TextFlags.OPS );
