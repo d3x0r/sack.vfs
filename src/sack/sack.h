@@ -1,4 +1,5 @@
 /*CMake Option defined*/
+// clang-format off
 #define NO_AUTO_VECTLIB_NAMES
 #define NODE_ADDON_BUILD
 /* Includes the system platform as required or appropriate. If
