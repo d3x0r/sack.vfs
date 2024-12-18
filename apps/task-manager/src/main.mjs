@@ -129,6 +129,29 @@ function handleStop( ws, msg, msg_ ) {
 }
 
 
+function handleInput( ws, msg, msg_ ) 
+{ 
+	if( (!("system" in msg ) ) || msg.system === local.id ){
+		const task = local.taskMap[msg.id];
+		//console.log( "Log request:", msg_ );
+		if( !task ) {
+			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
+		} else {
+			task.run.write( msg.data );
+		}
+	}
+	else {
+		const remote = local.systems.find( system=>system.id === msg.system );
+		//console.log( "found remote system:", remote, msg_ );
+		if( remote ) {
+				remote.connection.ws.send( msg_ );
+		}
+		else {
+			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
+			ws.send( JSOX.stringify( {op:"deleteSystem", id: msg.system } ) );
+		}
+	}
+}
 
 
 function handleLog( ws, msg, msg_ ) 
@@ -257,7 +280,8 @@ else startTasks();
 
 function startTasks() {
 	local.tasks.forEach( task=>{
-		if (!task.hasDepends 
+		if (!task.running 
+                   && !task.hasDepends 
 		   && !task.noAutoRun){
 			task.start() 
 		}} );
@@ -526,11 +550,16 @@ function handleMessage( ws, msg_ ) {
 		case "log":
 			handleLog( ws, msg, msg_ );
 			break;
+		case "send":
+			handleInput( ws, msg, msg_ );
+			break;
 		case "createTask": {
 			if( local.system === msg.system || !msg.system ) {
 				const task = loadTask( msg.task );
-				saveRunConfig();
+				if( !msg.task.temporary )
+					saveRunConfig();
 				addTask( task.id, task ); // sends new task
+				if( !task.noAutoRun ) task.start();
 			} else if( msg.system && msg.system != local.system ) {
 				local.systems.find( system=>{
 					if( system.id === msg.system ) {
@@ -541,8 +570,10 @@ function handleMessage( ws, msg_ ) {
 				});
 			}else {
 				const task = loadTask( msg.task );
-				saveRunConfig();
+				if( !msg.task.temporary )
+					saveRunConfig();
 				addTask( task.id, task );
+				if( !task.noAutoRun ) task.start();
 			}
 			}
 			break;
@@ -575,6 +606,7 @@ function handleMessage( ws, msg_ ) {
 		}
 			break;
 		case "deleteTask": {
+			if( !msg.system || msg.system ===local.system ) {
 				const task = local.taskMap[msg.id];
 				if( task ) {
 					const taskInfo = task.task;
@@ -588,13 +620,18 @@ function handleMessage( ws, msg_ ) {
 								}
 							}
 							delete local.taskMap[msg.id];
-							task.stop();
-							saveRunConfig();
+							if( task.running )
+								task.stop();
+							if( !taskInfo.temporary )
+								saveRunConfig();
 							break;
 						}
 					}
-					deleteTask( task );
+					send( msg_ );
 				}
+			} else {
+				// send to remote system...
+			}
 			}
 			break;
 		case "getDisplays": {
@@ -648,6 +685,8 @@ function handleMessage( ws, msg_ ) {
 
 
 function saveRunConfig() {
+	const c = Object.assign( {}, config );
+        c.tasks = c.tasks.reduce( (acc,task)=>{if( !task.temporary ) acc.push( task ); return acc;}, [] );
 	const output = JSOX.stringify( config, null, "\t" );
 	disk.write( "config.run.jsox", output );
 }
