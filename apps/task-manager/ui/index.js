@@ -21,6 +21,7 @@ protocolConfig.insertBackLog = insertBackLog;
 protocol.on( "addTaskList", AddTaskList )
 protocol.on( "addSystem", AddSystem );
 protocol.on( "addTask", addTask );
+protocol.on( "deleteTask", deleteTask );
 protocol.on( "extern.task", addNewSystem );
 protocol.on( "deleteSystem", deleteSystem );
 
@@ -84,12 +85,21 @@ function showLogClick(taskList,task) {
 }
 
 function deleteTask( taskId ) {
-	for( let t = 0; t < local.tasks.length; t++ ) {
-		if( local.tasks[t].id === taskId ) {
-			local.tasks.splice( t, 1 );
-			local.systemMap.splice(t,1);
-			local.statusDisplay.refresh();
-			return;
+	console.log( "Deleting task..." );
+	const task = local.tasks[taskId];
+	if( task ) {
+		delete local.tasks[taskId];
+		delete local.systemMap[taskId];
+		for( let t = 0; t < local.taskData.length; t++ ) {
+			if( local.taskData[t].id === taskId ) {
+				local.taskData.splice( t, 1 );
+				break;
+			}
+		}
+
+		if( local.statusDisplay ){
+			local.statusDisplay.reinit();
+			local.statusDisplay.fill();
 		}
 	}
 }
@@ -225,7 +235,7 @@ function AddSystem( system ) {
 
 		//system.pageFrame = div;
 		system.dataGrid = AddTaskList( div, system, "tasks" );
-		console.log( "system datagrid became:", system.dataGrid );
+		//console.log( "system datagrid became:", system.dataGrid );
 	}
 }
 
