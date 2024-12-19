@@ -228,6 +228,7 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY_METHOD( taskF, "parentId", ::GetProcessParentId );
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
+	SET_READONLY_METHOD( taskF, "onEnd", TaskObject::MonitorProcess );
 
 	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programName" )
 		, getProgramName
@@ -1573,7 +1574,78 @@ static void getProcessWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 
 #endif
 
+struct onEndParams {
+	PERSISTENT_FUNCTION cb;
+	PTASK_INFO task;
+	int exitCode;   
+	uv_async_t async; // keep this instance around for as long as we might need
+	                  // to do the periodic callback
 
+	;
+};
+
+static void CPROC monitoredTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
+	struct onEndParams *params = (struct onEndParams *)psvTask;
+	if( !task_ended )
+		params->task = NULL;
+	else
+		params->exitCode = GetTaskExitCode( task_ended );
+	uv_async_send( &params->async );
+}
+
+static void monitoredTaskAsyncClosed( uv_handle_t *async ) {
+	struct onEndParams *params = (struct onEndParams *)async->data;
+	delete params;
+}
+
+static void monitoredTaskAsyncMsg( uv_async_t *handle ) {
+	struct onEndParams *params = (struct onEndParams *)handle->data;
+	v8::Isolate *isolate    = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+
+	{
+		if( !params->cb.IsEmpty() ) {
+			Local<Value> argv[1];
+			if( params->task )
+				argv[ 0 ] = Integer::New( isolate, params->exitCode );
+			else
+				argv[ 0 ] = Null( isolate );
+			params->cb.Get( isolate )->Call( context, Null( isolate ), 1, argv );
+		}
+		// these is a chance output will still come in?
+		uv_close( (uv_handle_t *)&params->async, monitoredTaskAsyncClosed );
+	}
+	{
+		// This is hook into Node to dispatch Promises() that are created... all
+		// event loops should have this.
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cb
+		     = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
+}
+
+
+void TaskObject::MonitorProcess( const FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal(
+		     isolate, "Must specify process ID to watch, and callback on end." ) ) );
+		return;
+	}
+	int32_t id = (int32_t)args[ 0 ]->IntegerValue( context ).FromMaybe( 0 );
+	struct onEndParams *params = new onEndParams;
+	class constructorSet *c    = getConstructors( isolate );
+	params->async.data         = params;
+	params->task               = NULL;
+	uv_async_init( c->loop, &params->async, monitoredTaskAsyncMsg );
+
+	params->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
+	params->task = MonitorTask( id, 0, monitoredTaskEnd, (uintptr_t)params );
+
+}
 
 void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();

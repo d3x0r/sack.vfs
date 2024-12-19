@@ -394,6 +394,8 @@ handle inheritance.  (Many handles created by SACK have inheritance disabled by 
 
 | Task Static Methods | description |
 | loadLibrary( libname ) | Load external shared library. ex: `sack.Task.loadLibrary( "xxx" );` |
+| processId() | returns the current processes ID |
+| parentId() | returns the parent processes ID |
 | getProcessList( partial name) | gets a list of processes that the program name matches the optional `partial name` parameter; if no parameter or null is specified, then all processes are returned|
 | getDisplays() | (Windows) returns an array of information about displays. |
 | getStyles( processId ) | (Windows) returns an object with `window`, `windowEx` and `class` members that are the style values|
@@ -407,6 +409,9 @@ handle inheritance.  (Many handles created by SACK have inheritance disabled by 
 | programDataPath| Program specific datapath? |
 | programPath | The path of the program that is running |
 | programName | the name (minus.exe) of the program that is running |
+| kill(id) | attempt to kill a task by process ID (sigterm or TerminateProcess) |
+| stop(id) | attempt to stop a task by process ID (sigint or WM_QUIT/Ctrl-C/EndProcess) |
+| onEnd(id, cb(exitCode) ) | monitor a process ID to exit, when it does exit, send exit code to callback `cb`; if (exitCode === null) process with ID was not found; has already exited, callback happens before function returns.|
 
 
 ``` js
