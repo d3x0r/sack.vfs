@@ -241,7 +241,7 @@ export class Task {
 		if( process.platform === "linux" ) {
 			bin = this.#task.bin; // linux will scan path for name
 		}else if( !this.#task.bin.includes( ":" ) )
-			bin = config.config.winroot + this.#task.bin + config.config.winsuffix;
+			bin = this.#task.bin;
 		else {
 			if( this.#task.altbin ) {
 				if( disk.exists( this.#task.bin ) )
