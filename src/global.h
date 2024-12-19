@@ -627,7 +627,7 @@ struct command_line_result {
 
 #endif
 // returns a PLIST of struct command_line_results
-PLIST GetProcessCommandLines( const char* process );
+PLIST GetProcessCommandLines( const char* process, int pid );
 int GetProcessParent( int pid );
 
 void ReleaseCommandLineResults( PLIST* ppResults );

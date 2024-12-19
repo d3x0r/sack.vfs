@@ -100,9 +100,11 @@ void addProc( uintptr_t psvUser, CTEXTSTR name, ScanFileProcessFlags flags ){
 
 }
 
-PLIST GetProcessCommandLines( const char* process ) {
+PLIST GetProcessCommandLines( const char* process, int pid ) {
 	struct addArgs params = {process, (int)( process?strlen( process ):0), NULL};
 	POINTER info = NULL;
+	if( pid )
+		lprintf( "return task by pid isn't done..." );
 	while( ScanFiles( "/proc", "*", &info, addProc, (ScanFileFlags)0, (uintptr_t)&params ));
 	return params.pArgs;
 }

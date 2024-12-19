@@ -1296,6 +1296,58 @@ void TaskObject::getWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 
 #endif
 
+static Local<Object> makeInfo( Isolate *isolate, Local<Context> context
+                             , struct optionStrings const * strings
+                             , struct command_line_result const *proc ) {
+	Local<Object> info = Object::New( isolate );
+	Local<Array> args  = Array::New( isolate );
+	char *bin          = proc->data;
+	size_t binChars    = 0;
+	size_t argStart;
+	size_t argEnd;
+	int arg = 0;
+	if( bin[ 0 ] == '"' ) {
+		binChars++;
+		while( bin[ binChars ] != '"' )
+			binChars++;
+	} else
+		while( bin[ binChars ] && bin[ binChars ] != ' ' )
+			binChars++;
+	argStart = binChars;
+	if( bin[ 0 ] == '"' ) {
+		bin++;
+		binChars--;
+	}
+	while( bin[ argStart ] ) {
+		while( bin[ argStart ] == ' ' )
+			argStart++;
+		if( !bin[ argStart ] )
+			break;
+		argEnd = argStart + 1;
+		if( bin[ argStart ] == '"' ) {
+			argStart++;
+			while( bin[ argEnd ] && bin[ argEnd ] != '"' )
+				argEnd++;
+		} else
+			while( bin[ argEnd ] && bin[ argEnd ] != ' ' )
+				argEnd++;
+		args->Set( context, arg++
+		         , String::NewFromUtf8( isolate, bin + argStart, NewStringType::kNormal, (int)( argEnd - argStart ) )
+		                .ToLocalChecked() );
+		if( bin[ argEnd ] == '"' )
+			argStart = argEnd + 1;
+		else
+			argStart = argEnd;
+	}
+	info->Set( context, String::NewFromUtf8Literal( isolate, "id" ), Integer::New( isolate, proc->dwProcessId ) );
+	info->Set( context, strings->binString->Get( isolate )
+	         , String::NewFromUtf8( isolate, bin, NewStringType::kNormal, (int)binChars ).ToLocalChecked() );
+	info->Set( context, strings->binaryString->Get( isolate )
+	         , String::NewFromUtf8( isolate, proc->processName ).ToLocalChecked() );
+	info->Set( context, strings->argString->Get( isolate ), args );
+	return info;
+}
+
 void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 #ifdef _WIN32
 	Isolate* isolate = args.GetIsolate();
@@ -1305,51 +1357,18 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 	struct command_line_result* proc;
 	INDEX idx;
 	if( args.Length() > 0 ) {
-		String::Utf8Value s( USE_ISOLATE( isolate ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
-		procs = GetProcessCommandLines( *s );
+		if( args[0]->IsNumber() ) {
+			procs = GetProcessCommandLines( NULL, args[ 0 ]->IntegerValue( context ).FromMaybe( 0 ) );
+		} else {
+			String::Utf8Value s(
+				  USE_ISOLATE( isolate ) args[ 0 ]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+			procs = GetProcessCommandLines( *s, 0 );
+		}
 	} else
-		procs = GetProcessCommandLines( NULL );
+		procs = GetProcessCommandLines( NULL, 0 );
 	Local<Array> result = Array::New( isolate );
 	LIST_FORALL( procs, idx, struct command_line_result*, proc ) {
-		Local<Object> info = Object::New( isolate );
-		Local<Array> args = Array::New( isolate );
-		char* bin = proc->data;
-		size_t binChars = 0;
-		size_t argStart;
-		size_t argEnd;
-		int arg = 0;
-		if( bin[0] == '"' ) {
-			binChars++;
-			while( bin[binChars] != '"' )
-				binChars++;
-		} else 
-			while( bin[binChars] && bin[binChars] != ' ' )
-				binChars++;
-		argStart = binChars;
-		if( bin[0] == '"' ) {
-			bin++;
-			binChars--;
-		}
-		while( bin[argStart] ) {
-			while( bin[argStart] == ' ' ) argStart++;
-			if( !bin[argStart] ) break;
-			argEnd = argStart + 1;
-			if( bin[argStart] == '"' ) {
-				argStart++;
-				while( bin[argEnd] && bin[argEnd] != '"' ) argEnd++;
-			}else
-				while( bin[argEnd] && bin[argEnd] != ' ' ) argEnd++;
-			args->Set( context, arg++, String::NewFromUtf8( isolate, bin + argStart, NewStringType::kNormal, (int)(argEnd - argStart) ).ToLocalChecked() );
-			if( bin[argEnd] == '"' )
-				argStart = argEnd+1;
-			else
-				argStart = argEnd;
-		}
-		info->Set( context, String::NewFromUtf8Literal( isolate, "id" ), Integer::New( isolate, proc->dwProcessId ) );
-		info->Set( context, strings->binString->Get( isolate ), String::NewFromUtf8( isolate, bin, NewStringType::kNormal, (int)binChars ).ToLocalChecked() );
-		info->Set( context, strings->binaryString->Get( isolate ), String::NewFromUtf8( isolate, proc->processName ).ToLocalChecked() );
-		info->Set( context, strings->argString->Get( isolate ), args );
-		result->Set( context, (uint32_t)idx, info );
+		result->Set( context, (uint32_t)idx, makeInfo( isolate, context, strings, proc ) );
 	}
 	ReleaseCommandLineResults( &procs );
 	args.GetReturnValue().Set( result );

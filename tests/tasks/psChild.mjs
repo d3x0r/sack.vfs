@@ -22,3 +22,7 @@ function indexProcs( procs ) {
 
 console.log( "Self:", self );
 console.log( "Self:", self.parent.parent.children );
+
+for( let proc of procs ) {
+	console.log( proc );
+}

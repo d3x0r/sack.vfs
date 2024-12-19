@@ -6,7 +6,7 @@ export function findTask( task ) {
 	let b2 = '';
 	let resolve = null;
 	sack.Task( { bin: "schtasks.exe",
-	           args: ["/query", "/tn", "@d3x0r\\sack.vfs\\"+task.name
+	           args: ["/query", "/tn", (task.service || "@d3x0r\\sack.vfs\\")+task.name
 	           ]
 			   , input(buffer ) {
 				b1 += buffer;
@@ -27,7 +27,7 @@ export function findTask( task ) {
 
 export function createTask( task ) {
 	let resolve = null;
-	sack.Task( { bin: "schtasks.exe", args: ["/create", "/tn", "@d3x0r\\sack.vfs\\"+task.name, "/tr", task.bin, "/sc", "ONCE", "/st", "00:00", "/sd", "01/01/2000" ],
+	sack.Task( { bin: "schtasks.exe", args: ["/create", "/tn", (task.service || "@d3x0r\\sack.vfs\\")+task.name, "/tr", task.bin, "/sc", "ONCE", "/st", "00:00", "/sd", "01/01/2000" ],
 		input( buffer ) {
 			console.log( "buffer:", buffer );
 		}
@@ -43,9 +43,9 @@ export function triggerTask( task ) {
 	let b1 = '';
 	let resolve = null;
 	const base_procs = sack.Task.getProcessList( task.bin );
-
+	console.log( "Shouldn't there already be some?", base_procs );
 	sack.Task( { bin: "schtasks.exe",
-	           args: ["/run", "/tn", "@d3x0r\\sack.vfs\\"+task.name
+	           args: ["/run", "/tn", (task.service || "@d3x0r\\sack.vfs\\")+task.name
 	           ]
 			   , input(buffer ) {
 				b1 += buffer;
@@ -74,7 +74,7 @@ export function termTask( task ) {
 	let b1 = '';
 	let resolve = null;
 	sack.Task( { bin: "schtasks.exe",
-	           args: ["/end", "/tn", "@d3x0r\\sack.vfs\\"+task.name
+	           args: ["/end", "/tn", (task.service || "@d3x0r\\sack.vfs\\")+task.name
 	           ]
 			   , input(buffer ) {
 					b1 += buffer;
@@ -90,7 +90,7 @@ export function termTask( task ) {
 export function deleteTask( task ) {
 	let b1 = '';
 	let resolve = null;
-	sack.Task( { bin: "schtasks.exe", args: ["/delete", "/tn", "@d3x0r\\sack.vfs\\"+task.name, "/F" ],
+	sack.Task( { bin: "schtasks.exe", args: ["/delete", "/tn", (task.service || "@d3x0r\\sack.vfs\\")+task.name, "/F" ],
 			input( buffer ) {
 				b1 += buffer;
 			}

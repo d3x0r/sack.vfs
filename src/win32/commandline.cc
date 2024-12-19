@@ -67,7 +67,7 @@ int GetProcessParent( int pid ) {
 }
 
 
-PLIST GetProcessCommandLines( const char* process ) {
+PLIST GetProcessCommandLines( const char* process, int pid ) {
 	PLIST results = NULL;
 	HANDLE hToken;
 	//BOOL bOpenToken = 
@@ -104,6 +104,10 @@ PLIST GetProcessCommandLines( const char* process ) {
 		if( Process32First( hp, &pe ) ) {
 			do {
 				if( pe.th32ProcessID < 5) continue; // skip idle and System
+				if( pid && pe.th32ProcessID != pid ) {
+					// only looking for this one task...
+					continue; 
+				}
 				//static wchar_t processBaseName[256];
 				HANDLE hProcess = OpenProcess( PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pe.th32ProcessID);
 
