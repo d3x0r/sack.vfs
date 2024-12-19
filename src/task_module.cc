@@ -229,14 +229,14 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
 	SET_READONLY_METHOD( taskF, "onEnd", TaskObject::MonitorProcess );
+	SET_READONLY_METHOD( taskF, "monitor", TaskObject::MonitorProcess );
 
-	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programName" )
-		, getProgramName
-		, nullptr //Local<Function>()
-		, Local<Value>()
-		, PropertyAttribute::ReadOnly
-		, SideEffectType::kHasNoSideEffect
-		, SideEffectType::kHasSideEffect
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programName" ), getProgramName
+	                            , nullptr                          // Local<Function>()
+	                            , Local<Value>()                   //
+	                            , PropertyAttribute::ReadOnly      //
+	                            , SideEffectType::kHasNoSideEffect //
+	                            , SideEffectType::kHasSideEffect   //
 	);
 	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programPath" )
 		, getProgramPath
