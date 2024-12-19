@@ -408,9 +408,11 @@ function connect( ws ) {
 				let system = null;
 				//console.log( "Got external tasks...", msg );
 				//console.log( "looking at systems:", local.systems );
+				//console.log( "Connection system?", connection.system );
 				if( connection.system ){
 					if( connection.system.id === msg.id ){
 						console.log( "This shouldn't happen.. we should have already been connected to this system...")
+						system = connection.system;
 					}else {
 						for( n = 0; n < connection.systems.length; n++ ) {
 							const testSystem = connection.systems[n];
