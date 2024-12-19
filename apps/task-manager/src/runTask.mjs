@@ -3,7 +3,7 @@ import {sack} from "sack.vfs"
 const JSOX=sack.JSOX
 const addr = "ws://localhost:" + (process.env.PORT || 8089);
 console.log( "Connect to addr:", addr );
-const ws = sack.WebSocket.Client( "ws://localhost:" + (process.env.PORT || 8089), "tasks" );
+const ws = sack.WebSocket.Client( process.env.SERVER || ( "ws://localhost:" + (process.env.PORT || 8089) ), "tasks" );
 const task = {
 	name: "Temporary Task",
 	bin: process.argv[2],
@@ -28,9 +28,10 @@ ws.onmessage = (msg_)=>{
 		if( msg.running === false && msg.id === serverTask.id )
 			process.exit(0);
 	}
-	console.log( "Got Message:", msg );
+	else console.log( "Got Unhandled Message:", msg );
 }
 ws.onopen = ()=>{
+	//console.log( "opened, send create task", task );
 	ws.send( JSOX.stringify( {op:"createTask",system:null,task,close:true} ) );
 }
 ws.onclose = ()=>{
