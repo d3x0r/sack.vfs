@@ -7,7 +7,7 @@ read from the current directory to load a file 'config.tasks.jsox' which is in J
 Task entries are described below. 
 
 
-`node  --experimental-loader=sack.vfs/import.mjs node_modules\sack.vfs\apps\task-manager\src\main.mjs`
+`node  --import=sack.vfs/import node_modules\sack.vfs\apps\task-manager\src\main.mjs`
 
 ## Configuration
 
@@ -17,13 +17,11 @@ Task entries are described below.
 
 {
 	port: 8089,
-	winroot : "C:\\Program Files\\nodejs\\",
-	winsuffix: ".exe",
 	tasks: [
 		{ name: "Log Test Program",
 		  bin: "node",
 		  work: "test/test_logging",
-		  args: ["--experimental-loader=sack.vfs/import.mjs", "generate_log.mjs" ],
+		  args: ["--import=sack.vfs/import", "generate_log.mjs" ],
 		  env: { MORE_ENV: "value" },
 		},
 	]
@@ -93,6 +91,8 @@ for the program to run, while windows requires a full path (otherwise stdio redi
 | useUpstream | bool | Enables connecting to an upstream task server |
 | upstreamServer | string | "Host:port" address to connect to, with `ws://` (support wss?) |
 | extraModules| array of {name,function} | Specifies additional modules to load before starting any tasks.  This are expected to be async functions and await resolution of each module in turn.|
+| onStopAll| array of {name,function,options} | Specifies additional modules to load when Stop All is triggered.  This are expected to be async functions and await resolution of each module in turn. `module.function(options)` |
+| tasks | array of Task configurations above | list of defined tasks |
 
 
 ### Extra Module Object

@@ -273,6 +273,23 @@ function loadModules( n ) {
 		} );
 }
 
+function onStopAll( n ) {
+	if( !config.onStopAll || n >= config.onStopAll.length )
+		return;
+	return import( config.onStopAll[n].name ).then( (module)=>{
+		module[config.onStopAll[n].function](config.onStopAll[n].options).then( ()=>{
+			return loadModules( n+1 );
+		} ).catch( (err)=>{
+			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
+			return loadModules( n+1 );
+		} )
+	} ).catch( (err)=>{
+			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
+			return loadModules( n+1 );
+		} );
+}
+
+
 if( config.extraModules ) {
 	loadModules( 0 );
 }
@@ -520,9 +537,9 @@ function handleMessage( ws, msg_ ) {
 		case "stopAll": {
 			console.log( "Stopping all tasks", msg.close );
 			if( msg.close )
-				closeAllTasks( ws );
+				closeAllTasks( ws ).then( onStopAll );
 			else 
-				closeAllTasks();
+				closeAllTasks().then( onStopAll );
 			break;
 		}
 		case "startAll": {
