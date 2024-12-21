@@ -8,6 +8,7 @@ function indexProcs( procs ) {
 	let self = null;
 	for( let proc of procs ) {
 		proc.pid = sack.Task.parentId( proc.id );
+		proc.title = sack.Task.getTitle( proc.id );
 		if( proc.pid )
 			proc.parent = procs.find( (test)=>test.id === proc.pid );
 		if( proc.parent )
