@@ -26,7 +26,7 @@ list(GET VERSION_LIST 2 NODE_VERSION_PATCH)
 ########
 
 #message( "WHAT? ${NODE_RUNTIMEVERSION} ${NONDE_VERSION_MAJOR}" )
-
+message( "COMPILER: ${CMAKE_CXX_COMPILER_ID}" )
 if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
 	add_definitions( -Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion -Wno-unused-parameter )
 	add_definitions( -Wno-deprecated-volatile)
@@ -592,7 +592,12 @@ if( CMAKE_COMPILER_IS_GNUCC )
 			COMPILE_FLAGS "-std=c++17" )
   endif()
 
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation")
+	LIST( GET CPP_SOURCES 1 ONE_CPP_SOURCE)
+	get_source_file_property( OLD_CPP_SOURCE_FLAGS ${ONE_CPP_SOURCE}  COMPILE_FLAGS ) 
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "${OLD_CPP_SOURCE_FLAGS} -Wno-volatile" )
+
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation" )
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 
