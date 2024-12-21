@@ -53,7 +53,7 @@ case "linux":
 	//child_process.execSync( "npm run build-"+target+"-"+config+"config" );
 	{
 	const proc = child_process.spawn( `npx cmake-js --CDMAKE_GUI=${GUI} ${moreopts.join(' ')} --config ${config} configure`
-			, {shell:true, stdio:pipe}
+			, {shell:true, stdio:"pipe"}
 		);
 	proc.stdout.pipe( process.stdout );
 	proc.stderr.pipe( process.stderr );
