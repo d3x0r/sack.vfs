@@ -446,7 +446,7 @@ void RenderObject::getDisplay( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void RenderObject::show( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	// UpdateDisplay deadlocks; so use this method instead....
 	// this means the display is not nessecarily shown when this returns, but will be.
@@ -454,13 +454,13 @@ void RenderObject::show( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void RenderObject::hide( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	HideDisplay( r->r );
 }
 
 void RenderObject::reveal( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	RestoreDisplay( r->r );
 }
@@ -477,8 +477,7 @@ void RenderObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	Local<Function> arg0 = Local<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
-	r->cbMouse = cb;
+	r->cbMouse.Reset( isolate, arg0 );
 	SetMouseHandler( r->r, doMouse, (uintptr_t)r );
 }
 
@@ -511,9 +510,8 @@ void RenderObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	Local<Function> arg0 = Local<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
 	SetRedrawHandler( r->r, doRedraw, (uintptr_t)r );
-	r->cbDraw = cb;
+	r->cbDraw.Reset( isolate, arg0 );
 	
 }
 
@@ -530,9 +528,8 @@ void RenderObject::setKey( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	Local<Function> arg0 = Local<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
 	SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
-	r->cbKey = cb;
+	r->cbKey.Reset( isolate, arg0 );
 }
 
 void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
@@ -552,19 +549,16 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 
 	String::Utf8Value fName( isolate, args[0] );
 	if( StrCmp( *fName, "draw" ) == 0 ) {
-		Persistent<Function> cb( isolate, arg1 );
 		SetRedrawHandler( r->r, doRedraw, (uintptr_t)r );
-		r->cbDraw = cb;
+		r->cbDraw.Reset( isolate, arg1 );
 	}
 	else if( StrCmp( *fName, "mouse" ) == 0 ) {
-		Persistent<Function> cb( isolate, arg1 );
 		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
-		r->cbMouse = cb;
+		r->cbMouse.Reset( isolate, arg1 );
 	}
 	else if( StrCmp( *fName, "key" ) == 0 ) {
-		Persistent<Function> cb( isolate, arg1 );
 		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
-		r->cbKey = cb;
+		r->cbKey.Reset( isolate, arg1 );
 	}
 }
 
@@ -585,6 +579,9 @@ uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 		break;
 	case Event_Render_Key:
 		e.data.key.code = va_arg( args, uint32_t );
+		break;
+	default:
+		lprintf( "Unhandled event requested %d", type );
 		break;
 	}
 

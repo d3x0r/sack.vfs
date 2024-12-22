@@ -40,11 +40,11 @@ public:
 	Persistent<Object> self;
 	Persistent<Object> registrationObject;
 
-	Persistent<Function, CopyablePersistentTraits<Function>> cbClick; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbCreate; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDestroy; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDraw; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbMouse; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbClick; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbCreate; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbDestroy; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbDraw; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbMouse; // event callback        ()  // return true/false to allow creation
 
 public:
 

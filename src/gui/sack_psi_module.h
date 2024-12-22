@@ -86,38 +86,38 @@ public:
 
 
 	//1) Expose a function in the addon to allow Node to set the Javascript cb that will be periodically called back to :
-	Persistent<Function, CopyablePersistentTraits<Function>> cbInitEvent; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbLoadEvent; // event callback       ( PTEXT parameters )
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDrawEvent; // event callback       ()  // return true/false if handled
-	Persistent<Function, CopyablePersistentTraits<Function>> cbMouseEvent; // event callback      (int32,int32,uint32) // return true/false if handled
-	Persistent<Function, CopyablePersistentTraits<Function>> cbKeyEvent; // event callback        (uint32)  // return true/false if handled
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDestroyEvent; // event callback    ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbPropPageEvent; // event callback   () return PSI_CONTROL frame
-	Persistent<Function, CopyablePersistentTraits<Function>> cbApplyPropEvent; // event callback  (frame)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbSaveEvent; // event callback       ( pvt )
-	Persistent<Function, CopyablePersistentTraits<Function>> cbAddedEvent; // event callback     ( added Control )
-	Persistent<Function, CopyablePersistentTraits<Function>> cbCaptionEvent; // event callback  ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbFocusEvent; // event callback    (focused/notFocused)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbPositionEvent; // event callback  (start/end)
+	PERSISTENT_FUNCTION cbInitEvent; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbLoadEvent; // event callback       ( PTEXT parameters )
+	PERSISTENT_FUNCTION cbDrawEvent; // event callback       ()  // return true/false if handled
+	PERSISTENT_FUNCTION cbMouseEvent; // event callback      (int32,int32,uint32) // return true/false if handled
+	PERSISTENT_FUNCTION cbKeyEvent; // event callback        (uint32)  // return true/false if handled
+	PERSISTENT_FUNCTION cbDestroyEvent; // event callback    ()
+	PERSISTENT_FUNCTION cbPropPageEvent; // event callback   () return PSI_CONTROL frame
+	PERSISTENT_FUNCTION cbApplyPropEvent; // event callback  (frame)
+	PERSISTENT_FUNCTION cbSaveEvent; // event callback       ( pvt )
+	PERSISTENT_FUNCTION cbAddedEvent; // event callback     ( added Control )
+	PERSISTENT_FUNCTION cbCaptionEvent; // event callback  ()
+	PERSISTENT_FUNCTION cbFocusEvent; // event callback    (focused/notFocused)
+	PERSISTENT_FUNCTION cbPositionEvent; // event callback  (start/end)
 
-	Persistent<Function, CopyablePersistentTraits<Function>> cbHideEvent; // event callback         ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbRevealEvent; // event callback       ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDrawCaptionEvent; // event callback  (image) // given the image to draw into
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDrawDecorationEvent; // event callback ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbMoveEvent; // event callback   (start/end of move)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbSizeEvent; // event callback  (start/end of sizing)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbScaleEvent; // event callback   ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbParentMoveEvent; // event callback        ( start/end of parent move)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbBeginEditEvent; // event callback   ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbEndEditEvent; // event callback     ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbReadPropEvent; // event callback     (prop Sheet)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbAbortPropEvent; // event callback   (prop sheet)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDonePropEvent; // event callback    ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbTouchEvent; // event callback ( [touches] )
-	Persistent<Function, CopyablePersistentTraits<Function>> cbBorderDrawEvent; // event callback   (image)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbBorderMeasureEvent; // event callback  (int*,int*,int*,int*)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDropAcceptEvent; // event callback  (filePath,x,y)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbRolloverEvent; // event callback  (true/false - enter/leave)
+	PERSISTENT_FUNCTION cbHideEvent; // event callback         ()
+	PERSISTENT_FUNCTION cbRevealEvent; // event callback       ()
+	PERSISTENT_FUNCTION cbDrawCaptionEvent; // event callback  (image) // given the image to draw into
+	PERSISTENT_FUNCTION cbDrawDecorationEvent; // event callback ()
+	PERSISTENT_FUNCTION cbMoveEvent; // event callback   (start/end of move)
+	PERSISTENT_FUNCTION cbSizeEvent; // event callback  (start/end of sizing)
+	PERSISTENT_FUNCTION cbScaleEvent; // event callback   ()
+	PERSISTENT_FUNCTION cbParentMoveEvent; // event callback        ( start/end of parent move)
+	PERSISTENT_FUNCTION cbBeginEditEvent; // event callback   ()
+	PERSISTENT_FUNCTION cbEndEditEvent; // event callback     ()
+	PERSISTENT_FUNCTION cbReadPropEvent; // event callback     (prop Sheet)
+	PERSISTENT_FUNCTION cbAbortPropEvent; // event callback   (prop sheet)
+	PERSISTENT_FUNCTION cbDonePropEvent; // event callback    ()
+	PERSISTENT_FUNCTION cbTouchEvent; // event callback ( [touches] )
+	PERSISTENT_FUNCTION cbBorderDrawEvent; // event callback   (image)
+	PERSISTENT_FUNCTION cbBorderMeasureEvent; // event callback  (int*,int*,int*,int*)
+	PERSISTENT_FUNCTION cbDropAcceptEvent; // event callback  (filePath,x,y)
+	PERSISTENT_FUNCTION cbRolloverEvent; // event callback  (true/false - enter/leave)
 
 };
 
@@ -172,7 +172,7 @@ public:
 	static void setText( const FunctionCallbackInfo<Value>& args );
 	static void getOpen( const FunctionCallbackInfo<Value>& args );
 	static void setOpen( const FunctionCallbackInfo<Value>& args );
-	Persistent<Function, CopyablePersistentTraits<Function>> cbOpened; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbOpened; // event callback        ()  // return true/false to allow creation
 	//static Persistent<FunctionTemplate> listItemTemplate;
 };
 
@@ -189,7 +189,7 @@ public:
 	static void New( const FunctionCallbackInfo<Value>& args );
 	static void Delete( const FunctionCallbackInfo<Value>& args );
 
-	Persistent<Function, CopyablePersistentTraits<Function>> cbSelected; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbSelected; // event callback        ()  // return true/false to allow creation
 	static void removeItem( const FunctionCallbackInfo<Value>&  args );
 
 	static void wrapSelf( Isolate* isolate, MenuItemObject*_this, Local<Object> into );
@@ -287,11 +287,11 @@ public:
 
 	// clock control extension
 	static void makeAnalog( const FunctionCallbackInfo<Value>& args );
-	//Persistent<Function, CopyablePersistentTraits<Function>> cbConsoleRead;  // event for console control callback (psi/console.h)
-	//Persistent<Function, CopyablePersistentTraits<Function>> cbButtonClick;  // event for button control callback (psi/console.h)
+	//PERSISTENT_FUNCTION cbConsoleRead;  // event for console control callback (psi/console.h)
+	//PERSISTENT_FUNCTION cbButtonClick;  // event for button control callback (psi/console.h)
 
 	// a chunk of events that are general place holders for events from controls
-	Persistent<Function, CopyablePersistentTraits<Function>> customEvents[5];  // event for button control callback (psi/console.h)
+	PERSISTENT_FUNCTION customEvents[5];  // event for button control callback (psi/console.h)
 
 	static void getListboxIsTree( const FunctionCallbackInfo<Value>& args );
 	static void setListboxIsTree( const FunctionCallbackInfo<Value> & args );
@@ -321,38 +321,38 @@ public:
 	static void setPassword( const FunctionCallbackInfo<Value>&  args );
 
 																			 //1) Expose a function in the addon to allow Node to set the Javascript cb that will be periodically called back to :
-	Persistent<Function, CopyablePersistentTraits<Function>> cbInitEvent; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbLoadEvent; // event callback       ( PTEXT parameters )
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDrawEvent; // event callback       ()  // return true/false if handled
-	Persistent<Function, CopyablePersistentTraits<Function>> cbMouseEvent; // event callback      (int32,int32,uint32) // return true/false if handled
-	Persistent<Function, CopyablePersistentTraits<Function>> cbKeyEvent; // event callback        (uint32)  // return true/false if handled
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDestroyEvent; // event callback    ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbPropPageEvent; // event callback   () return PSI_CONTROL frame
-	Persistent<Function, CopyablePersistentTraits<Function>> cbApplyPropEvent; // event callback  (frame)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbSaveEvent; // event callback       ( pvt )
-	Persistent<Function, CopyablePersistentTraits<Function>> cbAddedEvent; // event callback     ( added Control )
-	Persistent<Function, CopyablePersistentTraits<Function>> cbCaptionEvent; // event callback  ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbFocusEvent; // event callback    (focused/notFocused)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbPositionEvent; // event callback  (start/end)
+	PERSISTENT_FUNCTION cbInitEvent; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbLoadEvent; // event callback       ( PTEXT parameters )
+	PERSISTENT_FUNCTION cbDrawEvent; // event callback       ()  // return true/false if handled
+	PERSISTENT_FUNCTION cbMouseEvent; // event callback      (int32,int32,uint32) // return true/false if handled
+	PERSISTENT_FUNCTION cbKeyEvent; // event callback        (uint32)  // return true/false if handled
+	PERSISTENT_FUNCTION cbDestroyEvent; // event callback    ()
+	PERSISTENT_FUNCTION cbPropPageEvent; // event callback   () return PSI_CONTROL frame
+	PERSISTENT_FUNCTION cbApplyPropEvent; // event callback  (frame)
+	PERSISTENT_FUNCTION cbSaveEvent; // event callback       ( pvt )
+	PERSISTENT_FUNCTION cbAddedEvent; // event callback     ( added Control )
+	PERSISTENT_FUNCTION cbCaptionEvent; // event callback  ()
+	PERSISTENT_FUNCTION cbFocusEvent; // event callback    (focused/notFocused)
+	PERSISTENT_FUNCTION cbPositionEvent; // event callback  (start/end)
 
-	Persistent<Function, CopyablePersistentTraits<Function>> cbHideEvent; // event callback         ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbRevealEvent; // event callback       ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDrawCaptionEvent; // event callback  (image) // given the image to draw into
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDrawDecorationEvent; // event callback ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbMoveEvent; // event callback   (start/end of move)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbSizeEvent; // event callback  (start/end of sizing)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbScaleEvent; // event callback   ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbParentMoveEvent; // event callback        ( start/end of parent move)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbBeginEditEvent; // event callback   ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbEndEditEvent; // event callback     ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbReadPropEvent; // event callback     (prop Sheet)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbAbortPropEvent; // event callback   (prop sheet)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDonePropEvent; // event callback    ()
-	Persistent<Function, CopyablePersistentTraits<Function>> cbTouchEvent; // event callback ( [touches] )
-	Persistent<Function, CopyablePersistentTraits<Function>> cbBorderDrawEvent; // event callback   (image)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbBorderMeasureEvent; // event callback  (int*,int*,int*,int*)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDropAcceptEvent; // event callback  (filePath,x,y)
-	Persistent<Function, CopyablePersistentTraits<Function>> cbRolloverEvent; // event callback  (true/false - enter/leave)
+	PERSISTENT_FUNCTION cbHideEvent; // event callback         ()
+	PERSISTENT_FUNCTION cbRevealEvent; // event callback       ()
+	PERSISTENT_FUNCTION cbDrawCaptionEvent; // event callback  (image) // given the image to draw into
+	PERSISTENT_FUNCTION cbDrawDecorationEvent; // event callback ()
+	PERSISTENT_FUNCTION cbMoveEvent; // event callback   (start/end of move)
+	PERSISTENT_FUNCTION cbSizeEvent; // event callback  (start/end of sizing)
+	PERSISTENT_FUNCTION cbScaleEvent; // event callback   ()
+	PERSISTENT_FUNCTION cbParentMoveEvent; // event callback        ( start/end of parent move)
+	PERSISTENT_FUNCTION cbBeginEditEvent; // event callback   ()
+	PERSISTENT_FUNCTION cbEndEditEvent; // event callback     ()
+	PERSISTENT_FUNCTION cbReadPropEvent; // event callback     (prop Sheet)
+	PERSISTENT_FUNCTION cbAbortPropEvent; // event callback   (prop sheet)
+	PERSISTENT_FUNCTION cbDonePropEvent; // event callback    ()
+	PERSISTENT_FUNCTION cbTouchEvent; // event callback ( [touches] )
+	PERSISTENT_FUNCTION cbBorderDrawEvent; // event callback   (image)
+	PERSISTENT_FUNCTION cbBorderMeasureEvent; // event callback  (int*,int*,int*,int*)
+	PERSISTENT_FUNCTION cbDropAcceptEvent; // event callback  (filePath,x,y)
+	PERSISTENT_FUNCTION cbRolloverEvent; // event callback  (true/false - enter/leave)
 
 	RegistrationObject *registration;
 };
