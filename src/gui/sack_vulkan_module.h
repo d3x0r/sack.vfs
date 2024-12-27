@@ -28,10 +28,10 @@ public:
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 
 					  //1) Expose a function in the addon to allow Node to set the Javascript cb that will be periodically called back to :
-	Persistent<Function, CopyablePersistentTraits<Function>> cbInitEvent; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbMouse; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbKey; // event callback        ()  // return true/false to allow creation
-	Persistent<Function, CopyablePersistentTraits<Function>> cbDraw; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbInitEvent; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbMouse; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbKey; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbDraw; // event callback        ()  // return true/false to allow creation
 
 
 	PLINKQUEUE receive_queue;

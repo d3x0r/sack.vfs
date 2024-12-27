@@ -5162,6 +5162,15 @@ struct environmentValue {
 	char* field;
 	char* value;
 };
+/**
+ start process end monitoring based on a process ID
+ */
+SYSTEM_PROC( PTASK_INFO, MonitorTaskEx )( int pid, int flags, TaskEnd EndNotice, uintptr_t psv DBG_PASS );
+#define MonitorTask(pid,flags,end,psv) MonitorTaskEx( pid, flags, end, psv DBG_SRC )
+/**
+ Launch a process...
+ provides hoooks for task output, task end notification, flags control spawning behavior...
+ */
 SYSTEM_PROC( PTASK_INFO, LaunchPeerProgramExx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args
                                                , int flags
                                                , TaskOutput OutputHandler

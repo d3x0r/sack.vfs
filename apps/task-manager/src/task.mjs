@@ -22,6 +22,7 @@ export class Task {
 	stopped = false;
 	stopping = false;
 
+	#autoEndBatch = false;
 	#log = [];
 	#task = null; // task definition
 	#run = null;  // running service instance handle
@@ -39,6 +40,7 @@ export class Task {
 		this.#task = task;
 		this.name = task.name;
 		this.noAutoRun = task.noAutoRun;
+		this.#autoEndBatch = task.autoEndBatch || false;
 		if( task.moveTo ) {
 			task.moveTo.cb = (yesno)=>{
 				if( !yesno ) {
@@ -149,6 +151,13 @@ export class Task {
 		return "no title";
 	}
 
+	set autoEndBatch( val ) {
+		// this was automatic code, but shouldn't
+		// really be done, except on demenad....
+		// nothing demands it.
+		this.autoEndBatch = val;
+	}
+
 	get run() {
 		// get run handle
 		return this.#run;
@@ -241,7 +250,7 @@ export class Task {
 		if( process.platform === "linux" ) {
 			bin = this.#task.bin; // linux will scan path for name
 		}else if( !this.#task.bin.includes( ":" ) )
-			bin = config.config.winroot + this.#task.bin + config.config.winsuffix;
+			bin = this.#task.bin;
 		else {
 			if( this.#task.altbin ) {
 				if( disk.exists( this.#task.bin ) )
@@ -296,15 +305,21 @@ export class Task {
 
 		function log(buffer) {
 			//console.log( "Adding stdout log:", buffer );
-			if( buffer === "Terminate batch job (Y/N)? " ) this_.#run.write( "y\n" );
+			if( this_.#autoEndBatch ) {
+				if( buffer === "Terminate batch job (Y/N)? " ) this_.#run.write( "y\n" );
+			}
+			// strip newlines - attempts to line gather...
 			if( buffer.endsWith("\n" ) ) 
 				buffer = buffer.slice( 0, -1 );
+
 			const msg = { time:new Date(), error: false, line:buffer};
 			this_.#send( msg );
-			const saneBuffer = buffer.replaceAll( '\r\r\n', '\n' ).replaceAll( "\r\n", "\n" );
-			const lines = saneBuffer.split('\n' );
-			for( let line of lines ) 
-				console.log( this_.#task.name, ":", line );
+			if( !this_.#task.temporary ) {
+				const saneBuffer = buffer.replaceAll( '\r\r\n', '\n' ).replaceAll( "\r\n", "\n" );
+				const lines = saneBuffer.split('\n' );
+				for( let line of lines ) 
+					console.log( this_.#task.name, ":", line );
+			}
 		}
 		function log2(buffer) {
 			//console.log( "stderr log:", buffer );
@@ -312,7 +327,12 @@ export class Task {
 				buffer = buffer.slice( 0, -1 );
 			const msg = { time:new Date(), error: true, line:buffer};
 			this_.#send( msg );
-			console.log( this_.#task.name, "|", buffer );
+			if( !this_.#task.temporary ) {
+				const saneBuffer = buffer.replaceAll( '\r\r\n', '\n' ).replaceAll( "\r\n", "\n" );
+				const lines = saneBuffer.split('\n' );
+				for( let line of lines ) 
+					console.log( this_.#task.name, ":", line );
+			}
 		}
 		function stop() {
 			this_.ended = new Date();

@@ -1,0 +1,44 @@
+---
+BasedOnStyle: LLVM
+ColumnLimit: 120
+
+IndentWidth: 3
+TabWidth: 3
+ContinuationIndentWidth: 5
+
+UseTab: ForIndentation
+
+InsertNewlineAtEOF: true
+
+AlignOperands: AlignAfterOperator 
+BreakBeforeBraces: Attach
+#BracedInitializerIndentWidth: brace
+SpaceBeforeCaseColon: false
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeJsonColon: false
+SpaceBeforeSquareBrackets: false
+SpacesInAngles: false
+SpacesInParens: Custom
+SpacesInParensOptions:
+  InConditionalStatements: true
+  Other: true
+#  ExceptDoubleParentheses: true
+SpaceAfterLogicalNot: false
+SpacesInSquareBrackets: true
+SpaceBeforeParens: Never
+SpaceInEmptyParentheses: false
+SpaceInEmptyBlock: false
+LineEnding: LF
+AlignAfterOpenBracket: AlignTop
+#AlignAfterOpenBracket: true
+AlignConsecutiveAssignments: AcrossEmptyLinesAndComments
+BreakBinaryOperations: RespectPrecedence
+BreakBeforeBinaryOperators: All
+#BreakBeforeUnaryOperators: All
+PointerAlignment: Right
+BreakConstructorInitializers: BeforeComma
+BreakBeforeComma: true
+---
+Language: JavaScript
+RemoveParentheses: MultipleParentheses
+...

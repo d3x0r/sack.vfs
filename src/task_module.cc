@@ -228,14 +228,15 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SET_READONLY_METHOD( taskF, "parentId", ::GetProcessParentId );
 	SET_READONLY_METHOD( taskF, "kill", TaskObject::KillProcess );
 	SET_READONLY_METHOD( taskF, "stop", TaskObject::StopProcess );
+	SET_READONLY_METHOD( taskF, "onEnd", TaskObject::MonitorProcess );
+	SET_READONLY_METHOD( taskF, "monitor", TaskObject::MonitorProcess );
 
-	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programName" )
-		, getProgramName
-		, nullptr //Local<Function>()
-		, Local<Value>()
-		, PropertyAttribute::ReadOnly
-		, SideEffectType::kHasNoSideEffect
-		, SideEffectType::kHasSideEffect
+	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programName" ), getProgramName
+	                            , nullptr                          // Local<Function>()
+	                            , Local<Value>()                   //
+	                            , PropertyAttribute::ReadOnly      //
+	                            , SideEffectType::kHasNoSideEffect //
+	                            , SideEffectType::kHasSideEffect   //
 	);
 	taskF->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "programPath" )
 		, getProgramPath
@@ -1295,6 +1296,58 @@ void TaskObject::getWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 
 #endif
 
+static Local<Object> makeInfo( Isolate *isolate, Local<Context> context
+                             , struct optionStrings const * strings
+                             , struct command_line_result const *proc ) {
+	Local<Object> info = Object::New( isolate );
+	Local<Array> args  = Array::New( isolate );
+	char *bin          = proc->data;
+	size_t binChars    = 0;
+	size_t argStart;
+	size_t argEnd;
+	int arg = 0;
+	if( bin[ 0 ] == '"' ) {
+		binChars++;
+		while( bin[ binChars ] != '"' )
+			binChars++;
+	} else
+		while( bin[ binChars ] && bin[ binChars ] != ' ' )
+			binChars++;
+	argStart = binChars;
+	if( bin[ 0 ] == '"' ) {
+		bin++;
+		binChars--;
+	}
+	while( bin[ argStart ] ) {
+		while( bin[ argStart ] == ' ' )
+			argStart++;
+		if( !bin[ argStart ] )
+			break;
+		argEnd = argStart + 1;
+		if( bin[ argStart ] == '"' ) {
+			argStart++;
+			while( bin[ argEnd ] && bin[ argEnd ] != '"' )
+				argEnd++;
+		} else
+			while( bin[ argEnd ] && bin[ argEnd ] != ' ' )
+				argEnd++;
+		args->Set( context, arg++
+		         , String::NewFromUtf8( isolate, bin + argStart, NewStringType::kNormal, (int)( argEnd - argStart ) )
+		                .ToLocalChecked() );
+		if( bin[ argEnd ] == '"' )
+			argStart = argEnd + 1;
+		else
+			argStart = argEnd;
+	}
+	info->Set( context, String::NewFromUtf8Literal( isolate, "id" ), Integer::New( isolate, proc->dwProcessId ) );
+	info->Set( context, strings->binString->Get( isolate )
+	         , String::NewFromUtf8( isolate, bin, NewStringType::kNormal, (int)binChars ).ToLocalChecked() );
+	info->Set( context, strings->binaryString->Get( isolate )
+	         , String::NewFromUtf8( isolate, proc->processName ).ToLocalChecked() );
+	info->Set( context, strings->argString->Get( isolate ), args );
+	return info;
+}
+
 void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 #ifdef _WIN32
 	Isolate* isolate = args.GetIsolate();
@@ -1304,51 +1357,18 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 	struct command_line_result* proc;
 	INDEX idx;
 	if( args.Length() > 0 ) {
-		String::Utf8Value s( USE_ISOLATE( isolate ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
-		procs = GetProcessCommandLines( *s );
+		if( args[0]->IsNumber() ) {
+			procs = GetProcessCommandLines( NULL, args[ 0 ]->IntegerValue( context ).FromMaybe( 0 ) );
+		} else {
+			String::Utf8Value s(
+				  USE_ISOLATE( isolate ) args[ 0 ]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
+			procs = GetProcessCommandLines( *s, 0 );
+		}
 	} else
-		procs = GetProcessCommandLines( NULL );
+		procs = GetProcessCommandLines( NULL, 0 );
 	Local<Array> result = Array::New( isolate );
 	LIST_FORALL( procs, idx, struct command_line_result*, proc ) {
-		Local<Object> info = Object::New( isolate );
-		Local<Array> args = Array::New( isolate );
-		char* bin = proc->data;
-		size_t binChars = 0;
-		size_t argStart;
-		size_t argEnd;
-		int arg = 0;
-		if( bin[0] == '"' ) {
-			binChars++;
-			while( bin[binChars] != '"' )
-				binChars++;
-		} else 
-			while( bin[binChars] && bin[binChars] != ' ' )
-				binChars++;
-		argStart = binChars;
-		if( bin[0] == '"' ) {
-			bin++;
-			binChars--;
-		}
-		while( bin[argStart] ) {
-			while( bin[argStart] == ' ' ) argStart++;
-			if( !bin[argStart] ) break;
-			argEnd = argStart + 1;
-			if( bin[argStart] == '"' ) {
-				argStart++;
-				while( bin[argEnd] && bin[argEnd] != '"' ) argEnd++;
-			}else
-				while( bin[argEnd] && bin[argEnd] != ' ' ) argEnd++;
-			args->Set( context, arg++, String::NewFromUtf8( isolate, bin + argStart, NewStringType::kNormal, (int)(argEnd - argStart) ).ToLocalChecked() );
-			if( bin[argEnd] == '"' )
-				argStart = argEnd+1;
-			else
-				argStart = argEnd;
-		}
-		info->Set( context, String::NewFromUtf8Literal( isolate, "id" ), Integer::New( isolate, proc->dwProcessId ) );
-		info->Set( context, strings->binString->Get( isolate ), String::NewFromUtf8( isolate, bin, NewStringType::kNormal, (int)binChars ).ToLocalChecked() );
-		info->Set( context, strings->binaryString->Get( isolate ), String::NewFromUtf8( isolate, proc->processName ).ToLocalChecked() );
-		info->Set( context, strings->argString->Get( isolate ), args );
-		result->Set( context, (uint32_t)idx, info );
+		result->Set( context, (uint32_t)idx, makeInfo( isolate, context, strings, proc ) );
 	}
 	ReleaseCommandLineResults( &procs );
 	args.GetReturnValue().Set( result );
@@ -1573,7 +1593,78 @@ static void getProcessWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 
 #endif
 
+struct onEndParams {
+	PERSISTENT_FUNCTION cb;
+	PTASK_INFO task;
+	int exitCode;   
+	uv_async_t async; // keep this instance around for as long as we might need
+	                  // to do the periodic callback
 
+	;
+};
+
+static void CPROC monitoredTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
+	struct onEndParams *params = (struct onEndParams *)psvTask;
+	if( !task_ended )
+		params->task = NULL;
+	else
+		params->exitCode = GetTaskExitCode( task_ended );
+	uv_async_send( &params->async );
+}
+
+static void monitoredTaskAsyncClosed( uv_handle_t *async ) {
+	struct onEndParams *params = (struct onEndParams *)async->data;
+	delete params;
+}
+
+static void monitoredTaskAsyncMsg( uv_async_t *handle ) {
+	struct onEndParams *params = (struct onEndParams *)handle->data;
+	v8::Isolate *isolate    = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+
+	{
+		if( !params->cb.IsEmpty() ) {
+			Local<Value> argv[1];
+			if( params->task )
+				argv[ 0 ] = Integer::New( isolate, params->exitCode );
+			else
+				argv[ 0 ] = Null( isolate );
+			params->cb.Get( isolate )->Call( context, Null( isolate ), 1, argv );
+		}
+		// these is a chance output will still come in?
+		uv_close( (uv_handle_t *)&params->async, monitoredTaskAsyncClosed );
+	}
+	{
+		// This is hook into Node to dispatch Promises() that are created... all
+		// event loops should have this.
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cb
+		     = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
+}
+
+
+void TaskObject::MonitorProcess( const FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	if( args.Length() < 2 ) {
+		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal(
+		     isolate, "Must specify process ID to watch, and callback on end." ) ) );
+		return;
+	}
+	int32_t id = (int32_t)args[ 0 ]->IntegerValue( context ).FromMaybe( 0 );
+	struct onEndParams *params = new onEndParams;
+	class constructorSet *c    = getConstructors( isolate );
+	params->async.data         = params;
+	params->task               = NULL;
+	uv_async_init( c->loop, &params->async, monitoredTaskAsyncMsg );
+
+	params->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
+	params->task = MonitorTask( id, 0, monitoredTaskEnd, (uintptr_t)params );
+
+}
 
 void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();

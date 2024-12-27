@@ -76,10 +76,6 @@
 #include <openssl/core_names.h>
 #endif
 
-#ifdef INCLUDE_GUI
-#include "gui/gui_global.h"
-
-#endif
 
 // probably didn't need the copyable persistent trait thing anyway?
 #if V8_MAJOR_VERSION >= 13 || ( V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 9 )
@@ -103,6 +99,10 @@
 #endif
 
 using namespace v8;
+
+#ifdef INCLUDE_GUI
+#include "gui/gui_global.h"
+#endif
 
 #include "task_module.h"
 #include "ssh2_module.h"
@@ -627,7 +627,7 @@ struct command_line_result {
 
 #endif
 // returns a PLIST of struct command_line_results
-PLIST GetProcessCommandLines( const char* process );
+PLIST GetProcessCommandLines( const char* process, int pid );
 int GetProcessParent( int pid );
 
 void ReleaseCommandLineResults( PLIST* ppResults );

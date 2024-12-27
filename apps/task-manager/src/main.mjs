@@ -129,6 +129,29 @@ function handleStop( ws, msg, msg_ ) {
 }
 
 
+function handleInput( ws, msg, msg_ ) 
+{ 
+	if( (!("system" in msg ) ) || msg.system === local.id ){
+		const task = local.taskMap[msg.id];
+		//console.log( "Log request:", msg_ );
+		if( !task ) {
+			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
+		} else {
+			task.run.write( msg.data );
+		}
+	}
+	else {
+		const remote = local.systems.find( system=>system.id === msg.system );
+		//console.log( "found remote system:", remote, msg_ );
+		if( remote ) {
+				remote.connection.ws.send( msg_ );
+		}
+		else {
+			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
+			ws.send( JSOX.stringify( {op:"deleteSystem", id: msg.system } ) );
+		}
+	}
+}
 
 
 function handleLog( ws, msg, msg_ ) 
@@ -250,6 +273,23 @@ function loadModules( n ) {
 		} );
 }
 
+function onStopAll( n ) {
+	if( !config.onStopAll || n >= config.onStopAll.length )
+		return;
+	return import( config.onStopAll[n].name ).then( (module)=>{
+		module[config.onStopAll[n].function](config.onStopAll[n].options).then( ()=>{
+			return loadModules( n+1 );
+		} ).catch( (err)=>{
+			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
+			return loadModules( n+1 );
+		} )
+	} ).catch( (err)=>{
+			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
+			return loadModules( n+1 );
+		} );
+}
+
+
 if( config.extraModules ) {
 	loadModules( 0 );
 }
@@ -257,7 +297,8 @@ else startTasks();
 
 function startTasks() {
 	local.tasks.forEach( task=>{
-		if (!task.hasDepends 
+		if (!task.running 
+                   && !task.hasDepends 
 		   && !task.noAutoRun){
 			task.start() 
 		}} );
@@ -384,9 +425,11 @@ function connect( ws ) {
 				let system = null;
 				//console.log( "Got external tasks...", msg );
 				//console.log( "looking at systems:", local.systems );
+				//console.log( "Connection system?", connection.system );
 				if( connection.system ){
 					if( connection.system.id === msg.id ){
 						console.log( "This shouldn't happen.. we should have already been connected to this system...")
+						system = connection.system;
 					}else {
 						for( n = 0; n < connection.systems.length; n++ ) {
 							const testSystem = connection.systems[n];
@@ -494,9 +537,9 @@ function handleMessage( ws, msg_ ) {
 		case "stopAll": {
 			console.log( "Stopping all tasks", msg.close );
 			if( msg.close )
-				closeAllTasks( ws );
+				closeAllTasks( ws ).then( onStopAll );
 			else 
-				closeAllTasks();
+				closeAllTasks().then( onStopAll );
 			break;
 		}
 		case "startAll": {
@@ -526,11 +569,16 @@ function handleMessage( ws, msg_ ) {
 		case "log":
 			handleLog( ws, msg, msg_ );
 			break;
+		case "send":
+			handleInput( ws, msg, msg_ );
+			break;
 		case "createTask": {
 			if( local.system === msg.system || !msg.system ) {
 				const task = loadTask( msg.task );
-				saveRunConfig();
+				if( !msg.task.temporary )
+					saveRunConfig();
 				addTask( task.id, task ); // sends new task
+				if( !task.noAutoRun ) task.start();
 			} else if( msg.system && msg.system != local.system ) {
 				local.systems.find( system=>{
 					if( system.id === msg.system ) {
@@ -541,8 +589,10 @@ function handleMessage( ws, msg_ ) {
 				});
 			}else {
 				const task = loadTask( msg.task );
-				saveRunConfig();
+				if( !msg.task.temporary )
+					saveRunConfig();
 				addTask( task.id, task );
+				if( !task.noAutoRun ) task.start();
 			}
 			}
 			break;
@@ -575,6 +625,7 @@ function handleMessage( ws, msg_ ) {
 		}
 			break;
 		case "deleteTask": {
+			if( !msg.system || msg.system ===local.system ) {
 				const task = local.taskMap[msg.id];
 				if( task ) {
 					const taskInfo = task.task;
@@ -588,13 +639,18 @@ function handleMessage( ws, msg_ ) {
 								}
 							}
 							delete local.taskMap[msg.id];
-							task.stop();
-							saveRunConfig();
+							if( task.running )
+								task.stop();
+							if( !taskInfo.temporary )
+								saveRunConfig();
 							break;
 						}
 					}
-					deleteTask( task );
+					send( msg_ );
 				}
+			} else {
+				// send to remote system...
+			}
 			}
 			break;
 		case "getDisplays": {
@@ -648,6 +704,8 @@ function handleMessage( ws, msg_ ) {
 
 
 function saveRunConfig() {
+	const c = Object.assign( {}, config );
+        c.tasks = c.tasks.reduce( (acc,task)=>{if( !task.temporary ) acc.push( task ); return acc;}, [] );
 	const output = JSOX.stringify( config, null, "\t" );
 	disk.write( "config.run.jsox", output );
 }
