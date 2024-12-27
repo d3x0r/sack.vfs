@@ -1349,7 +1349,6 @@ static Local<Object> makeInfo( Isolate *isolate, Local<Context> context
 }
 
 void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
-#ifdef _WIN32
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	struct optionStrings* strings = getStrings( isolate );
@@ -1367,24 +1366,11 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 	} else
 		procs = GetProcessCommandLines( NULL, 0 );
 	Local<Array> result = Array::New( isolate );
+#ifdef _WIN32
 	LIST_FORALL( procs, idx, struct command_line_result*, proc ) {
 		result->Set( context, (uint32_t)idx, makeInfo( isolate, context, strings, proc ) );
 	}
-	ReleaseCommandLineResults( &procs );
-	args.GetReturnValue().Set( result );
 #else
-	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
-	struct optionStrings* strings = getStrings( isolate );
-	PLIST procs;
-	struct command_line_result* proc;
-	INDEX idx;
-	if( args.Length() > 0 ) {
-		String::Utf8Value s( USE_ISOLATE( isolate ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
-		procs = GetProcessCommandLines( *s );
-	} else
-		procs = GetProcessCommandLines( NULL );
-	Local<Array> result = Array::New( isolate );
 	//lprintf( "procs:%p", procs );
 	LIST_FORALL( procs, idx, struct command_line_result*, proc ) {
 		Local<Object> info = Object::New( isolate );
@@ -1403,12 +1389,9 @@ void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 		result->Set( context, (uint32_t)idx, info );
 
 	}	
-
+#endif
 	ReleaseCommandLineResults( &procs );
 	args.GetReturnValue().Set( result );
-
-	//lprintf( "Process List is not available on this platform." );
-#endif
 }
 
 
