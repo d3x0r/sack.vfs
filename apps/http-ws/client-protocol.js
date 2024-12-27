@@ -6,6 +6,7 @@ import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 export class Protocol extends Events {
 	static debug = false;
 	protocol = null;
+	server = new URL(import.meta.url).origin.replace("http","ws") || location.origin.replace("http","ws");
 	#Protocol = Protocol; // this is the proper class container of the implemented protocol
 	get debug() {
 		return Protocol.debug;
@@ -13,8 +14,9 @@ export class Protocol extends Events {
 	set debug(val) {
 		Protocol.debug = val;
 	}
-	constructor( protocol ){
+	constructor( protocol, server ){
 		super();
+		if( server ) this.server = server.replace("http","ws");
 		this.#Protocol = Object.getPrototypeOf( this ).constructor;
 		this.#Protocol.ws = null; // allocate static ws member.
 		this.protocol = protocol;
@@ -25,7 +27,7 @@ export class Protocol extends Events {
 	static connect(protocol, this_) {
 		const ThisProtocol = this_.#Protocol;//Object.getPrototypeOf( this ).constructor;
 		const source = new URL( import.meta.url ).origin
-		ThisProtocol.ws = new WebSocket( source.replace("http","ws"), protocol );
+		ThisProtocol.ws = new WebSocket( this.server, protocol );
 		ThisProtocol.ws.onmessage = (evt)=>Protocol.onmessage.call( this_, evt) ;
 		ThisProtocol.ws.onclose = (evt)=>Protocol.onclose.call( this_, evt) ;
 		ThisProtocol.ws.onopen = (evt)=>Protocol.onopen.call( this_, evt) ;
