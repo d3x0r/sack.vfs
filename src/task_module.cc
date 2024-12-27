@@ -1296,6 +1296,7 @@ void TaskObject::getWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 
 #endif
 
+#ifdef _WIN32
 static Local<Object> makeInfo( Isolate *isolate, Local<Context> context
                              , struct optionStrings const * strings
                              , struct command_line_result const *proc ) {
@@ -1347,6 +1348,7 @@ static Local<Object> makeInfo( Isolate *isolate, Local<Context> context
 	info->Set( context, strings->argString->Get( isolate ), args );
 	return info;
 }
+#endif
 
 void TaskObject::GetProcessList( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
