@@ -260,6 +260,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
    - Updates for v8 version 13.
    - Add ability to watch for task end by PID.
    - Build udpates for Node 22/23 to stdc++20.
+   - Add ability to emit keystrokes on windows.
 - 1.3.117
     - Make TLS hostname checks less optional.  Add hooks to TCP for TLS host specification.
     - Make default server module check for SSL_HOST environment when SSL_PATH is specified for certificate chain.
