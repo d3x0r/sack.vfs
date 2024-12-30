@@ -18,7 +18,16 @@ function eventCallback( event ) {
 
 Keys are dispached to every `sack.Keyboard` object created.
 
-There is a callback on the resulting keyboard object `lock(true/false)` which can lock the keyboard and block any input.
+There is a function on the resulting keyboard object `lock(true/false)` 
+which can lock the keyboard and block any input.
+
+the keyboard object can also use `send( key, code, isDown, isExtended)` or 
+`send( [{key:,code:,down:false,extended:false}[, ...] )` to send key events.
+down is a boolean indicating if the key is being pressed or released.  extended
+is used to generate an extended keycode on windows.  (grey keys and some extra 
+function keys use this).
+
+
 
 the keyboard event handler can be closed with the `close()` method on the mouse result.
 

@@ -29,6 +29,8 @@ private:
 	static void close( const v8::FunctionCallbackInfo<Value>& args );
 	static void lock( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void sendKey( const v8::FunctionCallbackInfo<Value>& args );
+	
 	~KeyHidObject();
 };
 
@@ -246,6 +248,7 @@ void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 																 // Prototype
 	NODE_SET_PROTOTYPE_METHOD( keyTemplate, "onKey", onRead );
 	NODE_SET_PROTOTYPE_METHOD( keyTemplate, "lock", lock );
+	NODE_SET_PROTOTYPE_METHOD( keyTemplate, "send", sendKey );
 
 	c->KeyHidObject_constructor.Reset( isolate, keyTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "Keyboard"
@@ -474,21 +477,7 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	KeyHidObject *com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
-	/*
-        if( args[0]->IsNull() ) {
-            if( argc > 1 ) {
-                if( args[1]->IsTrue() ) {
-                    struct msgbuf *msgbuf = NewPlus( struct msgbuf, 1 );
-                    msgbuf->close = TRUE;
-                    EnqueLink( &com->readQueue, msgbuf );
-                    uv_async_send( &com->async );
-					return;
-                } 
-            }
-			com->readCallback.Reset();
-		}
-	else
-	*/
+
 	if( args[0]->IsFunction() ) {
 		com->readCallback.Reset( isolate, Local<Function>::Cast(args[0]));
 	}
@@ -496,6 +485,106 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Unhandled parameter value to keyboard reader." ) ) );
 	}
 }
+
+
+static void generateKeys( Isolate *isolate, Local<Array> events ) {
+#ifdef _WIN32
+	Local<Context> context = isolate->GetCurrentContext();
+
+	PDATALIST pdlInputs = CreateDataList( sizeof( INPUT ) );
+	INPUT input;
+	int event = 0;
+	input.type = INPUT_KEYBOARD;
+	input.ki.time = 0; // auto time
+	input.ki.dwExtraInfo = 0;
+
+	for( event = 0; event < events->Length(); event++ ) {
+		Local<Object> e = events->Get( context, event ).ToLocalChecked().As<Object>();
+		Local<Value> ex = e->Get( context, String::NewFromUtf8Literal( isolate, "key" ) ).ToLocalChecked();
+		Local<Value> ey = e->Get( context, String::NewFromUtf8Literal( isolate, "code" ) ).ToLocalChecked();
+		Local<Value> eb = e->Get( context, String::NewFromUtf8Literal( isolate, "down" ) ).ToLocalChecked();
+		Local<Value> esh = e->Get( context, String::NewFromUtf8Literal( isolate, "extended" ) ).ToLocalChecked();
+		input.ki.wVk = ex->IsNumber() ? ex.As<Number>()->IntegerValue( context ).ToChecked() : 0;
+		input.ki.wScan = ey->IsNumber() ? ey.As<Number>()->IntegerValue( context ).ToChecked() : 0;
+		input.ki.dwFlags =  eb->TOBOOL( isolate )?0:KEYEVENTF_KEYUP;
+		input.ki.dwFlags |=  esh->TOBOOL( isolate )?KEYEVENTF_EXTENDEDKEY:0;
+		
+		
+		AddDataItem( &pdlInputs, &input );
+	}
+
+	if( 0 ) {
+		//for( int i = 0; i < pdlInputs->Cnt; i++ ) {
+			//INPUT* input = (INPUT*)GetDataItem( &pdlInputs, i );
+			//lprintf( "Generating key: x:%d y:%d f:%d ex:%d md:%d t:%d", input->mi.dx, input->mi.dy, input->mi.dwFlags, input->mi.dwExtraInfo, input->mi.mouseData, input->mi.time );
+		//}
+	}
+	
+	//int n = 
+	SendInput( pdlInputs->Cnt, (LPINPUT)pdlInputs->data, sizeof( INPUT ) );
+	//lprintf( "Send Inputreplied? %d", n );
+	DeleteDataList( &pdlInputs );
+#endif
+}
+
+
+void KeyHidObject::sendKey( const v8::FunctionCallbackInfo<Value>& args ) {
+#ifdef WIN32
+	//static int old_x; // save old x,y to know whether current is a move or just a click
+	//static int old_y; 
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	int scan;
+	int vKey;
+	int down;
+	int ext;
+
+	if( args.Length() < 3 ) {
+		if( args[0]->IsArray() ) {
+			Local<Array> arr = Local<Array>::Cast( args[0] );
+			generateKeys( isolate, arr );
+			return;
+		}
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "At least 3 arguments must be specified for a key event (vKey, scanCode, isDown, extended)." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	} else {
+		vKey = (args.Length() > 0)?args[0]->IntegerValue( context ).ToChecked():0;
+		scan = (args.Length() > 1)?args[1]->IntegerValue( context ).ToChecked():0;
+		down = (args.Length() > 2)?args[2]->TOBOOL( isolate ):0;
+		ext = (args.Length() > 3)?args[3]->TOBOOL( isolate ):0;
+
+	}
+
+
+	INPUT inputs[4];
+	int used_inputs = 0;
+
+	inputs[0].type = INPUT_KEYBOARD;
+
+	{
+
+		inputs[used_inputs].ki.wVk = vKey;
+		inputs[used_inputs].ki.wScan = scan;
+		// normal buttons have no extra data either - only include their states in the first message.
+		inputs[used_inputs].ki.dwFlags |=
+				(ext?KEYEVENTF_EXTENDEDKEY:0)
+          | (down?0:KEYEVENTF_KEYUP)
+			 //| KEYEVENTF_SCANCODE
+			 //| KEYEVENTF_UNICODE
+
+			;
+		inputs[used_inputs].ki.time = 0; // auto time
+		inputs[used_inputs].ki.dwExtraInfo = 0;
+
+		used_inputs++;
+
+	};
+	//lprintf( "Generating events: %d %d %d", used_inputs, inputs[0].mi.dx, inputs[0].mi.dy  );
+	SendInput( used_inputs, inputs, sizeof( INPUT ) );
+#endif
+}
+
 
 
 void mouse_asyncmsg( uv_async_t* handle ) {
