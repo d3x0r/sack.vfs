@@ -91,13 +91,13 @@ class DbStorage {
 
 		{
 			if( this.#psql ) {
-				const table1 = "create table if not exists os (id char(45) primary key,value varchar(4096))";
-				db.do( table1 );
+				const table1 = "create table if not exists os (id char(45) primary key,value varchar(4096),updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)";
+				db.makeTable( table1 );
 			} if( this.#mysql ) {
-				const table1 = "create table if not exists os (id char(45) primary key,value LONGTEXT)";
-				db.do( table1 );
+				const table1 = "create table if not exists os (id char(45) primary key,value LONGTEXT,updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)";
+				db.makeTable( table1 );
 			} else if( !this.#sqlite ) {
-				db.makeTable( "create table os (id char(45) primary key,value char)" );
+				db.makeTable( "create table os (id char(45) primary key,value char,updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)" );
 			}
 		}
 	}
@@ -127,12 +127,12 @@ class DbStorage {
 			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj,obj );
 		else if( this.#mysql ) {
 			try {
-				this.#db.do( "replace into os (id,value)values(?,?)", opts.id, obj );
+				this.#db.do( "insert into os (id,value)values(?,?)  ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj, obj );
 			} catch( err ) {
 				console.log( "Insert error:", err );
 			}
 		} else
-			this.#db.do( "replace into os (id,value)values(?,?)", opts.id, obj );
+			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=excluded.value", opts.id, obj );
 	}
 }
 
