@@ -339,7 +339,7 @@ set( UUID_SOURCES
 SET( BUILD_AMALGAM on )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.33.0-TableAlias/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.45.0-TableAlias/sqlite3.c
 )
 
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
