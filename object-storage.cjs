@@ -78,7 +78,7 @@ class DbStorage {
 	#mysql = false;
 	#sqlite = false;
 	constructor(db, opts ) {
-		console.trace( "Options:", db, opts );
+		console.trace( "Options:", db, db.provider, opts );
 		this.#db = db;
 		if( db.provider === 3 )
 			this.#psql = true;     
@@ -127,7 +127,8 @@ class DbStorage {
 			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj,obj );
 		else if( this.#mysql ) {
 			try {
-				this.#db.do( "insert into os (id,value)values(?,?)  ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj, obj );
+				this.#db.do( "insert into os (id,value)values(?,?)  ON DUPLICATE KEY UPDATE value=?", opts.id, obj, obj );
+				//this.#db.do( "insert into os (id,value)values(?,?)  ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj, obj );
 			} catch( err ) {
 				console.log( "Insert error:", err );
 			}
