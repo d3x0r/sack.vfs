@@ -75,6 +75,7 @@ class DbStorage {
 	// need to update personality detection in C library.
 	#db = null;
 	#psql = false;
+	#maria = false;
 	#mysql = false;
 	#sqlite = false;
 	constructor(db, opts ) {
@@ -85,7 +86,7 @@ class DbStorage {
 		else if( db.provider === 2 )
 			this.#mysql = true;     
 		else if( db.provider === 5 )
-			this.#mysql = true;  // really is mariadb   
+			this.#maria = true;  // really is mariadb   
 		if( db.provider === 1 )
 			this.#sqlite = true;     
 
@@ -93,7 +94,7 @@ class DbStorage {
 			if( this.#psql ) {
 				const table1 = "create table if not exists os (id char(45) primary key,value varchar(4096),updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)";
 				db.makeTable( table1 );
-			} if( this.#mysql ) {
+			} if( this.#maria || this.#mysql ) {
 				const table1 = "create table if not exists os (id char(45) primary key,value LONGTEXT,updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)";
 				db.makeTable( table1 );
 			} else if( !this.#sqlite ) {
@@ -105,6 +106,7 @@ class DbStorage {
 		let version = 0;
 		let parser = null;
 		let cb = null;
+		//console.log( "Read in object storage interface? should it have been a file?", obj );
 		for( let arg of args ) {
 		if( "function" === typeof arg ) {
 			cb = arg;
@@ -115,6 +117,7 @@ class DbStorage {
 		}
 		}
 		const records = this.#db.do( "select value from os where id=?", obj );
+		//console.log( "Thing?", obj, records );
 		if( records.length ) {
 			
 			const o = parser.parse( records[0].value );
@@ -126,6 +129,9 @@ class DbStorage {
 		if( this.#psql ) 
 			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj,obj );
 		else if( this.#mysql ) {
+			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj,obj );
+		}
+		else if( this.#maria ) {
 			try {
 				this.#db.do( "insert into os (id,value)values(?,?)  ON DUPLICATE KEY UPDATE value=?", opts.id, obj, obj );
 				//this.#db.do( "insert into os (id,value)values(?,?)  ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj, obj );
