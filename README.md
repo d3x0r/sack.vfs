@@ -253,7 +253,12 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.119(in progress)
+- 1.3.120(in progress)
+- 1.3.119
+   - Fixed length computed for CGI parameters with lots of escapes.
+   - Implement some basic node_module scanning in default server.
+   - Updated sqlite to 3.48-pre.
+   - updated object storage in database to have an updated timestamp; and use upsert syntaxes.
 - 1.3.118
    - Add some control over imported modules to force module type on (.js) files.
    - allow searching for tasks by PID
