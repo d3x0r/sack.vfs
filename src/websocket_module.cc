@@ -691,7 +691,7 @@ static void cgiParamSave(uintptr_t psv, PTEXT name, PTEXT value){
 	Isolate *isolate = cgi->isolate;
 	Local<Context> context = cgi->isolate->GetCurrentContext();
 	if( value )
-		SETT( cgi->cgi, name, String::NewFromUtf8( cgi->isolate, GetText( value ), v8::NewStringType::kNormal ).ToLocalChecked() );
+		SETT( cgi->cgi, name, String::NewFromUtf8( cgi->isolate, GetText( value ), v8::NewStringType::kNormal, GetTextSize( value ) ).ToLocalChecked() );
 	else
 		SETT( cgi->cgi, name, Null( cgi->isolate ) );
 }
@@ -1690,7 +1690,6 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	SET_READONLY( wsWebStatesObject, "LISTENING", Integer::New( isolate, wsReadyStates::LISTENING ) );
 	SET_READONLY( o, "readyStates", wsWebStatesObject );
 
-	SET_READONLY( exports, "WSBanana", o );
 	SET_READONLY( exports, "WebSocket", o );
 	class constructorSet *c = getConstructors( isolate );
 	{
