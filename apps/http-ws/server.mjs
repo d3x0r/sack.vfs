@@ -19,7 +19,7 @@ let packageRoot = null;
 	let here = process.cwd().split(/[\/\\]/);
 	let leader = here.length;
 	while( !packageRoot && leader > 0 ) {
-		const root = here.slice(0,leader).join('/');
+		const root = here.slice(0,leader--).join('/');
 		if( disk.exists( root + "/package.json" ) ) {
 			if( disk.isDir( root + "/node_modules" ) ) {
 				packageRoot = root;
