@@ -487,6 +487,8 @@ static void initBlankCursor( void ) {
 	return;
 }
 
+static void lockStation( const v8::FunctionCallbackInfo<Value> &args ) { LockWorkStation(); }
+
 static void hideCursor( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	static PTHREAD hideThread;
@@ -531,6 +533,7 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   SET_READONLY_METHOD( systemInterface, "isElevated", isElevated );
   SET_READONLY_METHOD( systemInterface, "triggerLogin", beginWindowsShell );
   SET_READONLY_METHOD( systemInterface, "setShell", setShell );
+  SET_READONLY_METHOD( systemInterface, "lock", lockStation );
   SET_READONLY_METHOD( systemInterface, "disableTaskManager", disableTaskManager );
 #endif
 
