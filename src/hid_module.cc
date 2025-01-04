@@ -353,6 +353,8 @@ void asyncmsg( uv_async_t* handle ) {
 			SET( eventObj, "down", (msg->hookEvent.flags& LLKHF_UP )?False(isolate):True(isolate) );
 			SET( eventObj, "scan", Integer::New( isolate, msg->hookEvent.scanCode ) );
 			SET( eventObj, "vkey", Integer::New( isolate, msg->hookEvent.vkCode ) );
+			SET( eventObj, "time", Number::New( isolate, msg->hookEvent.time ) );
+			SET( eventObj, "extended", (msg->hookEvent.flags & LLKHF_EXTENDED)?True(isolate):False(isolate) );
 
 			SET( eventObj, "char", String::NewFromTwoByte( isolate, (const uint16_t*)&msg->ch, NewStringType::kNormal, 1 ).ToLocalChecked() );
 			//SET( eventObj, "id", Number::New( isolate,(double)idx ) );
