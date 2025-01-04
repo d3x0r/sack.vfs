@@ -487,11 +487,42 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
+
+struct sendParam {
+	PDATALIST pdlInputs;//
+};
+static PTHREAD pSendKeyThread = NULL;
+static PLINKQUEUE plsKeys     = NULL;
+
+static uintptr_t KeySendThread( PTHREAD thread ) {
+	while( TRUE ) {
+		struct sendParam *param;
+		while( param = (struct sendParam *)DequeLink( &plsKeys ) ) {
+			struct sendParam *pend;
+			while( pend = (struct sendParam *)DequeLink( &plsKeys ) ) {
+				INDEX idx;
+				PINPUT pInput;
+				DATA_FORALL( pend->pdlInputs, idx, PINPUT, pInput ) { AddDataItem( &param->pdlInputs, pInput ); }
+			}
+			// lprintf( "thread Generating event: %d %d %d", param->used_inputs, param->inputs[ 0 ].ki.wScan
+			//        , param->inputs[ 0 ].ki.wVk );
+			BOOL b = SendInput( param->pdlInputs->Cnt, (INPUT*)param->pdlInputs->data, sizeof( INPUT ) );
+			if( !b ) {
+				lprintf( "SendInput failed. %d", GetLastError() );
+			}
+			DeleteDataList( &param->pdlInputs );
+			Release( param );
+		}
+		WakeableSleep( SLEEP_FOREVER );
+	}
+}
+
+
 static void generateKeys( Isolate *isolate, Local<Array> events ) {
 #ifdef _WIN32
 	Local<Context> context = isolate->GetCurrentContext();
-
-	PDATALIST pdlInputs = CreateDataList( sizeof( INPUT ) );
+	struct sendParam *param = NewPlus( struct sendParam, 0 );
+	param->pdlInputs = CreateDataList( sizeof( INPUT ) );
 	INPUT input;
 	int event = 0;
 	input.type = INPUT_KEYBOARD;
@@ -508,22 +539,16 @@ static void generateKeys( Isolate *isolate, Local<Array> events ) {
 		input.ki.wScan = ey->IsNumber() ? ey.As<Number>()->IntegerValue( context ).ToChecked() : 0;
 		input.ki.dwFlags =  eb->TOBOOL( isolate )?0:KEYEVENTF_KEYUP;
 		input.ki.dwFlags |=  esh->TOBOOL( isolate )?KEYEVENTF_EXTENDEDKEY:0;
-		
-		
-		AddDataItem( &pdlInputs, &input );
+		AddDataItem( &param->pdlInputs, &input );
 	}
 
-	if( 0 ) {
-		//for( int i = 0; i < pdlInputs->Cnt; i++ ) {
-			//INPUT* input = (INPUT*)GetDataItem( &pdlInputs, i );
-			//lprintf( "Generating key: x:%d y:%d f:%d ex:%d md:%d t:%d", input->mi.dx, input->mi.dy, input->mi.dwFlags, input->mi.dwExtraInfo, input->mi.mouseData, input->mi.time );
-		//}
-	}
 	
-	//int n = 
-	SendInput( pdlInputs->Cnt, (LPINPUT)pdlInputs->data, sizeof( INPUT ) );
-	//lprintf( "Send Inputreplied? %d", n );
-	DeleteDataList( &pdlInputs );
+	EnqueLink( &plsKeys, param );
+	if( !pSendKeyThread )
+		pSendKeyThread = ThreadTo( KeySendThread, 0 );
+	else
+		WakeThread( pSendKeyThread );
+
 #endif
 }
 
@@ -556,32 +581,35 @@ void KeyHidObject::sendKey( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	}
 
+	struct sendParam *param = NewPlus( struct sendParam, 0 );
+	param->pdlInputs        = CreateDataList( sizeof( INPUT ) );
+	INPUT input;
+	//int used_inputs = 0;
 
-	INPUT inputs[4];
-	int used_inputs = 0;
-
-	inputs[0].type = INPUT_KEYBOARD;
+	input.type = INPUT_KEYBOARD;
 
 	{
 
-		inputs[used_inputs].ki.wVk = vKey;
-		inputs[used_inputs].ki.wScan = scan;
+		input.ki.wVk = vKey;
+		input.ki.wScan = scan;
 		// normal buttons have no extra data either - only include their states in the first message.
-		inputs[used_inputs].ki.dwFlags |=
-				(ext?KEYEVENTF_EXTENDEDKEY:0)
-          | (down?0:KEYEVENTF_KEYUP)
-			 //| KEYEVENTF_SCANCODE
-			 //| KEYEVENTF_UNICODE
-
-			;
-		inputs[used_inputs].ki.time = 0; // auto time
-		inputs[used_inputs].ki.dwExtraInfo = 0;
-
-		used_inputs++;
-
+		input.ki.dwFlags |= 
+			( ext ? KEYEVENTF_EXTENDEDKEY : 0 ) 
+			| ( down ? 0 : KEYEVENTF_KEYUP )
+		     //| KEYEVENTF_SCANCODE
+		     //| KEYEVENTF_UNICODE
+		     ;
+		input.ki.time = 0; // auto time
+		input.ki.dwExtraInfo = 0;
+		AddDataItem( &param->pdlInputs, &input );
 	};
-	//lprintf( "Generating events: %d %d %d", used_inputs, inputs[0].mi.dx, inputs[0].mi.dy  );
-	SendInput( used_inputs, inputs, sizeof( INPUT ) );
+	//lprintf( "Generating events: %d %d %d", param->used_inputs, inputs[ 0 ].ki.wScan, inputs[ 0 ].ki.wVk );
+	EnqueLink( &plsKeys, param );
+	if( !pSendKeyThread )
+		pSendKeyThread = ThreadTo( KeySendThread, 0 );
+	else
+		WakeThread( pSendKeyThread );
+	
 #endif
 }
 
