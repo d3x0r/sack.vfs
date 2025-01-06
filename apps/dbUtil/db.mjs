@@ -89,7 +89,7 @@ class Table {
 		let now = Date.now();
 		const {db:dbname} = this.sqlite?"":db.do( "select DATABASE() db" )[0];
 		//console.log( Date.now()-now, "selected Db" ); now = Date.now();
-		const cols = db.do( "select COLUMN_NAME,COLUMN_TYPE,DATA_TYPE,COLUMN_DEFAULT,COLUMN_KEY,NUMERIC_PRECISION,NUMERIC_SCALE,CHARACTER_MAXIMUM_LENGTH,EXTRA from INFORMATION_SCHEMA.COLUMNS where TABLE_NAME=? and TABLE_SCHEMA=? ORDER BY ORDINAL_POSITION", this.name, dbname );
+		const cols = db.do( "select COLUMN_NAME,COLUMN_TYPE,DATA_TYPE,COLUMN_DEFAULT,COLUMN_KEY,NUMERIC_PRECISION,NUMERIC_SCALE,IS_NULLABLE,CHARACTER_MAXIMUM_LENGTH,EXTRA from INFORMATION_SCHEMA.COLUMNS where TABLE_NAME=? and TABLE_SCHEMA=? ORDER BY ORDINAL_POSITION", this.name, dbname );
 		//console.log( Date.now()-now, "selected 1" ); now = Date.now();
 		for( let col of cols ) {
 			const newcol = new Column();
