@@ -33,9 +33,10 @@ class Display extends Popup {
 		super("Service Manager", document.body, { suffix: "-service-manager" });
 
 
-		popups.makeButton( this.divCaption, "Add Task", ()=>{
-			new TaskInfoEditor( null, null );
-		}, {suffix:"add-task"} );
+		if( local.login )
+			popups.makeButton( this.divCaption, "Add Task", ()=>{
+				new TaskInfoEditor( null, null );
+			}, {suffix:"add-task"} );
 		
 		local.pageFrame = new popups.PagedFrame( this, {suffix:"-system"} );
 		local.pageFrame.on( "activate", (page)=>{ local.activePage = page; } );
@@ -119,9 +120,7 @@ function AddTaskList(display, object, field) {
 	const editing = {
 
 	}
-	const dataGrid = new popups.DataGrid( display, object, field, {//suffix:'-browse'
-		edit:false,
-      columns:[ {field:"name", name:"Name", className: "name", type:{edit:false} }
+	const columns = [ {field:"name", name:"Name", className: "name", type:{edit:false} }
 		, { field: "running", name:"Status"  , className: "status"
 				, type:{edit:false
 						,options:[ { text:"Running", value:true,className:"task-running" }
@@ -145,7 +144,9 @@ function AddTaskList(display, object, field) {
 		, { name:"Start"   , className: "-start", type:{suffix:" green", click:protocol.startTask.bind( protocol,object), text: "PLAY ▷"} }
 		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click:protocol.restartTask.bind( protocol,object), text: "RESTART ↻"} }
 		//, { name:"Edit"    , className: "edit", type:{click:protocol.editTask.bind( protocol,object), text: "Edit ✎"} }
-		, { name:"Edit"    , className: "-edit", type:{suffix:" purple", click: async function(task) {
+	];
+	if( local.login )
+		columns.push( { name:"Edit"    , className: "-edit", type:{suffix:" purple", click: async function(task) {
       // Define the new action or function here
 			if( editing[task.id] ) return;
 
@@ -154,9 +155,13 @@ function AddTaskList(display, object, field) {
 			const editor = new TaskInfoEditor( task.id, taskInfo.task );
 			editor.on( "close", ()=>{ delete editing[task.id] } );
 
-    }, text: "Edit ✎"} }
-	]
-	} );
+    }, text: "Edit ✎"} } );
+
+
+	const dataGrid = new popups.DataGrid( display, object, field, {//suffix:'-browse'
+		edit:false,
+      columns } );
+
 	let visible = false;
 	if( object === local ) {
 		local.statusDisplay = dataGrid;

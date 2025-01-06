@@ -13,6 +13,7 @@ export const local = {
 	activePage : null, // which page is currently active to default to main
 	pageFrame : null, // page control for systems.
 	firstPage : null, // the first status has a page itself...
+	login : null,
 	reset() {
 		if( local.statusDisplay )
 			local.statusDisplay.remove();
