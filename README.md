@@ -194,6 +194,8 @@ import {SACK} from "sack.vfs";
  - [TCP](https://github.com/d3x0r/sack.vfs/blob/master/README_TCP.md) - Low level system TCP sockets.
  - [ICMP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md) - ICMP interface (name lookup and ping)
  - [TLS](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - certificate creation and validation
+ - [Task](https://github.com/d3x0r/sack.vfs/blob/master/README_Task.md) - Process creation/control/information
+ - [SSH](https://github.com/d3x0r/sack.vfs/blob/master/README_SSH.md) - SSH connection interface
  - [ComPort](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - COM port IO
  - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Monitors files for changes
  - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Other
