@@ -46,6 +46,7 @@ describe('Added in 1.0.1013', function () {
 		}
 		function fromJSOX( field, val ) {
 			if( field ) {
+	console.log( "doing magic?", field, val );
 				processed.push( [field, val, JSON.stringify(val)] );
 				if( field === "c" ) {
 					this.c = val;
@@ -97,13 +98,13 @@ Sub Final revive
 sub,{"inner":"VALUE","a":[1,2,3]},{"inner":"VALUE","a":[1,2,3]}
 a,123,123
 b,345,345
-c,[8],[]
+c,[5,6,7,8],[]
 d,{"deleted":false},{"deleted":false}
 Final revive` );
 
 		//expect( object ).to.deep.equal( { sub:new SubO("VALUE"),a:123,b:345,c:[8],d:undefined,realD:{} } );
 		// old version returned the above.
-		expect( object ).to.deep.equal( { sub:new SubO("VALUE"),a:123,b:345,c:[8],realD:{} } );
+		expect( object ).to.deep.equal( { sub:new SubO("VALUE"),a:123,b:345,c:[5,6,7,8],realD:{} } );
 
 	} );
         
