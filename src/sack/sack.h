@@ -582,6 +582,13 @@ But WHO doesn't have stdint?  BTW is sizeof( size_t ) == sizeof( void* )
 // the C Procedure standard - using a stack, and resulting
 // in EDX:EAX etc...
 #  define CPROC
+#if !defined( _WIN32 )
+#  define PUBLIC_METHOD
+#  define REFERENCE_METHOD extern
+#else
+#  define PUBLIC_METHOD __declspec(dllexport)
+#  define REFERENCE_METHOD __declspec(dllimport)
+#endif
 #  ifdef SACK_BAG_EXPORTS
 #    ifdef BUILD_GLUE
 // this is used as the export method appropriate for C#?
