@@ -1,5 +1,4 @@
 "use strict";
-const util = require('util');
 
 var sack, errN = [];
 try {
@@ -22,7 +21,6 @@ if( !sack )
 					+";"+__dirname+"\\build\\Release\\bin"
 					+";"+__dirname+"\\build\\Release\\share\\SACK\\plugins"
           sack = require( "./build/Release/" + name );
-			console.log( "Release loaded Yes.", sack );
       } catch( err ){
         errN.push(err);
       }
@@ -33,7 +31,6 @@ if( !sack )
 						+";"+__dirname+"\\build\\Debug\\bin"
 						+";"+__dirname+"\\build\\Debug\\share\\SACK\\plugins"
               sack = require( "./build/Debug/" + name );
-				console.log( "Debug loaded Yes.", sack );
           } catch( err ){
             errN.push(err);
           }
@@ -118,8 +115,15 @@ if( !sack )
 	if( !sack && !gui ) includeNative( true );
 }
 includeNative( false );
-if( !sack )
+if( !sack ) {
+	if( "undefined" !== typeof log ) {
+		log( errN.join(',') );
+	}
+	const util = require('util');
   throw new Error( util.format( "Failed to match configuration:", process && process.config && process.config.target_defaults && process.config.target_defaults.default_configuration, "\n", errN.join(',') ) );
+}
+
+module.exports=exports=sack;
 
 require( "./sack-jsox.cjs" )(sack);
 require( "./object-storage.cjs" )(sack);
@@ -127,7 +131,6 @@ require( "./object-storage-cb.cjs" )(sack);
 //if( process.platform === "win32" )
 //	require( "./service-object.cjs" )(sack);
 
-module.exports=exports=sack;
 
 /*
 process.on('exit', ()=>{
