@@ -8,6 +8,7 @@
   },
   "main": "vfs_module.cjs",
   "module": "vfs_module.mjs",
+  "vm": "vfs_ivm.mjs",
   "type": "commonjs",
   "exports": {
     ".": {
@@ -62,6 +63,9 @@
     "./Events": {
       "require": "./apps/events/events.js",
       "import": "./apps/events/events.mjs"
+    },
+    "./Events2": {
+      "import": "./apps/events/events2.mjs"
     },
     "./prng": {
       "require": "./apps/prng/prng_short.js",
