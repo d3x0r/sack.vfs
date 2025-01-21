@@ -27,7 +27,7 @@ export class Protocol extends Events {
 	static connect(protocol, this_) {
 		const ThisProtocol = this_.#Protocol;//Object.getPrototypeOf( this ).constructor;
 		const source = new URL( import.meta.url ).origin
-		ThisProtocol.ws = new WebSocket( this_.server, protocol );
+		ThisProtocol.ws = new WebSocket( this.server, protocol );
 		ThisProtocol.ws.onmessage = (evt)=>Protocol.onmessage.call( this_, evt) ;
 		ThisProtocol.ws.onclose = (evt)=>Protocol.onclose.call( this_, evt) ;
 		ThisProtocol.ws.onopen = (evt)=>Protocol.onopen.call( this_, evt) ;
