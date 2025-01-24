@@ -1783,18 +1783,19 @@ namespace list {
 #  endif
 //--------------------------------------------------------
 TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        CreateListEx   ( DBG_VOIDPASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE        MakeListEx   ( PLIST *pList DBG_PASS );
 /* Destroy a PLIST. */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        DeleteListEx   ( PLIST *plist DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE        DeleteListEx   ( PLIST *plist DBG_PASS );
 /* See <link AddLink>.
    See <link DBG_PASS>. */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        AddLinkEx      ( PLIST *pList, POINTER p DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE        AddLinkEx      ( PLIST *pList, POINTER p DBG_PASS );
 /* Sets the value of a link at the specified index.
    Parameters
    pList :     address of a PLIST
    idx :       index of the element to set
    p :         new link value to be set at the specified index
    DBG_PASS :  debug file and line information                 */
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        SetLinkEx      ( PLIST *pList, INDEX idx, POINTER p DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE        SetLinkEx      ( PLIST *pList, INDEX idx, POINTER p DBG_PASS );
 /* Gets the link at the specified index.
    Parameters
    pList :  address of a PLIST pointer.
@@ -1831,6 +1832,8 @@ TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        FindLink       ( PLIST *pList, POINT
 	   number of things in the list.
 */
 TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetLinkCount   ( PLIST pList );
+#define GetLinkCount(l) GetLinksUsed(&(l))
+TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetLinksUsed( PLIST *pList );
 /* Uses FindLink on the list for the value to delete, and then
    sets the index of the found link to NULL.
    Parameters
@@ -2142,7 +2145,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE         DeleteLinkStackEx( PLINKSTACK *pls D
    more space. Since the address of the pointer is passed, the
    pointer is already updated, and the return value is
    unimportant.                                                */
-TYPELIB_PROC  PLINKSTACK TYPELIB_CALLTYPE   PushLinkEx       ( PLINKSTACK *pls, POINTER p DBG_PASS);
+TYPELIB_PROC  void TYPELIB_CALLTYPE   PushLinkEx       ( PLINKSTACK *pls, POINTER p DBG_PASS);
 /* Reads the top value of the stack and returns it, removes top
    link on the stack.
    Parameters
@@ -2190,13 +2193,24 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekLinkEx         ( PLINKSTACK *pls
    Parameters
    size :       size of elements in the stack
    DBG_PASS :  debug file and line information.                 */
+TYPELIB_PROC  void TYPELIB_CALLTYPE   MakeDataStackEx( PDATASTACK *pds, size_t size DBG_PASS );
+/* Creates a data stack for data element of the specified size.
+   Parameters
+   size :       size of elements in the stack
+   DBG_PASS :  debug file and line information.                 */
 TYPELIB_PROC  PDATASTACK TYPELIB_CALLTYPE   CreateDataStackEx( size_t size DBG_PASS );
 /* Creates a data stack for data element of the specified size.
    Parameters
    size :       size of items in the stack
    count :      max items in stack (oldest gets deleted)
    DBG_PASS :  debug file and line information.                 */
-TYPELIB_PROC  PDATASTACK TYPELIB_CALLTYPE   CreateDataStackLimitedEx( size_t size, INDEX count DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE   MakeDataStackLimitedEx( PDATASTACK *pds, size_t size, INDEX count DBG_PASS );
+/* Creates a data stack for data element of the specified size.
+   Parameters
+   size :       size of items in the stack
+   count :      max items in stack (oldest gets deleted)
+   DBG_PASS :  debug file and line information.                 */
+TYPELIB_PROC PDATASTACK TYPELIB_CALLTYPE CreateDataStackLimitedEx( size_t size, INDEX count DBG_PASS );
 /* Destroys a data stack.
    Parameters
    pds :       address of a data stack pointer. The pointer will
@@ -2209,7 +2223,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE         DeleteDataStackEx( PDATASTACK *pds D
    pds :       address of a data stack pointer
    p :         pointer to data to push on stack
    DBG_PASS :  debug file and line information                 */
-TYPELIB_PROC  PDATASTACK TYPELIB_CALLTYPE   PushDataEx     ( PDATASTACK *pds, POINTER pdata DBG_PASS );
+TYPELIB_PROC void TYPELIB_CALLTYPE PushDataEx( PDATASTACK *pds, POINTER pdata DBG_PASS );
 /* \Returns an allocated buffer containing the data on the
    stack. Removes item from the stack.
    Parameters
@@ -2256,18 +2270,22 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekDataEx     ( PDATASTACK *pds, IN
 /* Creates a <link sack::containers::PLINKQUEUE, LinkQueue>. In
    debug mode, gets passed the current source and file so it can
    blame the user for the allocation.                            */
+TYPELIB_PROC  void TYPELIB_CALLTYPE   MakeLinkQueueEx( PLINKQUEUE *into DBG_PASS );
+/* Creates a <link sack::containers::PLINKQUEUE, LinkQueue>. In
+   debug mode, gets passed the current source and file so it can
+   blame the user for the allocation.                            */
 TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   CreateLinkQueueEx( DBG_VOIDPASS );
 /* Delete a link queue. Pass the address of the pointer to the
    queue to delete, this function sets the pointer to NULL if
    the queue is actually deleted.                              */
 TYPELIB_PROC  void TYPELIB_CALLTYPE         DeleteLinkQueueEx( PLINKQUEUE *pplq DBG_PASS );
 /* Enque a link to the queue.  */
-TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   EnqueLinkEx      ( PLINKQUEUE *pplq, POINTER link DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE   EnqueLinkEx      ( PLINKQUEUE *pplq, POINTER link DBG_PASS );
 TYPELIB_PROC  void TYPELIB_CALLTYPE   EnqueLinkNLEx( PLINKQUEUE *pplq, POINTER link DBG_PASS );
 /* EnqueLink adds the new item at the end of the list. PrequeueLink
    puts the new item at the head of the queue (so it's the next
    one to be retrieved).                                            */
-TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   PrequeLinkEx      ( PLINKQUEUE *pplq, POINTER link DBG_PASS );
+TYPELIB_PROC void TYPELIB_CALLTYPE PrequeLinkEx( PLINKQUEUE *pplq, POINTER link DBG_PASS );
 /* If the queue is not empty, returns the address of the next
    element in the queue and removes the element from the queue.
                                                                 */
@@ -2316,7 +2334,15 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekQueue    ( PLINKQUEUE plq );
 #endif
 /* Creates a PDATAQUEUE. Can pass DBG_FILELINE information to
    blame other code for the allocation.                       */
+TYPELIB_PROC  void TYPELIB_CALLTYPE   MakeDataQueueEx( PDATAQUEUE *into, INDEX size DBG_PASS );
+/* Creates a PDATAQUEUE. Can pass DBG_FILELINE information to
+   blame other code for the allocation.                       */
 TYPELIB_PROC  PDATAQUEUE TYPELIB_CALLTYPE   CreateDataQueueEx( INDEX size DBG_PASS );
+/* Creates a PDATAQUEUE that has an overridden expand-by amount
+   and initial amount of entries in the queue. (expecting
+   something like 1000 to start and expand by 500, instead of
+   the default 0, and expand by 1.                              */
+TYPELIB_PROC void TYPELIB_CALLTYPE MakeLargeDataQueueEx( PDATAQUEUE *pdq, INDEX size, INDEX entries, INDEX expand DBG_PASS );
 /* Creates a PDATAQUEUE that has an overridden expand-by amount
    and initial amount of entries in the queue. (expecting
    something like 1000 to start and expand by 500, instead of
@@ -2325,10 +2351,10 @@ TYPELIB_PROC  PDATAQUEUE TYPELIB_CALLTYPE   CreateLargeDataQueueEx( INDEX size, 
 /* Destroys a data queue. */
 TYPELIB_PROC  void TYPELIB_CALLTYPE         DeleteDataQueueEx( PDATAQUEUE *pplq DBG_PASS );
 /* Add a data element into the queue. */
-TYPELIB_PROC  PDATAQUEUE TYPELIB_CALLTYPE   EnqueDataEx      ( PDATAQUEUE *pplq, POINTER Data DBG_PASS );
+TYPELIB_PROC  void TYPELIB_CALLTYPE   EnqueDataEx      ( PDATAQUEUE *pplq, POINTER Data DBG_PASS );
 /* Enque data at the head of the queue instead of the tail. (Normally
    add at tail, take from head).                                      */
-TYPELIB_PROC  PDATAQUEUE TYPELIB_CALLTYPE   PrequeDataEx      ( PDATAQUEUE *pplq, POINTER Data DBG_PASS );
+TYPELIB_PROC void TYPELIB_CALLTYPE PrequeDataEx( PDATAQUEUE *pplq, POINTER Data DBG_PASS );
 /* Removes data from a queue, resulting with the data in the
    specified buffer, and result TRUE if there was an element
    else FALSE, and the buffer is not modified.               */
