@@ -337,8 +337,8 @@ public:
 
 public:
 
-	static void doInit( Local<Context> context, Local<Object> exports );
-	static void Init( Local<Context> context, Local<Object> exports );
+	static void doInit( Local<Context> context, Local<Object> exports, bool isolated );
+	static void Init( Local<Context> context, Local<Object> exports, bool isolated );
 	static void Init( Local<Object> exports, Local<Value> val, void* p );
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority = 2000 );
 	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
