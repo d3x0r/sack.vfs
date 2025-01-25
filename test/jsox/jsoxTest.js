@@ -32,7 +32,7 @@ describe('Basic parsing', function () {
 	describe('Dates', function () {
 		it('converts to same date', function () {
 			const o = parse( "2020-01-01T12:00:00.123456789Z" ).getTime();
-			expect(o).to.equal( new Date( "2020-01-01T12:00:00.123456789Z" ).getTime() );
+			expect(o).to.equal( new JSOX.DateNS( "2020-01-01T12:00:00.123456789Z" ).getTime() );
 		});
 		it('converts from the same date', function () {
 			expect( function() {
@@ -43,7 +43,8 @@ describe('Basic parsing', function () {
 		});
 		it('converts to and from the same date', function () {
 			const o = parse( stringify( parse("2020-01-01T12:00:00.123456789Z") ) ).toISOString();
-			expect(o).to.equal( "2020-01-01T12:00:00.123Z" );
+			// gains a timezone
+			expect(o).to.equal( "2020-01-01T12:00:00.123456789Z" );
 		});
         } );
 

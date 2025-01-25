@@ -194,6 +194,8 @@ import {SACK} from "sack.vfs";
  - [TCP](https://github.com/d3x0r/sack.vfs/blob/master/README_TCP.md) - Low level system TCP sockets.
  - [ICMP](https://github.com/d3x0r/sack.vfs/blob/master/README_UDP.md) - ICMP interface (name lookup and ping)
  - [TLS](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - certificate creation and validation
+ - [Task](https://github.com/d3x0r/sack.vfs/blob/master/README_Task.md) - Process creation/control/information
+ - [SSH](https://github.com/d3x0r/sack.vfs/blob/master/README_SSH.md) - SSH connection interface
  - [ComPort](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - COM port IO
  - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Monitors files for changes
  - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Other
@@ -253,7 +255,12 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.119(in progress)
+- 1.3.120(in progress)
+- 1.3.119
+   - Fixed length computed for CGI parameters with lots of escapes.
+   - Implement some basic node_module scanning in default server.
+   - Updated sqlite to 3.48-pre.
+   - updated object storage in database to have an updated timestamp; and use upsert syntaxes.
 - 1.3.118
    - Add some control over imported modules to force module type on (.js) files.
    - allow searching for tasks by PID

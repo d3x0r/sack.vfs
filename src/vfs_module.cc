@@ -295,7 +295,7 @@ void decodeFlags( int flags ) {
 }
 */
 
-void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
+void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool isolated ) {
 	static int runOnce = 1;
 	Isolate* isolate = context->GetIsolate();// Isolate::GetCurrent();
 #ifdef _WIN32
@@ -381,11 +381,15 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 	Local<FunctionTemplate> volumeTemplate;
 
 	class constructorSet* c = getConstructors( isolate );
+	if( !isolated ) {
 #if ( NODE_MAJOR_VERSION > 9 )
-	node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, c );
+		node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, c );
 #else
-	node::AtExit( moduleExit );
+		node::AtExit( moduleExit );
 #endif
+	} else {
+		lprintf( "Isolated module, no cleanup hook(yet)" );
+	}
 
 	ThreadObject::Init( exports );
 	FileObject::Init();
@@ -519,11 +523,11 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports ) {
 void VolumeObject::Init( Local<Object> exports, Local<Value> val, void* p )  {
 	Isolate* isolate = Isolate::GetCurrent();
 	Local<Context> context = isolate->GetCurrentContext();
-	doInit( context, exports );	
+	doInit( context, exports, false );
 }
 
-void VolumeObject::Init( Local<Context> context, Local<Object> exports )  {
-	doInit( context, exports );
+void VolumeObject::Init( Local<Context> context, Local<Object> exports, bool isolated )  {
+	doInit( context, exports, isolated );
 }
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority )  {
@@ -2088,6 +2092,7 @@ FileObject::~FileObject() {
 //https://nodejs.org/docs/latest-v10.x/api/addons.html#addons_context_aware_addons
 
 #if 0
+// this was an example expansion from a few versions ago... but this is the sort of thing that NODE_MODULE_INIT turns into...
 extern "C" __declspec(dllexport) void node_register_module_v127(v8::Local<v8::Object> exports, v8::Local<v8::Value> module, v8::Local<v8::Context> context); extern "C" { static node::node_module _module = { 127, 0, 0, "M:\\javascript\\sack.vfs\\src\\vfs_module.cc", 0, (node::addon_context_register_func)(node_register_module_v127), "sack_vfs", 0, 0 }; static void __cdecl _register_sack_vfs(void); namespace {
 	struct _register_sack_vfs_ {
 		_register_sack_vfs_() {
@@ -2104,13 +2109,13 @@ extern "C" __declspec(dllexport) void node_register_module_v127(v8::Local<v8::Ob
 		Local<Context> context*/ ) {
 		
 		//printf( "called?\n");
-		VolumeObject::Init(context,exports);		
+		VolumeObject::Init(context,exports, FALSE);
 	}
 #  else
 	static void internalReg( Local<Object> exports,
 		Local<Value>Module,
 		Local<Context> context ) {
-		VolumeObject::Init( context, exports );
+		VolumeObject::Init( context, exports, FALSE );
 	}
 	NODE_MODULE_CONTEXT_AWARE_INTERNAL( sack, internalReg );
 #  endif
@@ -2118,3 +2123,7 @@ extern "C" __declspec(dllexport) void node_register_module_v127(v8::Local<v8::Ob
 	NODE_MODULE( vfs_module, VolumeObject::Init)
 #endif
 
+PUBLIC_METHOD void InitForContext( v8::Isolate *isolate, v8::Local<v8::Context> context
+                                        , v8::Local<v8::Object> target ) {
+		VolumeObject::Init( context, target, TRUE );
+}

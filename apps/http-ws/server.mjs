@@ -14,6 +14,21 @@ tmpPath.splice( 0, 3 );
 tmpPath.splice( tmpPath.length-1, 1 );
 const parentRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-2).join( '/' );
 
+let packageRoot = null;
+{
+	let here = process.cwd().split(/[\/\\]/);
+	let leader = here.length;
+	while( !packageRoot && leader > 0 ) {
+		const root = here.slice(0,leader--).join('/');
+		if( disk.exists( root + "/package.json" ) ) {
+			if( disk.isDir( root + "/node_modules" ) ) {
+				packageRoot = root;
+				break;
+			}
+		}
+	}
+}
+
 function read( name ) {
 	try {
 		const data = sack.Volume.readAsString( name );
@@ -93,6 +108,9 @@ function logRequests() {
 	console.log( "Requests:", log );
 }
 
+
+
+
 //exports.getRequestHandler = getRequestHandler;
 export function getRequestHandler( serverOpts ) {
 	serverOpts = serverOpts || {};
@@ -124,10 +142,10 @@ export function getRequestHandler( serverOpts ) {
 			extname = path.extname(path.basename(filePath,extname));
 		}
 
+		// if the name doesn't end in a slash, should generate a redirect to content... 
 		if( disk.isDir( filePath ) ) {filePath += "/index.html"; extname = ".html"; }
 
 		const contentType = extMap[extname] || "text/plain";
-		//console.log( ":", extname, filePath )
 		if( disk.exists( filePath ) ) {
 			const fc = disk.read(filePath );
 
@@ -135,7 +153,13 @@ export function getRequestHandler( serverOpts ) {
 				const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
 				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 				res.writeHead(200, headers );
-				res.end( fc );
+				if( req.CGI['🔧'] ) {
+					const str = fc.toString();
+					const content = str.replaceAll( /import([^\(]?\s+[^\(]?.*from\s+|)["']((?!\/|.\/|..\/)[^'"]*)["']/g, 'import$1"/$2?🔧=1+🔨=' + req.CGI['🔨'] +'"' )
+					res.end( content );
+				} else {
+					res.end( fc );
+				}
 
 				if( requests.length !== 0 )
 					clearTimeout( reqTimeout );
@@ -147,11 +171,56 @@ export function getRequestHandler( serverOpts ) {
 			}
 			return true;
 		} else {
+			const foundModule = findModule( unescape(req.url), req, res );
+			if( foundModule ) {
+				if( "object" === typeof  foundModule ) {
+				const headers = { 'Content-Type': foundModule.contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
+				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
+				res.writeHead(200, headers );
+				res.end( foundModule.content );
+
+				if( requests.length !== 0 )
+					clearTimeout( reqTimeout );
+				reqTimeout = setTimeout( logRequests, 500 );
+				requests.push( req.url );
+				}
+				return true;
+			}
 			lastFilePath = filePath;
 			return false;
 		}
 	};
+	function findModule( spec, req, res ) {
+		const specPath = spec.substr( 1 ).split('/');
+		let content = null;
 
+		//console.log("Find module:", spec, leader, here );
+		let n = 1;
+		let a = "";
+		while( n <= specPath.length && disk.isDir( a = packageRoot + "/node_modules" + "/" + specPath.slice(0,n++).join('/') ) )
+			;//console.log( "still goood", a );
+		const relPath = "/node_modules/" + specPath.slice(0,n-1).join('/') + "/";
+		//console.log( "so we use:", a, relPath );
+		//const filePart = specPath.slice(n-1);
+
+		//console.log( "Even have node_modules..." );
+		const modPath = packageRoot + relPath;
+		//console.log( "Path:", modPath );
+		const pkgDef = modPath + "package.json";
+		if( disk.exists( pkgDef ) ) {
+			const module = disk.readJSOX( pkgDef, (pkg)=>{
+				res.writeHead( 301, {Location: relPath + pkg.module + "?🔧=1+🔨=" + relPath} );
+						const modname = modPath + pkg.module;
+							
+							//content = disk.read( modname );
+					} );
+			res.end();
+			return true;
+		}
+		if( content )
+			return { contentType: "text/javascript", content };
+		return null;
+	}
 }
 
 function hookJSOX( serverOpts, server ) {

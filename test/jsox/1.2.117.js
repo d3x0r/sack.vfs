@@ -11,7 +11,10 @@ describe('Added in JSOX@1.2.117', function () {
 		const string = '[{self:ref[0]}]';
 		const expects = JSOX.parse(string);
 		console.log( "Expects to not be an error:", expects );
-		expect( expects ).to.deep.equal( [0,0] );
+		const recurs = [{self:null}];
+		recurs[0].self = recurs[0];
+		//console.log( "Expects to not be an error:", expects );
+		expect( expects ).to.deep.equal( recurs );
 
 	} );
         

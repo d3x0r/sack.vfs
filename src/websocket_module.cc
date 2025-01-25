@@ -1,4 +1,4 @@
-
+#define WEBSOCKET_MODULE_SOURCE
 #include "global.h"
 
 #include "ssh2_module.h"
@@ -72,6 +72,16 @@ void send(ArrayBuffer data);
 void send(ArrayBufferView data);
 
 */
+
+static void wssAsyncMsg__( wssObject *myself );
+
+wssAsyncTask::wssAsyncTask( wssObject *myself ) { this->myself = myself; }
+
+void wssAsyncTask ::Run() {
+	wssAsyncMsg__( this->myself );
+	Isolate *isolate = Isolate::GetCurrent();
+	isolate->PerformMicrotaskCheckpoint();
+}
 
 
 enum wsEvents {
@@ -471,10 +481,25 @@ public:
 	~httpObject();
 };
 
+static void wscAsyncMsg__( wscObject* wsc );
+
+struct wscAsyncTask : Task {
+	wscObject *myself;
+	wscAsyncTask( wscObject *myself )
+	    : myself( myself ) {}
+	void Run() {
+		wscAsyncMsg__( this->myself );
+		Isolate *isolate = Isolate::GetCurrent();
+		isolate->PerformMicrotaskCheckpoint();
+	}
+};
+
 // web sock client Object
 class wscObject : public node::ObjectWrap {
 
 public:
+	bool ivm_hosted = false;
+	wscAsyncTask task;
 	PCLIENT pc;
 	bool resolveAddr = false;
 	bool resolveMac = false;
@@ -528,9 +553,25 @@ public:
 	Persistent<Function> callback; //
 };
 
+
+static void wssiAsyncMsg__( wssiObject* myself );
+struct wssiAsyncTask : Task {
+	class wssiObject *myself;
+	wssiAsyncTask( wssiObject *myself )
+	    : myself( myself ) {}
+	void Run() {
+		wssiAsyncMsg__( this->myself );
+		Isolate *isolate = Isolate::GetCurrent();
+		isolate->PerformMicrotaskCheckpoint();
+	}
+};
+
+
 // web sock server instance Object  (a connection from a remote)
 class wssiObject : public node::ObjectWrap {
 public:
+	bool ivm_hosted  = false;
+	wssiAsyncTask task;
 	uv_async_t async = {}; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Object> _this;
 	PLINKQUEUE eventQueue;
@@ -691,7 +732,7 @@ static void cgiParamSave(uintptr_t psv, PTEXT name, PTEXT value){
 	Isolate *isolate = cgi->isolate;
 	Local<Context> context = cgi->isolate->GetCurrentContext();
 	if( value )
-		SETT( cgi->cgi, name, String::NewFromUtf8( cgi->isolate, GetText( value ), v8::NewStringType::kNormal ).ToLocalChecked() );
+		SETT( cgi->cgi, name, String::NewFromUtf8( cgi->isolate, GetText( value ), v8::NewStringType::kNormal, GetTextSize( value ) ).ToLocalChecked() );
 	else
 		SETT( cgi->cgi, name, Null( cgi->isolate ) );
 }
@@ -994,12 +1035,12 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
 	}
 }
 
-static void wssiAsyncMsg_( uv_async_t* handle ) {
+
+static void wssiAsyncMsg__( wssiObject* myself ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
-	wssiObject* myself = (wssiObject*)handle->data;
 
 	Local<Context> context = isolate->GetCurrentContext();
 	{
@@ -1084,16 +1125,21 @@ static void wssiAsyncMsg_( uv_async_t* handle ) {
 	}
 }
 
+
+static void wssiAsyncMsg_( uv_async_t* handle ) {
+	wssiObject* myself = (wssiObject*)handle->data;
+	wssiAsyncMsg__( myself );
+}
+
 static void wssiAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
-	wssiAsyncMsg_(handle);
+	wssiAsyncMsg__( (wssiObject*)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
-
 }
 /*
 static void handleWebSockEOF( uintptr_t psv ) {
@@ -1111,10 +1157,11 @@ static void handleWebSockClose( uintptr_t psv ) {
 }
 */
 
-static void wssAsyncMsg_( uv_async_t* handle ) {
+
+static void wssAsyncMsg__( wssObject* myself ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	wssObject* myself = (wssObject*)handle->data;
+	//wssObject* myself = (wssObject*)handle->data;
 	v8::Isolate* isolate = myself->isolate;//v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
 	Local<Context> context = isolate->GetCurrentContext();
@@ -1356,10 +1403,16 @@ static void wssAsyncMsg_( uv_async_t* handle ) {
 	}
 }
 
+static void wssAsyncMsg_( uv_async_t* handle ) {
+	wssObject* myself = (wssObject*)handle->data;
+	wssAsyncMsg__( myself );
+}
+
+
 static void wssAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
-	wssAsyncMsg_( handle );
+	wssAsyncMsg__( (wssObject*)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
@@ -1367,12 +1420,14 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	}
 }
 
-static void wscAsyncMsg_( uv_async_t* handle ) {
+
+
+static void wscAsyncMsg__( wscObject* wsc ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
-	wscObject* wsc = (wscObject*)handle->data;
+	//wscObject* wsc = (wscObject*)handle->data;
 	wscEvent *eventMessage;
 	Local<Context> context = isolate->GetCurrentContext();
 
@@ -1469,11 +1524,17 @@ static void wscAsyncMsg_( uv_async_t* handle ) {
 	}
 }
 
+static void wscAsyncMsg_( uv_async_t* handle ) {
+	wscObject* myself = (wscObject*)handle->data;
+	wscAsyncMsg__( myself );
+}
+
+
 
 static void wscAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
-	wscAsyncMsg_( handle );
+	wscAsyncMsg__( (wscObject*)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
@@ -1690,7 +1751,6 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 	SET_READONLY( wsWebStatesObject, "LISTENING", Integer::New( isolate, wsReadyStates::LISTENING ) );
 	SET_READONLY( o, "readyStates", wsWebStatesObject );
 
-	SET_READONLY( exports, "WSBanana", o );
 	SET_READONLY( exports, "WebSocket", o );
 	class constructorSet *c = getConstructors( isolate );
 	{
@@ -1932,8 +1992,12 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		if( MakeThread() == wssi->c->thread ) {
 			wssiAsyncMsg_( &wssi->async );
 		}
-		else
-			uv_async_send( &wssi->async );
+		else {
+			if( wssi->ivm_hosted )
+				;//env::GetCurrent()->GetCurrentHolder()->ScheduleTask( wssi->task );
+			else
+				uv_async_send( &wssi->async );
+		}
 		// can't change this result later, so need to send 
 		// it as a refernence, in case the JS object changes
 		return (uintptr_t)wssi->wssiRef;
@@ -2607,7 +2671,7 @@ static uintptr_t catchLostEvents( PTHREAD thread ) {
 }
 #endif
 
-wssObject::wssObject( struct wssOptions *opts ) {
+wssObject::wssObject( struct wssOptions *opts ) : task(this) {
 	char tmp[256];
 	int clearUrl = 0;
 	this->resolveMac = opts->getMAC;
@@ -3181,7 +3245,7 @@ void wssObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-wssiObject::wssiObject( ) {
+wssiObject::wssiObject( ) : task(this) {
 	eventQueue = CreateLinkQueue();
 	readyState = wsReadyStates::CONNECTING;
 	protocolResponse = NULL;
@@ -3538,7 +3602,7 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 	uv_async_send( &wsc->async );
 }
 
-wscObject::wscObject( wscOptions *opts ) {
+wscObject::wscObject( wscOptions *opts ) : task(this) {
 	eventQueue = CreateLinkQueue();
 	readyState = INITIALIZING;
 	closed = 0;

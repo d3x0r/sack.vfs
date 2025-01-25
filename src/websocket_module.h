@@ -13,6 +13,14 @@ enum wsReadyStates {
 
 uintptr_t WSReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort );
 
+struct wssAsyncTask : v8::Task {
+	wssObject *myself;
+	wssAsyncTask( wssObject *myself );
+	void Run();
+};
+
+
+
 /*
 * web sock server Object
 * Is also an accepted client at the socket level, 
@@ -27,8 +35,12 @@ uintptr_t WSReverseCallback( uintptr_t psv, struct ssh_listener* listener, int b
 class wssObject : public node::ObjectWrap {
 	LOGICAL closed;
 public:
+
+	LOGICAL ivm_host; // isolated-vm events should be generated.
+	wssAsyncTask task;
 	bool resolveAddr = false;
-	bool resolveMac = false;
+	bool resolveMac  = false;
+	bool ivm_hosted  = false;
 	
 	PCLIENT pc;  // pc and wsPipe should be a union. usage is mutuaully exclusive
 	/* but then I would need a flag anyway to indiciate which.

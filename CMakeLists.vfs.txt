@@ -339,7 +339,7 @@ set( UUID_SOURCES
 SET( BUILD_AMALGAM on )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.33.0-TableAlias/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.45.0-TableAlias/sqlite3.c
 )
 
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
@@ -441,7 +441,6 @@ endif( EXISTS ${SACK_BASE} )
 	if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
 		set( CMAKE_C_FLAGS ${CMAKE_C_FLAGS_ORIG} )
 	endif()
-	add_definitions( -DLIBRESSL_DISABLE_OVERRIDE_WINCRYPT_DEFINES_WARNING )
    include_directories( ${CMAKE_BINARY_DIR}/include )
    include_directories( src/sack/libressl/${LIBRESSL_VERSION}/include )
    set( SSL_LIBS ssl crypto tls )
