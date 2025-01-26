@@ -255,7 +255,10 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.120(in progress)
+- 1.3.121(in progress)
+- 1.3.120
+   - Fix JSOX parsing error for unquoted partial keywords at the end of objects/arrays.
+   - Fix race condition handling onopen(onconnect) to server and handling the first client message.
 - 1.3.119
    - Fixed length computed for CGI parameters with lots of escapes.
    - Implement some basic node_module scanning in default server.
