@@ -223,7 +223,7 @@ class ObjectStorage {
 		if( !opts ) opts = defaultMapOpts;
 		//if( opts && opts.depth === 0 ) return;
 		//console.log( "External API invoked map...");
-		const rootId = this.stored.get( o );
+		const rootId = opts.id || this.stored.get( o );
 		if( !rootId ) { console.trace( "Object was not stored, cannot map", o ); return Promise.resolve( o ); }
 		if( rootId[0] === '~' ) {
 			//console.log( "this is mapping a directly referenced field; which means we have to resolve this at least.", rootId );
@@ -248,21 +248,16 @@ class ObjectStorage {
 		this_.addDecoders( [ {tag: "d", p:FileDirectory }, {tag: "f", p:FileEntry } ] )
 		const result = new FileDirectory( this, "?" );
 		//console.log( "result:", result );
-		loading = [];
-		//console.trace( "Who gets this promise for getting root?");
-		return new Promise( (resolve,reject)=>{
-			return this_.get( { id:result.id } )
-				.catch( reject )
+		return this_.get( { id:result.id } )
 				.then( (dir)=>{
-					//console.log( "get root directory got:", dir, "(WILL DEFINE FOLDER)" );
 					if( !dir ) {
-						result.store(true)
+						return result.store(true)
 							.then( function(id){
-								//console.log( "1) Assigning ID to directory", id );
+								console.log( "1) Assigning ID to directory", id );
 								Object.defineProperty( result, "id", { value:id } );
 								finishLoad( result );
+								return result; 
 							} )
-							.catch( reject );
 					}
 	        
 					// foreach file, set file.folder
@@ -274,19 +269,14 @@ class ObjectStorage {
 						Object.defineProperty( dir, "id", { value:result.id } );
 						finishLoad(dir);
 					}
+					return dir;
 					function finishLoad(dir) {
 						//console.log( "2) Assigning ID to directory(sub)", result.id );
 						Object.defineProperty( dir, "volume", {value:this_} );
 						this_.root = dir;
 	        
-						//console.log( "Don't resolve with this yet?" );
-						resolve(dir)  // first come, first resolved
-						// notify anyone else that was asking for this...
-						if( loading && loading.length ) for( var l of loading ) l.res(dir);
-						loading = null; // dont' need this anymore.
 					}
 				} );
-		} );
 	}
 
 	async dir() {

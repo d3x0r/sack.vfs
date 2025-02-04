@@ -12,10 +12,18 @@ if( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
 	SET( __ANDROID__ ON )
 endif( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
 
-#OPTION( HOST_NWJS "Target is hosted in NWJS which isn't quite node. " ${HOST_NWJS} )
+OPTION( HOST_NWJS "Target is hosted in NWJS which isn't quite node. " ${HOST_NWJS} )
 
 IF( HOST_NWJS )
    ADD_DEFINITIONS( -DHOST_NWJS )
+	set( NODE_RUNTIMEVERSION "23.3.0" )
+	#message( "OVERRIDE CMAKE_JS_INC: ${CMAKE_JS_INC}" )
+	set( CMAKE_JS_INC ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/include )
+	set( CMAKE_JS_INC ${CMAKE_JS_INC} ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/include/v8 )
+	set( CMAKE_JS_INC ${CMAKE_JS_INC} ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/include/node )
+	set( CMAKE_JS_INC ${CMAKE_JS_INC} ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/include/libc++ )
+	LINK_DIRECTORIES( ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/lib )
+	ADD_DEFINITIONS( -D_LIBCPP_SHARED_PTR_DEFINE_LEGACY_INLINE_FUNCTIONS )
 ENDIF( HOST_NWJS )
 
 ## Compute node version...
@@ -444,6 +452,7 @@ endif( EXISTS ${SACK_BASE} )
    include_directories( ${CMAKE_BINARY_DIR}/include )
    include_directories( src/sack/libressl/${LIBRESSL_VERSION}/include )
    set( SSL_LIBS ssl crypto tls )
+	ADD_DEFINITIONS( -DLIBRESSL_DISABLE_OVERRIDE_WINCRYPT_DEFINES_WARNING )
 
 
 include_directories( ./include ${CMAKE_JS_INC} src/sack )
@@ -464,14 +473,18 @@ elseif( UNIX )
 	)
 endif( WIN32 )
 
+if( HOST_NWJS )
+	set( MORE_MODULE_SOURCES ${MORE_MODULE_SOURCES} src/nwjs.cc )
+endif( HOST_NWJS )
+
 
 if( HOST_NWJS )
   set( NWJS_CPP_SOURCES 	nw.js/win_delay_load_hook.cc )
 #  STRING( REPLACE "/DELAYLOAD:NODE.EXE" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}" )
-  set( NODE_LIBS ${NODE_LIBS};C:/Users/d3x0r/.cmake-js/node-x64/v22.7.0/win-x64/node.lib;C:/Users/d3x0r/.cmake-js/node-x64/v22.7.0/win-x64/nw.lib )
+  set( NODE_LIBS ${NODE_LIBS};${CMAKE_CURRENT_SOURCE_DIR}/nw.js/lib/node.lib;${CMAKE_CURRENT_SOURCE_DIR}/nw.js/lib/nw.lib )
 else()
-endif( HOST_NWJS )
   set( NODE_LIBS ${NODE_LIBS};${CMAKE_JS_LIB} )
+endif( HOST_NWJS )
 
 SET( CPP_SOURCES
 	${NWJS_CPP_SOURCES}

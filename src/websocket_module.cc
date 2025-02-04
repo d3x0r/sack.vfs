@@ -481,11 +481,11 @@ public:
 	~httpObject();
 };
 
-static void wscAsyncMsg__( wscObject* wsc );
+static void wscAsyncMsg__( class wscObject* wsc );
 
-struct wscAsyncTask : Task {
-	wscObject *myself;
-	wscAsyncTask( wscObject *myself )
+struct wscAsyncTask : v8::Task {
+	class wscObject *myself;
+	wscAsyncTask( class wscObject *myself )
 	    : myself( myself ) {}
 	void Run() {
 		wscAsyncMsg__( this->myself );
@@ -698,9 +698,12 @@ static void uv_closed_wssi( uv_handle_t* handle ) {
 	//myself->openCallback.Reset();
 	INDEX idx;
 	callbackFunction* c;
-	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	DeleteList( &myself->messageCallbacks );
+	DeleteList( &myself->closeCallbacks );
+	DeleteList( &myself->errorCallbacks );
 	myself->_this.Reset();
 }
 static void uv_closed_wss( uv_handle_t* handle ) {
@@ -715,10 +718,14 @@ static void uv_closed_wsc( uv_handle_t* handle ) {
 	wscObject* myself = (wscObject*)handle->data;
 	INDEX idx;
 	callbackFunction* c;
-	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->openCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->openCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	DeleteList( &myself->messageCallbacks );
+	DeleteList( &myself->closeCallbacks );
+	DeleteList( &myself->errorCallbacks );
+	DeleteList( &myself->openCallbacks );
 	myself->_this.Reset();
 }
 
@@ -1448,6 +1455,8 @@ static void wscAsyncMsg__( wscObject* wsc ) {
 					callbackFunction* callback;
 					LIST_FORALL( wsc->openCallbacks, idx, callbackFunction*, callback ) {
 						callback->callback.Get(isolate)->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+						delete callback;
+						SetLink( &wsc->openCallbacks, idx, NULL ); // only call these once...
 					}
 				}
 				break;
@@ -3836,9 +3845,17 @@ void wscObject::onOpen( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		callbackFunction* c = new callbackFunction();
-		c->callback.Reset( isolate, cb );
-		AddLink( &obj->openCallbacks, c );
+		if( obj->readyState == OPEN ) {
+			// on open would have already been dispatched.
+			struct optionStrings *strings;
+			strings = getStrings( isolate );
+			SETV( isolate, strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, obj, NULL ) );
+			cb->Call( context, isolate, 0, NULL );
+		} else {
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->openCallbacks, c );
+		}
 	}
 }
 
@@ -3946,6 +3963,10 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
 			if( obj->readyState == OPEN ) {
+				struct optionStrings *strings;
+				strings = getStrings( isolate );
+				// on open usually sets this object member...
+				SETV( isolate, strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, obj, NULL ) );
 				cb->Call( isolate->GetCurrentContext(), obj->_this.Get( isolate ), 0, NULL );
 			}
 			else {

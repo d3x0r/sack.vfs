@@ -3,7 +3,10 @@
 // C26495 - uninitialized member; yes; It will be.
 #endif
 
+#ifndef NWJS_HOST
 #include <node.h>
+
+#endif
 //#include <nan.h>
 #include <node_object_wrap.h>
 #include <v8.h>
@@ -53,6 +56,11 @@
 #  endif
 #endif
 
+#if defined( HOST_NWJS )
+#  include "nwjs.h"
+#endif
+
+
 #undef New
 
 //#include <openssl/ssl.h>
@@ -61,7 +69,7 @@
 #endif
 
 #if NODE_MAJOR_VERSION >= 17
-#  include <openssl/configuration.h>
+//#  include <openssl/configuration.h>
 #endif
 #include <openssl/safestack.h>  // STACK_OF
 #include <openssl/tls1.h>
