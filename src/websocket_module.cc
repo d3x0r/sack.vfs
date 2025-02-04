@@ -3848,9 +3848,11 @@ void wscObject::onOpen( const FunctionCallbackInfo<Value>& args ) {
 		if( obj->readyState == OPEN ) {
 			// on open would have already been dispatched.
 			struct optionStrings *strings;
+			Local<Context> context = isolate->GetCurrentContext();
+
 			strings = getStrings( isolate );
-			SETV( isolate, strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, obj, NULL ) );
-			cb->Call( context, isolate, 0, NULL );
+			SETV( obj->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, obj, NULL ) );
+			cb->Call( context, obj->_this.Get( isolate ), 0, NULL );
 		} else {
 			callbackFunction* c = new callbackFunction();
 			c->callback.Reset( isolate, cb );
@@ -3964,10 +3966,11 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		if( StrCmp( *event, "open" ) == 0 ){
 			if( obj->readyState == OPEN ) {
 				struct optionStrings *strings;
+				Local<Context> context = isolate->GetCurrentContext();
 				strings = getStrings( isolate );
 				// on open usually sets this object member...
-				SETV( isolate, strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, obj, NULL ) );
-				cb->Call( isolate->GetCurrentContext(), obj->_this.Get( isolate ), 0, NULL );
+				SETV( obj->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, obj, NULL ) );
+				cb->Call( context, obj->_this.Get( isolate ), 0, NULL );
 			}
 			else {
 				if( obj->connect_failed ) {
