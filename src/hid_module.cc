@@ -8,14 +8,32 @@
 
 static uintptr_t InputThread( PTHREAD thread );
 
+static void mouse_asyncmsg__( v8::Isolate *isolate, Local<Context> context, class MouseObject * handle );
+static void asyncmsg__( v8::Isolate *isolate, Local<Context> context, class KeyHidObject * handle );
+static void asyncmsg( uv_async_t* handle );
+
+
+class keyAsyncTask : public SackTask {
+	class KeyHidObject *myself;
+public:
+	keyAsyncTask( class KeyHidObject *myself )
+		: myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		asyncmsg__( isolate, context, myself );
+	}
+};
+
 class KeyHidObject : public node::ObjectWrap {
 public:
 	int handle;
 	char *name;
+	bool ivm_hosted;
+	class constructorSet *c;
+	uv_async_t keyAsync; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE keyEvents;
 
 	Persistent<Object> this_;
 	Persistent<Function> readCallback; //
-	//uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	//PLINKQUEUE readQueue;
 	LOGICAL blocking = FALSE;
 public:
@@ -34,8 +52,24 @@ private:
 	~KeyHidObject();
 };
 
+
+class mouseAsyncTask : public SackTask {
+	class MouseObject *myself;
+
+ public:
+	mouseAsyncTask( class MouseObject *myself )
+	    : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		mouse_asyncmsg__( isolate, context, myself );
+	}
+};
+
 class MouseObject : public node::ObjectWrap {
 public:
+	bool ivm_hosted;
+	class constructorSet *c;
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE mouseEvents;
 	Persistent<Object> this_;
 	Persistent<Function> readCallback; //
 public:
@@ -62,7 +96,7 @@ struct msgbuf {
 	LOGICAL close;
 	KBDLLHOOKSTRUCT hookEvent;
 	WCHAR ch;
-	LOGICAL done;
+	int done;
 	LOGICAL used;
 	PTHREAD waiter;
 };
@@ -79,13 +113,9 @@ typedef struct global_tag
 {
 
 	PLIST keyEventHandlers;
-	uv_async_t keyAsync; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE keyEvents;
 	PTHREAD keyThread;
 
 	PLIST mouseEventHandlers;
-	uv_async_t mouseAsync; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE mouseEvents;
 	PTHREAD mouseThread;
 	int buttons;
 	int mouseX, mouseY;
@@ -155,10 +185,28 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 	msgbuf->hookEvent = kbhook[0];
 	msgbuf->ch = ch;
 
-	//KeyHidObject* com = (KeyHidObject*)psv;
-	EnqueLink( &hidg.keyEvents, msgbuf );
-	uv_async_send( &hidg.keyAsync );
-	while( !msgbuf->done ) WakeableSleep( 1 );
+	KeyHidObject* kbd;
+	INDEX idx;
+	LIST_FORALL( hidg. keyEventHandlers, idx, KeyHidObject*, kbd ) {
+		if( !kbd->readCallback.IsEmpty() ) {
+			msgbuf->done--;
+			EnqueLink( &kbd->keyEvents, msgbuf );
+			if( kbd->ivm_hosted )
+				kbd->c->ivm_post( kbd->c->ivm_holder, std::make_unique<keyAsyncTask>( kbd ) );
+			else
+				uv_async_send( &kbd->keyAsync );
+			while( msgbuf->done < 0 ) WakeableSleep( 1 );
+			if( msgbuf->used )
+				return TRUE;
+		}
+	}
+
+	EnqueLink( &kbd->keyEvents, msgbuf );
+	if( kbd->ivm_hosted )
+		kbd->c->ivm_post( kbd->c->ivm_holder, std::make_unique<keyAsyncTask>( kbd ) );
+	else
+		uv_async_send( &kbd->keyAsync );
+	while( msgbuf->done < 0 ) WakeableSleep( 1 );
 	if( msgbuf->used )
 		return TRUE;
 	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
@@ -177,8 +225,21 @@ LRESULT WINAPI MouseProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 		input->msgid = wParam;
 		input->data = mhook[0];
 
-		EnqueLink( &hidg.mouseEvents, input );
-		uv_async_send( &hidg.mouseAsync );
+		MouseObject *m;
+		INDEX idx;
+		LIST_FORALL( hidg.mouseEventHandlers, idx, MouseObject *, m ) {
+			if( !m->readCallback.IsEmpty() ) {
+				Hold( input );
+				EnqueLink( &m->mouseEvents, input );
+				if( m->ivm_hosted )
+					m->c->ivm_post( m->c->ivm_holder, std::make_unique<mouseAsyncTask>( m ) );
+				else
+					uv_async_send( &m->async );
+			}
+		}
+		Release( input );
+		//EnqueLink( &hidg.mouseEvents, input );
+		//uv_async_send( &hidg.mouseAsync );
 	}
 	return CallNextHookEx( hidg.hookHandleMLL, code, wParam, lParam );
 }
@@ -225,7 +286,6 @@ uintptr_t MouseInputThread( PTHREAD thread )
 	return 0;
 }
 
-static void asyncmsg( uv_async_t* handle );
 
 KeyHidObject::KeyHidObject(  ) {
 	if( !hidg.keyThread )
@@ -314,21 +374,29 @@ static void uv_closed( uv_handle_t* handle ) {
 	PostThreadMessage( GetThreadID( hidg.mouseThread ) & 0xFFFFFFFF, WM_QUIT, 0, 0 );
 
 }
-
 void asyncmsg( uv_async_t* handle ) {
-	// Called by UV in main thread after our worker thread calls uv_async_send()
-	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
+	asyncmsg__( isolate, context, (KeyHidObject *)handle->data );
+	{
+		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( context, Null( isolate ), 0, NULL );
+	}
+}
 
-	KeyHidObject* myself;// = (KeyHidObject*)handle->data;
+void asyncmsg__( v8::Isolate *isolate, Local<Context> context, KeyHidObject * myself ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+
 	{
 		struct msgbuf *msg;
-        while( msg = (struct msgbuf *)DequeLink( &hidg.keyEvents ) ) {
+        while( msg = (struct msgbuf *)DequeLink( &myself->keyEvents ) ) {
             if( msg->close ) {
 				//lprintf( "Key async close" );
-                uv_close( (uv_handle_t*)&hidg.keyAsync, uv_key_closed );
+                uv_close( (uv_handle_t*)&myself->keyAsync, uv_key_closed );
 				break;
             }
 
@@ -395,12 +463,6 @@ void asyncmsg( uv_async_t* handle ) {
 			}
 		}
 	}
-	{
-		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
-	}
 }
 
 void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -413,9 +475,12 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			//MemSet( &obj->async, 0, sizeof( obj->async ) );
 
 			class constructorSet *c = getConstructors( isolate );
-			if( !hidg.keyEvents ) {
-				hidg.keyEvents = CreateLinkQueue();
-				uv_async_init( c->loop, &hidg.keyAsync, asyncmsg );
+			if( !obj->keyEvents ) {
+				obj->keyEvents = CreateLinkQueue();
+			if( c->ivm_post )
+				obj->ivm_hosted = true;
+			else
+				uv_async_init( c->loop, &obj->keyAsync, asyncmsg );
 			}
 			AddLink( &hidg.keyEventHandlers, obj );
 
@@ -453,7 +518,7 @@ void KeyHidObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( !GetLinkCount( hidg.keyEventHandlers ) ) {
 		struct msgbuf* msg = NewArray( struct msgbuf, 1 );
 		msg->close = TRUE;
-		EnqueLink( &hidg.keyEvents, msg );
+		EnqueLink( &com->keyEvents, msg );
 	}
 }
 
@@ -615,23 +680,31 @@ void KeyHidObject::sendKey( const v8::FunctionCallbackInfo<Value>& args ) {
 #endif
 }
 
-
-
 void mouse_asyncmsg( uv_async_t* handle ) {
-	// Called by UV in main thread after our worker thread calls uv_async_send()
-	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
+	mouse_asyncmsg__( isolate, context, (MouseObject *)handle->data );
+	{
+		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
+		v8::Isolate *isolate    = v8::Isolate::GetCurrent();
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+	}
+}
 
-	MouseObject* myself;
-	INDEX idx;
+void mouse_asyncmsg__( v8::Isolate *isolate, Local<Context> context, MouseObject * myself ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+
+	//INDEX idx;
 	{
 		struct mouse_msgbuf *msg;
-        while( msg = (struct mouse_msgbuf *)DequeLink( &hidg.mouseEvents ) ) {
+        while( msg = (struct mouse_msgbuf *)DequeLink( &myself->mouseEvents ) ) {
             if( msg->close ) {
-				uv_close( (uv_handle_t*)&hidg.mouseAsync, uv_closed );
-				DeleteLinkQueue( &hidg.mouseEvents );
+				uv_close( (uv_handle_t*)&myself->async, uv_closed );
+				DeleteLinkQueue( &myself->mouseEvents );
                 break;
             }
 			Local<Object> eventObj = Object::New( isolate );
@@ -701,7 +774,9 @@ void mouse_asyncmsg( uv_async_t* handle ) {
 
 			Local<Value> argv[] = { eventObj };
 
-			LIST_FORALL( hidg.mouseEventHandlers, idx, MouseObject*, myself ) {
+
+			//LIST_FORALL( hidg.mouseEventHandlers, idx, MouseObject*, myself ) 
+			{
 				if( !myself->readCallback.IsEmpty() ) {
 					MaybeLocal<Value> result = myself->readCallback.Get( isolate )->Call( context, myself->this_.Get( isolate ), 1, argv );
 					if( result.IsEmpty() ) {
@@ -713,12 +788,6 @@ void mouse_asyncmsg( uv_async_t* handle ) {
 			}
 			Deallocate( struct mouse_msgbuf *, msg );
 		}
-	}
-	{
-		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
 
@@ -740,9 +809,13 @@ void MouseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		MouseObject* obj = new MouseObject( );
 		{
 			class constructorSet *c = getConstructors( isolate );
-			if( !hidg.mouseEvents ) {
-				hidg.mouseEvents = CreateLinkQueue();
-				uv_async_init( c->loop, &hidg.mouseAsync, mouse_asyncmsg );
+			if( !obj->mouseEvents ) {
+				obj->mouseEvents = CreateLinkQueue();
+				obj->c           = c;
+				if( c->ivm_post )
+					obj->ivm_hosted = true;
+				else
+					uv_async_init( c->loop, &obj->async, mouse_asyncmsg );
 			}
 			AddLink( &hidg.mouseEventHandlers, obj );
 			//obj->async.data = obj;
@@ -787,15 +860,16 @@ void MouseObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
 	com->this_.Reset();
 	com->readCallback.Reset();
 
+	struct mouse_msgbuf *msg = NewArray( struct mouse_msgbuf, 1 );
+	msg->close               = TRUE;
+	msg->msgid               = 0;
+	EnqueLink( &com->mouseEvents, msg );
+	if( com->ivm_hosted )
+		com->c->ivm_post( com->c->ivm_holder, std::make_unique<mouseAsyncTask>( com ) );
+	else
+		uv_async_send( &com->async );
+	// hidg.mouseThread = NULL;
 	DeleteLink( &hidg.mouseEventHandlers, com );
-	if( !GetLinkCount( hidg.mouseEventHandlers ) ) {
-		struct mouse_msgbuf* msg = NewArray( struct mouse_msgbuf, 1 );
-		msg->close = TRUE;
-		msg->msgid = 0;
-		EnqueLink( &hidg.mouseEvents, msg );
-		uv_async_send( &hidg.mouseAsync );
-		//hidg.mouseThread = NULL;
-	}
 
 	/*
 	struct mouse_msgbuf* msgbuf = NewPlus( struct mouse_msgbuf, 1 );

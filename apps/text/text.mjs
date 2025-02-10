@@ -54,7 +54,7 @@ export class TextFlags {
 	static OPS = {
       NOOP : 0
 			/* this segment clears to the end of the line.  Its content is then added to the output */
-			CLEAR_END_OF_LINE : 1
+		,CLEAR_END_OF_LINE : 1
         ,CLEAR_START_OF_LINE: 2/* clear from the current cursor to the start of line 2*/
 
         ,/* clear the current line; 3 */
@@ -193,7 +193,7 @@ export class TextFlags {
 }
 
 export class Text {
-
+	static TextFlags = TextFlags;
 	tabs= 0;
 	spaces = 0;
 	flags= null; // this is actually a whole object if we want to get technical.
@@ -370,7 +370,7 @@ export class Text {
 						if ((!elipses &&
 							(c = NextChar()) &&
 							(c === '.'))) {
-					    ON    	if ((word = out.getText())) {
+					     	if ((word = out.getText())) {
 								outdata = SegAppend(outdata, SET_SPACES(word));
 							}
 							out.collect.text += '.';
@@ -452,3 +452,5 @@ export class Text {
 
 Object.seal( TextFlags.OPS );
 Object.freeze( TextFlags.OPS );
+
+export default Text;

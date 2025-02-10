@@ -194,6 +194,10 @@ Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket*
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
 
+class IsolateHolder {
+};
+using Runnable = v8::Task;
+
 class constructorSet {
 	public:
 	Isolate *isolate;
@@ -264,6 +268,10 @@ class constructorSet {
 	Persistent<Function> exitCallback;
 	uv_async_t exitAsync; // different modules might have different signal registrations
 
+	void (*ivm_post)( IsolateHolder*, std::unique_ptr<Runnable> );
+	Local<Context> ( *ivm_get_default_context )( void );
+	IsolateHolder* ivm_holder;
+
 #ifdef _WIN32
 	uv_async_t serviceAsync; // keep this instance around for as long as we might need to do the periodic callback
 #endif
@@ -319,6 +327,23 @@ class constructorSet {
 };
 class constructorSet * getConstructors( Isolate *isolate );
 class constructorSet* getConstructorsByThread( void );
+
+class SackTask : public Runnable {
+	void Run() {
+		Isolate *isolate        = Isolate::GetCurrent();
+		class constructorSet *c = getConstructors( isolate );
+		Locker locker( isolate );
+		HandleScope handle_scope( isolate );
+		Context::Scope context_scope{ c->ivm_get_default_context() };
+		this->Run2( isolate, isolate->GetCurrentContext() );
+		isolate->PerformMicrotaskCheckpoint();
+	}
+
+ public:
+	//virtual void Run2() = 0;
+	virtual void Run2( Isolate *isolate, Local<Context> context ) = 0;
+};
+// class Runnable
 
 
 

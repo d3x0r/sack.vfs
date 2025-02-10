@@ -217,6 +217,7 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
+/************************* support for import force module mode *****************************/
 
 static PLIST moduleList = NULL;
 
@@ -266,6 +267,103 @@ static void forceNextModule_list( Local<Name> property, const v8::PropertyCallba
 	}
 	args.GetReturnValue().Set( a );
 }
+
+/************************** replacement process.cwd ****************************/
+
+static void getCwd( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
+	static char buf[ 256 ];
+	GetCurrentPath( buf, sizeof( buf ) );
+	args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), buf ) );	
+}
+
+
+/************************ replacement setTimeout,setInterval ******************************/
+
+static PLIST timerList = NULL;
+
+struct timerEvent : SackTask {
+	Persistent<Function> cb;
+	constructorSet *c;
+	int id;
+	uv_async_t async;
+	bool once = false;
+	// timerEvent( Local<Function> cb) {  }
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		if( !this->cb.IsEmpty() ) {
+			Local<Function> cb = this->cb.Get( isolate );
+			cb->Call( context, Null( isolate ), 0, NULL );
+			if( this->once ) {
+				this->cb.Reset();
+				// delete this;
+			}
+		}
+	}
+};
+
+void triggerTimeout( uintptr_t psvTimer ) {
+	timerEvent *to = (timerEvent *)psvTimer;
+	if( to->c->ivm_holder ) {
+		to->c->ivm_post( to->c->ivm_holder, std::unique_ptr<timerEvent>( to ) );
+	} else
+		uv_async_send( &to->async );
+}
+
+static void setTimeout( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	constructorSet *c      = getConstructors( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	timerEvent *te         = new timerEvent();
+	if( !c->ivm_holder ) {
+		uv_async_init( c->loop, &te->async, []( uv_async_t *handle ) {
+			timerEvent *te = (timerEvent *)handle->data;
+			te->Run2( te->c->isolate, te->c->isolate->GetCurrentContext() );
+		} );
+	}
+	te->once               = true;
+	te->cb.Reset( isolate, Local<Function>::Cast( args[ 0 ] ) );
+	te->c  = c;
+	te->id = AddTimerExx( args[ 1 ]->ToNumber( context ).ToLocalChecked()->Value(), 0, triggerTimeout
+	                    , (uintptr_t)te DBG_SRC );
+	AddLink( &timerList, te );
+	args.GetReturnValue().Set( Number::New( isolate, te->id + 1 ) );
+}
+
+static void setInterval( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	constructorSet *c      = getConstructors( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	timerEvent *te         = new timerEvent();
+	if( !c->ivm_holder ) {
+		uv_async_init( c->loop, &te->async, []( uv_async_t *handle ) {
+			timerEvent *te = (timerEvent *)handle->data;
+			te->Run2( te->c->isolate, te->c->isolate->GetCurrentContext() );
+		} );
+	}
+	te->cb.Reset( isolate, Local<Function>::Cast( args[ 0 ] ) );
+	te->c  = c;
+	te->id = AddTimer( args[ 1 ]->ToNumber( context ).ToLocalChecked()->Value(), triggerTimeout, (uintptr_t)te );
+	AddLink( &timerList, te );
+	args.GetReturnValue().Set( Number::New( isolate, te->id + 1 ) );
+}
+
+static void clearTimeout( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	INDEX idx;
+	struct timerEvent *te;
+	int findId = args[ 0 ]->ToNumber( context ).ToLocalChecked()->Value() - 1;
+	LIST_FORALL( timerList, idx, timerEvent *, te ) {
+		if( te->id == findId ) {
+			SetLink( &timerList, idx, NULL );
+			RemoveTimer( te->id );
+			te->cb.Reset();
+			delete te;
+			break;
+		}
+	}
+}
+
+/******************************************************/
 
 /*
 void decodeFlags2( int flags ) {
@@ -389,6 +487,16 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 #endif
 	} else {
 		lprintf( "Isolated module, no cleanup hook(yet)" );
+		IsolateHolder* (*GetCurrentIsolate)( void ) = (IsolateHolder*(*)(void))LoadFunction( "isolated_vm.node", "GetCurrentIsolate" );
+		Local<Context> ( *GetDefaultContext )( void )
+		     = (Local<Context> ( * )( void ))LoadFunction( "isolated_vm.node", "GetDefaultContext" );
+		if( GetCurrentIsolate ) {
+			c->ivm_holder   = GetCurrentIsolate();
+			c->ivm_get_default_context = GetDefaultContext;
+			c->ivm_post = ( void ( * )( IsolateHolder *hIsolate, std::unique_ptr<Runnable> task ) )
+			     LoadFunction( "isolated_vm.node", "ScheduleTask" );
+		}
+		//lprintf( "Good pointers? %p %p", c->holder, c->ivm_post );
 	}
 
 	ThreadObject::Init( exports );
@@ -488,9 +596,18 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
 	SET_READONLY_METHOD( VolFunc, "chdir", chDir );
+
+	VolFunc->SetNativeDataProperty(
+	     context, String::NewFromUtf8Literal( isolate, "cwd" ), getCwd, nullptr // Local<Function>()
+	     , Local<Value>(), PropertyAttribute::ReadOnly, SideEffectType::kHasSideEffect, SideEffectType::kHasSideEffect );
+
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
+	SET_READONLY_METHOD( exports, "setTimeout", setTimeout );
+	SET_READONLY_METHOD( exports, "setInterval", setInterval );
+	SET_READONLY_METHOD( exports, "clearTimeout", clearTimeout );
+	SET_READONLY_METHOD( exports, "clearInterval", clearTimeout );
 	// this is an export under SaltyRNG
 	SET_READONLY_METHOD( exports, "id", idGenerator );
 	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
@@ -2123,7 +2240,7 @@ extern "C" __declspec(dllexport) void node_register_module_v127(v8::Local<v8::Ob
 	NODE_MODULE( vfs_module, VolumeObject::Init)
 #endif
 
-PUBLIC_METHOD void InitForContext( v8::Isolate *isolate, v8::Local<v8::Context> context
+extern "C" PUBLIC_METHOD void InitForContext( v8::Isolate *isolate, v8::Local<v8::Context> context
                                         , v8::Local<v8::Object> target ) {
 		VolumeObject::Init( context, target, TRUE );
 }

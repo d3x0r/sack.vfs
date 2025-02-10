@@ -8,8 +8,21 @@ struct msgbuf {
 	uint8_t buf[1];
 };
 
+static void asyncmsg__( Isolate *isolate, Local<Context> context, class ComObject * myself );
+struct comAsyncTask : SackTask {
+	class ComObject *myself;
+	comAsyncTask( ComObject *myself )
+	    : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		asyncmsg__( isolate, context, this->myself );
+	}
+};
+
+
 class ComObject : public node::ObjectWrap {
 public:
+	bool ivm_hosted = false;
+	class constructorSet *c;
 	int handle;
 	char* name;
 	//static Persistent<Function> constructor;
@@ -175,13 +188,14 @@ void dont_releaseBufferBackingStore(void* data, size_t length, void* deleter_dat
 }
 
 static void asyncmsg( uv_async_t* handle ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	asyncmsg__( isolate, isolate->GetCurrentContext(), (ComObject *)handle->data );
+}
+
+static void asyncmsg__( Isolate *isolate, Local<Context> context, ComObject * myself ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-
-	ComObject* myself = (ComObject*)handle->data;
-
-	HandleScope scope(isolate);
 	{
 		struct msgbuf *msg;
 		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
@@ -253,7 +267,11 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				//lprintf( "empty async...." );
 				//MemSet( &obj->async, 0, sizeof( obj->async ) );
 				//Environment* env = Environment::GetCurrent(args);
-				uv_async_init( c->loop, &obj->async, asyncmsg );
+				if( c->ivm_post ) {
+					obj->ivm_hosted = true;
+					obj->c = c;
+				} else
+					uv_async_init( c->loop, &obj->async, asyncmsg );
 				obj->async.data = obj;
 				obj->jsObject.Reset( isolate, args.This() );
 				obj->Wrap( args.This() );
@@ -287,7 +305,10 @@ static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int 
 	ComObject *com = (ComObject*)psv;
 	if( !com->readCallback->IsEmpty() ) {
 		EnqueLink( &com->readQueue, msgbuf );
-		uv_async_send( &com->async );
+		if( com->ivm_hosted )
+			com->c->ivm_post( com->c->ivm_holder, std::make_unique<comAsyncTask>( com ) );
+		else
+			uv_async_send( &com->async );
 	}
 }
 
@@ -361,7 +382,10 @@ void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 		struct msgbuf* msgbuf = NewPlus( struct msgbuf, 0 );
 		msgbuf->closeEvent = 1;
 		EnqueLink( &com->readQueue, msgbuf );
-		uv_async_send( &com->async );
+		if( com->ivm_hosted )
+			com->c->ivm_post( com->c->ivm_holder, std::make_unique<comAsyncTask>( com ) );
+		else
+			uv_async_send( &com->async );
 	}
 
 }

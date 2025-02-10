@@ -13,10 +13,12 @@ enum wsReadyStates {
 
 uintptr_t WSReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort );
 
-struct wssAsyncTask : v8::Task {
+struct wssAsyncTask : SackTask {
 	wssObject *myself;
+
+ public:
 	wssAsyncTask( wssObject *myself );
-	void Run();
+	void Run2( Isolate *isolate, Local<Context> context );
 };
 
 
