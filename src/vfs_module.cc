@@ -283,7 +283,7 @@ static void forceNextModule_list( Local<Name> property, const v8::PropertyCallba
 static void getCwd( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
 	static char buf[ 256 ];
 	GetCurrentPath( buf, sizeof( buf ) );
-	args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), buf ) );	
+	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), buf ).ToLocalChecked() );
 }
 
 
@@ -609,7 +609,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 
 	VolFunc->SetNativeDataProperty(
 	     context, String::NewFromUtf8Literal( isolate, "cwd" ), getCwd, nullptr // Local<Function>()
-	     , Local<Value>(), PropertyAttribute::ReadOnly, SideEffectType::kHasSideEffect, SideEffectType::kHasSideEffect );
+	                              , Local<Value>(), PropertyAttribute::ReadOnly, SideEffectType::kHasNoSideEffect
+	                              , SideEffectType::kHasSideEffect );
 
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
