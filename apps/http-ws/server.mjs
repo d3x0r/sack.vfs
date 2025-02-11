@@ -2,10 +2,12 @@
 //const sack = require( "sack.vfs" );
 //const path = require( "path" );
 
-import {sack} from "../../vfs_module.mjs";
+import {sack} from "sack.vfs";
 import {Events} from "../events/events.mjs";
 import {uExpress} from "./uexpress.mjs";
-import path from "path";
+//import path from "path";
+
+
 const disk = sack.Volume();
 
 const myPath = import.meta.url.split(/\/|\\/g);
@@ -16,7 +18,7 @@ const parentRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-2).join(
 
 let packageRoot = null;
 {
-	let here = process.cwd().split(/[\/\\]/);
+	let here = (sack.Volume.cwd||".").split(/[\/\\]/);
 	let leader = here.length;
 	while( !packageRoot && leader > 0 ) {
 		const root = here.slice(0,leader--).join('/');
@@ -28,6 +30,20 @@ let packageRoot = null;
 		}
 	}
 }
+
+const path = {
+	dirname(path) {
+		const lastSlash = path.lastIndexOf( '/' );
+		if( lastSlash > 0 ) return path.substring(0,lastSlash);
+		return "";
+	},
+	extname(path) {
+		const lastDot = path.lastIndexOf( "." );
+		if( lastDot > 0 ) return path.substring( lastDot );
+		return "";
+	}
+}
+
 
 function read( name ) {
 	try {
@@ -126,8 +142,6 @@ export function getRequestHandler( serverOpts ) {
 			 req.connection.socket.remoteAddress;
 		*/
 		//const resource_path = serverOpts.resourcePath || ".";
-
-		//console.log( "Received request:", req );
 		if( req.url[req.url.length-1] === "/" ) req.url += "index.html";
 
 		let filePath = resourcePath + unescape(req.url);
@@ -228,31 +242,30 @@ const app = uExpress();
 server.addHandler( app.handle );
 
 	server.app = app;
-app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
+	app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
 
-	console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
-	const headers = {
-		'Content-Type': "text/javascript",
-	}
+		const headers = {
+			'Content-Type': "text/javascript",
+		}
 
-	let filePath;
+		let filePath;
 		if( req.url.startsWith( "/common/" ) ) {
 			filePath = commonRoot + decodeURI(req.url).replace( "/common", "" );
 		}else {
 			filePath = serverOpts.resourcePath + req.url;
 		}
 
-	const config = disk.read( filePath );
-	if( config ) {
-		res.writeHead( 200, headers );
-		const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
-		res.end( resultContent );
-		return true;
-	}else {
-		console.log( "no file.." );
-		return false;
-	}
-} ) 
+		const config = disk.read( filePath );
+		if( config ) {
+			res.writeHead( 200, headers );
+			const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
+			res.end( resultContent );
+			return true;
+		}else {
+			console.log( "no file.." );
+			return false;
+		}
+	} ) 
 }
 
 class Server extends Events {
@@ -283,6 +296,7 @@ class Server extends Events {
 		}
 
 	handleEvent(req,res) {
+try {
 		for( let handler of this.handlers ) {
 			if( handler( req, res, this.serverOpts ) ) {
 				return true;
@@ -297,6 +311,9 @@ class Server extends Events {
 			res.writeHead( 404, {'Access-Control-Allow-Origin' : req.connection.headers.Origin } );
 			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
 		}
+} catch(err){
+	console.log( "Handler exception:", err.message, err.stack );
+}
 	}
 
 }
