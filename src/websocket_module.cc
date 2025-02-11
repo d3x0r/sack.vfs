@@ -73,14 +73,12 @@ void send(ArrayBufferView data);
 
 */
 
-static void wssAsyncMsg__( wssObject *myself );
+static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObject * myself );
 
 wssAsyncTask::wssAsyncTask( wssObject *myself ) { this->myself = myself; }
 
-void wssAsyncTask ::Run() {
-	wssAsyncMsg__( this->myself );
-	Isolate *isolate = Isolate::GetCurrent();
-	isolate->PerformMicrotaskCheckpoint();
+void wssAsyncTask ::Run2( Isolate *isolate, Local<Context> context ) {
+	wssAsyncMsg__( isolate, context, this->myself );
 }
 
 
@@ -295,7 +293,19 @@ struct socketTransport {
 	const char *protocolResponse;
 };
 
+static void handlePostedClient__( v8::Isolate *isolate, Local<Context> context, struct socketUnloadStation * myself );
+
+struct clientSocketPostTask : SackTask {
+	struct socketUnloadStation *myself;
+	clientSocketPostTask( struct socketUnloadStation *myself )
+	    : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		handlePostedClient__( isolate, context, this->myself );
+	}
+};
+
 struct socketUnloadStation {
+	bool ivm_hosted;
 	Persistent<Object> this_;
 	String::Utf8Value* s;  // destination address
 	uv_async_t clientSocketPoster;
@@ -402,8 +412,23 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	return check;
 }
 
+static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, httpRequestObject * myself );
+struct reqAsyncTask : SackTask {
+	class httpRequestObject *myself;
+	reqAsyncTask( httpRequestObject *myself )
+	    : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		httpRequestAsyncMsg__( isolate, context, this->myself );
+	}
+};
+
+
+
 class httpRequestObject : public node::ObjectWrap {
 public:
+	class constructorSet *c;
+	bool ivm_hosted = false;
+
 	PCLIENT pc;
 	//static Persistent<Function> constructor;
 	Persistent<Object> _this;
@@ -481,16 +506,14 @@ public:
 	~httpObject();
 };
 
-static void wscAsyncMsg__( wscObject* wsc );
+static void wscAsyncMsg__( v8::Isolate *isolate, Local<Context> context, class wscObject * wsc );
 
-struct wscAsyncTask : Task {
-	wscObject *myself;
-	wscAsyncTask( wscObject *myself )
+struct wscAsyncTask : SackTask {
+	class wscObject *myself;
+	wscAsyncTask( class wscObject *myself )
 	    : myself( myself ) {}
-	void Run() {
-		wscAsyncMsg__( this->myself );
-		Isolate *isolate = Isolate::GetCurrent();
-		isolate->PerformMicrotaskCheckpoint();
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		wscAsyncMsg__( isolate, context, this->myself );
 	}
 };
 
@@ -554,15 +577,13 @@ public:
 };
 
 
-static void wssiAsyncMsg__( wssiObject* myself );
-struct wssiAsyncTask : Task {
+static void wssiAsyncMsg__( Isolate *isolate, Local<Context> context, wssiObject * myself );
+struct wssiAsyncTask : SackTask {
 	class wssiObject *myself;
 	wssiAsyncTask( wssiObject *myself )
 	    : myself( myself ) {}
-	void Run() {
-		wssiAsyncMsg__( this->myself );
-		Isolate *isolate = Isolate::GetCurrent();
-		isolate->PerformMicrotaskCheckpoint();
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		wssiAsyncMsg__( isolate, context, this->myself );
 	}
 };
 
@@ -698,9 +719,12 @@ static void uv_closed_wssi( uv_handle_t* handle ) {
 	//myself->openCallback.Reset();
 	INDEX idx;
 	callbackFunction* c;
-	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	DeleteList( &myself->messageCallbacks );
+	DeleteList( &myself->closeCallbacks );
+	DeleteList( &myself->errorCallbacks );
 	myself->_this.Reset();
 }
 static void uv_closed_wss( uv_handle_t* handle ) {
@@ -715,10 +739,14 @@ static void uv_closed_wsc( uv_handle_t* handle ) {
 	wscObject* myself = (wscObject*)handle->data;
 	INDEX idx;
 	callbackFunction* c;
-	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
-	LIST_FORALL( myself->openCallbacks, idx, callbackFunction*, c ) c->callback.Reset();
+	LIST_FORALL( myself->messageCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->closeCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->errorCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	LIST_FORALL( myself->openCallbacks, idx, callbackFunction*, c ) { c->callback.Reset(); delete c; }
+	DeleteList( &myself->messageCallbacks );
+	DeleteList( &myself->closeCallbacks );
+	DeleteList( &myself->errorCallbacks );
+	DeleteList( &myself->openCallbacks );
 	myself->_this.Reset();
 }
 
@@ -937,13 +965,16 @@ static void uv_closed_httpRequest( uv_handle_t* handle ) {
 	delete myself;
 }
 
-static void httpRequestAsyncMsg( uv_async_t* handle ) {
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	httpRequestObject* myself = (httpRequestObject*)handle->data;
-	struct HTTPRequestOptions *opts = myself->opts;
 
-	Local<Context> context = isolate->GetCurrentContext();
+static void httpRequestAsyncMsg( uv_async_t * handle ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context          = isolate->GetCurrentContext();
+	httpRequestAsyncMsg__( isolate, context, (httpRequestObject *)handle->data );
+}
+
+static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, httpRequestObject * myself ) {
+	struct HTTPRequestOptions *opts = myself->opts;
 	{
 		struct httpRequestEvent* eventMessage;
 		while( eventMessage = (struct httpRequestEvent*)DequeLink( &myself->eventQueue ) ) {
@@ -1036,13 +1067,9 @@ static void httpRequestAsyncMsg( uv_async_t* handle ) {
 }
 
 
-static void wssiAsyncMsg__( wssiObject* myself ) {
+static void wssiAsyncMsg__( Isolate *isolate, Local<Context> context, wssiObject * myself ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-
-	Local<Context> context = isolate->GetCurrentContext();
 	{
 		struct wssiEvent* eventMessage;
 		INDEX idx;
@@ -1125,16 +1152,11 @@ static void wssiAsyncMsg__( wssiObject* myself ) {
 	}
 }
 
-
-static void wssiAsyncMsg_( uv_async_t* handle ) {
-	wssiObject* myself = (wssiObject*)handle->data;
-	wssiAsyncMsg__( myself );
-}
-
 static void wssiAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
-	wssiAsyncMsg__( (wssiObject*)handle->data );
+	Local<Context> context = isolate->GetCurrentContext();
+	wssiAsyncMsg__( isolate, context, (wssiObject *)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
@@ -1158,13 +1180,10 @@ static void handleWebSockClose( uintptr_t psv ) {
 */
 
 
-static void wssAsyncMsg__( wssObject* myself ) {
+static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObject * myself ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	//wssObject* myself = (wssObject*)handle->data;
-	v8::Isolate* isolate = myself->isolate;//v8::Isolate::GetCurrent();
-	HandleScope scope(isolate);
-	Local<Context> context = isolate->GetCurrentContext();
 	//class constructorSet *c = getConstructors( isolate);
 	int handled = 0;
 	{
@@ -1279,7 +1298,10 @@ static void wssAsyncMsg__( wssObject* myself ) {
 				// events are setup in the ssh_module when the channel is accepted
 				//  
 				wssiInternal->server = myself;
-				uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
+				if( c->ivm_post )
+					wssiInternal->ivm_hosted = true;
+				else
+					uv_async_init( c->loop, &wssiInternal->async, wssiAsyncMsg );
 				
 				AddLink( &myself->opening, wssiInternal );
 				eventMessage->result = wssiInternal;
@@ -1405,14 +1427,18 @@ static void wssAsyncMsg__( wssObject* myself ) {
 
 static void wssAsyncMsg_( uv_async_t* handle ) {
 	wssObject* myself = (wssObject*)handle->data;
-	wssAsyncMsg__( myself );
+	v8::Isolate *isolate = myself->isolate; // v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	wssAsyncMsg__( isolate, context, myself );
 }
 
 
 static void wssAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
-	wssAsyncMsg__( (wssObject*)handle->data );
+	Local<Context> context = isolate->GetCurrentContext();
+	wssAsyncMsg__( isolate, context, (wssObject *)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
@@ -1420,17 +1446,11 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	}
 }
 
-
-
-static void wscAsyncMsg__( wscObject* wsc ) {
+static void wscAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wscObject * wsc ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope(isolate);
 	//wscObject* wsc = (wscObject*)handle->data;
 	wscEvent *eventMessage;
-	Local<Context> context = isolate->GetCurrentContext();
-
 	{
 		Local<Value> argv[2];
 		while( eventMessage = (struct wscEvent*)DequeLink( &wsc->eventQueue ) ) {
@@ -1448,6 +1468,8 @@ static void wscAsyncMsg__( wscObject* wsc ) {
 					callbackFunction* callback;
 					LIST_FORALL( wsc->openCallbacks, idx, callbackFunction*, callback ) {
 						callback->callback.Get(isolate)->Call( context, eventMessage->_this->_this.Get( isolate ), 0, argv );
+						delete callback;
+						SetLink( &wsc->openCallbacks, idx, NULL ); // only call these once...
 					}
 				}
 				break;
@@ -1526,7 +1548,10 @@ static void wscAsyncMsg__( wscObject* wsc ) {
 
 static void wscAsyncMsg_( uv_async_t* handle ) {
 	wscObject* myself = (wscObject*)handle->data;
-	wscAsyncMsg__( myself );
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	wscAsyncMsg__( isolate, context, myself );
 }
 
 
@@ -1534,7 +1559,8 @@ static void wscAsyncMsg_( uv_async_t* handle ) {
 static void wscAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope(isolate);
-	wscAsyncMsg__( (wscObject*)handle->data );
+	Local<Context> context = isolate->GetCurrentContext();
+	wscAsyncMsg__( isolate, context, (wscObject *)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
@@ -1550,7 +1576,8 @@ static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssi
 	{
 		struct socketUnloadStation* station;
 		INDEX idx;
-		LIST_FORALL( l.transportDestinations, idx, struct socketUnloadStation*, station ) {
+		class constructorSet *c = getConstructors( isolate );
+		LIST_FORALL( l.transportDestinations, idx, struct socketUnloadStation *, station ) {
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
 				struct socketTransport* trans = new struct socketTransport();
 				trans->wssi = obj;
@@ -1564,7 +1591,10 @@ static LOGICAL PostClientSocket( Isolate *isolate, String::Utf8Value *name, wssi
 #ifdef DEBUG_EVENTS
 				lprintf( "Send Post Request %p", &station->clientSocketPoster );
 #endif				
-				uv_async_send( &station->clientSocketPoster );
+				if( c->ivm_post )
+					c->ivm_post( c->ivm_holder, std::make_unique<clientSocketPostTask>( station ) );
+				else
+					uv_async_send( &station->clientSocketPoster );
 
 				break;
 			}
@@ -1644,11 +1674,15 @@ static void finishPostClose( uv_handle_t *async ) {
 	delete unload;
 }
 
-static void handlePostedClient( uv_async_t* async ) {
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+static void handlePostedClient( uv_async_t *async ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	struct socketUnloadStation* unload = ( struct socketUnloadStation* )async->data;
+	handlePostedClient__( isolate, isolate->GetCurrentContext(), (struct socketUnloadStation *)async->data );
+	uv_close( (uv_handle_t *)async, finishPostClose ); // have to hold onto the handle until it's freed.
+}
+
+static void handlePostedClient__( v8::Isolate *isolate, Local<Context> context,
+                                struct socketUnloadStation * unload ) {
 	Local<Function> f = unload->cb.Get( isolate );
 	INDEX idx;
 	struct socketTransport* trans;
@@ -1668,7 +1702,10 @@ static void handlePostedClient( uv_async_t* async ) {
 		wssiObject* obj = wssiObject::Unwrap<wssiObject>( newThreadSocket );
 		obj->acceptEventMessage = trans->acceptEventMessage;
 		obj->server = trans->wssi->server;
-		uv_async_init( c->loop, &obj->async, wssiAsyncMsg );
+		if( c->ivm_post )
+			obj->ivm_hosted = true;
+		else
+			uv_async_init( c->loop, &obj->async, wssiAsyncMsg );
 		{
 			INDEX idx2 = FindLink( &obj->server->opening, trans->wssi );
 			SetLink( &obj->server->opening, idx2, obj );
@@ -1705,7 +1742,6 @@ static void handlePostedClient( uv_async_t* async ) {
 #ifdef DEBUG_EVENTS				
 		lprintf( "Sack uv_close3 %p", async);
 #endif
-		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 		break;
 	}
 }
@@ -1725,7 +1761,12 @@ static void setClientSocketHandler( const v8::FunctionCallbackInfo<Value>& args 
 	unloader->transport = NULL;
 	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
 
-	uv_async_init( unloader->targetThread, &unloader->clientSocketPoster, handlePostedClient );
+	if( c->ivm_post )
+		unloader->ivm_hosted = true;
+	else {
+		unloader->ivm_hosted = false;
+		uv_async_init( unloader->targetThread, &unloader->clientSocketPoster, handlePostedClient );
+	}
 
 	AddLink( &l.transportDestinations, unloader );
 }
@@ -1990,11 +2031,11 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		lprintf( "Open event send...%p", &wssi->async );
 #endif
 		if( MakeThread() == wssi->c->thread ) {
-			wssiAsyncMsg_( &wssi->async );
+			wssiAsyncMsg__( wssi->isolate, wssi->isolate->GetCurrentContext(), wssi );
 		}
 		else {
 			if( wssi->ivm_hosted )
-				;//env::GetCurrent()->GetCurrentHolder()->ScheduleTask( wssi->task );
+				wssi->c->ivm_post( wssi->c->ivm_holder, std::make_unique<wssiAsyncTask>( wssi ) );
 			else
 				uv_async_send( &wssi->async );
 		}
@@ -2026,7 +2067,10 @@ static void webSockServerCloseEvent( wssObject *wss ) {
 #ifdef DEBUG_EVENTS
 		lprintf( "socket close send %p", &wss->async);
 #endif
-		uv_async_send( &wss->async );
+		if( wss->ivm_hosted )
+			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
+		else
+			uv_async_send( &wss->async );
 	}
 	/*
 	while( wss->event_waker ) {
@@ -2097,7 +2141,10 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 #ifdef DEBUG_EVENTS
 				lprintf( "socket server close send2 %p", &wss->async);
 #endif
-				uv_async_send( &wss->async );
+				if( wss->ivm_hosted )
+					wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
+				else
+					uv_async_send( &wss->async );
 			}
 
 			while( !(*pevt).done )
@@ -2125,7 +2172,10 @@ static void webSockServerError_( PCLIENT pc, class wssiObjectReference* wssiRef,
 #ifdef DEBUG_EVENTS
 	lprintf( "socket server error send %p", &wssi->async);
 #endif	
-	uv_async_send( &wssi->async );
+	if( wssi->ivm_hosted )
+		wssi->c->ivm_post( wssi->c->ivm_holder, std::make_unique<wssiAsyncTask>( wssi ) );
+	else
+		uv_async_send( &wssi->async );
 }
 
 static void webSockServerError( PCLIENT pc, uintptr_t psv, int error ) {
@@ -2148,7 +2198,10 @@ static void webSockServerEvent_( PCLIENT pc, class wssiObjectReference*wssiRef, 
 #ifdef DEBUG_EVENTS
 	lprintf( "socket data evnet send %p", &wssi->async );
 #endif	
-	uv_async_send( &wssi->async );
+	if( wssi->ivm_hosted )
+		wssi->c->ivm_post( wssi->c->ivm_holder, std::make_unique<wssiAsyncTask>( wssi ) );
+	else
+		uv_async_send( &wssi->async );
 
 }
 
@@ -2185,7 +2238,10 @@ static void webSockServerAcceptAsync( PCLIENT pc, uintptr_t psv, const char* pro
 #ifdef DEBUG_EVENTS
 		lprintf( "socket server accept %p", &wss->async );
 #endif		
-		uv_async_send( &wss->async );
+		if( wss->ivm_hosted )
+			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
+		else
+			uv_async_send( &wss->async );
 	}
 	//while( !( *pevt ).done )
 	//	Wait();
@@ -2230,7 +2286,10 @@ static LOGICAL webSockServerAccept( PCLIENT pc, uintptr_t psv, const char* proto
 #ifdef DEBUG_EVENTS
 		lprintf( "socket server accept %p", &wss->async );
 #endif		
-		uv_async_send( &wss->async );
+		if( wss->ivm_hosted )
+			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
+		else
+			uv_async_send( &wss->async );
 	}
 
 	while( !( *pevt ).done )
@@ -2500,8 +2559,11 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					} else {
 #ifdef DEBUG_EVENTS
 						lprintf( "socket HTTP Parse Send %p", &obj->wss->async);
-#endif						
-						uv_async_send(&obj->wss->async);
+#endif					
+						if( obj->wss->ivm_hosted )
+							obj->wss->c->ivm_post( obj->wss->c->ivm_holder, std::make_unique<wssAsyncTask>( obj->wss ) );
+						else
+							uv_async_send(&obj->wss->async);
 					}
 					break;
 				}
@@ -2551,7 +2613,10 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 #ifdef DEBUG_EVENTS
 		lprintf( "socket HTTP close Send %p", &wss->async);
 #endif		
-		uv_async_send( &wss->async );
+		if( wss->ivm_hosted )
+			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
+		else
+			uv_async_send( &wss->async );
 		while( (*pevt).done )
 			Wait();
 	}
@@ -2575,7 +2640,10 @@ static void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len ) {
 #ifdef DEBUG_EVENTS
 				lprintf( "socket write complete Send %p", &write->wss->async );
 #endif
-				uv_async_send( &write->wss->async );
+				if( write->wss->ivm_hosted )
+					write->wss->c->ivm_post( write->wss->c->ivm_holder, std::make_unique<wssAsyncTask>( write->wss ) );
+				else
+					uv_async_send( &write->wss->async );
 				SetLink( &l.pendingWrites, idx, NULL );
 				break;
 			}	
@@ -2602,7 +2670,10 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 #ifdef DEBUG_EVENTS
 		lprintf( "socket HTTP Request Send %p", &wss->async );
 #endif		
-		uv_async_send( &wss->async );
+		if( wss->ivm_hosted )
+			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
+		else
+			uv_async_send( &wss->async );
 		//while (!(*pevt).done) WakeableSleep(SLEEP_FOREVER);
 		//lprintf("queued and evented  request event to JS");
 	} else {
@@ -2644,7 +2715,10 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 #ifdef DEBUG_EVENTS
 	lprintf( "socket HTTP LowError Send %p", &wss->async);
 #endif	
-	uv_async_send( &wss->async );
+	if( wss->ivm_hosted )
+		wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
+	else
+		uv_async_send( &wss->async );
 	while( !(*pevt).done )
 		WakeableSleep( 1000 );
 
@@ -2698,9 +2772,12 @@ wssObject::wssObject( struct wssOptions *opts ) : task(this) {
 	}
 	closed = 0;
 
-	uv_async_init( opts->c->loop, &this->async, wssAsyncMsg );
 	this->async.data = this;
 	this->c = opts->c;
+	if( c->ivm_post )
+		this->ivm_hosted = true;
+	else
+		uv_async_init( opts->c->loop, &this->async, wssAsyncMsg );
 	this->isolate = opts->isolate;
 	this->ssl = opts->ssl;
 
@@ -3278,6 +3355,8 @@ void wssiObject::New( const FunctionCallbackInfo<Value>& args ) {
 		class constructorSet *c = getConstructors( isolate );
 		//Local<Function> cons = Local<Function>::New( isolate, c->wssiConstructor );
 		obj->c = c;
+		if( c->ivm_post )
+			obj->ivm_hosted = true;
 		obj->isolate = isolate;
 		//class constructorSet *c = getConstructors(isolate);
 		//uv_async_init( c->loop, &obj->async, wssiAsyncMsg );
@@ -3531,7 +3610,10 @@ static uintptr_t webSockClientOpen( PCLIENT pc, uintptr_t psv ) {
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Open Request %p", &wsc->async );
 #endif
-	uv_async_send( &wsc->async );
+	if( wsc->ivm_hosted )
+		wsc->c->ivm_post( wsc->c->ivm_holder, std::make_unique<wscAsyncTask>( wsc ) );
+	else
+		uv_async_send( &wsc->async );
 	return psv;
 }
 
@@ -3560,7 +3642,10 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	}
 	else {
 		EnqueLink( &wsc->eventQueue, pevt );
-		uv_async_send( &wsc->async );
+		if( wsc->ivm_hosted )
+			wsc->c->ivm_post( wsc->c->ivm_holder, std::make_unique<wscAsyncTask>( wsc ) );
+		else
+			uv_async_send( &wsc->async );
 	}
 	wsc->pc = NULL;
 }
@@ -3582,7 +3667,10 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Error Request %p", &wsc->async );
 #endif
-	uv_async_send( &wsc->async );
+	if( wsc->ivm_hosted )
+		wsc->c->ivm_post( wsc->c->ivm_holder, std::make_unique<wscAsyncTask>( wsc ) );
+	else
+		uv_async_send( &wsc->async );
 }
 
 static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTER buffer, size_t msglen ) {
@@ -3599,7 +3687,10 @@ static void webSockClientEvent( PCLIENT pc, uintptr_t psv, LOGICAL type, CPOINTE
 #ifdef DEBUG_EVENTS
 	lprintf( "Send Client Read Request %p", &wsc->async );
 #endif
-	uv_async_send( &wsc->async );
+	if( wsc->ivm_hosted )
+		wsc->c->ivm_post( wsc->c->ivm_holder, std::make_unique<wscAsyncTask>( wsc ) );
+	else
+		uv_async_send( &wsc->async );
 }
 
 wscObject::wscObject( wscOptions *opts ) : task(this) {
@@ -3611,7 +3702,10 @@ wscObject::wscObject( wscOptions *opts ) : task(this) {
 	//lprintf( "Init async handle. (wsc) %p", &async );
 	NetworkWait( NULL, 256, 2 );  // 1GB memory
 	this->c = opts->c;
-	uv_async_init( opts->c->loop, &this->async, wscAsyncMsg );
+	if( c->ivm_post )
+		this->ivm_hosted = true;
+	else
+		uv_async_init( opts->c->loop, &this->async, wscAsyncMsg );
 	this->async.data = this;
 	Isolate *isolate = opts->c->isolate;
 	this->_this.Reset( opts->c->isolate, opts->_this );
@@ -3836,9 +3930,19 @@ void wscObject::onOpen( const FunctionCallbackInfo<Value>& args ) {
 	if( args.Length() > 0 ) {
 		wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 		Local<Function> cb = Local<Function>::Cast( args[0] );
-		callbackFunction* c = new callbackFunction();
-		c->callback.Reset( isolate, cb );
-		AddLink( &obj->openCallbacks, c );
+		if( obj->readyState == OPEN ) {
+			// on open would have already been dispatched.
+			struct optionStrings *strings;
+			Local<Context> context = isolate->GetCurrentContext();
+
+			strings = getStrings( isolate );
+			SETV( obj->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, obj, NULL ) );
+			cb->Call( context, obj->_this.Get( isolate ), 0, NULL );
+		} else {
+			callbackFunction* c = new callbackFunction();
+			c->callback.Reset( isolate, cb );
+			AddLink( &obj->openCallbacks, c );
+		}
 	}
 }
 
@@ -3946,7 +4050,12 @@ void wscObject::on( const FunctionCallbackInfo<Value>& args){
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "open" ) == 0 ){
 			if( obj->readyState == OPEN ) {
-				cb->Call( isolate->GetCurrentContext(), obj->_this.Get( isolate ), 0, NULL );
+				struct optionStrings *strings;
+				Local<Context> context = isolate->GetCurrentContext();
+				strings = getStrings( isolate );
+				// on open usually sets this object member...
+				SETV( obj->_this.Get( isolate ), strings->connectionString->Get( isolate ), makeSocket( isolate, obj->pc, NULL, NULL, obj, NULL ) );
+				cb->Call( context, obj->_this.Get( isolate ), 0, NULL );
 			}
 			else {
 				if( obj->connect_failed ) {
@@ -4100,6 +4209,7 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 
 
 httpRequestObject::httpRequestObject():_this() {
+	ivm_hosted         = false;
 	pc = NULL;
 	ssl = false;
 	port = 0;
@@ -4131,7 +4241,10 @@ void httpRequestObject::New( const FunctionCallbackInfo<Value>& args ) {
 		request->Wrap( _this );
 
 		class constructorSet* c = getConstructors( isolate );
-		uv_async_init( c->loop, &request->async, httpRequestAsyncMsg );
+		if( c->ivm_post )
+			request->ivm_hosted = true;
+		else
+			uv_async_init( c->loop, &request->async, httpRequestAsyncMsg );
 
 		args.GetReturnValue().Set( _this );
 	}
@@ -4216,7 +4329,10 @@ static uintptr_t DoRequest( PTHREAD thread ) {
 #ifdef DEBUG_EVENTS
 		lprintf( "socket DoRequest Send %p", &req->async);
 #endif		
-		uv_async_send(&req->async);
+		if( req->ivm_hosted )
+			req->c->ivm_post( req->c->ivm_holder, std::make_unique<reqAsyncTask>( req ) );
+		else
+			uv_async_send( &req->async );
 	}
 	else {
 		req->state = state;
@@ -4337,7 +4453,10 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 
 	if (!httpRequest->resultCallback.IsEmpty()) {
 		class constructorSet* c = getConstructors(isolate);
-		uv_async_init(c->loop, &httpRequest->async, httpRequestAsyncMsg);
+		if( c->ivm_post )
+			httpRequest->ivm_hosted = true;
+		else
+			uv_async_init( c->loop, &httpRequest->async, httpRequestAsyncMsg );
 		httpRequest->async.data = httpRequest;
 	}
 	{
@@ -4532,6 +4651,7 @@ static uintptr_t WSReverseConnectCallback( uintptr_t psv, struct ssh_listener* s
 	event->done = 0;
 	EnqueLink( &listener->ssh2->eventQueue, event );
 	// connect part first goes to JS on Connect, then comes back to here to get the channel.
+	
 	uv_async_send( &listener->ssh2->async );
 	while( !event->done ) {
 		WakeableSleep( 1000 );

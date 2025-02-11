@@ -101,13 +101,9 @@ static PSI_CONTROL getCanvas( Isolate *isolate, PMENU_BUTTON button ) {
 	return isLocal.canvas;
 }
 
-static void asyncmsg( uv_async_t* handle ) {
+static void asyncmsg_( v8::Isolate* isolate, Local<Context> context,class constructorSet* c) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	class constructorSet* c = getConstructors( isolate );
 	//lprintf( "async message notice. %p", myself );
 	{
 		struct event *evt;
@@ -123,7 +119,8 @@ static void asyncmsg( uv_async_t* handle ) {
 			case Event_Intershell_Quit:
 				extern void disableEventLoop( class constructorSet *c );
 				disableEventLoop( c );
-				uv_close( (uv_handle_t*)&isLocal.core->async, NULL );
+				if( !c->ivm_holder )
+					uv_close( (uv_handle_t*)&isLocal.core->async, NULL );
 				DeleteFromSet( IS_EVENT, isLocal.events, evt );
 				return;
 			case Event_Intershell_CreateControl:
@@ -258,6 +255,24 @@ static void asyncmsg( uv_async_t* handle ) {
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
+
+static void asyncmsg( uv_async_t* handle ) {
+
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
+	//lprintf( "async message notice. %p", myself );
+	asyncmsg_( isolate, context, c )
+}
+
+struct asyncTask : SackTask {
+	class constructorSet *c;
+	asyncTask( class constructorSet *c ) : c( c ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		asyncmsg( isolate, context, c );
+	}
+};
 
 static void onSave( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -628,7 +643,8 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 			obj = new InterShellObject();
 			obj->events = NULL;
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
-			uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
+			if( c->ivm_holder ) 
+			else uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
 			obj->async.data = obj;
 
 			isLocal.core = obj;
@@ -1096,6 +1112,10 @@ int MakeISEvent( uv_async_t *async, PLINKQUEUE *queue, enum GUI_eventType type, 
 
 	//e->value = 0;
 	EnqueLink( queue, e );
+	{
+		//constructorSet *c = GetConstructors( Isolate::GetCurrentIsolate() );
+	}
+	//if( !c->ivm_holder )
 	uv_async_send( async );
 	if( !e->flags.complete ) {
 		while( !e->flags.complete ) WakeableSleep( 1000 );

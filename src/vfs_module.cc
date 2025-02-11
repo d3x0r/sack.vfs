@@ -15,9 +15,19 @@ struct volumeTransport {
 	class VolumeObject *wssi;
 };
 
+static void handlePostedVolume_( Isolate *isolate, Local<Context> context, struct volumeUnloadStation * unload );
+
+struct volumeUnloadStationTask : SackTask {
+	struct volumeUnloadStation *vus;
+	volumeUnloadStationTask( struct volumeUnloadStation *vus ) { this->vus = vus; }
+	void Run2( Isolate *isolate, Local<Context> context ) { handlePostedVolume_( isolate, context, this->vus ); }
+};
+
 struct volumeUnloadStation {
 	Persistent<Object> this_;
 	String::Utf8Value* s;  // destination address
+	bool ivm_hosted;
+	class constructorSet *c;
 	uv_async_t poster;
 	uv_loop_t  *targetThread;
 	Persistent<Function> cb; // callback to invoke 
@@ -217,6 +227,7 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
+/************************* support for import force module mode *****************************/
 
 static PLIST moduleList = NULL;
 
@@ -266,6 +277,103 @@ static void forceNextModule_list( Local<Name> property, const v8::PropertyCallba
 	}
 	args.GetReturnValue().Set( a );
 }
+
+/************************** replacement process.cwd ****************************/
+
+static void getCwd( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
+	static char buf[ 256 ];
+	GetCurrentPath( buf, sizeof( buf ) );
+	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), buf ).ToLocalChecked() );
+}
+
+
+/************************ replacement setTimeout,setInterval ******************************/
+
+static PLIST timerList = NULL;
+
+struct timerEvent : SackTask {
+	Persistent<Function> cb;
+	constructorSet *c;
+	int id;
+	uv_async_t async;
+	bool once = false;
+	// timerEvent( Local<Function> cb) {  }
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		if( !this->cb.IsEmpty() ) {
+			Local<Function> cb = this->cb.Get( isolate );
+			cb->Call( context, Null( isolate ), 0, NULL );
+			if( this->once ) {
+				this->cb.Reset();
+				// delete this;
+			}
+		}
+	}
+};
+
+void triggerTimeout( uintptr_t psvTimer ) {
+	timerEvent *to = (timerEvent *)psvTimer;
+	if( to->c->ivm_holder ) {
+		to->c->ivm_post( to->c->ivm_holder, std::unique_ptr<timerEvent>( to ) );
+	} else
+		uv_async_send( &to->async );
+}
+
+static void setTimeout( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	constructorSet *c      = getConstructors( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	timerEvent *te         = new timerEvent();
+	if( !c->ivm_holder ) {
+		uv_async_init( c->loop, &te->async, []( uv_async_t *handle ) {
+			timerEvent *te = (timerEvent *)handle->data;
+			te->Run2( te->c->isolate, te->c->isolate->GetCurrentContext() );
+		} );
+	}
+	te->once               = true;
+	te->cb.Reset( isolate, Local<Function>::Cast( args[ 0 ] ) );
+	te->c  = c;
+	te->id = AddTimerExx( args[ 1 ]->ToNumber( context ).ToLocalChecked()->Value(), 0, triggerTimeout
+	                    , (uintptr_t)te DBG_SRC );
+	AddLink( &timerList, te );
+	args.GetReturnValue().Set( Number::New( isolate, te->id + 1 ) );
+}
+
+static void setInterval( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	constructorSet *c      = getConstructors( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	timerEvent *te         = new timerEvent();
+	if( !c->ivm_holder ) {
+		uv_async_init( c->loop, &te->async, []( uv_async_t *handle ) {
+			timerEvent *te = (timerEvent *)handle->data;
+			te->Run2( te->c->isolate, te->c->isolate->GetCurrentContext() );
+		} );
+	}
+	te->cb.Reset( isolate, Local<Function>::Cast( args[ 0 ] ) );
+	te->c  = c;
+	te->id = AddTimer( args[ 1 ]->ToNumber( context ).ToLocalChecked()->Value(), triggerTimeout, (uintptr_t)te );
+	AddLink( &timerList, te );
+	args.GetReturnValue().Set( Number::New( isolate, te->id + 1 ) );
+}
+
+static void clearTimeout( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	INDEX idx;
+	struct timerEvent *te;
+	int findId = args[ 0 ]->ToNumber( context ).ToLocalChecked()->Value() - 1;
+	LIST_FORALL( timerList, idx, timerEvent *, te ) {
+		if( te->id == findId ) {
+			SetLink( &timerList, idx, NULL );
+			RemoveTimer( te->id );
+			te->cb.Reset();
+			//delete te;
+			break;
+		}
+	}
+}
+
+/******************************************************/
 
 /*
 void decodeFlags2( int flags ) {
@@ -389,6 +497,16 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 #endif
 	} else {
 		lprintf( "Isolated module, no cleanup hook(yet)" );
+		IsolateHolder* (*GetCurrentIsolate)( void ) = (IsolateHolder*(*)(void))LoadFunction( "isolated_vm.node", "GetCurrentIsolate" );
+		Local<Context> ( *GetDefaultContext )( void )
+		     = (Local<Context> ( * )( void ))LoadFunction( "isolated_vm.node", "GetDefaultContext" );
+		if( GetCurrentIsolate ) {
+			c->ivm_holder   = GetCurrentIsolate();
+			c->ivm_get_default_context = GetDefaultContext;
+			c->ivm_post = ( void ( * )( IsolateHolder *hIsolate, std::unique_ptr<Runnable> task ) )
+			     LoadFunction( "isolated_vm.node", "ScheduleTask" );
+		}
+		//lprintf( "Good pointers? %p %p", c->holder, c->ivm_post );
 	}
 
 	ThreadObject::Init( exports );
@@ -488,9 +606,21 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
 	SET_READONLY_METHOD( VolFunc, "chdir", chDir );
+
+	VolFunc->SetNativeDataProperty(
+	     context, String::NewFromUtf8Literal( isolate, "cwd" ), getCwd, nullptr // Local<Function>()
+	                              , Local<Value>(), PropertyAttribute::ReadOnly, SideEffectType::kHasNoSideEffect
+	                              , SideEffectType::kHasSideEffect );
+
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
+	if( isolated ) {
+		SET_READONLY_METHOD( exports, "setTimeout", setTimeout );
+		SET_READONLY_METHOD( exports, "setInterval", setInterval );
+		SET_READONLY_METHOD( exports, "clearTimeout", clearTimeout );
+		SET_READONLY_METHOD( exports, "clearInterval", clearTimeout );
+	}
 	// this is an export under SaltyRNG
 	SET_READONLY_METHOD( exports, "id", idGenerator );
 	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
@@ -1141,6 +1271,8 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		size_t len;
 		Persistent<Function> *f;
 		Persistent<Object> _this;
+		bool ivm_hosted;
+		class constructorSet *c;
 		uv_async_t async;
 	};
 
@@ -1214,7 +1346,11 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				pargs->f->Reset( isolate, Local<Function>::Cast( args[1] ) );
 				pargs->_this.Reset( isolate, args.This() );
 				class constructorSet *c = getConstructors( isolate );
-				uv_async_init( c->loop, &pargs->async, preloadCallback );
+				if( c->ivm_holder ) {
+					pargs->c = c;
+					pargs->ivm_hosted = true;
+				} else
+					uv_async_init( c->loop, &pargs->async, preloadCallback );
 				pargs->async.data = pargs;
 				ThreadTo( preloadFile, (uintptr_t)pargs );
 			}
@@ -1546,7 +1682,10 @@ static LOGICAL PostVolume( Isolate *isolate, String::Utf8Value *name, VolumeObje
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
 				AddLink( &station->transport, trans );
 				//lprintf( "Send Post Request %p", station->poster );
-				uv_async_send( &station->poster );
+				if( station->ivm_hosted ) 
+					station->c->ivm_post( station->c->ivm_holder, std::make_unique<volumeUnloadStationTask>(station) );
+				else
+					uv_async_send( &station->poster );
 				break;
 			}
 		}
@@ -1584,11 +1723,8 @@ static void finishPostClose( uv_handle_t *async ) {
 	delete unload;
 }
 
-static void handlePostedVolume( uv_async_t* async ) {
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
+
+void handlePostedVolume_( Isolate*isolate, Local<Context> context, struct volumeUnloadStation *unload ) {
 	Local<Function> f = unload->cb.Get( isolate );
 	INDEX idx;
 	struct volumeTransport* trans;
@@ -1626,10 +1762,20 @@ static void handlePostedVolume( uv_async_t* async ) {
 		unload->this_.Reset();
 		DeleteLink( &VolumeObject::transportDestinations, unload );
 		SetLink( &unload->transport, 0, NULL );
-		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
+		//uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 		break;
 	}
 }
+
+static void handlePostedVolume( uv_async_t *async ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context             = isolate->GetCurrentContext();
+	struct volumeUnloadStation *unload = (struct volumeUnloadStation *)async->data;
+	handlePostedVolume_( isolate, context, unload );
+	uv_close( (uv_handle_t *)async, finishPostClose ); // have to hold onto the handle until it's freed.
+}
+
 
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1646,7 +1792,11 @@ static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args 
 	unloader->transport = NULL;
 	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
 
-	uv_async_init( unloader->targetThread, &unloader->poster, handlePostedVolume );
+	unloader->c            = c;
+	if( c->ivm_holder ) {
+		unloader->ivm_hosted = true;
+	} else
+		uv_async_init( unloader->targetThread, &unloader->poster, handlePostedVolume );
 
 	AddLink( &VolumeObject::transportDestinations, unloader );
 }
@@ -2123,7 +2273,7 @@ extern "C" __declspec(dllexport) void node_register_module_v127(v8::Local<v8::Ob
 	NODE_MODULE( vfs_module, VolumeObject::Init)
 #endif
 
-PUBLIC_METHOD void InitForContext( v8::Isolate *isolate, v8::Local<v8::Context> context
+extern "C" PUBLIC_METHOD void InitForContext( v8::Isolate *isolate, v8::Local<v8::Context> context
                                         , v8::Local<v8::Object> target ) {
 		VolumeObject::Init( context, target, TRUE );
 }

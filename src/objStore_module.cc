@@ -157,6 +157,8 @@ struct objectStorageTransport {
 struct objectStorageUnloadStation {
 	Persistent<Object> this_;
 	String::Utf8Value* s;  // destination address
+	bool ivm_hosted;
+	constructorSet *c;
 	uv_async_t poster;
 	uv_loop_t  *targetThread;
 	Persistent<Function> cb; // callback to invoke
@@ -166,11 +168,23 @@ struct objectStorageUnloadStation {
 
 static struct objStoreLocal {
 	PLIST open;
+	bool ivm_hosted;
+	constructorSet *c;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	POBJECT_STORAGE_EVENTSET osEvents;
 	PLIST strings;
 	PLIST transportDestinations;
 } osl;
+
+static void handlePostedObjectStorage_( Isolate *isolate, Local<Context> context
+                                      , struct objectStorageUnloadStation * unload );
+
+	struct objectStorageTask : SackTask {
+	struct objectStorageUnloadStation *unload;
+	objectStorageTask( struct objectStorageUnloadStation *unload )
+	    : unload( unload ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { handlePostedObjectStorage_( isolate, context, unload ); }
+};
 
 
 ATEXIT( closeVolumes ) {
@@ -281,7 +295,10 @@ static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, Obj
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
 				AddLink( &station->transport, trans );
 				//lprintf( "Send Post Request %p", station->poster );
-				uv_async_send( &station->poster );
+				if( station->ivm_hosted )
+					station->c->ivm_post( station->c->ivm_holder, std::make_unique<objectStorageTask>( station ) );
+				else
+					uv_async_send( &station->poster );
 				break;
 			}
 		}
@@ -342,12 +359,8 @@ static void finishPostClose( uv_handle_t *async ) {
 	delete unload;
 }
 
-static void handlePostedObjectStorage( uv_async_t* async ) {
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	class constructorSet* c = getConstructors( isolate );
-	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
+void handlePostedObjectStorage_( Isolate*isolate, Local<Context>context, struct objectStorageUnloadStation*unload ) {
+	class constructorSet* c = unload->c;
 	Local<Function> f = unload->cb.Get( isolate );
 	INDEX idx;
 	struct objectStorageTransport* trans;
@@ -368,15 +381,13 @@ static void handlePostedObjectStorage( uv_async_t* async ) {
 		obj->fsMount = trans->oso->fsMount;
 		obj->thrown = trans->oso->thrown = TRUE;
 
-	//lprintf( "having copied all the data to the new one, erase the old one. %p %p", trans->oso, obj );
-	trans->oso->vol = NULL;
-	trans->oso->volNative = false;
-	trans->oso->mountName = NULL;
-	trans->oso->fileName = NULL;
-	trans->oso->fsInt = NULL;
-	trans->oso->fsMount = NULL;
-
-
+		//lprintf( "having copied all the data to the new one, erase the old one. %p %p", trans->oso, obj );
+		trans->oso->vol = NULL;
+		trans->oso->volNative = false;
+		trans->oso->mountName = NULL;
+		trans->oso->fileName = NULL;
+		trans->oso->fsInt = NULL;
+		trans->oso->fsMount = NULL;
 
 		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
 		if( !ml_result.IsEmpty() ) {
@@ -389,15 +400,24 @@ static void handlePostedObjectStorage( uv_async_t* async ) {
 		unload->this_.Reset();
 		DeleteLink( &osl.transportDestinations, unload );
 		SetLink( &unload->transport, 0, NULL );
-		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 		break;
 	}
+}
+
+static void handlePostedObjectStorage( uv_async_t* async ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
+	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
+	handlePostedObjectStorage_( isolate, context, unload );
+	uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 	{
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		Local<Function> cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
+
 
 static void setClientObjectStorageHandler( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -414,7 +434,11 @@ static void setClientObjectStorageHandler( const v8::FunctionCallbackInfo<Value>
 	unloader->transport = NULL;
 	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
 
-	uv_async_init( unloader->targetThread, &unloader->poster, handlePostedObjectStorage );
+	unloader->c = c;
+	if( c->ivm_holder ) {
+		unloader->ivm_hosted = true;
+	} else
+		uv_async_init( unloader->targetThread, &unloader->poster, handlePostedObjectStorage );
 
 	AddLink( &osl.transportDestinations, unloader );
 }

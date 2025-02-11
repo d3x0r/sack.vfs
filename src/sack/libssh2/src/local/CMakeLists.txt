@@ -65,7 +65,7 @@ if(ENABLE_ZLIB_COMPRESSION)
 
   #find_package(ZLIB REQUIRED)
 
-  list(APPEND libssh2_INCLUDE_DIRS ../zlib-1.3)
+  list(APPEND libssh2_INCLUDE_DIRS ../../zlib-1.3)
 
   #list(APPEND libssh2_INCLUDE_DIRS ${ZLIB_INCLUDE_DIRS})
   #list(APPEND LIBRARIES ${ZLIB_LIBRARIES})

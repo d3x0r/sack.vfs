@@ -387,11 +387,7 @@ static void taskAsyncClosed( uv_handle_t* async ) {
 }
 
 
-static void taskAsyncMsg( uv_async_t* handle ) {
-	TaskObject *task = (TaskObject*)handle->data;
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
+static void taskAsyncMsg_( Isolate *isolate, Local<Context> context, TaskObject * task ) {
 
 #if _WIN32
 	if( task->moved ) {
@@ -492,13 +488,30 @@ static void taskAsyncMsg( uv_async_t* handle ) {
 		}
 
 	}
+}
+
+static void taskAsyncMsg( uv_async_t *handle ) {
+	TaskObject *task     = (TaskObject *)handle->data;
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	taskAsyncMsg_( isolate, context, task );
 	{
 		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cb      = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
+
+struct taskAsyncTask : SackTask {
+	TaskObject *task;
+	taskAsyncTask( TaskObject *task )
+	    : task( task ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { 
+		taskAsyncMsg_( isolate, context, this->task );
+	}
+};
 
 static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR buffer, size_t size ) {
 	TaskObject *task = (TaskObject*)psvTask;
@@ -507,8 +520,12 @@ static void CPROC getTaskInput( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR bu
 		memcpy( (char*)output->buffer, buffer, size );
 		output->size = size;
 		EnqueLink( &task->output, output );
-		if( !task->ended )
-			uv_async_send( &task->async );
+		if( !task->ended ) {
+			if( task->ivm_hosted ) {
+				task->c->ivm_post( task->c->ivm_holder, std::make_unique<taskAsyncTask>( task ) );
+			} else
+				uv_async_send( &task->async );
+		}
 	}
 
 }
@@ -520,8 +537,12 @@ static void CPROC getTaskInput2( uintptr_t psvTask, PTASK_INFO pTask, CTEXTSTR b
 		memcpy( (char*)output->buffer, buffer, size );
 		output->size = size;
 		EnqueLink( &task->output2, output );
-		if( !task->ended )
-			uv_async_send( &task->async );
+		if( !task->ended ) {
+			if( task->ivm_hosted ) {
+				task->c->ivm_post( task->c->ivm_holder, std::make_unique<taskAsyncTask>( task ) );
+			} else
+				uv_async_send( &task->async );
+		}
 	}
 
 }
@@ -534,8 +555,12 @@ static void CPROC getTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 	//task->waiter = NULL;
 	task->task = NULL;
 	//closes async
-	if( !task->ended )
-		uv_async_send( &task->async );
+	if( !task->ended ) {
+		if( task->ivm_hosted ) {
+			task->c->ivm_post( task->c->ivm_holder, std::make_unique<taskAsyncTask>( task ) );
+		} else
+			uv_async_send( &task->async );
+	}
 }
 
 static void 	readEnv( Isolate* isolate, Local<Context> context, Local<Object> headers, PLIST *env ) {
@@ -770,13 +795,23 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 			if( input2 || input || end ) {
 				class constructorSet *c = getConstructors( isolate );
-				uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
-				newTask->async.data = newTask;
+				if( c->ivm_holder ) {
+					newTask->ivm_hosted = true;
+					newTask->c          = c;
+				} else {
+					uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
+					newTask->async.data = newTask;
+				}
 			}
 			else if( !noWait ) {
 				class constructorSet* c = getConstructors( isolate );
-				uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
-				newTask->async.data = newTask;
+				if( c->ivm_holder ) {
+					newTask->ivm_hosted = true;
+					newTask->c          = c;
+				} else {
+					uv_async_init( c->loop, &newTask->async, taskAsyncMsg );
+					newTask->async.data = newTask;
+				}
 			}
 			/*
 			#define LPP_OPTION_DO_NOT_HIDE           1
@@ -1004,8 +1039,12 @@ static void moveTaskWindowResult( uintptr_t psv, LOGICAL success ){
 	//lprintf( "result... send event?" );
 	task->moved = TRUE;
 	task->moveSuccess = success;
-	if( !task->ended )
-		uv_async_send( &task->async );
+	if( !task->ended ) {
+		if( task->ivm_hosted ) {
+			task->c->ivm_post( task->c->ivm_holder, std::make_unique<taskAsyncTask>( task ) );
+		} else
+			uv_async_send( &task->async );
+	}
 }
 
 
@@ -1085,8 +1124,12 @@ static void styleTaskWindowResult( uintptr_t psv, int success ){
 	//lprintf( "result... send event?" );
 	task->styled = TRUE;
 	task->styleSuccess = success;
-	if( !task->ended )
-		uv_async_send( &task->async );
+	if( !task->ended ) {
+		if( task->ivm_hosted ) {
+			task->c->ivm_post( task->c->ivm_holder, std::make_unique<taskAsyncTask>( task ) );
+		} else
+			uv_async_send( &task->async );
+	}
 }
 
 static void doStyleWindow( Isolate* isolate, Local<Context> context, TaskObject* task, HWND hWnd, Local<Object> opts ){
@@ -1581,20 +1624,35 @@ static void getProcessWindowTitle( const FunctionCallbackInfo<Value>& args ) {
 struct onEndParams {
 	PERSISTENT_FUNCTION cb;
 	PTASK_INFO task;
-	int exitCode;   
+	int exitCode;
+	class constructorSet *c;
 	uv_async_t async; // keep this instance around for as long as we might need
 	                  // to do the periodic callback
 
 	;
 };
 
+static void monitoredTaskAsyncMsg_( Isolate *isolate, Local<Context> context, struct onEndParams * params );
+
+struct monitoredTaskTask : SackTask {
+	struct onEndParams *params;
+	monitoredTaskTask( struct onEndParams *params_ )
+	    : params( params_ ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { monitoredTaskAsyncMsg_( isolate, context, params ); }
+};
+
+
 static void CPROC monitoredTaskEnd( uintptr_t psvTask, PTASK_INFO task_ended ) {
 	struct onEndParams *params = (struct onEndParams *)psvTask;
+	
 	if( !task_ended )
 		params->task = NULL;
 	else
 		params->exitCode = GetTaskExitCode( task_ended );
-	uv_async_send( &params->async );
+	if( params->c ) {
+		params->c->ivm_post( params->c->ivm_holder, std::make_unique<monitoredTaskTask>( params ) );
+	} else
+		uv_async_send( &params->async );
 }
 
 static void monitoredTaskAsyncClosed( uv_handle_t *async ) {
@@ -1602,11 +1660,7 @@ static void monitoredTaskAsyncClosed( uv_handle_t *async ) {
 	delete params;
 }
 
-static void monitoredTaskAsyncMsg( uv_async_t *handle ) {
-	struct onEndParams *params = (struct onEndParams *)handle->data;
-	v8::Isolate *isolate    = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
+static void monitoredTaskAsyncMsg_( Isolate *isolate, Local<Context> context, struct onEndParams *params ) {
 
 	{
 		if( !params->cb.IsEmpty() ) {
@@ -1618,14 +1672,22 @@ static void monitoredTaskAsyncMsg( uv_async_t *handle ) {
 			params->cb.Get( isolate )->Call( context, Null( isolate ), 1, argv );
 		}
 		// these is a chance output will still come in?
-		uv_close( (uv_handle_t *)&params->async, monitoredTaskAsyncClosed );
+		if( !params->c )
+			uv_close( (uv_handle_t *)&params->async, monitoredTaskAsyncClosed );
 	}
+}
+
+static void monitoredTaskAsyncMsg( uv_async_t *handle ) {
+	struct onEndParams *params = (struct onEndParams *)handle->data;
+	v8::Isolate *isolate       = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	monitoredTaskAsyncMsg_( isolate, context, params );
 	{
 		// This is hook into Node to dispatch Promises() that are created... all
 		// event loops should have this.
 		class constructorSet *c = getConstructors( isolate );
-		Local<Function> cb
-		     = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		Local<Function> cb      = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
@@ -1644,8 +1706,12 @@ void TaskObject::MonitorProcess( const FunctionCallbackInfo<Value> &args ) {
 	class constructorSet *c    = getConstructors( isolate );
 	params->async.data         = params;
 	params->task               = NULL;
-	uv_async_init( c->loop, &params->async, monitoredTaskAsyncMsg );
-
+	if( c->ivm_holder )
+		params->c = c;
+	else {
+		params->c = NULL;
+		uv_async_init( c->loop, &params->async, monitoredTaskAsyncMsg );
+	}
 	params->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 	params->task = MonitorTask( id, 0, monitoredTaskEnd, (uintptr_t)params );
 

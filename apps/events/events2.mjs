@@ -110,3 +110,5 @@ function off( events, log, evt, d ) {
 	}
 
 }
+
+export default Events;

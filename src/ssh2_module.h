@@ -115,12 +115,15 @@ public:
 
 };
 
+
 class SSH2_Object : public node::ObjectWrap {
 
 public:
 	PLINKQUEUE eventQueue = CreateLinkQueue();
 	Persistent<Object> jsObject;
 	struct ssh_session* session = NULL;
+	bool ivm_hosted;
+	class constructorSet *c;
 	uv_async_t async = {}; // keep this instance around for as long as we might need to do the periodic callback
 	bool binary = 0;
 	uint8_t fingerprintData[20];
@@ -187,6 +190,8 @@ public:
 class SSH2_RemoteListen : public node::ObjectWrap {
 
 public:
+	bool ivm_hosted;
+	class constructorSet *c;
 	SSH2_Object* ssh2;
 	struct ssh_listener* listener;
 	Persistent<Object> jsObject;  // the object that represents this channel

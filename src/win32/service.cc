@@ -26,6 +26,9 @@ static struct {
 static SERVICE_STATUS ServiceStatus;
 static SERVICE_STATUS_HANDLE hStatus;
 
+static void asyncmsg_( Isolate*isolate, Local<Context>context, void*data ) {
+}
+
 static void asyncmsg( uv_async_t* handle ) {
 	
 }
@@ -332,7 +335,10 @@ static void startService( const v8::FunctionCallbackInfo<Value>& args ) {
 	l.startFunc = start;	
 
 	class constructorSet *c = getConstructors( isolate );
-	uv_async_init( c->loop, &c->serviceAsync, asyncmsg );
+	if( c->ivm_holder ) {
+		
+	}
+	else uv_async_init( c->loop, &c->serviceAsync, asyncmsg );
 	ThreadTo( serviceMonitor, 0 );
 }
 

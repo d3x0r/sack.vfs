@@ -243,19 +243,35 @@ static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 #endif
 
+static void exitAsyncMsg_( Isolate *isolate, Local<Context>context, constructorSet *c );
+struct exitAsyncTask: SackTask {
+	constructorSet *c;
+	exitAsyncTask( constructorSet *c ) : c( c ) {}
+	void Run2(Isolate *isolate, Local<Context>context) {
+		exitAsyncMsg_( isolate, context, c );
+	}
+};
+
 static int exitEvent( uintptr_t psv ) {
 	class constructorSet* c = (class constructorSet*)psv;
+	if( c->ivm_holder )
+		c->ivm_post( c->ivm_holder, std::make_unique<exitAsyncTask>( c ) );
 	uv_async_send( &c->exitAsync );
 	return 1; // don't exit yet; dispatch the event instead.
+}
+
+void exitAsyncMsg_( Isolate *isolate, Local<Context>context, constructorSet *c ) {
+	if( !c->exitCallback.IsEmpty() ) {
+		c->exitCallback.Get( c->isolate )->Call( context, Null( c->isolate ), 0, NULL );
+	}
 }
 
 static void exitAsyncMsg( uv_async_t* handle ) {
 	class constructorSet* c = (class constructorSet* )handle->data;
 	HandleScope scope( c->isolate );
-	if( !c->exitCallback.IsEmpty() ) {
-		c->exitCallback.Get( c->isolate )->Call( c->isolate->GetCurrentContext(), Null( c->isolate ), 0, NULL );
-	}
+	exitAsyncMsg_( c->isolate, c->isolate->GetCurrentContext(), c );
 }
+
 
 static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -266,7 +282,10 @@ static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
 	//lprintf( "Setting callback with isolate:%p", isolate );
 	class constructorSet* c = getConstructors( isolate );
 	AddKillSignalCallback( exitEvent, (uintptr_t)c );
-	uv_async_init( c->loop, &c->exitAsync, exitAsyncMsg );
+	if( c->ivm_holder ) {
+		;// all information is in `c` and that's what's used as argument
+	}else
+		uv_async_init( c->loop, &c->exitAsync, exitAsyncMsg );
 	c->exitAsync.data = c;
 	if( args.Length() > 0 )
 		c->exitCallback.Reset( isolate, Local<Function>::Cast( args[0]) );

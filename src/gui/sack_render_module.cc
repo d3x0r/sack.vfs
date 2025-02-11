@@ -108,7 +108,7 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 	return object;
 }
 
-static void asyncmsg( uv_async_t* handle ) {
+static void asyncmsg_( v8::Isolate* isolate, Local<Context>context, RenderObject *myself ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
@@ -145,14 +145,29 @@ static void asyncmsg( uv_async_t* handle ) {
 			}
 		}
 	}
+	//lprintf( "done calling message notice." );
+}
+
+static void asyncmsg( uv_async_t* handle ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	RenderObject* myself = (RenderObject*)handle->data;
+	asyncmsg_( isolate, context, myself );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
-	//lprintf( "done calling message notice." );
 }
 
+struct asyncMsgTask : SackTask {
+	RenderObject *myself;
+	asyncMsgTask( RenderObject *myself ) : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		asyncmsg_( isolate, context, myself );
+	}
+};
 
 void RenderObject::sigint( void ) {
 	RenderObject *r;
@@ -588,7 +603,8 @@ uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 	e.flags.complete = 0; 
 	e.success = 0;
 	EnqueLink( queue, &e );
-	uv_async_send( &r->async );
+	if( r->ivm_hosted ) r->c->ivm_post( r->c->ivm_holder, std::make_unique<asyncMsgTask>( r ) );
+	else uv_async_send( &r->async );
 
 	while( !e.flags.complete ) IdleFor( 1000 );
 
