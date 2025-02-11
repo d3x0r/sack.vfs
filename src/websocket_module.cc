@@ -1152,14 +1152,6 @@ static void wssiAsyncMsg__( Isolate *isolate, Local<Context> context, wssiObject
 	}
 }
 
-
-static void wssiAsyncMsg_( uv_async_t* handle ) {
-	wssiObject* myself = (wssiObject*)handle->data;
-	v8::Isolate *isolate   = v8::Isolate::GetCurrent();
-	Local<Context> context = isolate->GetCurrentContext();
-	wssiAsyncMsg__( isolate, context, myself );
-}
-
 static void wssiAsyncMsg( uv_async_t* handle ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
@@ -2039,7 +2031,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		lprintf( "Open event send...%p", &wssi->async );
 #endif
 		if( MakeThread() == wssi->c->thread ) {
-			wssiAsyncMsg_( &wssi->async );
+			wssiAsyncMsg__( wssi->isolate, wssi->isolate->GetCurrentContext(), wssi );
 		}
 		else {
 			if( wssi->ivm_hosted )
@@ -4461,7 +4453,10 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 
 	if (!httpRequest->resultCallback.IsEmpty()) {
 		class constructorSet* c = getConstructors(isolate);
-		uv_async_init(c->loop, &httpRequest->async, httpRequestAsyncMsg);
+		if( c->ivm_post )
+			httpRequest->ivm_hosted = true;
+		else
+			uv_async_init( c->loop, &httpRequest->async, httpRequestAsyncMsg );
 		httpRequest->async.data = httpRequest;
 	}
 	{
@@ -4656,6 +4651,7 @@ static uintptr_t WSReverseConnectCallback( uintptr_t psv, struct ssh_listener* s
 	event->done = 0;
 	EnqueLink( &listener->ssh2->eventQueue, event );
 	// connect part first goes to JS on Connect, then comes back to here to get the channel.
+	
 	uv_async_send( &listener->ssh2->async );
 	while( !event->done ) {
 		WakeableSleep( 1000 );

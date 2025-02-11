@@ -42,6 +42,8 @@ public:
 
    ~RenderObject();
 
+    bool ivm_hosted;
+	class constructorSet *c;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 
 	//1) Expose a function in the addon to allow Node to set the Javascript cb that will be periodically called back to :

@@ -41,6 +41,8 @@ struct sql_object_state {
 	int optionInitialized;
 	PTHREAD thread;
 	Isolate *isolate; // this is constant for the life of the connection
+	bool ivm_hosted;
+	constructorSet *c;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLIST userFunctions;
 	PLINKQUEUE messages;
@@ -170,6 +172,18 @@ struct userMessage{
 	struct sqlite3_value**argv;
 	int done;
 	PTHREAD waiter;
+};
+
+static void sqlUserAsyncMsgEx_( Isolate *isolate, Local<Context> context, struct sql_object_state * myself
+                              , LOGICAL internal, LOGICAL * pClosing );
+struct sqlUserAsyncTask : SackTask {
+	struct sql_object_state *myself;
+	sqlUserAsyncTask( struct sql_object_state *myself )
+	    : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		LOGICAL closing;
+		sqlUserAsyncMsgEx_( isolate, context, myself, TRUE, &closing );
+	}
 };
 
 static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal );
@@ -411,7 +425,10 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef DEBUG_EVENTS
 		lprintf( "uv_send closeDb %p", &sql->state->async );
 #endif		
-		uv_async_send( &sql->state->async );
+		if( sql->state->ivm_hosted )	{
+			sql->state->c->ivm_post( sql->state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(sql->state) );
+		}else
+			uv_async_send( &sql->state->async );
 		// cant' wait here.
 	}
 
@@ -906,7 +923,10 @@ static uintptr_t queryThread( PTHREAD thread ) {
 #ifdef DEBUG_EVENTS
 	lprintf( "uv_send queryThread %p", &params->sql->state->async );
 #endif	
-	uv_async_send( &params->sql->state->async );
+	if( params->sql->state->ivm_hosted )	{
+		params->sql->state->c->ivm_post( params->sql->state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(params->sql->state) );
+	}else
+		uv_async_send( &params->sql->state->async );
 	return 0;
 }
 
@@ -1059,7 +1079,9 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 				sql->state->thread = MakeThread();
 				//lprintf( "This should keep it open..." );
 				class constructorSet* c = getConstructors( isolate );
-				uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+				sql->state->c = c;
+				if( c->ivm_holder ) { sql->state->ivm_hosted = TRUE; }
+				else uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
 				//lprintf( "init async..." );
 				sql->state->async.data = sql->state;
 			}
@@ -1124,7 +1146,10 @@ void SqlObject::OnOpen( uintptr_t psv, PODBC odbc ){
 #ifdef DEBUG_EVENTS
 		lprintf( "uv_send onOpen %p", &this_->state->async );
 #endif		
-		uv_async_send( &this_->state->async );
+		if( this_->state->ivm_hosted )	{
+			this_->state->c->ivm_post( this_->state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(this_->state) );
+		}else
+			uv_async_send( &this_->state->async );
 		while( !msg.done ) WakeableSleep( 1000 );
 	} else {
 		msg.waiter = NULL;
@@ -1134,7 +1159,8 @@ void SqlObject::OnOpen( uintptr_t psv, PODBC odbc ){
 #ifdef DEBUG_EVENTS			
 			lprintf( "OnOpen Called async handler directly %p", &this_->state->async );
 #endif			
-			sqlUserAsyncMsgEx( &this_->state->async, TRUE );
+			LOGICAL closing;
+			sqlUserAsyncMsgEx_( this_->state->isolate, this_->state->isolate->GetCurrentContext(), this_->state, TRUE, &closing );
 		}
 	}
 }
@@ -1161,7 +1187,9 @@ static void WeakReferenceReleased( const v8::WeakCallbackInfo<void> &info ){
 #ifdef DEBUG_EVENTS			
 			lprintf( "weakRef Called async handler directly %p", &sql->state->async );
 #endif			
-			sqlUserAsyncMsgEx( &sql->state->async, TRUE );
+			LOGICAL closing;
+			sqlUserAsyncMsgEx_( sql->state->isolate, sql->state->isolate->GetCurrentContext(), sql->state, TRUE
+			                  , &closing );
 		}
 	}
 	sql->_this.Reset();
@@ -1192,7 +1220,9 @@ SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Lo
 		state->thread = MakeThread();
 		class constructorSet *c = getConstructors( isolate );
 		this->state->async.data = this->state;
-		uv_async_init( c->loop, &this->state->async, sqlUserAsyncMsg );
+		this->state->c = c;
+		if( c->ivm_holder ) { this->state->ivm_hosted = TRUE; }
+		else uv_async_init( c->loop, &this->state->async, sqlUserAsyncMsg );
 		this->openCallback.Reset( isolate, _openCallback );
 	}
 	state->odbc = ConnectToDatabaseLoginCallback( dsn, NULL, NULL, FALSE, SqlObject::OnOpen, (uintptr_t)this DBG_SRC );
@@ -1222,7 +1252,10 @@ SqlObject::~SqlObject() {
 #ifdef DEBUG_EVENTS
 		lprintf( "uv_send sqlObject Destroy %p", &state->async );
 #endif
-		uv_async_send( &state->async );
+		if( state->ivm_hosted )	{
+			state->c->ivm_post( state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(state) );
+		}else
+			uv_async_send( &state->async );
 	}
 	CloseDatabase( state->odbc );
 	//ReleaseEx( state DBG_SRC );
@@ -1747,15 +1780,12 @@ static void uv_closed_sql( uv_handle_t* handle ) {
 	ReleaseEx( myself DBG_SRC );
 }
 
-static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
-	LOGICAL closing = FALSE;
-	struct sql_object_state* myself = (struct sql_object_state*)handle->data;
-	Isolate *isolate = myself->isolate;
-	HandleScope scope( isolate );
+void sqlUserAsyncMsgEx_( Isolate *isolate , Local<Context> context, struct sql_object_state* myself, LOGICAL internal, LOGICAL *pClosing ) {
+	pClosing[0] = FALSE;
+	//LOGICAL closing = FALSE;
 	struct userMessage *msg;
 	while( msg  = (struct userMessage*)DequeLink( &myself->messages ) ) {
 		if (msg->mode == UserMessageModes::Query) {
-			Local<Context> context = isolate->GetCurrentContext();
 			if( msg->params->error ) {
 				struct query_thread_params * const params = msg->params;
 				Local<Promise::Resolver> res = params->promise.Get( isolate );
@@ -1785,7 +1815,7 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 		} else if (msg->mode == UserMessageModes::OnOpen) {
 			Local<Function> cb = myself->sql->openCallback.Get( isolate );
 			Local<Value> args[1] = {myself->sql->_this.Get( isolate )};
-			MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), args[0], 1, args );
+			MaybeLocal<Value> result = cb->Call( context, args[0], 1, args );
 			if( result.IsEmpty() ) {
 				//lprintf( "Error calling open callback" );
 			}
@@ -1803,17 +1833,19 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 #ifdef DEBUG_EVENTS
 				lprintf( "Sack uv_close5");
 #endif
-				uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
+				if( !myself->ivm_hosted )
+					uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
 			}
 		} else { // msg->mode == UserMessageModes::OnDeallocate
-			closing = TRUE;
+			pClosing[0] = TRUE;
 			if( myself->thread ) {
 				myself->thread = NULL;
 				//Hold( myself );
 #ifdef DEBUG_EVENTS
 				lprintf( "Sack uv_close6 %p", &myself->async );
 #endif
-				uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
+				if( !myself->ivm_hosted )
+					uv_close( (uv_handle_t*)&myself->async, uv_closed_sql );
 			}
 		}	
 		if( msg ) {
@@ -1822,7 +1854,17 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 				WakeThread( msg->waiter );
 		}
 	}
-	if( !internal && !closing )
+}
+
+static void sqlUserAsyncMsg( uv_async_t* handle ) {
+	struct sql_object_state* myself = (struct sql_object_state*)handle->data;
+	Isolate *isolate = myself->isolate;
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	LOGICAL closing;
+	sqlUserAsyncMsgEx_( isolate, context, myself, FALSE, &closing );
+
+	if( !closing )
 	{
 #ifdef DEBUG_EVENTS
 		lprintf( "Should be calling node's idle proc..." );
@@ -1834,9 +1876,6 @@ static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal ) {
 	}
 }
 
-static void sqlUserAsyncMsg( uv_async_t* handle ) {
-	sqlUserAsyncMsgEx( handle, FALSE );
-}
 
 static void releaseBuffer( void *buffer ) {
 	Deallocate( void*, buffer );
@@ -1855,8 +1894,12 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 		EnqueLink( &userData->sql->state->messages, &msg );
 #ifdef DEBUG_EVENTS
 		lprintf( "uv_send call user function %p", &userData->sql->state->async );
-#endif		
-		uv_async_send( &userData->sql->state->async );
+#endif	
+		if( userData->sql->state->ivm_hosted )	{
+			userData->sql->state->c->ivm_post( userData->sql->state->c->ivm_holder
+			                                 , std::make_unique<sqlUserAsyncTask>( userData->sql->state ) );
+		}else
+			uv_async_send( &userData->sql->state->async );
 
 		while( !msg.done ) {
 			WakeableSleep( SLEEP_FOREVER );
@@ -1983,7 +2026,9 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( !sql->state->thread ) {
 		sql->state->thread = MakeThread();
 		class constructorSet *c = getConstructors( isolate );
-		uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+		sql->state->c = c;
+		if( c->ivm_holder ) { sql->state->ivm_hosted = TRUE; }
+		else uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
 		sql->state->async.data = sql->state;
 	}
 
@@ -2004,7 +2049,9 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( !sql->state->thread ) {
 		sql->state->thread = MakeThread();
 		class constructorSet *c = getConstructors( isolate );
-		uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+		sql->state->c = c;
+		if( c->ivm_holder ) { sql->state->ivm_hosted = TRUE; }
+		else uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
 		sql->state->async.data = sql->state;
 	}
 
@@ -2032,7 +2079,10 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 #ifdef DEBUG_EVENTS
 		lprintf( "uv_send AggStep %p", &userData->sql->state->async );
 #endif		
-		uv_async_send( &userData->sql->state->async );
+		if( userData->sql->state->ivm_hosted )	{
+			userData->sql->state->c->ivm_post( userData->sql->state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(userData->sql->state) );
+		}else
+			uv_async_send( &userData->sql->state->async );
 
 		while( !msg.done ) {
 			WakeableSleep( SLEEP_FOREVER );
@@ -2118,7 +2168,10 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 #ifdef DEBUG_EVENTS
 		lprintf( "uv_send aggFinal %p", &userData->sql->state->async );
 #endif		
-		uv_async_send( &userData->sql->state->async );
+		if( userData->sql->state->ivm_hosted )	{
+			userData->sql->state->c->ivm_post( userData->sql->state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(userData->sql->state) );
+		}else
+			uv_async_send( &userData->sql->state->async );
 
 		while( !msg.done ) {
 			WakeableSleep( SLEEP_FOREVER );
@@ -2135,7 +2188,10 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 #ifdef DEBUG_EVENTS
 		lprintf( "uv_send aggFinal2 %p", &userData->sql->state->async );
 #endif		
-		uv_async_send( &userData->sql->state->async );
+		if( userData->sql->state->ivm_hosted )	{
+			userData->sql->state->c->ivm_post( userData->sql->state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(userData->sql->state) );
+		}else
+			uv_async_send( &userData->sql->state->async );
 	}
 
 	Local<Function> cb2 = Local<Function>::New( userData->isolate, userData->cb2 );
@@ -2262,7 +2318,9 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 		if( !sql->state->thread ) {
 			sql->state->thread = MakeThread();
 			class constructorSet *c = getConstructors( isolate );
-			uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
+			sql->state->c = c;
+			if( c->ivm_holder ) { sql->state->ivm_hosted = TRUE; }
+			else uv_async_init( c->loop, &sql->state->async, sqlUserAsyncMsg );
 			sql->state->async.data = sql->state;
 		}
 	}

@@ -15,9 +15,19 @@ struct volumeTransport {
 	class VolumeObject *wssi;
 };
 
+static void handlePostedVolume_( Isolate *isolate, Local<Context> context, struct volumeUnloadStation * unload );
+
+struct volumeUnloadStationTask : SackTask {
+	struct volumeUnloadStation *vus;
+	volumeUnloadStationTask( struct volumeUnloadStation *vus ) { this->vus = vus; }
+	void Run2( Isolate *isolate, Local<Context> context ) { handlePostedVolume_( isolate, context, this->vus ); }
+};
+
 struct volumeUnloadStation {
 	Persistent<Object> this_;
 	String::Utf8Value* s;  // destination address
+	bool ivm_hosted;
+	class constructorSet *c;
 	uv_async_t poster;
 	uv_loop_t  *targetThread;
 	Persistent<Function> cb; // callback to invoke 
@@ -357,7 +367,7 @@ static void clearTimeout( const v8::FunctionCallbackInfo<Value> &args ) {
 			SetLink( &timerList, idx, NULL );
 			RemoveTimer( te->id );
 			te->cb.Reset();
-			delete te;
+			//delete te;
 			break;
 		}
 	}
@@ -604,10 +614,12 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
-	SET_READONLY_METHOD( exports, "setTimeout", setTimeout );
-	SET_READONLY_METHOD( exports, "setInterval", setInterval );
-	SET_READONLY_METHOD( exports, "clearTimeout", clearTimeout );
-	SET_READONLY_METHOD( exports, "clearInterval", clearTimeout );
+	if( isolated ) {
+		SET_READONLY_METHOD( exports, "setTimeout", setTimeout );
+		SET_READONLY_METHOD( exports, "setInterval", setInterval );
+		SET_READONLY_METHOD( exports, "clearTimeout", clearTimeout );
+		SET_READONLY_METHOD( exports, "clearInterval", clearTimeout );
+	}
 	// this is an export under SaltyRNG
 	SET_READONLY_METHOD( exports, "id", idGenerator );
 	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
@@ -1258,6 +1270,8 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		size_t len;
 		Persistent<Function> *f;
 		Persistent<Object> _this;
+		bool ivm_hosted;
+		class constructorSet *c;
 		uv_async_t async;
 	};
 
@@ -1331,7 +1345,11 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				pargs->f->Reset( isolate, Local<Function>::Cast( args[1] ) );
 				pargs->_this.Reset( isolate, args.This() );
 				class constructorSet *c = getConstructors( isolate );
-				uv_async_init( c->loop, &pargs->async, preloadCallback );
+				if( c->ivm_holder ) {
+					pargs->c = c;
+					pargs->ivm_hosted = true;
+				} else
+					uv_async_init( c->loop, &pargs->async, preloadCallback );
 				pargs->async.data = pargs;
 				ThreadTo( preloadFile, (uintptr_t)pargs );
 			}
@@ -1663,7 +1681,10 @@ static LOGICAL PostVolume( Isolate *isolate, String::Utf8Value *name, VolumeObje
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
 				AddLink( &station->transport, trans );
 				//lprintf( "Send Post Request %p", station->poster );
-				uv_async_send( &station->poster );
+				if( station->ivm_hosted ) 
+					station->c->ivm_post( station->c->ivm_holder, std::make_unique<volumeUnloadStationTask>(station) );
+				else
+					uv_async_send( &station->poster );
 				break;
 			}
 		}
@@ -1701,11 +1722,8 @@ static void finishPostClose( uv_handle_t *async ) {
 	delete unload;
 }
 
-static void handlePostedVolume( uv_async_t* async ) {
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
+
+void handlePostedVolume_( Isolate*isolate, Local<Context> context, struct volumeUnloadStation *unload ) {
 	Local<Function> f = unload->cb.Get( isolate );
 	INDEX idx;
 	struct volumeTransport* trans;
@@ -1743,10 +1761,20 @@ static void handlePostedVolume( uv_async_t* async ) {
 		unload->this_.Reset();
 		DeleteLink( &VolumeObject::transportDestinations, unload );
 		SetLink( &unload->transport, 0, NULL );
-		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
+		//uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 		break;
 	}
 }
+
+static void handlePostedVolume( uv_async_t *async ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context             = isolate->GetCurrentContext();
+	struct volumeUnloadStation *unload = (struct volumeUnloadStation *)async->data;
+	handlePostedVolume_( isolate, context, unload );
+	uv_close( (uv_handle_t *)async, finishPostClose ); // have to hold onto the handle until it's freed.
+}
+
 
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1763,7 +1791,11 @@ static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args 
 	unloader->transport = NULL;
 	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
 
-	uv_async_init( unloader->targetThread, &unloader->poster, handlePostedVolume );
+	unloader->c            = c;
+	if( c->ivm_holder ) {
+		unloader->ivm_hosted = true;
+	} else
+		uv_async_init( unloader->targetThread, &unloader->poster, handlePostedVolume );
 
 	AddLink( &VolumeObject::transportDestinations, unloader );
 }

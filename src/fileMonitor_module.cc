@@ -144,6 +144,7 @@ static void addMonitorFilter( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	AddLink( &me->trackers, tracker );
 	class constructorSet *c = getConstructors( isolate );
+	tracker->c = c;
 	if( c->ivm_post )
 		tracker->ivm_hosted = true;
 	else

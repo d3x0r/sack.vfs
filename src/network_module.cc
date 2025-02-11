@@ -131,6 +131,8 @@ public:
 	PCLIENT pc;
 	POINTER buffer;
 	Persistent<Object> _this;
+	bool ivm_hosted = false;
+	class constructorSet *c;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
 	bool readStrings;  // return a string instead of a buffer
@@ -164,6 +166,8 @@ public:
 	bool ssl = false;
 	bool allowSSLfallback = true;
 	Persistent<Object> _this;
+	bool ivm_hosted = false;
+	class constructorSet *c;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE eventQueue;
 	bool readStrings = false;  // return a string instead of a buffer
@@ -478,13 +482,9 @@ void FreeCallback( char* data, void* hint ) {
 	Deallocate( char*, data );
 }
 
-static void udpAsyncMsg( uv_async_t* handle ) {
+static void udpAsyncMsg_( Isolate *isolate, Local<Context> context, udpObject*obj ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	udpObject* obj = (udpObject*)handle->data;
 	networkEvent *eventMessage;
 
 	{
@@ -523,7 +523,8 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 				if( !cb.IsEmpty() )
 					cb->Call( context, eventMessage->_this.udp->_this.Get( isolate ), 0, argv );
 				//lprintf( "Close async handle: %p",(uv_handle_t*)&obj->async );
-				uv_close( (uv_handle_t*)&obj->async, NULL );
+				if( !obj->ivm_hosted )
+					uv_close( (uv_handle_t *)&obj->async, NULL );
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
 			default:
@@ -533,13 +534,26 @@ static void udpAsyncMsg( uv_async_t* handle ) {
 			DeleteFromSet( NET_EVENT, l.networkEvents, eventMessage );
 		}
 	}
+}
+
+static void udpAsyncMsg( uv_async_t *handle ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	udpObject *obj         = (udpObject *)handle->data;
+	udpAsyncMsg_( isolate, context, obj );
 	{
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		Local<Function> cb      = Local<Function>::New( isolate, obj->c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
 
+struct udpAsyncTask : SackTask {
+	udpObject *obj;
+	udpAsyncTask( udpObject *obj )
+	    : obj( obj ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { udpAsyncMsg_( isolate, context, obj ); }
+};
 
 static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, SOCKADDR *from ) {
 	udpObject *_this = (udpObject*)psv;
@@ -558,7 +572,10 @@ static void CPROC ReadComplete( uintptr_t psv, CPOINTER buffer, size_t buflen, S
 		(*pevt).waiter = NULL;
 
 		EnqueLink( &_this->eventQueue, pevt );
-		uv_async_send( &_this->async );
+		if( _this->ivm_hosted )
+			_this->c->ivm_post( _this->c->ivm_holder, std::make_unique<udpAsyncTask>( _this ) );
+		else
+			uv_async_send( &_this->async );
 		doUDPRead( _this->pc, (POINTER)buffer, 4096 );
 	}
 }
@@ -572,7 +589,10 @@ static void CPROC Closed( uintptr_t psv ) {
 	(*pevt)._this.udp = _this;
 	(*pevt).waiter = NULL;
 	EnqueLink( &_this->eventQueue, pevt );
-	uv_async_send( &_this->async );
+	if( _this->ivm_hosted )
+		_this->c->ivm_post( _this->c->ivm_holder, std::make_unique<udpAsyncTask>( _this ) );
+	else
+		uv_async_send( &_this->async );
 }
 
 udpObject::udpObject( struct udpOptions *opts ) {
@@ -596,7 +616,12 @@ udpObject::udpObject( struct udpOptions *opts ) {
 		//lprintf( "Init async handle. (wss)" );
 		async.data = this;
 		class constructorSet *c = getConstructors( opts->isolate );
-		uv_async_init( c->loop, &async, udpAsyncMsg );
+		this->c                 = c;
+		if( c->ivm_holder )
+			this->ivm_hosted = true;
+		else
+			uv_async_init( c->loop, &async, udpAsyncMsg );
+
 		doUDPRead( pc, (POINTER)buffer, 4096 );
 		if( !opts->messageCallback.IsEmpty() )
 			this->messageCallback.Reset( opts->isolate, opts->messageCallback );
@@ -823,13 +848,9 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 
 //---------------------------- TCP Sockets ---------------------------
 
-static void tcpAsyncMsg( uv_async_t* handle ) {
+static void tcpAsyncMsg_( Isolate *isolate, Local<Context> context, tcpObject * obj ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	tcpObject* obj = (tcpObject*)handle->data;
 	networkEvent* eventMessage;
 
 	{
@@ -921,7 +942,8 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				if( !cb.IsEmpty() )
 					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, argv );
 				//lprintf( "Close async handle: %p",(uv_handle_t*)&obj->async );
-				uv_close( (uv_handle_t*)&obj->async, NULL );
+				if( !obj->ivm_hosted )
+					uv_close( (uv_handle_t*)&obj->async, NULL );
 				DeleteLinkQueue( &obj->eventQueue );
 				break;
 			}
@@ -933,13 +955,26 @@ static void tcpAsyncMsg( uv_async_t* handle ) {
 				DeleteFromSet( NET_EVENT, l.networkEvents, eventMessage );
 		}
 	}
+}
+
+static void tcpAsyncMsg( uv_async_t *handle ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	tcpObject *obj         = (tcpObject *)handle->data;
+	tcpAsyncMsg_( isolate, context, obj );
 	{
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		Local<Function> cb      = Local<Function>::New( isolate, obj->c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
 
+struct tcpAsyncTask : SackTask {
+	tcpObject *obj;
+	tcpAsyncTask( tcpObject *obj )
+	    : obj( obj ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { tcpAsyncMsg_( isolate, context, obj ); }
+};
 
 void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 	tcpObject *obj = (tcpObject*)psv;
@@ -947,13 +982,16 @@ void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 		struct networkEvent *pevt = GetFromSet( NET_EVENT, &l.networkEvents );
 		(*pevt).eventType = NET_EVENT_READ;
 		(*pevt).buf = NewArray( uint8_t*, length );
-		lprintf( "Send buffer %p", (*pevt).buf );
 		memcpy( (POINTER)(*pevt).buf, buffer, length );
 		(*pevt).buflen = length;
 		(*pevt)._this.tcp = obj;
 		(*pevt).waiter = NULL;
 		EnqueLink( &obj->eventQueue, pevt );
-		uv_async_send( &obj->async );
+		if( ( (tcpObject *)psv )->ivm_hosted )
+			( (tcpObject *)psv )->c->ivm_post( ( (tcpObject *)psv )->c->ivm_holder
+			                                 , std::make_unique<tcpAsyncTask>( (tcpObject *)psv ) );
+		else
+			uv_async_send( &obj->async );
 	}
 	else {
 		obj->buffer = buffer = NewArray( uint8_t, 4096 );
@@ -962,7 +1000,11 @@ void TCP_ReadComplete( uintptr_t psv, POINTER buffer, size_t length ) {
 			(*pevt).eventType = NET_EVENT_FIRST_READ;
 			(*pevt)._this.tcp = obj;
 			EnqueLink( &obj->eventQueue, pevt );
-			uv_async_send( &obj->async );
+			if( ( (tcpObject *)psv )->ivm_hosted )
+				( (tcpObject *)psv )->c->ivm_post( ( (tcpObject *)psv )->c->ivm_holder
+				                                 , std::make_unique<tcpAsyncTask>( (tcpObject *)psv ) );
+			else
+				uv_async_send( &obj->async );
 		}
 	}
 	ReadTCP( obj->pc, (POINTER)buffer, 4096 );
@@ -983,7 +1025,11 @@ void TCP_Connect( uintptr_t psv, int error ) {
 	(*pevt).waiter = NULL;
 	//lprintf( "Enque connect: %p", &obj->async );
 	EnqueLink( &obj->eventQueue, pevt );
-	uv_async_send( &obj->async );
+	if( ( (tcpObject *)psv )->ivm_hosted )
+		( (tcpObject *)psv )->c->ivm_post( ( (tcpObject *)psv )->c->ivm_holder
+		                                 , std::make_unique<tcpAsyncTask>( (tcpObject *)psv ) );
+	else
+		uv_async_send( &obj->async );
 }
 
 void TCP_Write( uintptr_t psv, CPOINTER buffer, size_t length ) {
@@ -1002,7 +1048,11 @@ void TCP_Close( uintptr_t psv ) {
 	(*pevt).waiter = NULL;
 	//lprintf( "!!! Enque close: %p %p", (void*)psv, &obj->async );
 	EnqueLink( &obj->eventQueue, pevt );
-	uv_async_send( &obj->async );
+	if( ( (tcpObject *)psv )->ivm_hosted )
+		( (tcpObject *)psv )->c->ivm_post( ( (tcpObject *)psv )->c->ivm_holder
+		                                 , std::make_unique<tcpAsyncTask>( (tcpObject *)psv ) );
+	else
+		uv_async_send( &obj->async );
 	//lprintf( "Close Happened to socket %p %p", psv, &obj->async );
 	
 	obj->pc = NULL;
@@ -1020,7 +1070,11 @@ void TCP_Notify( uintptr_t psv, PCLIENT pcNew ) {
 	( *pevt ).waiter = MakeThread();
 	//lprintf( "Server connect event: %p %p %p", (void*)psv, pcNew, & (*pevt )._this.tcp->async );
 	EnqueLink( &( (tcpObject*)psv )->eventQueue, pevt );
-	uv_async_send( &( (tcpObject*)psv )->async );
+	if( ( (tcpObject *)psv )->ivm_hosted )
+		( (tcpObject *)psv )->c->ivm_post( ( (tcpObject *)psv )->c->ivm_holder
+		                                 , std::make_unique<tcpAsyncTask>( (tcpObject *)psv ) );
+	else
+		uv_async_send( &( (tcpObject*)psv )->async );
 	while( !(*pevt).done ) {		
 		WakeableSleep( 100 );
 	}
@@ -1072,7 +1126,11 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		async.data = this;
 
 		class constructorSet* c = getConstructors( tcpObject::isolate );
-		uv_async_init( c->loop, &async, tcpAsyncMsg );
+		this->c                 = c;
+		if( c->ivm_holder ) {
+			this->ivm_hosted = true;
+		} else 
+			uv_async_init( c->loop, &async, tcpAsyncMsg );
 		// pc will be set later...
 		return;
 	}
@@ -1088,7 +1146,10 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 
 	class constructorSet* c = getConstructors( opts->isolate );
 	//lprintf( "Init async handle: %p",(uv_handle_t*)&async );
-	uv_async_init( c->loop, &async, tcpAsyncMsg );
+	if( c->ivm_holder ) {
+		this->ivm_hosted = true;
+	} else
+		uv_async_init( c->loop, &async, tcpAsyncMsg );
 	if( !opts->messageCallback.IsEmpty() )
 		this->messageCallback.Reset( isolate, opts->messageCallback );
 	if( !opts->connectCallback.IsEmpty() )
@@ -1751,6 +1812,8 @@ static void getName( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 struct pingState {
+	bool ivm_hosted;
+	class constructorSet *c;
 	uv_async_t async;
 	Persistent<Function> cb;
 	Isolate* isolate;
@@ -1781,11 +1844,8 @@ static void asyncClosed( uv_handle_t* async ) {
 	ReleaseEx( state DBG_SRC );
 }
 
-static void pingAsync( uv_async_t* async ) {
-	struct pingState* state = (struct pingState*)async->data;
-	HandleScope scope( state->isolate );
+static void pingAsync_( Isolate*isolate, Local<Context>context, struct pingState*state ) {
 	Local<Object> data = Object::New( state->isolate );
-	Local<Context> context = state->isolate->GetCurrentContext();
 	if( !state->done ) {
 		if( state->result.name )
 			data->Set( context, String::NewFromUtf8Literal( state->isolate, "IP" ), String::NewFromUtf8( state->isolate, state->result.name ).ToLocalChecked() );
@@ -1807,6 +1867,19 @@ static void pingAsync( uv_async_t* async ) {
 	}
 }
 
+static void pingAsync( uv_async_t *async ) {
+	struct pingState *state = (struct pingState *)async->data;
+	HandleScope scope( state->isolate );
+	Local<Context> context = state->isolate->GetCurrentContext();
+	pingAsync_( state->isolate, context, state );
+}
+
+struct pingAsyncTask : SackTask {
+	struct pingState *state;
+	pingAsyncTask( struct pingState *state ) { this->state = state; }
+	void Run2( Isolate *isolate, Local<Context> context ) { pingAsync_( isolate, context, state ); }
+};
+
 static void pingResult( uintptr_t psv, SOCKADDR* dwIP, CTEXTSTR name, int min, int max, int avg, int drop, int hops ) {
 	struct pingState* state = (struct pingState*)psv;
 	state->result.addr = dwIP;
@@ -1817,6 +1890,8 @@ static void pingResult( uintptr_t psv, SOCKADDR* dwIP, CTEXTSTR name, int min, i
 	state->result.drop = drop;
 	state->result.hops = hops;
 	state->handled = FALSE;
+	if( state->ivm_hosted )
+		state->c->ivm_post( state->c->ivm_holder, std::make_unique<pingAsyncTask>( state ) );
 	uv_async_send( &state->async );
 	while( !state->handled ) Relinquish();
 }
@@ -1865,7 +1940,11 @@ static void ping( const v8::FunctionCallbackInfo<Value>& args ) {
 				params.time = (int)i->Value();
 			}
 			class constructorSet* c = getConstructors( isolate );
-			uv_async_init( c->loop, &state->async, pingAsync );
+			state->c = c;
+			if( c->ivm_holder ) {
+				state->ivm_hosted = true;
+			} else
+				uv_async_init( c->loop, &state->async, pingAsync );
 			params.addr = *addr;
 			ThreadTo( pingThread, (uintptr_t)&params );
 			while( !params.received ) Relinquish();

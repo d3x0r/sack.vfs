@@ -5,7 +5,14 @@
 #include "websocket_module.h"
 
 
+static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, class SSH2_Object * ssh );
 
+struct SSH2_ObjectTask:SackTask {
+	SSH2_Object *obj;
+	SSH2_ObjectTask( SSH2_Object *obj )
+	    : obj( obj ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { SSH2_asyncmsg_( isolate, context, this->obj ); }
+};
 
 
 struct optionStrings {
@@ -58,11 +65,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 
 
 
-static void asyncmsg( uv_async_t* handle ) {
-	Isolate* isolate = Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	SSH2_Object* ssh = (SSH2_Object*)handle->data;
-	//SSH2_Object* channel = (SSH2_Object*)handle->data; 
+static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Object * ssh ) {
 	SSH2_Event* event;
 	while( event = (SSH2_Event*)DequeLink( &ssh->eventQueue ) ) {
 		switch( event->code ) {
@@ -97,27 +100,27 @@ static void asyncmsg( uv_async_t* handle ) {
 #else
 #error "Need to implement ArrayBuffer creation for node 14 and earlier (node 14 is End of life, consider upgrading)"
 #endif
-							pr->Resolve( isolate->GetCurrentContext(), ab );
+							pr->Resolve( context, ab );
 						} else 
-							pr->Resolve( isolate->GetCurrentContext(), pr_login );
+							pr->Resolve( context, pr_login );
 					} else {
-						pr->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+						pr->Reject( context, Undefined( isolate ) );
 					}
 				}
 				break;
 			case SSH2_EVENT_ERROR:
 				if( ssh->activePromise ) {
 					Local<Object> error = Object::New( isolate );
-					error->Set( isolate->GetCurrentContext()
+					error->Set( context
 								, String::NewFromUtf8Literal( isolate, "message" )
 						, String::NewFromUtf8( isolate, (const char*)event->data, NewStringType::kNormal, (int)event->length ).ToLocalChecked() );
-					error->Set( isolate->GetCurrentContext()
+					error->Set( context
 						, String::NewFromUtf8Literal( isolate, "error" ), Number::New( isolate, event->iData ) );
 					if( ssh->activePromise == &ssh->connectPromise ) 
-						error->Set( isolate->GetCurrentContext()
+						error->Set( context
 							, String::NewFromUtf8Literal( isolate, "options" ), ssh->connectOptions.Get( isolate ) );
 					if( ssh->activePromise ) {
-						Maybe<bool> rs = ssh->activePromise[0].Get( isolate )->Reject( isolate->GetCurrentContext(), error );
+						Maybe<bool> rs = ssh->activePromise[0].Get( isolate )->Reject( context, error );
 						if( rs.IsNothing() ) {
 						}
 						ssh->activePromise[0].Reset();
@@ -133,7 +136,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					Local<Value> argv[1];
 					argv[0] = String::NewFromUtf8( isolate, (const char*)event->data, NewStringType::kNormal, (int)event->length ).ToLocalChecked();
 					Local<Function> cb = Local<Function>::New( isolate, ssh->errorCallback );
-					cb->Call( isolate->GetCurrentContext(), ssh->jsObject.Get( isolate ), 1, argv );
+					cb->Call( context, ssh->jsObject.Get( isolate ), 1, argv );
 					event->done = true;
 					WakeThread( event->waiter );
 				}
@@ -144,17 +147,17 @@ static void asyncmsg( uv_async_t* handle ) {
 					SSH2_Channel* channel = (SSH2_Channel*)event->data2;
 					if( !IsQueueEmpty( &channel->activePromises ) ) {
 						Local<Object> error = Object::New( isolate );
-						error->Set( isolate->GetCurrentContext()
+						error->Set( context
 							, String::NewFromUtf8Literal( isolate, "message" )
 							, String::NewFromUtf8( isolate, (const char*)event->data, NewStringType::kNormal, (int)event->length ).ToLocalChecked() );
-						error->Set( isolate->GetCurrentContext()
+						error->Set( context
 							, String::NewFromUtf8Literal( isolate, "error" ), Number::New( isolate, event->iData ) );
 						Persistent<Promise::Resolver>* promise = ( Persistent<Promise::Resolver>* )DequeLink( &channel->activePromises );
 						//if( promise == &channel->connectPromise )
-						//	error->Set( isolate->GetCurrentContext()
+						//	error->Set( context
 						//		, String::NewFromUtf8Literal( isolate, "options" ), ssh->connectOptions.Get( isolate ) );
 
-						Maybe<bool> rs = promise[0].Get(isolate)->Reject(isolate->GetCurrentContext(), error);
+						Maybe<bool> rs = promise[0].Get(isolate)->Reject(context, error);
 						if( rs.IsNothing() ) {
 						}
 						//ssh->activePromise[0].Reset();
@@ -174,17 +177,17 @@ static void asyncmsg( uv_async_t* handle ) {
 					{
 						lprintf( "Unhandled listener error event: %p %d %s", listener, event->iData, (char*)event->data );
 						Local<Object> error = Object::New( isolate );
-						error->Set( isolate->GetCurrentContext()
+						error->Set( context
 							, String::NewFromUtf8Literal( isolate, "message" )
 							, String::NewFromUtf8( isolate, (const char*)event->data, NewStringType::kNormal, (int)event->length ).ToLocalChecked() );
-						error->Set( isolate->GetCurrentContext()
+						error->Set( context
 							, String::NewFromUtf8Literal( isolate, "error" ), Number::New( isolate, event->iData ) );
 						//Persistent<Promise::Resolver>* promise = ( Persistent<Promise::Resolver>* )DequeLink( &listener->activePromises );
 						//if( promise == &channel->connectPromise )
-						//	error->Set( isolate->GetCurrentContext()
+						//	error->Set( context
 						//		, String::NewFromUtf8Literal( isolate, "options" ), ssh->connectOptions.Get( isolate ) );
 
-						//Maybe<bool> rs = promise[0].Get(isolate)->Reject(isolate->GetCurrentContext(), error);
+						//Maybe<bool> rs = promise[0].Get(isolate)->Reject(context, error);
 						//if( rs.IsNothing() ) {
 						//}
 						//ssh->activePromise[0].Reset();
@@ -219,11 +222,11 @@ static void asyncmsg( uv_async_t* handle ) {
 #else
 #error "Need to implement ArrayBuffer creation for node 14 and earlier (node 14 is End of life, consider upgrading)"
 #endif
-							pr->Resolve( isolate->GetCurrentContext(), ab );
+							pr->Resolve( context, ab );
 						} else
-							pr->Resolve( isolate->GetCurrentContext(), Undefined( isolate ) );
+							pr->Resolve( context, Undefined( isolate ) );
 					} else
-						pr->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+						pr->Reject( context, Undefined( isolate ) );
 					ssh->connectOptions.Reset();
 					ssh->loginPromise.Reset();
 				}
@@ -234,7 +237,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						constructorSet* c = getConstructors( isolate );
 						//Local<Value>* argv = new Local<Value>[0];
 						Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
-						MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
+						MaybeLocal<Object> mo = cons->NewInstance( context, 0, NULL );
 						Local<Object> obj = mo.ToLocalChecked();
 						SSH2_Channel* ch = SSH2_Channel::Unwrap<SSH2_Channel>(obj);
 						ch->ssh2 = ssh;
@@ -242,10 +245,10 @@ static void asyncmsg( uv_async_t* handle ) {
 						event->data = ch;
 						sack_ssh_set_channel_error( ch->channel, SSH2_Channel::Error );
 
-						ssh->channelPromise.Get( isolate )->Resolve( isolate->GetCurrentContext(), obj );
+						ssh->channelPromise.Get( isolate )->Resolve( context, obj );
 					} else {
 						event->data = NULL;
-						ssh->channelPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+						ssh->channelPromise.Get( isolate )->Reject( context, Undefined( isolate ) );
 					}
 				}
 				break;
@@ -255,7 +258,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					constructorSet* c = getConstructors( isolate );
 					//Local<Value>* argv = new Local<Value>[0];
 					Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
-					MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
+					MaybeLocal<Object> mo = cons->NewInstance( context, 0, NULL );
 					Local<Object> obj = mo.ToLocalChecked();
 					SSH2_Channel* ch = SSH2_Channel::Unwrap<SSH2_Channel>( obj );
 					ch->ssh2 = ssh;
@@ -274,7 +277,7 @@ static void asyncmsg( uv_async_t* handle ) {
 						constructorSet* c = getConstructors( isolate );
 						//Local<Value>* argv = new Local<Value>[0];
 						Local<Function> cons = Local<Function>::New( isolate, c->SSH_RemoteListen_constructor );
-						MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL );
+						MaybeLocal<Object> mo = cons->NewInstance( context, 0, NULL );
 						Local<Object> obj = mo.ToLocalChecked();
 						SSH2_RemoteListen* ch = SSH2_RemoteListen::Unwrap<SSH2_RemoteListen>(obj);
 						ch->ssh2 = ssh;
@@ -282,10 +285,10 @@ static void asyncmsg( uv_async_t* handle ) {
 						event->data = ch;
 						//sack_ssh_set_listener_error( ch->listener, SSH2_RemoteListen::Error );
 
-						ssh->connectPromise.Get( isolate )->Resolve( isolate->GetCurrentContext(), obj );
+						ssh->connectPromise.Get( isolate )->Resolve( context, obj );
 					} else {
 						event->data = NULL;
-						ssh->connectPromise.Get( isolate )->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+						ssh->connectPromise.Get( isolate )->Reject( context, Undefined( isolate ) );
 					}
 				}
 				break;
@@ -310,7 +313,7 @@ static void asyncmsg( uv_async_t* handle ) {
 					}
 					argv[1] = Number::New( isolate, event->iData );
 					Local<Function> cb = Local<Function>::New( isolate, channel->dataCallback );
-					cb->Call( isolate->GetCurrentContext(), channel->jsObject.Get( isolate ), 2, argv );
+					cb->Call( context, channel->jsObject.Get( isolate ), 2, argv );
 				}
 				break;
 			case SSH2_EVENT_SETENV:
@@ -323,9 +326,9 @@ static void asyncmsg( uv_async_t* handle ) {
 					Local<Promise::Resolver> pr = promise[0].Get( isolate );
 					if( pr->GetPromise()->State() == Promise::PromiseState::kPending ) {
 						if( event->success ) {
-							pr->Resolve( isolate->GetCurrentContext(), True( isolate ) );
+							pr->Resolve( context, True( isolate ) );
 						} else {
-							pr->Reject( isolate->GetCurrentContext(), Undefined( isolate ) );
+							pr->Reject( context, Undefined( isolate ) );
 						}
 					} // otherwise it would have already been fulfilled by error();
 					promise[0].Reset();
@@ -339,15 +342,21 @@ static void asyncmsg( uv_async_t* handle ) {
 		} else
 			dropEvent( event );
 	}
+}
+
+static void SSH2_asyncmsg( uv_async_t *handle ) {
+	Isolate *isolate = Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	SSH2_Object *ssh = (SSH2_Object *)handle->data;
+	SSH2_asyncmsg_( isolate, isolate->GetCurrentContext(), ssh );
 
 	{
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cb      = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
-
-
 }
+
 
 SSH2_Channel::SSH2_Channel() {
 	this->activePromises = CreateLinkQueue( );
@@ -385,8 +394,12 @@ void SSH2_Channel::CloseCallback( uintptr_t psv ) {
 
 SSH2_Object::SSH2_Object( Isolate *isolate ) {
 	constructorSet* c = getConstructors( isolate );
-
-	uv_async_init( c->loop, &this->async, asyncmsg );
+	if( c->ivm_holder ) {
+		this->ivm_hosted = true;
+		this->c          = c;
+	} else {
+		uv_async_init( c->loop, &this->async, SSH2_asyncmsg );
+	}
 	this->async.data = this;
 
 
@@ -1102,8 +1115,13 @@ void SSH2_RemoteListen::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	//int argc = args.Length();
 	if( args.IsConstructCall() ) {
 		SSH2_RemoteListen* obj;
-		obj = new SSH2_RemoteListen();
-		obj->Wrap( args.This() );
+		class constructorSet *c = getConstructors( isolate );
+		obj                     = new SSH2_RemoteListen();
+		if( c->ivm_holder ) {
+			obj->ivm_hosted = true;
+			obj->c      = c;
+		}
+			obj->Wrap( args.This() );
 		obj->jsObject.Reset( isolate, args.This() );
 		args.GetReturnValue().Set( args.This() );
 	} else {
@@ -1137,7 +1155,11 @@ void SSH2_RemoteListen::Error( uintptr_t psv, int errcode, const char* string, i
 	event->done = 0;
 	event->waiter = test ? NULL : self;
 	EnqueLink( &listener->ssh2->eventQueue, event );
-	uv_async_send( &listener->ssh2->async );
+	// can listeners be in a separate context?
+	if( listener->ssh2->ivm_hosted )
+		listener->ssh2->c->ivm_post( listener->ssh2->c->ivm_holder, std::make_unique<SSH2_ObjectTask>(listener->ssh2) );
+	else
+		uv_async_send( &listener->ssh2->async );
 	if( event->waiter ) {
 		while( !event->done ) {
 			WakeableSleep( 1000 );

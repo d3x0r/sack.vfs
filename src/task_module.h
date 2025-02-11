@@ -19,6 +19,8 @@ public:
 	Persistent<Object> moveOpts; // if style is used with move, style is applied first and then move.
 	PERSISTENT_FUNCTION cbStyle; // temporary value for style window
 #endif
+	bool ivm_hosted;
+	class constructorSet *c;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	bool binary;
 	bool ending;

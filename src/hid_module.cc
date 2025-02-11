@@ -477,6 +477,7 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			class constructorSet *c = getConstructors( isolate );
 			if( !obj->keyEvents ) {
 				obj->keyEvents = CreateLinkQueue();
+			obj->c = c;
 			if( c->ivm_post )
 				obj->ivm_hosted = true;
 			else
