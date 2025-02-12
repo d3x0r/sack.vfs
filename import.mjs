@@ -9,7 +9,8 @@ import fs from "node:fs";
 import url from "node:url";
 import path from "node:path";
 import util from "node:util";
-import {sack} from "sack.vfs";
+const moduleName = "@d3x0r/sack-gui";
+import {sack} from "@d3x0r/sack-gui";
 
 const debug_ = false;
 const forceModule = ( process.env.FORCE_IMPORT_MODULE ) || false;
@@ -117,7 +118,7 @@ export async function load(urlin, context, defaultLoad) {
 			sack.HTTP.get( request );
 		})
 	}
-	else if( exten === ".jsox" || exten === '.json6' ){
+	else if( exten === ".jsox" || exten === '.json6' || exten === ".json" ){
 	  	const { format } = context;
 		debug_&&console.log( "urlin is a string?", typeof urlin );
 		const file = url.fileURLToPath(urlin);
@@ -125,17 +126,17 @@ export async function load(urlin, context, defaultLoad) {
 		const result = fs.readFileSync(file).toString("utf8");
    	 
 
-		if( exten === ".jsox" ){
+		if( exten === ".jsox" || exten === ".json" ){
 			return {
 			   format:"module",
-			   source: "import {sack} from 'sack.vfs'; const data = sack.JSOX.parse( '" + escape(result) + "'); export default data;",
+			   source: "import {sack} from '"+moduleName+"'; const data = sack.JSOX.parse( '" + escape(result) + "'); export default data;",
 			   shortCircuit:true,
 			};
 		}
 		if( exten === ".json6" ){
 		    return {
 			   format:"module",
-			   source: "import {sack} from 'sack.vfs'; const data = sack.JSON6.parse( '" + escape(result) + "'); export default data;",
+			   source: "import {sack} from '"+moduleName+"'; const data = sack.JSON6.parse( '" + escape(result) + "'); export default data;",
 			   shortCircuit:true,
 			};
 		}
@@ -182,7 +183,7 @@ export function getGlobalPreloadCode() {
   return `\
 const { createRequire } = getBuiltin('module');
 const requireJSOX = createRequire('${escape(url.fileURLToPath( import.meta.url ))}');
-globalThis.SACK = requireJSOX( "sack.vfs" );
+globalThis.SACK = requireJSOX( "${moduleName}" );
 globalThis.JSOX = globalThis.SACK.JSOX;
 globalThis.JSON6 = globalThis.SACK.JSON6;
 `;
@@ -208,7 +209,7 @@ export function resolve( specifier, context, nextResolve ) {
 		                new URL(specifier, context.parentURL).href :
 				new URL(specifier).href,
 		};	
-	} else if( specifier.endsWith( ".jsox" ) ){
+	} else if( specifier.endsWith( ".jsox" ) || specifier.endsWith( ".json" ) ){
 		return {
 			shortCircuit: true,
 			url: context.parentURL ?
@@ -244,8 +245,7 @@ if( version[0] >= 21 || ( version[0] >= 20 && version[1] >= 6 ) ) {
 	// https://nodejs.org/api/module.html#resolvespecifier-context-nextresolve
 	const fileURL = url.pathToFileURL("./", import.meta.url );
 	debug_ && console.log( "FileURL?", fileURL );
-	//module.register( "sack.vfs/import.mjs", fileURL );
-	module.register( "sack.vfs/import.mjs", fileURL.href );
+	module.register( moduleName + "/import.mjs", fileURL.href );
 }
 
 export function forceNextModule( yesno ) { sack.import.forceNextModule = yesno }
