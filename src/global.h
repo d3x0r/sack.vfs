@@ -321,6 +321,8 @@ class constructorSet {
 
 	v8::Persistent<v8::Function> RenderObject_constructor;
 	v8::Persistent<v8::Function> RenderObject_constructor2;
+	v8::Persistent<v8::Object> mouse_object;
+	v8::Persistent<v8::Object> pen_object;
 
 	v8::Persistent<v8::Function> VulkanObject_constructor;
 #endif

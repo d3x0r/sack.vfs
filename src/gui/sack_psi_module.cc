@@ -648,7 +648,7 @@ void ControlObject::Init( Local<Object> _exports ) {
 		// get the current interfaces, and set PSI to them.
 		// (this will be delayed until require())
 			// and is generally redundant.
-		g.pii = GetImageInterface();
+		if( !g.pii ) g.pii = GetImageInterface();
 		g.pdi = GetDisplayInterface();
 		SetControlImageInterface( g.pii );
 		SetControlInterface( g.pdi );

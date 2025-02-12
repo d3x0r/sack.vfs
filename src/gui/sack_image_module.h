@@ -33,9 +33,11 @@ public:
 	static void plotOver( const FunctionCallbackInfo<Value>& args );
 	static void line( const FunctionCallbackInfo<Value>& args );
 	static void lineOver( const FunctionCallbackInfo<Value>& args );
+	
 	static void putImage( const FunctionCallbackInfo<Value>& args );
 	static void putImageOver( const FunctionCallbackInfo<Value>& args );
-	static void imageData( const FunctionCallbackInfo<Value>& args );
+	static void putImageMultiShaded( const FunctionCallbackInfo<Value> &args );
+	static void imageData( const FunctionCallbackInfo<Value> &args );
 	
 	static void getPng( const FunctionCallbackInfo<Value>&  args );
 	static void getJpeg( const FunctionCallbackInfo<Value>& args );

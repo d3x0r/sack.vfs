@@ -191,8 +191,10 @@ void ImageObject::Init( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "lineOver", ImageObject::lineOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "plot", ImageObject::plot );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "plotOver", ImageObject::plotOver );
+
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImage", ImageObject::putImage );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
+	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageMS", ImageObject::putImageMultiShaded );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
 
 	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "png" )
@@ -252,6 +254,7 @@ void ImageObject::Init( Local<Object> exports ) {
 	SET_READONLY_METHOD( fontTemplate->GetFunction(context).ToLocalChecked(), "dialog", pickFont );
 
 	Local<Object> colors = Object::New( isolate );
+	if( !g.pii ) g.pii = GetImageInterface();
 	if( g.pii ) {
 		SET_READONLY( colors, "white", makeColor( isolate, BASE_COLOR_WHITE ) );
 		SET_READONLY( colors, "black", makeColor( isolate, BASE_COLOR_BLACK ) );
@@ -631,7 +634,7 @@ void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	int x, y, w, h, c;
+	int x = 0, y = 0, w = io->image->width, h = io->image->height, c;
 	if( argc > 0 ) {
 		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
@@ -867,7 +870,7 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
-	int x = 0, y = 0, xTo, yTo, c;
+	int x = 0, y = 0, xTo, yTo, c, xAt, yAt, w, h;
 	if( argc > 0 ) {
 		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 	}
@@ -877,21 +880,146 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 	if( argc > 2 ) {
 		y = (int)args[2]->NumberValue(context).ToChecked();
 	}
-	if( argc > 2 ) {
-		xTo = (int)args[2]->NumberValue(context).ToChecked();
+	if( argc > 3 ) {
+		xAt = (int)args[ 3 ]->NumberValue( context ).ToChecked();
 
-		if( argc > 3 ) {
-			yTo = (int)args[3]->NumberValue(context).ToChecked();
-		}
 		if( argc > 4 ) {
-			c = (int)args[4]->NumberValue(context).ToChecked();
+			yAt = (int)args[ 4 ]->NumberValue( context ).ToChecked();
+		} else {
+			isolate->ThrowException(
+			     Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
+			return;
 		}
-		else {
+		if( argc > 5 ) {
+			w = (int)args[ 5 ]->NumberValue( context ).ToChecked();
+			if( argc > 6 ) {
+				h = (int)args[ 6 ]->NumberValue( context ).ToChecked();
+			}
+			if( argc > 7 ) {
+				int ow, oh;
+
+				ow  = xAt;
+				oh  = yAt;
+				xAt = w;
+				yAt = h;
+				if( argc > 7 ) {
+					w = (int)args[ 7 ]->NumberValue( context ).ToChecked();
+					if( w < 0 )
+						w = ii->image->width;
+				}
+				if( argc > 8 ) {
+					h = (int)args[ 8 ]->NumberValue( context ).ToChecked();
+					if( h < 0 )
+						h = ii->image->height;
+				}
+				if( ow && oh && w && h )
+					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT
+					                      , BLOT_COPY );
+			} else
+				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
+		} else {
+			w = xAt;
+			h = yAt;
+			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
 		}
 	}
 	else
 		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_COPY );
 }
+
+// {x, y output
+// w, h} output
+// {x, y input
+// w, h} input
+void ImageObject::putImageMultiShaded( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int argc = args.Length();
+	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int x = 0, y= 0, xAt, yAt;
+	int w, h;
+	if( argc > 3 ) {
+		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
+		if( !ii || !ii->image ) {
+			lprintf( "Bad First paraemter, must be an image to put?" );
+			return;
+		}
+		else {
+			w = ii->image->width;
+			h = ii->image->height;
+		}
+	}
+	else {
+		// throw error ?
+		return;
+	}
+	if( argc > 5 ) {
+		x = (int)args[1]->NumberValue(context).ToChecked();
+		y = (int)args[2]->NumberValue(context).ToChecked();
+	}
+	else {
+		x = 0;
+		y = 0;
+		//isolate->ThrowException( Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
+		//return;
+	}
+
+	int r = args[argc-3]->Int32Value(context).ToChecked();
+	int grn = args[ argc - 2 ]->Int32Value( context ).ToChecked();
+	int b   = args[ argc - 1 ]->Int32Value( context ).ToChecked();
+
+	if( argc > 6 ) {
+		xAt = (int)args[3]->NumberValue(context).ToChecked();
+
+		if( argc > 7 ) {
+			yAt = (int)args[4]->NumberValue(context).ToChecked();
+		}
+		else {
+			isolate->ThrowException( Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
+			return;
+		}
+		if( argc > 8 ) {
+			w = (int)args[5]->NumberValue(context).ToChecked();
+			if( argc > 9 ) {
+				h = (int)args[6]->NumberValue(context).ToChecked();
+			}
+			if( argc > 10 ) {
+				int ow, oh;
+		
+				ow = xAt;
+				oh = yAt;
+				xAt = w;
+				yAt = h;
+				if( argc > 10 ) {
+					w = (int)args[ 7 ]->NumberValue( context ).ToChecked();
+					if( w < 0 )
+						w = ii->image->width;
+				} else
+					w = ii->image->width;
+				if( argc > 11 ) {
+					h = (int)args[ 8 ]->NumberValue( context ).ToChecked();
+					if( h < 0 )
+						h = ii->image->height;
+				} else
+					h = ii->image->height;
+				if( ow && oh && w && h )
+					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+			}
+			else
+				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn
+				                , b );
+		}
+		else  {
+			w = xAt; 
+			h = yAt;
+			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+		}
+	}
+	else
+		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+}
+
 
 void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();

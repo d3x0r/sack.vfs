@@ -32,7 +32,9 @@ public:
 
 	static void setDraw( const FunctionCallbackInfo<Value>& args );
 	static void setMouse( const FunctionCallbackInfo<Value>& args );
-	static void setKey( const FunctionCallbackInfo<Value>& args );
+	static void setTouch( const FunctionCallbackInfo<Value> &args );
+	static void setPen( const FunctionCallbackInfo<Value> &args );
+	static void setKey( const FunctionCallbackInfo<Value> &args );
 	static void close( const FunctionCallbackInfo<Value>& args );
 	void do_close( void );
 	static void on( const FunctionCallbackInfo<Value>& args );
@@ -49,7 +51,9 @@ public:
 	//1) Expose a function in the addon to allow Node to set the Javascript cb that will be periodically called back to :
 	PERSISTENT_FUNCTION cbInitEvent; // event callback        ()  // return true/false to allow creation
 	PERSISTENT_FUNCTION cbMouse; // event callback        ()  // return true/false to allow creation
-	PERSISTENT_FUNCTION cbKey; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbTouch;     // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbPen; // event callback        ()  // return true/false to allow creation
+	PERSISTENT_FUNCTION cbKey;   // event callback        ()  // return true/false to allow creation
 	PERSISTENT_FUNCTION cbDraw; // event callback        ()  // return true/false to allow creation
 
 
