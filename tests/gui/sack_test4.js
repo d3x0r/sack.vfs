@@ -82,3 +82,8 @@ process.on('SIGINT', function (){
   f.close();
 });
 
+function tick() {
+	setTimeout( tick, 50000 );
+}
+tick();
+

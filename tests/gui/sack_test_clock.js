@@ -1,6 +1,7 @@
 
 var sack = require( "../.." );
-console.log( "Something?", sack )
+
+//console.log( "Something?", sack )
 sack.Sqlite.so( "SACK/PSI/Clock Control/Default to high resolution time?", 0 );
 
 var f = sack.PSI.Frame( "test", -1, -1, 600, 600 );
