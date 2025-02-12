@@ -1,5 +1,5 @@
 {
-  "name": "sack.vfs",
+  "name": "@d3x0r/sack-gui",
   "version": "1.3.120",
   "description": "SACK abstraction library exposed to JS to provide low level system services.",
   "repository": {
