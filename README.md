@@ -175,7 +175,11 @@ import {SACK} from "sack.vfs";
     	set( path, value ) - set a new value in the registry
         get( path )  - get a value from the registry.
     hid - raw keyboard interface, allows identification of different physical keyboard devices.
-    
+
+   setTimeout(fn,delay ) - same as JS function of same name (on sack object)  (returns a number ID)
+   setInterval(fn,delay) - same as JS function of same name  (returns a number ID)
+   clearTimeout( timeout_id )    
+   clearInterval( timeout_id )
 }	
 ```
 
@@ -255,7 +259,11 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
+- 1.3.122(in progress)
 - 1.3.121(in progress)
+   - Implements interface compatible with isolated-vm.
+   - Adds some utility functions to support isolated-vm; setTimeout and setInterval for examples.
+   - Fixes some small limits of set size in SACK threads; migrate small dynamic object THREAD_EVENT to a set managed object.
 - 1.3.120
    - Fix JSOX parsing error for unquoted partial keywords at the end of objects/arrays.
    - Fix race condition handling onopen(onconnect) to server and handling the first client message.

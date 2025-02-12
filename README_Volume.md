@@ -38,6 +38,7 @@ Volume() = {
 Volume  // function has these methods.
     readAsString( filename ) - read a local system file as a string; used to quick-read for require( "*.[jsox/json6]")
     mapFile( filename ) - return an ArrayBuffer that is the memory mapped file on the disk.
+    cwd - getter that results with current working directory (may later be isolate-local).
     Thread : {
         post( uniqueId, Volume ) - post a volume to a thread by a unique identifier.
         accept( uniqueId, cb(volume) ) - registers a callback which is called with a volume thrown from some other thread.
