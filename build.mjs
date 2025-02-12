@@ -1,12 +1,18 @@
 
 import child_process from "node:child_process";
 
+import fs from "node:fs";
+
+const   pkg = JSON.parse( fs.readFileSync( "./package.json", {encoding:"utf8"} ) );
+		//await import( "./package.json" , {assert:{ type: 'json' }} );
+
 let config = "Release"
-let target = "vfs";
-let GUI = 0;
+let target = (pkg.name === "@d3x0r/sack-gui")?"gui":"vfs";
+let GUI = (pkg.name === "@d3x0r/sack-gui")?1:0;
 let skipConfigure = false;
 let arg = 2;
 const moreopts = [];
+
 
 for( arg = 2; arg < process.argv.length; arg++ ) {
 
