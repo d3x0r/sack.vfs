@@ -263,14 +263,14 @@ static void asyncmsg( uv_async_t* handle ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	class constructorSet* c = getConstructors( isolate );
 	//lprintf( "async message notice. %p", myself );
-	asyncmsg_( isolate, context, c )
+	asyncmsg_( isolate, context, c );
 }
 
 struct asyncTask : SackTask {
 	class constructorSet *c;
 	asyncTask( class constructorSet *c ) : c( c ) {}
 	void Run2( Isolate *isolate, Local<Context> context ) {
-		asyncmsg( isolate, context, c );
+		asyncmsg_( isolate, context, c );
 	}
 };
 
@@ -644,6 +644,7 @@ void InterShellObject::NewApplication( const FunctionCallbackInfo<Value>& args )
 			obj->events = NULL;
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 			if( c->ivm_holder ) 
+				lprintf( "event dispatch in ivm not finished." );
 			else uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
 			obj->async.data = obj;
 

@@ -176,10 +176,6 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 static void asyncmsg_( v8::Isolate* isolate, Local<Context>context, RenderObject *myself ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	RenderObject* myself = (RenderObject*)handle->data;
 	{
 		struct event *evt;
 
@@ -580,11 +576,13 @@ static int CPROC doTouch( uintptr_t psvUser, PINPUT_POINT pTouches, int nTouches
 }
 
 void RenderObject::setTouch( const FunctionCallbackInfo<Value> &args ) {
+#ifndef NO_TOUCH
 	Isolate *isolate     = args.GetIsolate();
 	RenderObject *r      = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	Local<Function> arg0 = Local<Function>::Cast( args[ 0 ] );
 	r->cbTouch.Reset( isolate, arg0 );
 	SetTouchHandler( r->r, doTouch, (uintptr_t)r );
+#endif
 }
 
 
@@ -596,11 +594,13 @@ static int CPROC doPen( uintptr_t psvUser, PPEN_EVENT pEvent ) {
 }
 
 void RenderObject::setPen( const FunctionCallbackInfo<Value> &args ) {
+#ifndef NO_PEN
 	Isolate *isolate     = args.GetIsolate();
 	RenderObject *r      = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	Local<Function> arg0 = Local<Function>::Cast( args[ 0 ] );
 	r->cbMouse.Reset( isolate, arg0 );
 	SetPenHandler( r->r, doPen, (uintptr_t)r );
+#endif
 }
 
 static int CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
@@ -679,12 +679,16 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 		r->cbMouse.Reset( isolate, arg1 );
 	}
 	else if( StrCmp( *fName, "touch" ) == 0 ) {
+#ifndef NO_TOUCH
 		SetTouchHandler( r->r, doTouch, (uintptr_t)r );
 		r->cbTouch.Reset( isolate, arg1 );
+#endif
 	}
 	else if( StrCmp( *fName, "pen" ) == 0 ) {
+#ifndef NO_PEN
 		SetPenHandler( r->r, doPen, (uintptr_t)r );
 		r->cbPen.Reset( isolate, arg1 );
+#endif
 	}
 	else if( StrCmp( *fName, "key" ) == 0 ) {
 		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
@@ -700,13 +704,17 @@ uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 	e.type = type;
 	e.waiter = MakeThread();
 	switch( type ) {
+#ifndef NO_PEN
 	case Event_Render_Pen:
 		e.data.pen.pEvent = va_arg( args, PPEN_EVENT );
 		break;
+#endif
+#ifndef NO_TOUCH
 	case Event_Render_Touch:
 		e.data.touch.pTouches = va_arg( args, PINPUT_POINT );
 		e.data.touch.nTouches = va_arg( args, int );
 		break;
+#endif
 	case Event_Render_Mouse:
 		e.data.mouse.x = va_arg( args, int32_t );
 		e.data.mouse.y = va_arg( args, int32_t );

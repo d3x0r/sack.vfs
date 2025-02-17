@@ -60,7 +60,7 @@ static Local<Object> makeColor( Isolate *isolate, CDATA color ) {
 	return cObject;
 }
 
-static void imageAsyncmsg( v8::Isolate* isolate, Local<Holder> holder, class constructorSet*c ) {
+static void imageAsyncmsg_( v8::Isolate* isolate, Local<Context> context, class constructorSet*c ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	if( !c->imageResult.IsEmpty() )
@@ -95,7 +95,7 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 	class constructorSet* c = getConstructors( isolate );
-	imageAsyncMsg_( isolate, context, (struct imageLocal*)handle->data );
+	imageAsyncmsg_( isolate, context, c );//(class constructorSet*)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
@@ -107,9 +107,9 @@ struct imageAsyncTask: SackTask {
 	class constructorSet *c;
 	imageAsyncTask( class constructorSet *c ) : c( c ) {}
 	void Run2( Isolate *isolate, Local<Context> context ) {
-		imageAsyncmsg( isolate, context, c );
+		imageAsyncmsg_( isolate, context, c );
 	}
-}
+};
 
 static uintptr_t fontPickThread( PTHREAD thread ) {
 	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
@@ -156,7 +156,7 @@ static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	class constructorSet* c = getConstructors( isolate );
 	c->priorThis.Reset( isolate, args.This() );
 	c->imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
-
+	c->colorAsync.data = c;
 	if( !c->colorAsyncActive) {
 		c->colorAsyncActive = TRUE;
 		if( !c->ivm_holder)
