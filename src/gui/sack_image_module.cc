@@ -295,7 +295,8 @@ void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 		if( PngImageFile( obj->image, &buf, &size ) )
 		{
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, releaseBufferBackingStore, NULL );
+			//lprintf( "png backing store for:%p", buf );
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, dontReleaseBufferBackingStore, NULL );
 			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
@@ -304,6 +305,7 @@ void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
 			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			//lprintf( "(2)png backing store for:%p", buf );
 			holder->buffer = buf;
 			args.GetReturnValue().Set( arrayBuffer );
 		}
@@ -321,7 +323,8 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 		if( JpgImageFile( obj->image, &buf, &size, obj->jpegQuality ) )
 		{
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, releaseBufferBackingStore, NULL );
+			//lprintf( "jpg backing store for:%p", buf );
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, dontReleaseBufferBackingStore, NULL );
 			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
@@ -329,6 +332,7 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
 			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			//lprintf( "(2)jpg backing store for:%p", buf );
 			holder->buffer = buf;
 			args.GetReturnValue().Set( arrayBuffer );
 		}
@@ -563,8 +567,8 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
-  class constructorSet* c = getConstructors( isolate );
-  Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
 	obj->image = image;
@@ -1029,7 +1033,8 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	//Context::Global()
 	size_t length;
 #if ( NODE_MAJOR_VERSION >= 14 )
-	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth, releaseBufferBackingStore, NULL );
+	//lprintf( "IMAGE backing store for:%p", (POINTER)GetImageSurface( io->image ) );
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth, dontReleaseBufferBackingStore, NULL );
 	Local<SharedArrayBuffer> ab =
 		SharedArrayBuffer::New( isolate, bs );
 #else	

@@ -300,7 +300,7 @@ void RenderObject::Init( Local<Object> exports ) {
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
 	AddLink( &render_global.renderers, this );
 	if( title )
-		r = OpenDisplayAboveSizedAt( DISPLAY_ATTRIBUTE_LAYERED, w, h, x, y, over ? over->r : NULL );
+		r = OpenDisplayAboveSizedAt( 0, w, h, x, y, over ? over->r : NULL );
 	else
 		r = NULL;
 	receive_queue = NULL;
@@ -355,7 +355,9 @@ RenderObject::~RenderObject() {
 			RenderObject* obj = new RenderObject( title?title:"Node Application", x, y, w, h, parent );
 			obj->this_.Reset( isolate, args.This() );
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
-			uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
+			obj->c = getConstructors( isolate );
+			if( !( obj->ivm_hosted = ( obj->c->ivm_holder != nullptr ) ) )
+				uv_async_init( obj->c->loop, &obj->async, asyncmsg );
 			//uv_unref( (uv_handle_t*)obj->async );
 			obj->isolate = isolate;
 			obj->eventThread = MakeThread();
@@ -489,6 +491,7 @@ void RenderObject::update( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	int argc = args.Length();
+	lprintf( "update??" );
 	if( argc > 3 ) {
 		int x, y, w, h;
 		x = (int)args[0]->IntegerValue(context).ToChecked();
