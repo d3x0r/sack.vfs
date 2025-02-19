@@ -11,8 +11,13 @@ console.log( "display 0:", display );
 //for( var n = 1; n < 8; n++ ) {
 //	console.log( "display %d:", n, sack.Renderer.getDisplay( n ) );
 //}
-var r = sack.Renderer( "test", 0, 0, display.width, display.height );
-console.log( "created renderer?", r, Object.keys( Object.getPrototypeOf(r)) );
+if( display.width === 0 ) {
+	display.width = 1920;
+	display.height = 1080;
+}
+
+const r = sack.Renderer( "test", 0, 0, display.width, display.height );
+//console.log( "created renderer?", r, Object.keys( Object.getPrototypeOf(r)) );
 
 
 
@@ -165,52 +170,36 @@ const redraw = ( image )=>{
 	//console.log( "draw tick:", image, tick, l );
 	MoveBubbles( (tick-l.lastTick)/1000 );
 	l.lastTick = tick;
-   image.fill( 0, 0, image.width, image.height, sack.Image.colors.purple );
-	//ctx.clearRect( 0, 0, canvas.width, canvas.height );
+	image.fill( 0, 0, image.width, image.height, sack.Image.colors.transparent );
 	l.bubbles.forEach( bubble=>{ ChooseColorDest( bubble ); DrawBubbles( image, tick, bubble,bubble.x-75,bubble.y-75,bubble.current ) } );
-	//requestAnimationFrame( UpdateImage );
 
-	//image.fill( 0, 0, 0, 0, sack.Image.Color( 0x7f7f7f7f ) );
-	if(1)
-	for( let i = 0;i < 255; i++ ) {
-		color.a = i;
-		color.g = 0;
-		image.line( 0, i, 127, i, color );
-		color.g = 128;
-		image.line( 128, i, 256, i, color );
-	}
-
-  //    image.drawImageOver( l.shaded );
-  //    image.drawImageOver( l.cover );
-
-	r.update();
-	//return true;
+	return false;
 }
 
 r.setDraw( redraw );
 //r.on( "draw", redraw )
 
-
 	l.shadow = images[0];
 	l.cover = images[5];
 	l.shaded = images[4];
 
-			for( let n = 0; n < 40; n++ )
-			{
-				const bubble = new Bubble();
-				bubble.x = n * 160;
-				while( bubble.x > 1650 )
-				{
-					bubble.x -= 1650;
-					bubble.y += 160;
-				}
-				l.bubbles.push( bubble );
-			}
+	for( let n = 0; n < 40; n++ )
+	{
+		const bubble = new Bubble();
+		bubble.x = n * 160;
+		while( bubble.x > 1650 )
+		{
+			bubble.x -= 1650;
+			bubble.y += 160;
+		}
+		l.bubbles.push( bubble );
+	}
 
 	r.show();
+
 function animate() {
 	r.redraw();
-	setTimeout( animate, 5 );
+	setTimeout( animate, 16.6 );
 }
 animate();
 
@@ -226,5 +215,7 @@ r.on( "mouse", (evt )=> {
 		bub.explodeTo.x = Math.random() * 1920;
 		bub.explodeTo.y = Math.random() * 1080;
 	}
+	//console.log( "mouse (draw)")
+	//r.redraw();
 } );
 
