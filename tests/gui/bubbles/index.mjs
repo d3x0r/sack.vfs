@@ -1,7 +1,7 @@
 
 import {sack} from "sack.vfs"
-
-
+//const disk = sack.Volume();
+//let frame = 0;
 
 const imageNames = ["117.png","118.png","119.png","120.png","121.png","123.png"]
 const images = imageNames.map( sack.Image );
@@ -12,8 +12,8 @@ console.log( "display 0:", display );
 //	console.log( "display %d:", n, sack.Renderer.getDisplay( n ) );
 //}
 if( display.width === 0 ) {
-	display.width = 1920;
-	display.height = 1080;
+	display.width = 1920*2;
+	display.height = 1080*2;
 }
 
 const r = sack.Renderer( "test", 0, 0, display.width, display.height );
@@ -25,7 +25,7 @@ const r = sack.Renderer( "test", 0, 0, display.width, display.height );
 const l = { shadow : null,
 	 shaded : null,
 	 cover : null,
-	w:1920,h:1080,
+	w:display.width,h:display.height,
 
 
 	base:null,dest:null,current:null,
@@ -38,25 +38,26 @@ const ht = images[0].height;
 
 class Bubble {
 	base = [0,0,0,0];
-dest=[0,0,0,0];
-current=[0,0,0,0];
-length=0;
-step=0;
-x=0;
-y=0;
-over=true;
-delx = 0;
-dely = 0;
-r=0;
-grn=0;
-b=0;
-//cover = ;
-//ctx = this.cover.getContext("2d" );
+	dest=[0,0,0,0];
+	current=[0,0,0,0];
 
-explode = false;
-explodeAt = 0;
-explodeUntil = 0;
-explodeTo = {x:0, y:0};
+	length=0;
+	step=0;
+	x=0;
+	y=0;
+	over=true;
+	delx = 0;
+	dely = 0;
+	r=0;
+	grn=0;
+	b=0;
+	//cover = ;
+	//ctx = this.cover.getContext("2d" );
+
+	explode = false;
+	explodeAt = 0;
+	explodeUntil = 0;
+	explodeTo = {x:0, y:0};
 
 	constructor() {
 	}
@@ -64,8 +65,6 @@ explodeTo = {x:0, y:0};
 	updateColor( image, r,g,b ) {
 		
 	}
-
-
 }
 
 
@@ -98,12 +97,12 @@ const Avg=( c1, c2, d, max )=>((((c1)*(max-(d))) + ((c2)*(d)))/max);
 // where d is from 0 to 255 between c1, c2
 function ColorAverage( c1,  c2, d,  max )
 {
- let r, g, b, a;
-  r = Avg( c1[0],  c2[0],   d, max );
-  g = Avg( c1[1], c2[1], d, max );
-  b = Avg( c1[2],  c2[2],  d, max );
-  a = Avg( c1[3], c2[3], d, max );
-  return [r,g,b,a];
+	let r, g, b, a;
+	r = Avg( c1[0],  c2[0],   d, max );
+	g = Avg( c1[1], c2[1], d, max );
+	b = Avg( c1[2],  c2[2],  d, max );
+	a = Avg( c1[3], c2[3], d, max );
+	return [r,g,b,a];
 }
 
 
@@ -151,13 +150,13 @@ function DrawBubbles( image, now, bubble, x,  y,  c )
 		}
 	} else {
 		//console.log( "Draw at:", x, y );
-	if( x > 1920 || y > 1080) return;
-      image.drawImageOver( l.cover, x,y,150,150, 0, 0, wd, ht );
-      image.drawImageMS( l.shaded, x,y,150,150, 0, 0, wd, ht, bubble.r,bubble.grn,bubble.b );
-		let ux = ( x < 0 )?0:(x>1920)?0:x;
-		let uy = ( y < 0 )?0:(y>1080)?0:y;
-		let uw = ( x<0)?(150+x):x > (1920-150)?150-(1920-x):150;
-		let uh = ( y<0)?(150+y):y > (1080-150)?150-(1080-y):150;
+		if( x > display.width || y > display.height) return;
+		image.drawImageOver( l.cover, x,y,150,150, 0, 0, wd, ht );
+		image.drawImageMS( l.shaded, x,y,150,150, 0, 0, wd, ht, bubble.r,bubble.grn,bubble.b );
+		let ux = ( x < 0 )?0:(x>display.width)?0:x;
+		let uy = ( y < 0 )?0:(y>display.height)?0:y;
+		let uw = ( x<0)?(150+x):x > (display.width-150)?150-(display.width-x):150;
+		let uh = ( y<0)?(150+y):y > (display.height-150)?150-(display.height-y):150;
 //		if( uw > 0 && uh > 0 ) 
 //		   r.update( ux,uy,uh,uw);
 	}
@@ -172,7 +171,9 @@ const redraw = ( image )=>{
 	l.lastTick = tick;
 	image.fill( 0, 0, image.width, image.height, sack.Image.colors.transparent );
 	l.bubbles.forEach( bubble=>{ ChooseColorDest( bubble ); DrawBubbles( image, tick, bubble,bubble.x-75,bubble.y-75,bubble.current ) } );
-
+	//const png = image.png;
+	//console.log( "PNG?", png );
+	//disk.write( "frame_"+(frame++)+".png", png );
 	return false;
 }
 
@@ -203,19 +204,23 @@ function animate() {
 }
 animate();
 
-
+let b_ = 0
 r.on( "mouse", (evt )=> {
 	const mx = evt.x;
 	const my = evt.y;
-	const bub = l.bubbles.find( (bub)=>{ const dx = mx - bub.x, dy = my-bub.y; if( (dx*dx+dy*dy) > 75*75 ) return false; return true; } );
-	if( bub ) {
-		bub.explode = true;
-		bub.explodeAt = l.lastTick;
-		bub.explodeUntil = l.lastTick + 500;
-		bub.explodeTo.x = Math.random() * 1920;
-		bub.explodeTo.y = Math.random() * 1080;
+	if( (evt.b&1) && ( evt.b ^ b_ & 1 ) ) {
+		const bub = l.bubbles.find( (bub)=>{ const dx = mx - bub.x, dy = my-bub.y; if( (dx*dx+dy*dy) > 75*75 ) return false; return true; } );
+		if( bub ) {
+			bub.explode = true;
+			bub.explodeAt = l.lastTick;
+			bub.explodeUntil = l.lastTick + 500;
+			bub.explodeTo.x = Math.random() * display.width;
+			bub.explodeTo.y = Math.random() * display.height;
+		}
 	}
+	b_ = evt.b;
 	//console.log( "mouse (draw)")
 	//r.redraw();
 } );
+
 
