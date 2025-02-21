@@ -277,6 +277,8 @@ void ImageObject::Init( Local<Object> exports ) {
 		SET_READONLY( colors, "orange", makeColor( isolate, BASE_COLOR_ORANGE ) );
 		SET_READONLY( colors, "niceOrange", makeColor( isolate, BASE_COLOR_NICE_ORANGE ) );
 		SET_READONLY( colors, "purple", makeColor( isolate, BASE_COLOR_PURPLE ) );
+		SET_READONLY( colors, "transparent", makeColor( isolate, 0 ) );
+		SET_READONLY( colors, "clear", makeColor( isolate, 0 ) );
 	}
 	Local<Function> i = imageTemplate->GetFunction(context).ToLocalChecked();
 	SET_READONLY( i, "colors", colors );
