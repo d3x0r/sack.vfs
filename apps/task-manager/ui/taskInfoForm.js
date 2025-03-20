@@ -192,13 +192,16 @@ export class TaskInfoEditor extends Popup {
 		this.args = new popups.DataGrid( this.group2, this, "argVal", { noSort: true,
 			columns: [
 				{field:"arg", name:"Arguments", className: "argument-field", type:{edit:true} },
-				{name: "", className: "-arg-up", type :{ suffix:" blue", text:"▲", click:(row)=>{
+				{name: "", className: "-arg-up", type :{ suffix:" blue", text:"▲", click:(gridRow)=>{
+					const row = gridRow.rowData;
 					this.args.moveRowUp( row );
 				}}},
-				{name: "", className: "-arg-down", type :{suffix:" blue", text: "▼", click:(row)=>{
+				{name: "", className: "-arg-down", type :{suffix:" blue", text: "▼", click:(gridRow)=>{
+					const row = gridRow.rowData;
 					this.args.moveRowDown( row );
 				}}},
-				{name: "", className: "-arg-delete", type :{ suffix:" red", text:"X", click:(row)=>{
+				{name: "", className: "-arg-delete", type :{ suffix:" red", text:"X", click:(gridRow)=>{
+					const row = gridRow.rowData;
 					const arg = this.argVal.findIndex( (arg)=>arg===row );
 					if( arg >= 0 ) this.argVal.splice( arg, 1 );
 					this.args.deleteRow( row );
@@ -221,7 +224,8 @@ export class TaskInfoEditor extends Popup {
 			columns: [
 				{field:"key", name:"Key", className: "env-key", type:{edit:true} },
 				{field:"val", name:"Value", className: "env-value", type:{edit:true} },
-				{name: "", className: "-env-delete", type :{suffix:" red",  text:"X", click:(row)=>{
+				{name: "", className: "-env-delete", type :{suffix:" red",  text:"X", click:(gridRow)=>{
+					const row = gridRow.rowData;
 					const envKey = this.envKeys.findIndex( (key)=>key===row );
 					if( envKey >= 0 ) this.envKeys.splice( envKey, 1 );
 					this.env.deleteRow( row );

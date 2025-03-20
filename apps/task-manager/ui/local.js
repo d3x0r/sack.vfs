@@ -26,7 +26,6 @@ export const local = {
 			delete local.tasks[task];
 		}
 		for( let system of local.systems )  {
-			//system.dataGrid.remove();
 			system.page.remove();
 		}
 		local.systems.length = 0;
