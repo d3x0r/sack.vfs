@@ -82,7 +82,10 @@
     },
     "./text": {
       "import": "./apps/text/text.mjs"
-    }
+    },
+	 "./wait": {
+		"import": "./apps/wait/wait.mjs"
+	 }
   },
   "old_exports": {
     "index": "./vfs_module.mjs",
