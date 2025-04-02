@@ -140,9 +140,9 @@ function AddTaskList(display, object, field) {
              	return delTime( new Date( Date.now() - row.ended.getTime() ) );
 		    } } }
 		, { name:"Show Log", className: "-log", type:{suffix:" blue", click:(gridRow)=>showLogClick(object,gridRow.rowData/*task*/), text: "LOG ✎"} }
-		, { name:"Stop"    , className: "-stop", type:{suffix:" red", click(gridRow)=>protocol.stopTask(object,gridRow.rowData)bind( protocol,object), text: "STOP ▢"} }
-		, { name:"Start"   , className: "-start", type:{suffix:" green", click(gridRow)=>protocol.startTask(object,gridRow.rowData), text: "PLAY ▷"} }
-		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click(gridRow)=>protocol.restartTask(object,gridRow.rowData), text: "RESTART ↻"} }
+		, { name:"Stop"    , className: "-stop", type:{suffix:" red", click(gridRow){protocol.stopTask(object,gridRow.rowData)}, text: "STOP ▢"} }
+		, { name:"Start"   , className: "-start", type:{suffix:" green", click(gridRow){protocol.startTask(object,gridRow.rowData)}, text: "PLAY ▷"} }
+		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click(gridRow){protocol.restartTask(object,gridRow.rowData)}, text: "RESTART ↻"} }
 		//, { name:"Edit"    , className: "edit", type:{click:protocol.editTask.bind( protocol,object), text: "Edit ✎"} }
 	];
 	if( local.login )
