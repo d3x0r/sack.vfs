@@ -2571,7 +2571,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 			UnlockHttp( pHttpState );
-			Release( pHttpState );
+			Release( pHttpState );  // just my hold on it.
 		}
 	}
 
