@@ -78,7 +78,7 @@ endif()
 
 if( UNIX )
   list(APPEND LIB_SHARED_C_FLAGS "-fPIC")
-endif( UNIX )
+endif()
 
 
 list(APPEND LIBRARIES ${SOCKET_LIBRARIES})
