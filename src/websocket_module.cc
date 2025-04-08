@@ -2570,7 +2570,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					break;
 				}
 			}
-			UnockHttp( pHttpState );
+			UnlockHttp( pHttpState );
 			Release( pHttpState );
 		}
 	}
