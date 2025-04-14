@@ -2095,6 +2095,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		(*pevt).buf = StrDup(reason);
 		(*pevt).buflen = StrLen( reason );
 		wssi->pc = NULL;
+		wssi->readyState = CLOSED;
 		EnqueLink( &wssi->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 		lprintf( "socket server close send %p", &wssi->async);
@@ -3650,6 +3651,7 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		else
 			uv_async_send( &wsc->async );
 	}
+	wsc->readyState = CLOSED;
 	wsc->pc = NULL;
 }
 
@@ -4153,8 +4155,10 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 	//lprintf( "Send From JS" );
 	if( !obj->pc ) {
+		static char msg[128];
+		snprintf( msg, 128, TranslateText( "Connection is already closed: %d" ), obj->readyState ); 
 		isolate->ThrowException( Exception::Error(
-			String::NewFromUtf8( isolate, TranslateText( "Connection is already closed." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			String::NewFromUtf8( isolate, msg, v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
 	if( args[0]->IsTypedArray() ) {
