@@ -10150,7 +10150,16 @@ HTTP_EXPORT PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
    see also: ProcessHttpFields and ProcessCGIFields
 */
 HTTP_EXPORT PLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
-HTTP_EXPORT int HTTPAPI GetHttpVersion( HTTPState pHttpState );
+//HTTP_EXPORT int HTTPAPI GetHttpVersion( HTTPState pHttpState );
+/* get the version of the current reply which has been parsed into the state.
+    will be 0 if it is a reply and not a reply.
+*/
+HTTP_EXPORT int HTTPAPI GetHttpReplyVersion( HTTPState pHttpState );
+/* get the version of the current request which has been parsed into the state.
+    will be 0 if it is a reply and not a request.
+*/
+HTTP_EXPORT int HTTPAPI GetHttpRequestVersion( HTTPState pHttpState );
+// #define GetHttpVersion(state) GetHttpRequestVersion( state )
 HTTP_EXPORT
  /* Enumerates the various http header fields by passing them
    each sequentially to the specified callback.
