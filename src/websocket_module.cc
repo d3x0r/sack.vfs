@@ -897,7 +897,7 @@ static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings
 		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
 		SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
 		SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
-		SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpVersion( pHttpState ) ) );
+		SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpRequestVersion( pHttpState ) ) );
 		if (content = GetHttpContent(pHttpState))
 			SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
 		else
@@ -2349,7 +2349,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	HTTPState http = obj->pc?GetWebSocketHttpState( obj->pc ):obj->wss?GetWebSocketPipeHttpState( obj->wss->wsPipe ): NULL;
 	if( http ) {
-		int vers = GetHttpVersion( http );
+		int vers = GetHttpRequestVersion( http ); // reply with same version as request
 		obj->headWritten = true;
 		vtprintf( obj->pvtResult, "HTTP/%d.%d %d %s\r\n", vers / 100, vers % 100, status, "OK" );
 
