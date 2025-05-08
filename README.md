@@ -264,6 +264,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
    - Implements interface compatible with isolated-vm.
    - Adds some utility functions to support isolated-vm; setTimeout and setInterval for examples.
    - Fixes some small limits of set size in SACK threads; migrate small dynamic object THREAD_EVENT to a set managed object.
+   - Fixes some client HTTP requesting.
 - 1.3.120
    - Fix JSOX parsing error for unquoted partial keywords at the end of objects/arrays.
    - Fix race condition handling onopen(onconnect) to server and handling the first client message.
