@@ -19,13 +19,13 @@ export class Protocol extends Events {
 	get debug() { return Protocol.debug; }
 
 	connect(protocol, this_) {
-		if( this.ws ) this.ws.close( 1006, "close duplicate socket" );
-		this.ws = new sack.WebSocket.Client( this.address, protocol );
-		this.ws.onmessage = (msg)=>this.onmessage(msg) ;
-		this.ws.onclose = (code,reason)=>this.onclose(code,reason) ;
-		this.ws.onopen = (msg)=>this.onopen.call( evt) ;
-		this.ws.onerror = (msg)=>this.onerror.call( evt) ;
-		return this.ws;
+		if( this_.ws ) this_.ws.close( 1006, "close duplicate socket" );
+		this_.ws = new sack.WebSocket.Client( this_.address, protocol );
+		this_.ws.onmessage = (msg)=>this_.onmessage(msg) ;
+		this_.ws.onclose = (code,reason)=>this_.onclose(code,reason) ;
+		this_.ws.onopen = (evt)=>this_.onopen( evt) ;
+		this_.ws.onerror = (evt)=>this_.onerror(evt) ;
+		return this_.ws;
 	}
 	
 	onopen( evt ) {
@@ -40,7 +40,7 @@ export class Protocol extends Events {
 		this.on( "close", [evt.code, evt.reason] );
 		this.ws = null;
 		if( evt.code === 1000 ) this.connect();
-		else setTimeout( this.connect, 5000 );
+		else setTimeout( ()=>this.connect( this.protocol,this), 5000 );
 	}
 
 	onmessage( evt ) {
@@ -52,7 +52,7 @@ export class Protocol extends Events {
 	}
 
 	send( msg ) {
-		if( Protocol.ws.readyState === 1 ) {
+		if( this.ws.readyState === 1 ) {
 			if( "object" === typeof msg ) 
 				this.ws.send( JSOX.stringify(msg) ); 
 			else
