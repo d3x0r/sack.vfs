@@ -164,12 +164,13 @@ static void setCursor( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
-	if( code < 0 ) 	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
+	if( code < 0 )
+		return CallNextHookEx( 0 /*ignored*/, code, wParam, lParam );
 
 	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
-	static int resending;
+	static int resending = 0;
 	if( resending ) {
-		return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
+		return CallNextHookEx( 0/*ignored*/, code, wParam, lParam );
 	}
 	if( hidg.blocking ) {
 		hidg.skipEvent = 1;
@@ -189,21 +190,20 @@ LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 	INDEX idx;
 	LIST_FORALL( hidg. keyEventHandlers, idx, KeyHidObject*, kbd ) {
 		if( !kbd->readCallback.IsEmpty() ) {
-			msgbuf->done--;
+			msgbuf->done = 0;
 			EnqueLink( &kbd->keyEvents, msgbuf );
 			if( kbd->ivm_hosted )
 				kbd->c->ivm_post( kbd->c->ivm_holder, std::make_unique<keyAsyncTask>( kbd ) );
 			else {
-				//lprintf( "uv_async_send  %p %p", kbd, &kbd->keyAsync.data );
 				uv_async_send( &kbd->keyAsync );
 			}
-			while( msgbuf->done < 0 ) WakeableSleep( 1 );
-			if( msgbuf->used )
-				return TRUE;
+			while( !msgbuf->done ) WakeableSleep( 1 );
+			if( msgbuf->used ) {
+				return 1; // don't pass it on to the OS
+			}
 		}
 	}
-
-	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
+	return CallNextHookEx( 0 /*ignored*/, code, wParam, lParam );
 
 }
 
@@ -235,7 +235,7 @@ LRESULT WINAPI MouseProcLL( int code, WPARAM wParam, LPARAM lParam ) {
 		//EnqueLink( &hidg.mouseEvents, input );
 		//uv_async_send( &hidg.mouseAsync );
 	}
-	return CallNextHookEx( hidg.hookHandleMLL, code, wParam, lParam );
+	return CallNextHookEx( 0 /*ignored*/, code, wParam, lParam );
 }
 
 uintptr_t InputThread( PTHREAD thread )
@@ -372,7 +372,6 @@ void asyncmsg( uv_async_t* handle ) {
 	v8::Isolate *isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
-	lprintf( "async posted... %p", handle->data );
 
 	asyncmsg__( isolate, context, (KeyHidObject const *)handle->data );
 	{
@@ -389,10 +388,8 @@ void asyncmsg__( v8::Isolate *isolate, Local<Context> context, KeyHidObject cons
 
 	{
 		struct msgbuf *msg;
-		//lprintf( "kbdhid %p %p", myself, myself->keyEvents );
 		while( msg = (struct msgbuf *)DequeLink( (PLINKQUEUE*)&myself->keyEvents ) ) {
 			if( msg->close ) {
-				//lprintf( "Key async close" );
 				uv_close( (uv_handle_t*)&myself->keyAsync, uv_key_closed );
 				break;
 			}
@@ -431,9 +428,10 @@ void asyncmsg__( v8::Isolate *isolate, Local<Context> context, KeyHidObject cons
 				*/
 
 			Local<Value> argv[] = { eventObj };
-			INDEX idx;
-			class KeyHidObject *handler;
-			LIST_FORALL( hidg.keyEventHandlers, idx, class KeyHidObject *, handler ) {
+			//INDEX idx;
+			class KeyHidObject const * const handler = myself;
+			//LIST_FORALL( hidg.keyEventHandlers, idx, class KeyHidObject *, handler ) 
+			{
 				if( !handler->readCallback.IsEmpty() ) {
 					MaybeLocal<Value> result = handler->readCallback.Get( isolate )->Call( context, isolate->GetCurrentContext()->Global(), 1, argv );
 					if( result.IsEmpty() ) {
