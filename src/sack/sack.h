@@ -7769,6 +7769,15 @@ NETWORK_PROC( PCLIENT, CPPOpenTCPListenerAddr_v2d )(SOCKADDR *pAddr
 	, LOGICAL waitForReady
 	DBG_PASS);
 #define CPPOpenTCPListenerAddr_v2(a,b,c,d)  CPPOpenTCPListenerAddr_v2d(a,b,c,d DBG_SRC )
+// This is an extended version of v2 - that is used internally to open a second socket that can listen on 0.0.0.0 and ::0
+// FALSE is passed to the first isAuto; and TRUE to the second, which prevents infinite recursion.
+NETWORK_PROC( PCLIENT, CPPOpenTCPListenerAddr_v3d )( SOCKADDR *pAddr
+	, cppNotifyCallback NotifyCallback
+	, uintptr_t psvConnect
+	, LOGICAL waitForReady
+	, LOGICAL isAuto
+	DBG_PASS );
+#define CPPOpenTCPListenerAddr_v3(a,b,c,d,e)  CPPOpenTCPListenerAddr_v3d(a,b,c,d,e DBG_SRC )
 /* <combine sack::network::tcp::OpenTCPListenerAddrEx@SOCKADDR *@cNotifyCallback>
    \ \                                                                            */
 NETWORK_PROC( PCLIENT, OpenTCPListenerExx )( uint16_t wPort, cNotifyCallback NotifyCallback DBG_PASS );

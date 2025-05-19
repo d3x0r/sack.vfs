@@ -41,9 +41,9 @@ private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getPorts( Local<Name> property, const PropertyCallbackInfo<Value>& info );
 	static void getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args );
-	//static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
 	static void setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args );
-	//static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
+	static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
 	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
@@ -155,7 +155,7 @@ void ComObject::getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>
 
 }
 
-/*
+
 void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
@@ -163,7 +163,7 @@ void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
 
 }
-*/
+
 void ComObject::setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
@@ -171,7 +171,7 @@ void ComObject::setRTS2( Local<Name> property, Local<Value> value, const Propert
 		SetCommRTS( obj->handle, obj->rts = value.As<Boolean>()->BooleanValue( isolate ) );
 }
 
-/*
+
 void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() > 0 ) {
@@ -180,7 +180,7 @@ void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
 			SetCommRTS( obj->handle, obj->rts = args[0].As<Boolean>()->BooleanValue( isolate ) );
 	}
 }
-*/
+
 
 void dont_releaseBufferBackingStore(void* data, size_t length, void* deleter_data) {
 	(void)length;
