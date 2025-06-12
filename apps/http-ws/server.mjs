@@ -32,6 +32,12 @@ let packageRoot = null;
 }
 
 const path = {
+	basename(path) {
+		const lastDot = path.lastIndexOf( "." );
+		if( lastDot > 0 ) return path.substring( 0, lastDot );
+		return path;
+		
+	},
 	dirname(path) {
 		const lastSlash = path.lastIndexOf( '/' );
 		if( lastSlash > 0 ) return path.substring(0,lastSlash);
