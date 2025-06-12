@@ -377,8 +377,10 @@ void asyncmsg( uv_async_t* handle ) {
 	{
 		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
 		class constructorSet *c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( context, Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( context, Null( isolate ), 0, NULL );
+		}
 	}
 }
 
@@ -687,8 +689,10 @@ void mouse_asyncmsg( uv_async_t* handle ) {
 		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
 		v8::Isolate *isolate    = v8::Isolate::GetCurrent();
 		class constructorSet *c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 }
 

@@ -542,7 +542,7 @@ static void udpAsyncMsg( uv_async_t *handle ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	udpObject *obj         = (udpObject *)handle->data;
 	udpAsyncMsg_( isolate, context, obj );
-	{
+	if( !obj->c->ThreadObject_idleProc.IsEmpty() ) {
 		Local<Function> cb      = Local<Function>::New( isolate, obj->c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
@@ -963,7 +963,7 @@ static void tcpAsyncMsg( uv_async_t *handle ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	tcpObject *obj         = (tcpObject *)handle->data;
 	tcpAsyncMsg_( isolate, context, obj );
-	{
+	if( !obj->c->ThreadObject_idleProc.IsEmpty() ) {
 		Local<Function> cb      = Local<Function>::New( isolate, obj->c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}

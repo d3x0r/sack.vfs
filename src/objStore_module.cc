@@ -412,7 +412,7 @@ static void handlePostedObjectStorage( uv_async_t* async ) {
 	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
 	handlePostedObjectStorage_( isolate, context, unload );
 	uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
-	{
+	if( !c->ThreadObject_idleProc.IsEmpty() ) {
 		Local<Function> cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}

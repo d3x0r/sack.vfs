@@ -1159,8 +1159,10 @@ static void wssiAsyncMsg( uv_async_t* handle ) {
 	wssiAsyncMsg__( isolate, context, (wssiObject *)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 }
 /*
@@ -1441,8 +1443,10 @@ static void wssAsyncMsg( uv_async_t* handle ) {
 	wssAsyncMsg__( isolate, context, (wssObject *)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 }
 
@@ -1563,8 +1567,10 @@ static void wscAsyncMsg( uv_async_t* handle ) {
 	wscAsyncMsg__( isolate, context, (wscObject *)handle->data );
 	{
 		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 }
 
@@ -2498,15 +2504,21 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( obj->pc ) {
 #ifdef DEBUG_AGGREGATE_WRITES
 				lprintf( "Sending header buffer: %p  %d", obj->pc, GetTextSize(buffer) );
+				LogBinary( GetText( buffer ), GetTextSize( buffer ) );
 #endif
 				SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
 				if( content && contentLen ) {
 #ifdef DEBUG_AGGREGATE_WRITES
+					lprintf( "And send data: %d", contentLen );
+					LogBinary( GetText( buffer ), GetTextSize( buffer ) );
 					lprintf( "And there's some content to send: %p %d", obj->pc, contentLen );
 #endif
 					// allow network layer to keep this content buffer
 					SendTCPLong( obj->pc, content, contentLen );
-				}
+				} 
+				// no content is allowed.
+				//else
+				//	lprintf( "Content disappeared?" );
 			} else {
 #ifdef DEBUG_AGGREGATE_WRITES
 				lprintf( "Send to pipe somehow??" );

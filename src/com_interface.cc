@@ -237,8 +237,10 @@ static void asyncmsg__( Isolate *isolate, Local<Context> context, ComObject * my
 	//lprintf( "done calling message notice." );
 	{
 		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 }
 

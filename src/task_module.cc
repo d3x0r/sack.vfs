@@ -499,8 +499,10 @@ static void taskAsyncMsg( uv_async_t *handle ) {
 	{
 		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
 		class constructorSet *c = getConstructors( isolate );
-		Local<Function> cb      = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function> cb      = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 }
 
@@ -1687,8 +1689,10 @@ static void monitoredTaskAsyncMsg( uv_async_t *handle ) {
 		// This is hook into Node to dispatch Promises() that are created... all
 		// event loops should have this.
 		class constructorSet *c = getConstructors( isolate );
-		Local<Function> cb      = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function> cb      = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 }
 
