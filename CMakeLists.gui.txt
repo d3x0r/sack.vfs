@@ -231,6 +231,7 @@ if( WIN32 )
 		src/playSound_module.cc
 		src/win32/commandline.cc
 		src/win32/window_shell.cc
+		src/win32/wifiInterface.cc
 		src/gui/sack_systray.cc
 		)
 elseif( UNIX )
