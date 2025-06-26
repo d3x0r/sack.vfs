@@ -2,6 +2,30 @@ import {sack} from "sack.vfs"
 
 let interfaces = sack.WIFI.interfaces;
 
+let autoConnect = false;
+
+
+sack.Systray.set(  !interfaces.find( i=>i.status !== "connected" )?"../gui/pfull.ico":"../gui/pdown.ico", ()=>{
+	// only saves the first function
+	interfaces.forEach( (i,idx)=> (i.status=== "disconnected")&&sack.WIFI.connect( idx, "MobleyPlace", "MobleyPlace" ) );
+	
+} );
+
+sack.Systray.on( "Connect All", ( )=>{
+	console.log( "Connect all(except connected)" );
+	for( let i = 0; i < interfaces.length; i++ ) {
+		if( interfaces[i].status !== "connected" )
+			sack.WIFI.connect( i, "MobleyPlace", "MobleyPlace" );
+	}
+} );
+
+sack.Systray.on( "Close All Connections", ( )=>{
+	console.log( "Disconnect all wifi" );
+	for( let i = 0; i < interfaces.length; i++ ) sack.WIFI.disconnect( i );
+} );
+
+
+
 const imap = new Map();
 
 if( interfaces.length > 0 )  {
@@ -20,6 +44,7 @@ sack.WIFI.onEvent( (event)=>{
 	    , 15 /* profile change */
 	  //  , 23 /* profile unblocked */
 	    , 5 /* BSS Type Change */
+		, 23 /* profile unblock - gets a Profile and SSID */
 	    , 8 /*scanfail*/].includes( event.code ) ) {
 		//console.log( "Skipping event:", event );
 		return;
@@ -69,20 +94,27 @@ sack.WIFI.onEvent( (event)=>{
 	else if( event.code === 10 ) {
 		interfaces[event.interface].state = 1;
 		interfaces[event.interface].status = "connected";
+		if( !interfaces.find( i=>i.status !== "connected" ) )
+			sack.Systray.set( "../gui/pfull.ico" );
 		return;
 		
 	} else if( event.code === 20 ) {
 		interfaces[event.interface].state = 3;
 		interfaces[event.interface].status = "disconnecting";
+		console.log( "no disconnecting?" );
+		sack.Systray.set( "../gui/pdown.ico" );
 		return;
 	} else if( event.code === 21 ) {
 		interfaces[event.interface].state = 4;
 		interfaces[event.interface].status = "disconnected";
 		// power off wifi ges back an error
-		console.log( "This is disconnected, we can now connect...(connecting.)" );
-		const x = 0;//sack.WIFI.connect( event.interface, "MobleyPlace", "MobleyPlace" );
-		if( x )
-			console.log( "Connect error at disconnect event:", x );
+		sack.Systray.set( "../gui/pdown.ico" );
+		//console.log( "This is disconnected, we can now connect...(connecting.)" );
+		if( autoConnect ) {
+			const x = sack.WIFI.connect( event.interface, "MobleyPlace", "MobleyPlace" );
+			if( x )
+				console.log( "Connect error at disconnect event:", x );
+		}
 		return;
 	}
 
@@ -98,7 +130,7 @@ function tick() {
 		//console.log( "laststatus:", int.status, lastStatus );
 		if( int.status != lastStatus[i] ) {
 			//console.log( "int:", int );
-			console.log( int.name,":", int.status );
+			console.log( (new Date()).toLocaleString(), int.name,":", int.status );
 		}
 		if( int.status != "connected" && int.status != "disconnected" ) {
 			setTimeout( tick, 10 );
