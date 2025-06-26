@@ -274,6 +274,7 @@ class constructorSet {
 
 #ifdef _WIN32
 	uv_async_t serviceAsync; // keep this instance around for as long as we might need to do the periodic callback
+	uv_async_t wifiAsync;
 #endif
 
 #ifdef INCLUDE_GUI
@@ -666,3 +667,8 @@ PLIST GetProcessCommandLines( const char* process, int pid );
 int GetProcessParent( int pid );
 
 void ReleaseCommandLineResults( PLIST* ppResults );
+
+
+//----------- win32 wifiInterface.cc
+
+void InitWifiInterface( Isolate *isolate, Local<Object>exports );

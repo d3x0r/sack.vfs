@@ -534,6 +534,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	KeyHidObjectInit( isolate, exports );
 	SoundInit( isolate, exports );
 	InitSystray( isolate, exports );
+	InitWifiInterface( isolate, exports );
 #endif
 	InitWebSocket( isolate, exports );
 	InitUDPSocket( isolate, exports );
