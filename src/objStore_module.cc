@@ -157,6 +157,8 @@ struct objectStorageTransport {
 struct objectStorageUnloadStation {
 	Persistent<Object> this_;
 	String::Utf8Value* s;  // destination address
+	bool ivm_hosted;
+	constructorSet *c;
 	uv_async_t poster;
 	uv_loop_t  *targetThread;
 	Persistent<Function> cb; // callback to invoke
@@ -166,11 +168,23 @@ struct objectStorageUnloadStation {
 
 static struct objStoreLocal {
 	PLIST open;
+	bool ivm_hosted;
+	constructorSet *c;
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	POBJECT_STORAGE_EVENTSET osEvents;
 	PLIST strings;
 	PLIST transportDestinations;
 } osl;
+
+static void handlePostedObjectStorage_( Isolate *isolate, Local<Context> context
+                                      , struct objectStorageUnloadStation * unload );
+
+	struct objectStorageTask : SackTask {
+	struct objectStorageUnloadStation *unload;
+	objectStorageTask( struct objectStorageUnloadStation *unload )
+	    : unload( unload ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { handlePostedObjectStorage_( isolate, context, unload ); }
+};
 
 
 ATEXIT( closeVolumes ) {
@@ -214,6 +228,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 	return check;
 }
 
+#if 0
 static void objStoreEventHandler( uv_async_t* handle ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
@@ -241,9 +256,10 @@ static void objStoreEventHandler( uv_async_t* handle ) {
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
-
 }
+#endif
 
+#if 0
 static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt, ... ) {
 	//= (udpObject*)psv;
 	va_list args;
@@ -266,8 +282,7 @@ static void postEvent( ObjectStorageObject *_this, enum objectStorageEvents evt,
 	EnqueLink( &_this->plqEvents, pevt );
 	uv_async_send( &_this->async );
 }
-
-
+#endif
 
 static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, ObjectStorageObject* obj ) {
 	struct objectStorageTransport* trans = new struct objectStorageTransport();
@@ -280,7 +295,10 @@ static LOGICAL PostObjectStorage( Isolate *isolate, String::Utf8Value *name, Obj
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
 				AddLink( &station->transport, trans );
 				//lprintf( "Send Post Request %p", station->poster );
-				uv_async_send( &station->poster );
+				if( station->ivm_hosted )
+					station->c->ivm_post( station->c->ivm_holder, std::make_unique<objectStorageTask>( station ) );
+				else
+					uv_async_send( &station->poster );
 				break;
 			}
 		}
@@ -313,7 +331,7 @@ static void postObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 
-
+/*
 static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() < 1 ) {
@@ -333,7 +351,7 @@ static void postObjectStorageObject( const v8::FunctionCallbackInfo<Value>& args
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
 	}
 }
-
+*/
 
 static void finishPostClose( uv_handle_t *async ) {
 	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
@@ -341,12 +359,8 @@ static void finishPostClose( uv_handle_t *async ) {
 	delete unload;
 }
 
-static void handlePostedObjectStorage( uv_async_t* async ) {
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	class constructorSet* c = getConstructors( isolate );
-	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
+void handlePostedObjectStorage_( Isolate*isolate, Local<Context>context, struct objectStorageUnloadStation*unload ) {
+	class constructorSet* c = unload->c;
 	Local<Function> f = unload->cb.Get( isolate );
 	INDEX idx;
 	struct objectStorageTransport* trans;
@@ -367,15 +381,13 @@ static void handlePostedObjectStorage( uv_async_t* async ) {
 		obj->fsMount = trans->oso->fsMount;
 		obj->thrown = trans->oso->thrown = TRUE;
 
-	//lprintf( "having copied all the data to the new one, erase the old one. %p %p", trans->oso, obj );
-	trans->oso->vol = NULL;
-	trans->oso->volNative = false;
-	trans->oso->mountName = NULL;
-	trans->oso->fileName = NULL;
-	trans->oso->fsInt = NULL;
-	trans->oso->fsMount = NULL;
-
-
+		//lprintf( "having copied all the data to the new one, erase the old one. %p %p", trans->oso, obj );
+		trans->oso->vol = NULL;
+		trans->oso->volNative = false;
+		trans->oso->mountName = NULL;
+		trans->oso->fileName = NULL;
+		trans->oso->fsInt = NULL;
+		trans->oso->fsMount = NULL;
 
 		MaybeLocal<Value> ml_result = f->Call( context, unload->this_.Get(isolate), 2, args );
 		if( !ml_result.IsEmpty() ) {
@@ -388,15 +400,24 @@ static void handlePostedObjectStorage( uv_async_t* async ) {
 		unload->this_.Reset();
 		DeleteLink( &osl.transportDestinations, unload );
 		SetLink( &unload->transport, 0, NULL );
-		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 		break;
 	}
-	{
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+}
+
+static void handlePostedObjectStorage( uv_async_t* async ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
+	struct objectStorageUnloadStation* unload = ( struct objectStorageUnloadStation* )async->data;
+	handlePostedObjectStorage_( isolate, context, unload );
+	uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
+	if( !c->ThreadObject_idleProc.IsEmpty() ) {
+		Local<Function> cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 }
+
 
 static void setClientObjectStorageHandler( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -413,7 +434,11 @@ static void setClientObjectStorageHandler( const v8::FunctionCallbackInfo<Value>
 	unloader->transport = NULL;
 	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
 
-	uv_async_init( unloader->targetThread, &unloader->poster, handlePostedObjectStorage );
+	unloader->c = c;
+	if( c->ivm_holder ) {
+		unloader->ivm_hosted = true;
+	} else
+		uv_async_init( unloader->targetThread, &unloader->poster, handlePostedObjectStorage );
 
 	AddLink( &osl.transportDestinations, unloader );
 }
@@ -460,7 +485,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "delete", ObjectStorageObject::removeObject );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "flush", ObjectStorageObject::flush );
 
-	Local<Function> VolFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
+	//Local<Function> VolFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
 	class constructorSet* c = getConstructors( isolate );
 	Local<Function> objectStoreFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
@@ -557,6 +582,9 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 			storeId = EncodeBase64Ex( (uint8_t*)buf, (16 + 16), &outlen, (const char *)1 );
 			SRG_DestroyEntropy( &ctx );
 		}
+		if( storeId ) {
+			lprintf( "Sealed ID is not implemented fully..." );
+		}
 	}
 	else {
 		if( osoOpts.data ) {
@@ -595,8 +623,8 @@ static uintptr_t CPROC DoPutObject( PTHREAD thread ) {
 }
 
 void ObjectStorageObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
+	//Isolate* isolate = args.GetIsolate();
+	//Local<Context> context = isolate->GetCurrentContext();
 	//Local<Function> cb;
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	// And unload?
@@ -607,7 +635,7 @@ void ObjectStorageObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void ObjectStorageObject::removeObject( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 	//Local<Function> cb;
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	if( args[0]->IsString() ) {
@@ -756,7 +784,6 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 	const char* filename;
 	LOGICAL result;
 	int got = 0;
-	int stepMode = 0;
 	class constructorSet* c = getConstructors( isolate );
 	do {
 		if( got == 0 ) {
@@ -769,7 +796,7 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 					result = sack_vfs_os_read_time_cursor( tlc->cursor, 1, (int)fd->Value(), &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 				} else if( from->InstanceOf( context, c->dateNsCons.Get( isolate ) ).ToChecked() ) {
 					Local<Date> fd = from.As<Date>();
-					Local<Value> ns = fd->Get( context, String::NewFromUtf8Literal( isolate, "ns" ) ).ToLocalChecked();
+					//Local<Value> ns = fd->Get( context, String::NewFromUtf8Literal( isolate, "ns" ) ).ToLocalChecked();
 
 					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
 
@@ -1029,9 +1056,9 @@ void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& ar
 		struct optionStrings *strings = getStrings( isolate );
 		Local<String> optName;
 
-		Local<Object> theArray = GETV( indexDef, optName = strings->dataString->Get(isolate) ).As<Object>();
+		//Local<Object> theArray = GETV( indexDef, optName = strings->dataString->Get(isolate) ).As<Object>();
 		Local<String> name = GETV( indexDef, optName = strings->nameString->Get( isolate ) ).As<String>();
-		Local<Object> opts = GETV( indexDef, optName = strings->optsString->Get( isolate ) ).As<Object>();
+		//Local<Object> opts = GETV( indexDef, optName = strings->optsString->Get( isolate ) ).As<Object>();
 
 		String::Utf8Value fieldName( isolate,  name );
 		objStore::sack_vfs_os_file_ioctl( file, SOSFSFIO_CREATE_INDEX, *fieldName, fieldName.length() );
@@ -1133,7 +1160,8 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 #endif
 			objStore::sack_vfs_os_truncate( file ); // allow new content to allocate in large blocks?
 
-			size_t lengthWritten = objStore::sack_vfs_os_write( file, *data, data.length() );
+			//size_t lengthWritten = 
+			objStore::sack_vfs_os_write( file, *data, data.length() );
 			// compare lengthWritten with data.length() ?
 
 			if( dateValToUse )
@@ -1263,7 +1291,7 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 
 void ObjectStorageObject::getTimeline( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	ObjectStorageObject* obj = ObjectWrap::Unwrap<ObjectStorageObject>( args.This() );
+	//ObjectStorageObject* obj = ObjectWrap::Unwrap<ObjectStorageObject>( args.This() );
 	class constructorSet* c = getConstructors( isolate );
 	Local<Value> tl_args[] = { args.This() };
 	Local<Value> timeline = c->TimelineCursorObject_constructor.Get( isolate )->CallAsConstructor( isolate->GetCurrentContext(), 1, tl_args ).ToLocalChecked();
@@ -1274,12 +1302,12 @@ void ObjectStorageObject::getTimeline( const FunctionCallbackInfo<Value>& args )
 
 
 void ObjectStorageObject::getTimelineCursor( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	
 }
 
 void ObjectStorageObject::haltVolume( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	sack_vfs_os_halt( vol->vol );
 }
@@ -1328,7 +1356,7 @@ Local<Array> makeTimes( Isolate* isolate, uint64_t* timeArray, int8_t* tzArray, 
 		timeArray[n] += ( use_tz * 900000LL ) * 1000000;
 		
 		ConvertTickToTime( ( (timeArray[n]/1000000)<<8)| (use_tz&0xFF), &st );
-		Local<Script> script;
+		//Local<Script> script;
 		char buf[64];
 		int tz;
 		int negTz = 0;
@@ -1357,9 +1385,9 @@ void ObjectStorageObject::fileGetTimes( const v8::FunctionCallbackInfo<Value>& a
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( args.Holder() );
 	String::Utf8Value fName( isolate, args[0] );
 
-	size_t timeCount;
-	uint64_t* timeArray;
-	int8_t* tzArray;
+	size_t timeCount = 0;
+	uint64_t* timeArray = NULL;
+	int8_t* tzArray = NULL;
 
 	if( vol->volNative ) {
 		if( !objStore::sack_vfs_os_exists( vol->vol, ( *fName ) ) ) {

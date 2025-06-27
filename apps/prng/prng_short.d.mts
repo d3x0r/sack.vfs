@@ -1,0 +1,10 @@
+export function getSeed(s: any): () => number;
+export function getSeed4(seed: any): number[];
+export function SFC32(seed: any): () => number;
+export function MUL32(seed: any): () => number;
+export function XOR32(seed: any): () => number;
+export function JSF32(seed: any): () => number;
+export function SFC32_(seed: any): () => number;
+export function MUL32_(seed: any): () => number;
+export function XOR32_(seed: any): () => number;
+export function JSF32_(seed: any): () => number;

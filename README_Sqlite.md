@@ -1,5 +1,14 @@
 
-# Sqlite Interface
+# SQL
+
+`sack.Sqlite` is also aliased as `sack.DB` and `sack.ODBC`; the database access is not exclusively Sqlite.
+All three are the same function.
+
+
+
+## SQL Interface
+
+
 
   (result from `vfs.Sqlite("dbName.db")` or `vfs.Volume().Sqlite("dbName.db")`)
 
@@ -7,7 +16,10 @@ Sqlite command only processes one command at a time.  If a multiple command sepa
 
 Calling `sack.Sqlite` with no arguments `sack.Sqlite()` will create an in-memory temporary database.
 
-Sqlite( &lt;String&gt; ) will user the string to specify a filename.  
+Sqlite( &lt;String&gt; ) will user the string to specify a filename or ODBC DSN.
+
+Sqlite( &lt;String&gt; [, callback] ) will user the string to specify a filename or ODBC DSN, optional callback is called with the database connection when it is opened (or reopened).  
+
 Sqlite URI decoding is enabled.  `":memory:"` will also result in a memory only database.
 
 There are methods on the Sqlite() function call...
@@ -39,10 +51,12 @@ There are methods on the Sqlite() function call...
 | commit | ()  |  end a transaction successfully. |
 | autoTransact | (&lt;bool&gt;) | enabled/disable auto transaction features.    A command will begin a transaction, a timer will be set such that if no other command between happens, then a commit will be generated. So merely doing ```do()``` commands are optimized into transactions.
 | makeTable | (tableString) | evalute a sql create table clause, and create or update a table based on its definitions.          Additional columns will be added, old columns are untouched, even if the type specified changes.    Additional indexes and constraints can be added to existing tables.
+| provider | accessor | Get the database provider for the connection. (1=SQLite, 2=MySQL, 3=PSSQL, 4=Access, -1=unknown) |
 | do | ( &lt;String&gt;) | execute a single sql command or query.  Results with null on error, or an array on success of a select, and true/false/scalar int on result of other commands.    If command generates no output, array length will be 0.  |
 | do | ( &lt;Format String&gt; [,bound parameters... ] ) | This varaition, if the first string contains '?', then the first string is taken as the sql statement, and all extra paramters are passed to be bound to 1-N.  |
 | do | ( &lt;Format String&gt; , object  [,bound parameters... ] ) | This varaition, if the first string contains ':','@', or '$', works like other format string, but second parameter must be an object with field names that match the names specified in the query.   (see examples below) |
 | do | ( &lt;String&gt; [,bound parameters , &lt;More SQL String&gt; [,param,sql ... ] ) | The SQL statement is composed dynamically from parts.  Literal text of the query is interleaved with bound variables.  Each variable is replaced with a '?', and passed as an argument to bind to the statement. |
+| run | any do() args | behaves like `do(...)` but returns a promise, and is executed in a background thread; some ODBC drivers will fail because they only support one outstanding statement (MSSQL for example) |
 | op  | (section [, opName],defaultValue) |  get an option from sqlite option database; return defaultValue  if not set, and set the option int he database to the default value.
 | getOption | (section [,opName],defaultValue) | longer name of 'op' |
 | so | (section [,opName] ,value) | set an option in sqlite option database |
@@ -50,6 +64,7 @@ There are methods on the Sqlite() function call...
 | fo  | (opName) | find an option node under this one (returns null if node doesn't exist)<BR> fo( "name" ) |
 | go  | (opName) | get an option node      <BR>go( "name" ) |
 | eo  | ( callback(node,name)) |  enum option nodes from root of options, takes a callback as a parameter.<br> callback parameters ( optionNode, optionName ) ... the callback parameters get a node and a name.   The node is another option node that migth be enumerated with eo...<BR> `function callback(node,name)  {console.log( "got", name, node.value );` |
+| require | setter/getter | set the option for required, which will attempt to re-open a connection if it fails; the optional callback specified when opening the connection will be re-called. |
 | function | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Set as deterministic; callback is called whenever the procedure's value is required by sqlite; values for inputs are cached so it doesn't need to always call the function.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT** |
 | procedure | (name, callback(...args) | Add a user defined function to the current sql connection.  'name' is the name of the function.  Callback is called whenever the function is used in SQL statement given to sqlite.  Return value is given as result of function.   **ODBC CONNECTION UNDEFINED RESULT** |
 | aggregate | ( name, stepCallback(...args), finalCallback() ) | Define an aggregate function called 'name' and when used, each row stepped is passed to the step callback, when the grouping issues a final, invoke the final callback.  Final result is given as the final value.  **ODBC CONNECTION UNDEFINED RESULT** |

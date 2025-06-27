@@ -6,7 +6,7 @@ const sack = require( "../.." );
 const vfs = sack.Volume( "cmount", "container.vfs" );
 //console.log( "sack:", sack );
 
-const store = sack.ObjectStorage( vfs, "storage.os" );
+const store = new sack.ObjectStorage( vfs, "storage.os" );
 
 // consts...
 const storage = {
@@ -52,7 +52,7 @@ function loadConfig() {
 						storage.configFile.read().then( setConfig );
 					} );
 				} );
-			} );
+			} ).catch( async err=>{ storage.configFile = await directory.create( "config.jsox" ); setConfig(); console.log( "error:", err ) } );
 		} );
 	});
 

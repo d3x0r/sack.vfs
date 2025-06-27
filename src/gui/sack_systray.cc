@@ -64,8 +64,10 @@ static void asyncmsg( uv_async_t* handle ) {
 	DeleteFromSet( SS_EVENT, &systrayLocal.event_pool, evt );
 	{
 		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 }
 
@@ -78,6 +80,7 @@ static void enableEventLoop( void ) {
 	systrayLocal.eventLoopEnables++;
 }
 
+#if 0
 static void disableEventLoop( void ) {
 	if( systrayLocal.eventLoopRegistered ) {
 		if( !(--systrayLocal.eventLoopEnables) ) {
@@ -86,7 +89,7 @@ static void disableEventLoop( void ) {
 		}
 	}
 }
-
+#endif
 
 static uintptr_t MakeSystrayEvent( enum systrayEvents type, ... ) {
 	systrayEvent* pe;
@@ -120,8 +123,6 @@ static void CPROC doubleClickCallback( void ) {
 	MakeSystrayEvent( Event_Systray_DoubleClick );
 }
 
-
-
 void setSystrayIcon( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.Length() > 0 ) {
@@ -154,12 +155,12 @@ void setSystrayIconMenu( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 void InitSystray( Isolate* isolate, Local<Object> _exports ) {
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 
 	Local<Object> systrayObject = Object::New( isolate );
 	SET_READONLY_METHOD( systrayObject, "set", setSystrayIcon );
 	SET_READONLY_METHOD( systrayObject, "on", setSystrayIconMenu );
 
-	SET( _exports, "Systray", systrayObject );
+	SET_READONLY( _exports, "Systray", systrayObject );
 
 }

@@ -68,3 +68,8 @@ item.addItem( "Item Four" );
 
 f.show();
 
+function tick() {
+	setTimeout( tick, 50000 );
+}
+tick();
+

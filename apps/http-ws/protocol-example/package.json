@@ -1,0 +1,19 @@
+{
+  "name": "xkb-layout-editor",
+  "version": "0.1.0",
+  "description": "Node+HTML Editor for XKB keyboard layouts",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "node --experimental-loader=sack.vfs/import.mjs main.mjs",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "link": "npm link sack.vfs @d3x0r/popups jsox"
+  },
+  "author": "d3x0r",
+  "license": "ISC",
+  "pubic": true,
+  "dependencies": {
+    "@d3x0r/popups": "^1.0.110",
+    "sack.vfs": "https://github.com/d3x0r/sack.vfs",
+    "jsox": "https://github.com/d3x0r/jsox"
+  }
+}

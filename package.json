@@ -1,30 +1,92 @@
 {
   "name": "sack-gui",
   "version": "0.9.123",
+  "description": "SACK abstraction library exposed to JS to provide low level system services including GUI.",
   "repository": {
       "type": "git",
       "url": "https://github.com/d3x0r/sack.vfs/",
       "branch": "sack-gui"
   },
-  "description": "Node.js GUI Addon",
   "main": "vfs_module.cjs",
   "module": "vfs_module.mjs",
+  "vm": "vfs_ivm.mjs",
   "type": "commonjs",
   "exports": {
-    ".":{
-    	"require":"./vfs_module.cjs",
-    	"import":"./vfs_module.mjs"
+    ".": {
+      "require": "./vfs_module.cjs",
+      "import": "./vfs_module.mjs"
     },
-    "./sack":{
-    	"require":"./vfs_module.cjs",
-    	"import":"./vfs_module.mjs"
+    "./sack": {
+      "require": "./vfs_module.cjs",
+      "import": "./vfs_module.mjs"
     },
-    "./import.mjs":{
-    	"default":"./import.mjs"
+    "./import.mjs": {
+      "default": "./import.mjs"
     },
-    "./object-storage":{
-    	"default":"./object-storage.mjs"
-    }
+    "./import": {
+      "default": "./import.mjs"
+    },
+    "./object-storage": {
+      "default": "./object-storage.mjs"
+    },
+    "./apps/http-ws": {
+      "require": "./apps/http-ws/server.js",
+      "import": "./apps/http-ws/server.mjs"
+    },
+    "./http-ws": {
+      "require": "./apps/http-ws/server.js",
+      "import": "./apps/http-ws/server.mjs"
+    },
+    "./protocol": {
+      "require": "./apps/http-ws/server-protocol.js",
+      "import": "./apps/http-ws/server-protocol.mjs"
+    },
+    "./server-protocol": {
+      "require": "./apps/http-ws/server-protocol.js",
+      "import": "./apps/http-ws/server-protocol.mjs"
+    },
+    "./client-protocol": {
+      "require": "./apps/http-ws/client-node-protocol.js",
+      "import": "./apps/http-ws/client-node-protocol.mjs"
+    },
+    "./apps/http-ws/uexpress": {
+      "require": "./apps/http-ws/uexpress.js",
+      "import": "./apps/http-ws/uexpress.mjs"
+    },
+    "./net-import": {
+      "require": "./apps/net-import/net-import.js",
+      "import": "./apps/net-import/net-import.mjs"
+    },
+    "./uexpress": {
+      "require": "./apps/http-ws/uexpress.js",
+      "import": "./apps/http-ws/uexpress.mjs"
+    },
+    "./Events": {
+      "require": "./apps/events/events.js",
+      "import": "./apps/events/events.mjs"
+    },
+    "./Events2": {
+      "import": "./apps/events/events2.mjs"
+    },
+    "./prng": {
+      "require": "./apps/prng/prng_short.js",
+      "import": "./apps/prng/prng_short.mjs"
+    },
+    "./task-manager": {
+      "import": "./apps/task-manager/src/main.mjs"
+    },
+    "./dbUtil": {
+      "import": "./apps/dbUtil/db.mjs"
+    },
+    "./isTopLevel": {
+      "import": "./apps/isTopLevel/isTopLevel.mjs"
+    },
+    "./text": {
+      "import": "./apps/text/text.mjs"
+    },
+	 "./wait": {
+		"import": "./apps/wait/wait.mjs"
+	 }
   },
   "private": false,
   "preferGlobal": false,
@@ -85,28 +147,28 @@
     "build": "npm run build-gui"
   },
   "devDependencies": {
-    "cmake-js": "latest",
-    "@d3x0r/bloomnhash": "git://github.com/d3x0r/bloomnhash-js",
-    "@d3x0r/object-storage": "git://github.com/d3x0r/Objectstorage",
-    "@d3x0r/popups": "git://github.com/d3x0r/popups",
-    "@d3x0r/slab-array": "git://github.com/d3x0r/SlabArray",
-    "@d3x0r/srg": "git://github.com/d3x0r/srg",
     "@babel/preset-env": "latest",
+    "@d3x0r/bloomnhash": "latest",
+    "@d3x0r/object-storage": "latest",
+    "@d3x0r/popups": "latest",
+    "@d3x0r/slab-array": "latest",
+    "@d3x0r/srg": "latest",
     "@rollup/plugin-babel": "latest",
     "@rollup/plugin-commonjs": "latest",
     "@rollup/plugin-node-resolve": "^13.0.0",
     "@rollup/plugin-strip": "latest",
-    "jsox": "latest",
+    "@rollup/plugin-terser": "latest",
     "acorn": "latest",
     "chai": "latest",
+    "cmake-js": "latest",
     "core-js": "latest",
     "eslint": "latest",
     "husky": "latest",
+    "jsox": "latest",
     "lint-staged": "latest",
     "mocha": "latest",
     "nyc": "latest",
-    "rollup": "latest",
-    "rollup-plugin-terser": "latest"
+    "rollup": "latest"
   },
   "nyc": {
     "statements": 100,

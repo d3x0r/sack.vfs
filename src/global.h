@@ -3,7 +3,10 @@
 // C26495 - uninitialized member; yes; It will be.
 #endif
 
+#ifndef NWJS_HOST
 #include <node.h>
+
+#endif
 //#include <nan.h>
 #include <node_object_wrap.h>
 #include <v8.h>
@@ -38,6 +41,13 @@
 #include <construct.h>
 #include <configscript.h>
 #include <filemon.h>
+#include <sack_ssh.h>
+#include <listhids.h>
+#include <listports.h>
+#include <md5.h>
+#include <sha1.h>
+#include <sha2.h>
+
 #else
 #  if defined( NODE_WANT_INTERNALS )
 #    include "../../../deps/sack/sack.h"
@@ -45,6 +55,11 @@
 #    include "sack/sack.h"
 #  endif
 #endif
+
+#if defined( HOST_NWJS )
+#  include "nwjs.h"
+#endif
+
 
 #undef New
 
@@ -54,7 +69,7 @@
 #endif
 
 #if NODE_MAJOR_VERSION >= 17
-#  include <openssl/configuration.h>
+//#  include <openssl/configuration.h>
 #endif
 #include <openssl/safestack.h>  // STACK_OF
 #include <openssl/tls1.h>
@@ -69,11 +84,13 @@
 #include <openssl/core_names.h>
 #endif
 
-#ifdef INCLUDE_GUI
-#include "gui/gui_global.h"
 
+// probably didn't need the copyable persistent trait thing anyway?
+#if V8_MAJOR_VERSION >= 13 || ( V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 9 )
+#define PERSISTENT_FUNCTION Persistent<Function>
+#else
+#define PERSISTENT_FUNCTION Persistent<Function, CopyablePersistentTraits<Function>>
 #endif
-
 
 #if NODE_MAJOR_VERSION >= 10
 #  define USE_ISOLATE(i)   (i),
@@ -91,7 +108,12 @@
 
 using namespace v8;
 
+#ifdef INCLUDE_GUI
+#include "gui/gui_global.h"
+#endif
+
 #include "task_module.h"
+#include "ssh2_module.h"
 
 //fileObject->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal( isolate, "SeekSet" ), Integer::New( isolate, SEEK_SET ), ReadOnlyProperty );
 
@@ -107,6 +129,45 @@ using namespace v8;
 #define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
 #define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
 
+
+// --------- String Utilities for option objects ------------
+#define DEF_STRING(name) Eternal<String> *name##String
+#define MK_STRING(name)  check->name##String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, #name ) );
+#define GET_STRING(name)  	String::Utf8Value* name = NULL; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsString() ) { \
+					name = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ); \
+				} \
+			}
+
+#define GET_ARRAY_BUFFER(name)  	Local<ArrayBuffer> name##_ab; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsArrayBuffer() ) { \
+					name##_ab = Local<ArrayBuffer>::Cast( GETV( opts, optName ) ); \
+				} \
+			}
+
+#define GET_TYPED_ARRAY(name)  	Local<TypedArray> name##_ta; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsArrayBuffer() ) { \
+					name##_ta = Local<TypedArray>::Cast( GETV( opts, optName ) ); \
+				} \
+			}
+
+#define GET_NUMBER(name)  int name = 0;  \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsString() ) { \
+					name = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 ); \
+				} \
+			}
+#define GET_BOOL(name)  bool name = false; \
+		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
+				if( GETV( opts, optName )->IsBoolean() ) { \
+					name = GETV( opts, optName )->TOBOOL( isolate ); \
+				} \
+			}
+
+//------------------ end of string utilities ----------------
 
 #if ( NODE_MAJOR_VERSION <= 13 )
 #define NewFromUtf8Literal(a,b,...)  NewFromUtf8(a,b, v8::NewStringType::kNormal ).ToLocalChecked()
@@ -127,9 +188,15 @@ void fileMonitorInit( Isolate* isolate, Local<Object> exports );
 void textObjectInit( Isolate *isolate, Local<Object> _exports );
 PTEXT isTextObject( Isolate *isolate, Local<Value> object );
 void SystemInit( Isolate* isolate, Local<Object> exports );
+void InitSystray( Isolate * isolate, Local<Object> _exports );
 
+Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket* pipe, class wssObject* wss, class wscObject* wsc, class wssiObject* wssi );
 
 #define ReadOnlyProperty (PropertyAttribute)((int)PropertyAttribute::ReadOnly | PropertyAttribute::DontDelete)
+
+class IsolateHolder {
+};
+using Runnable = v8::Task;
 
 class constructorSet {
 	public:
@@ -175,7 +242,7 @@ class constructorSet {
 	Persistent<Function> addrConstructor;
 	Persistent<FunctionTemplate> addrTpl;
 	Persistent<Function> udpConstructor;
-	//Persistent<Function> tcpConstructor;
+	Persistent<Function> tcpConstructor;
 
 	Persistent<Map> fromPrototypeMap;
 
@@ -187,10 +254,29 @@ class constructorSet {
 	v8::Persistent<v8::Function> TaskObject_constructor;
 	v8::Persistent<v8::Function> ObjectStorageObject_constructor;
 	v8::Persistent<v8::Function> TimelineCursorObject_constructor;
-	v8::Persistent<v8::Function> monitorConstructor;
+	v8::Persistent<v8::Function> monitorConstructor;  // File Monitor
 	v8::Persistent<v8::Function> KeyHidObject_constructor;
+	v8::Persistent<v8::Function> MouseHidObject_constructor;
+	v8::Persistent<v8::Function> ConfigObject_constructor;
+	v8::Persistent<v8::Function> SSH_Object_constructor;
+	v8::Persistent<v8::Function> SSH_Channel_constructor;
+	v8::Persistent<v8::Function> SSH_RemoteListen_constructor;
+	//v8::Persistent<v8::Function> SSH_LocalListen_constructor;
+
 	//Persistent<Function> onCientPost;
 	uv_loop_t* loop;
+	Persistent<Function> exitCallback;
+	uv_async_t exitAsync; // different modules might have different signal registrations
+
+	void (*ivm_post)( IsolateHolder*, std::unique_ptr<Runnable> );
+	Local<Context> ( *ivm_get_default_context )( void );
+	IsolateHolder* ivm_holder;
+
+#ifdef _WIN32
+	uv_async_t serviceAsync; // keep this instance around for as long as we might need to do the periodic callback
+	uv_async_t wifiAsync;
+#endif
+
 #ifdef INCLUDE_GUI
 	uv_async_t psiLocal_async;
 	int eventLoopEnables = 0;
@@ -198,8 +284,10 @@ class constructorSet {
 
 	Persistent<Function> ImageObject_constructor;
 	Persistent<FunctionTemplate> ImageObject_tpl;
+	LOGICAL fontAsyncActive;
 	uv_async_t fontAsync; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> FontObject_constructor;
+	LOGICAL colorAsyncActive;
 	uv_async_t colorAsync; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> ColorObject_constructor;
 	Persistent<FunctionTemplate> ColorObject_tpl;
@@ -234,12 +322,31 @@ class constructorSet {
 
 	v8::Persistent<v8::Function> RenderObject_constructor;
 	v8::Persistent<v8::Function> RenderObject_constructor2;
+	v8::Persistent<v8::Object> mouse_object;
+	v8::Persistent<v8::Object> pen_object;
 
 	v8::Persistent<v8::Function> VulkanObject_constructor;
 #endif
 };
 class constructorSet * getConstructors( Isolate *isolate );
 class constructorSet* getConstructorsByThread( void );
+
+class SackTask : public Runnable {
+	void Run() {
+		Isolate *isolate        = Isolate::GetCurrent();
+		class constructorSet *c = getConstructors( isolate );
+		Locker locker( isolate );
+		HandleScope handle_scope( isolate );
+		Context::Scope context_scope{ c->ivm_get_default_context() };
+		this->Run2( isolate, isolate->GetCurrentContext() );
+		isolate->PerformMicrotaskCheckpoint();
+	}
+
+ public:
+	//virtual void Run2() = 0;
+	virtual void Run2( Isolate *isolate, Local<Context> context ) = 0;
+};
+// class Runnable
 
 
 
@@ -266,8 +373,8 @@ public:
 
 public:
 
-	static void doInit( Local<Context> context, Local<Object> exports );
-	static void Init( Local<Context> context, Local<Object> exports );
+	static void doInit( Local<Context> context, Local<Object> exports, bool isolated );
+	static void Init( Local<Context> context, Local<Object> exports, bool isolated );
 	static void Init( Local<Object> exports, Local<Value> val, void* p );
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority = 2000 );
 	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
@@ -283,6 +390,8 @@ public:
 	static void openVolDb( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileVolDelete( const v8::FunctionCallbackInfo<Value>& args );
 	static void makeDirectory( const v8::FunctionCallbackInfo<Value>& args );
+	static void changeDirectory( const v8::FunctionCallbackInfo<Value>& args );
+	static void chDir( const v8::FunctionCallbackInfo<Value>& args );
 	static void isDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void mkdir( const v8::FunctionCallbackInfo<Value>& args );
 	static void volRekey( const v8::FunctionCallbackInfo<Value>& args );
@@ -332,6 +441,7 @@ public:
 	static void seekFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void tellFile( const v8::FunctionCallbackInfo<Value>& args );
 	static void truncateFile( const v8::FunctionCallbackInfo<Value>& args );
+	static void closeFile( const v8::FunctionCallbackInfo<Value>& args );
 
 	//static void readFile( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -359,9 +469,9 @@ class WebSockClientObject : public node::ObjectWrap {
 public:
 	//static Persistent<Function> constructor;
 
-	Persistent<Function, CopyablePersistentTraits<Function>> closeCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> errorCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
+	PERSISTENT_FUNCTION closeCallback; //
+	PERSISTENT_FUNCTION errorCallback; //
+	PERSISTENT_FUNCTION readCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
 
@@ -402,6 +512,7 @@ public:
 	static void validate( const v8::FunctionCallbackInfo<Value>& args );
 	static void expiration( const v8::FunctionCallbackInfo<Value>& args );
 	static void certToString( const v8::FunctionCallbackInfo<Value>& args );
+	static void getHosts( const v8::FunctionCallbackInfo<Value>& args );
 
 
 	~TLSObject();
@@ -471,8 +582,8 @@ class JSOXObject : public node::ObjectWrap {
 public:
 	struct jsox_parse_state *state;
 	//static Persistent<Function> constructor;
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-	Persistent<Function, CopyablePersistentTraits<Function>> reviver; // on begin() save reviver function here
+	PERSISTENT_FUNCTION readCallback; //
+	PERSISTENT_FUNCTION reviver; // on begin() save reviver function here
 	Persistent<Map> fromPrototypeMap;
 	Persistent<Map> promiseFromPrototypeMap;
 	PLIST prototypes; // revivde prototypes by class
@@ -506,18 +617,19 @@ typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
 void releaseBufferBackingStore( void* data, size_t length, void* deleter_data );
+void dontReleaseBufferBackingStore(void* data, size_t length, void* deleter_data);
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 Local<String> localString( Isolate *isolate, const char *data, int len = -1 );
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len = -1, const char *real_root = NULL );
 
 void InitFS( const v8::FunctionCallbackInfo<Value>& args );
-void ConfigScriptInit( Local<Object> exports );
+void ConfigScriptInit( Isolate *isolate, Local<Object> exports );
 
-void ObjectStorageInit( Isolate *isoalte, Local<Object> exports );
+void ObjectStorageInit( Isolate *isolate, Local<Object> exports );
 
 
 void SqlObjectInit( Local<Object> exports );
-void createSqlObject( const char *name, Local<Object> into );
+void createSqlObject( const char* name, Isolate* isolate, Local<Object> into );
 Local<Value> newSqlObject( Isolate *isolate, int argc, Local<Value> *argv );
 
 class ObjectStorageObject*  openInVFS( Isolate *isolate, const char *mount, const char *name, const char *key1, const char *key2 );
@@ -535,3 +647,28 @@ struct vfs_global_data {
 #define GetHolder() GetFromSet( ARRAY_BUFFER_HOLDER, &vfs_global_data.holders )
 #define DropHolder(h) DeleteFromSet( ARRAY_BUFFER_HOLDER, vfs_global_data.holders, h )
 
+#ifdef _WIN32
+struct command_line_result {
+	DWORD dwProcessId;
+	size_t length;
+	char* data;
+	char* processName;
+};
+#else
+struct command_line_result {
+	pid_t dwProcessId;
+	size_t length;
+	char** cmd;
+};
+
+#endif
+// returns a PLIST of struct command_line_results
+PLIST GetProcessCommandLines( const char* process, int pid );
+int GetProcessParent( int pid );
+
+void ReleaseCommandLineResults( PLIST* ppResults );
+
+
+//----------- win32 wifiInterface.cc
+
+void InitWifiInterface( Isolate *isolate, Local<Object>exports );

@@ -7,18 +7,34 @@
 
 
 static uintptr_t InputThread( PTHREAD thread );
-static void CPROC dispatchKey( uintptr_t psv, RAWINPUT *event, WCHAR ch, int len );
-#define WM_HOOK2 WM_USER+512
+
+static void mouse_asyncmsg__( v8::Isolate *isolate, Local<Context> context, class MouseObject * handle );
+static void asyncmsg__( v8::Isolate *isolate, Local<Context> context, class KeyHidObject const * const handle );
+static void asyncmsg( uv_async_t* handle );
+
+
+class keyAsyncTask : public SackTask {
+	class KeyHidObject *myself;
+public:
+	keyAsyncTask( class KeyHidObject *myself )
+		: myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		asyncmsg__( isolate, context, myself );
+	}
+};
 
 class KeyHidObject : public node::ObjectWrap {
 public:
 	int handle;
 	char *name;
+	bool ivm_hosted = 0;
+	class constructorSet *c;
+	uv_async_t keyAsync; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE keyEvents = NULL;
 
 	Persistent<Object> this_;
-	Persistent<Function, CopyablePersistentTraits<Function>> readCallback; //
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	PLINKQUEUE readQueue;
+	Persistent<Function> readCallback; //
+	//PLINKQUEUE readQueue;
 	LOGICAL blocking = FALSE;
 public:
 
@@ -28,13 +44,47 @@ public:
 private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 
+	static void close( const v8::FunctionCallbackInfo<Value>& args );
 	static void lock( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
-	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
-	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
+	static void sendKey( const v8::FunctionCallbackInfo<Value>& args );
+	
 	~KeyHidObject();
 };
 
+
+class mouseAsyncTask : public SackTask {
+	class MouseObject *myself;
+
+ public:
+	mouseAsyncTask( class MouseObject *myself )
+	    : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		mouse_asyncmsg__( isolate, context, myself );
+	}
+};
+
+class MouseObject : public node::ObjectWrap {
+public:
+	bool ivm_hosted = 0;
+	class constructorSet *c;
+	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	PLINKQUEUE mouseEvents = NULL;
+	Persistent<Object> this_;
+	Persistent<Function> readCallback; //
+public:
+
+	static void Init( Isolate *isolate, Local<Object> exports );
+	MouseObject(  );
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+
+	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
+	static void close( const v8::FunctionCallbackInfo<Value>& args );
+	static void clickAt( const v8::FunctionCallbackInfo<Value>& args );
+	static void event( const v8::FunctionCallbackInfo<Value>& args );
+	~MouseObject();
+};
 
 struct input_data {
 	HANDLE hDevice;
@@ -42,295 +92,150 @@ struct input_data {
 	Eternal<String> v8name;
 };
 
+struct msgbuf {
+	LOGICAL close;
+	KBDLLHOOKSTRUCT hookEvent;
+	WCHAR ch;
+	int done;
+	LOGICAL used;
+	PTHREAD waiter;
+};
+
+struct mouse_msgbuf {
+	LOGICAL close;
+	MSLLHOOKSTRUCT data;
+	WPARAM msgid;
+};
+
+
+
 typedef struct global_tag
 {
-	HWND hWnd;
-	uint32_t nWriteTimeout;
-	uv_loop_t* loop;
-	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
-	KeyHidObject *eventHandler;
-	PLIST inputs;
-	HHOOK hookHandle;
+
+	PLIST keyEventHandlers;
+	PTHREAD keyThread;
+
+	PLIST mouseEventHandlers;
+	PTHREAD mouseThread;
+	int buttons;
+	int mouseX, mouseY;
+
+	//PLIST inputs;
+	//HHOOK hookHandle;
 	HHOOK hookHandleLL;
+	//HHOOK hookHandleM;
+	HHOOK hookHandleMLL;
 	int skipEvent;
 	LOGICAL blocking;
 } GLOBAL;
 
 static GLOBAL hidg;
 
-static RAWINPUTDEVICE devices[] = {
-	{ 1, 6, RIDEV_NOLEGACY | RIDEV_INPUTSINK,  0 }
-};
-
-LRESULT CALLBACK WndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
-{
-	UINT uSize;
-
-	switch( uMsg ) {
-	case WM_CREATE:
-		/* 1 - generic desktop controls // we use this
-		2 - simulation controls
-		3 - vr
-		4 - sport
-		5 - game 
-		6 - generic device
-		7 - keyboard
-		8 - LEDs
-		9 - button
-		*/
-		/*
-		// for page 1 (above)
-		0 - undefined
-		1 - pointer
-		2 - mouse
-		3 - reserved
-		4 - joystick
-		5 - game pad
-		6 - keyboard // we use this
-		7 - keypad
-		8 - multi-axis controller
-		9 - Tablet PC controls
-		*/
-		devices[0].hwndTarget = hWnd;
-		int rc;rc = RegisterRawInputDevices( devices, 1, sizeof( RAWINPUTDEVICE ) );
-#if 0
-		RAWINPUTDEVICELIST *devices;
-		UINT uSize; uSize = sizeof( devices );
-		UINT nDev;
-		UINT n;
-		nDev = 0;
-		/*
-		RAWINPUTDEVICE *devices2;
-		GetRegisteredRawInputDevices( NULL, &nDev, sizeof( RAWINPUTDEVICE ) );
-		devices2 = NewArray( RAWINPUTDEVICE, nDev );
-		GetRegisteredRawInputDevices( devices2, &nDev, sizeof( RAWINPUTDEVICE ) );
-		*/
-
-		GetRawInputDeviceList( NULL, &nDev, sizeof( RAWINPUTDEVICELIST ) );
-		lprintf( "%d", GetLastError());
-		devices = NewArray( RAWINPUTDEVICELIST, nDev );
-		GetRawInputDeviceList( devices, &nDev, sizeof( RAWINPUTDEVICELIST ) );
-		lprintf( "%d", GetLastError() );
-		for( n = 0; n < nDev; n++ ) {
-			struct input_data *indev;
-			UINT uSize;
-			indev = NewArray( struct input_data, 1 );
-			indev->hDevice = devices[n].hDevice;
-			GetRawInputDeviceInfo(
-				devices[n].hDevice,
-				RIDI_DEVICENAME,
-				NULL,
-				&uSize
-			);
-			indev->name = NewArray( char, uSize );
-			GetRawInputDeviceInfo(
-				devices[n].hDevice,
-				RIDI_DEVICENAME,
-				indev->name,
-				&uSize
-			);
-			lprintf( "New Device: %s", indev->name );
-			AddLink( &hidg.inputs, indev );
-		}
-#endif
-		//SetTimer( hWnd, 100, 1000, NULL );
-		return TRUE;
-	case WM_HOOK2:
-		//lprintf( "HOOK2 MSG" );
-		return TRUE;;;;;;
-	case WM_INPUT:
-		if( GetRawInputData( (HRAWINPUT)lParam,
-			RID_INPUT, NULL, &uSize, sizeof( RAWINPUTHEADER ) ) == -1 ) {
-			break;
-		}
-		LPBYTE lpb = new BYTE[uSize];
-		if( lpb == NULL ) {
-			break;
-		}
-		if( GetRawInputData( (HRAWINPUT)lParam,
-			RID_INPUT, lpb, &uSize, sizeof( RAWINPUTHEADER ) ) != uSize ) {
-			delete[] lpb;
-			break;
-		}
-		RAWINPUT *input = (RAWINPUT *)lpb;
-#if 0
-#define RI_KEY_MAKE             0
-#define RI_KEY_BREAK            1
-#define RI_KEY_E0               2
-#define RI_KEY_E1               4
-#define RI_KEY_TERMSRV_SET_LED  8
-#define RI_KEY_TERMSRV_SHADOW   0x10
-#endif
-
-		UINT Event;
-		WCHAR keyChar;
-
-		Event = input->data.keyboard.Message;
-		keyChar = MapVirtualKey( input->data.keyboard.VKey, MAPVK_VK_TO_CHAR );
-		{
-			INDEX idx;
-			struct input_data *indev;
-			LIST_FORALL( hidg.inputs, idx, struct input_data *, indev ) {
-				if( indev->hDevice == input->header.hDevice )
-					break;
-			}
-			if (!indev) {
-				indev = NewArray(struct input_data, 1);
-				memset(indev, 0, sizeof(*indev));
-				indev->hDevice = input->header.hDevice;
-				if (!input->header.hDevice) {
-					indev->name = StrDup( "Stdin" );
-
-				}
-				else {
-					UINT uSize;
-					UINT x = GetRawInputDeviceInfo(
-						input->header.hDevice,
-						RIDI_DEVICENAME,
-						NULL,
-						&uSize
-					);
-					DWORD dwError = GetLastError();
-					if (dwError == ERROR_INVALID_HANDLE)
-					{
-						lprintf("result: %d %d %p", x, GetLastError(), input->header.hDevice);
-						//	ERROR_SUCCESS
-					}
-					else {
-						indev->name = NewArray(char, uSize);
-						GetRawInputDeviceInfo(
-							input->header.hDevice,
-							RIDI_DEVICENAME,
-							indev->name,
-							&uSize
-						);
-						//if(0)
-
-					}
-				}
-				//lprintf("New Device: %s", indev->name);
-				AddLink(&hidg.inputs, indev);
-			}
-		}
-		if( hidg.eventHandler )
-			dispatchKey( (uintptr_t)hidg.eventHandler
-				, input, keyChar, 0 );
-
-		if(0)
-		LoG( "Got: %c(%d) %p %d %d %d %d %d %d %d ", keyChar,keyChar
-			, input->header.hDevice
-			, input->header.wParam
-			, input->data.keyboard.Reserved, input->data.keyboard.ExtraInformation,
-			input->data.keyboard.MakeCode,
-			input->data.keyboard.Flags,
-			input->data.keyboard.VKey,
-			input->data.keyboard.Message );
-
-		delete[] lpb;			// free this now
-			
-		return TRUE;
-	}
-	return DefWindowProc( hWnd, uMsg, wParam, lParam );
+PRIORITY_ATEXIT( removeHooks, 100 ) {
+	UnhookWindowsHookEx( hidg.hookHandleLL );
+	UnhookWindowsHookEx( hidg.hookHandleMLL );
 }
 
-int MakeProxyWindow( void )
-{
-	ATOM aClass;
-	{
-		WNDCLASS wc;
-		memset( &wc, 0, sizeof( WNDCLASS ) );
-		wc.style = CS_OWNDC | CS_GLOBALCLASS;
-
-		wc.lpfnWndProc = (WNDPROC)WndProc;
-		wc.hInstance = GetModuleHandle( NULL );
-		wc.hbrBackground = 0;
-		wc.lpszClassName = "sack.vfs.raw.input.receiver.class";
-		aClass = RegisterClass( &wc );
-		if( !aClass ) {
-			MessageBox( NULL, "Failed to register class to handle SQL Proxy messagses.", "INIT FAILURE", MB_OK );
-			return FALSE;
-		}
+static void getCursor( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	const Local<String> x = String::NewFromUtf8Literal( isolate, "x" );
+	const Local<String> y = String::NewFromUtf8Literal( isolate, "y" );
+	Local<Object> obj = Object::New( isolate );
+	POINT point;
+	if( hidg.hookHandleMLL ) {
+		obj->Set( isolate->GetCurrentContext(), x, Number::New( isolate, hidg.mouseX ) );
+		obj->Set( isolate->GetCurrentContext(), y, Number::New( isolate, hidg.mouseY ) );
+	} else {
+		GetCursorPos( &point );
+		obj->Set( isolate->GetCurrentContext(), x, Number::New( isolate, point.x ) );
+		obj->Set( isolate->GetCurrentContext(), y, Number::New( isolate, point.y ) );
 	}
-
-	hidg.hWnd = CreateWindowEx( 0,
-		(char*)aClass,
-		"sack.vfs.raw.input.receiver",
-		0,
-		0,
-		0,
-		0,
-		0,
-		HWND_MESSAGE, // Parent
-		NULL, // Menu
-		GetModuleHandle( NULL ),
-		(void*)1 );
-	if( !hidg.hWnd ) {
-		Log( "Failed to create window!?!?!?!" );
-		MessageBox( NULL, "Failed to create window to handle raw input Messages", "INIT FAILURE", MB_OK );
-		return FALSE;
-	}
-	return TRUE;
+	args.GetReturnValue().Set( obj );
 }
-
-LRESULT WINAPI KeyboardProc( int code, WPARAM wParam, LPARAM lParam ) {
-	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
-	lprintf( "   keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
-	MSG msg;
-	while( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) )  lprintf( "had message..." );
-	return CallNextHookEx( hidg.hookHandle, code, wParam, lParam );
+static void setCursor( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	const Local<String> x = String::NewFromUtf8Literal( isolate, "x" );
+	const Local<String> y = String::NewFromUtf8Literal( isolate, "y" );
+	Local<Object> obj = args[0].As< Object>();
+	int64_t xnum = GETV( obj, x )->IntegerValue( context ).FromMaybe( 0 );
+	int64_t ynum = GETV( obj, y )->IntegerValue( context ).FromMaybe( 0 );
+	SetCursorPos( (int)xnum, (int)ynum );
 }
-
 
 LRESULT WINAPI KeyboardProcLL( int code, WPARAM wParam, LPARAM lParam ) {
-	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
-	static int resending;
-	static struct states {
-		int state;
-		int tick;
-		INPUT events[12];
-		INPUT eventsUp[12];
-		struct {
-			int code;
-			int wParam;
-			KBDLLHOOKSTRUCT lParam;
-		} pending[12];
-	} States[10];
-	static int lastDownSkip;
-	//static 
-	int n = 10;
-	int up = (kbhook->flags & LLKHF_UP) != 0;
-	if( resending ) {
-		return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
-	}
-	if( up ) {
-		if( lastDownSkip ) {
-			States[n].eventsUp[States[n].state].type = INPUT_KEYBOARD;
-			States[n].eventsUp[States[n].state].ki.dwExtraInfo = kbhook->dwExtraInfo;
-			States[n].eventsUp[States[n].state].ki.dwFlags = kbhook->flags;
-			States[n].eventsUp[States[n].state].ki.time = kbhook->time;
-			States[n].eventsUp[States[n].state].ki.wScan = (WORD)kbhook->scanCode;
-			States[n].eventsUp[States[n].state].ki.wVk = (WORD)kbhook->vkCode;
-			lastDownSkip--;
-			return 1;
-		}
-		else {
-			return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
-		}
-	}
+	if( code < 0 )
+		return CallNextHookEx( 0 /*ignored*/, code, wParam, lParam );
 
-	if(	hidg.blocking ) {
+	KBDLLHOOKSTRUCT *kbhook = (KBDLLHOOKSTRUCT*)lParam;
+	static int resending = 0;
+	if( resending ) {
+		return CallNextHookEx( 0/*ignored*/, code, wParam, lParam );
+	}
+	if( hidg.blocking ) {
 		hidg.skipEvent = 1;
-		if( 0 ) {
-			LoG( "Drop key." );
-			lastDownSkip++;
-		}
 		return 1;
 	}
-	//SendMessage( hidg.hWnd, WM_HOOK2, 0, 0 );
-	//LoG( "LL keyhook for key... %08x  %d %d %x", wParam, kbhook->scanCode, kbhook->vkCode, kbhook->flags );
-	MSG msg;
-	while( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) ) { DispatchMessage( &msg );  lprintf( "had LL message..." ); }
-	return CallNextHookEx( hidg.hookHandleLL, code, wParam, lParam );
+
+	char ch = MapVirtualKey( kbhook->vkCode, MAPVK_VK_TO_CHAR );
+	struct msgbuf* msgbuf = NewPlus( struct msgbuf, 0 );
+	msgbuf->waiter = MakeThread();
+	msgbuf->done = 0;
+	msgbuf->close = FALSE;
+	//msgbuf->event = event[0];
+	msgbuf->hookEvent = kbhook[0];
+	msgbuf->ch = ch;
+
+	KeyHidObject* kbd;
+	INDEX idx;
+	LIST_FORALL( hidg. keyEventHandlers, idx, KeyHidObject*, kbd ) {
+		if( !kbd->readCallback.IsEmpty() ) {
+			msgbuf->done = 0;
+			EnqueLink( &kbd->keyEvents, msgbuf );
+			if( kbd->ivm_hosted )
+				kbd->c->ivm_post( kbd->c->ivm_holder, std::make_unique<keyAsyncTask>( kbd ) );
+			else {
+				uv_async_send( &kbd->keyAsync );
+			}
+			while( !msgbuf->done ) WakeableSleep( 1 );
+			if( msgbuf->used ) {
+				return 1; // don't pass it on to the OS
+			}
+		}
+	}
+	return CallNextHookEx( 0 /*ignored*/, code, wParam, lParam );
+
+}
+
+LRESULT WINAPI MouseProcLL( int code, WPARAM wParam, LPARAM lParam ) {
+	MSLLHOOKSTRUCT *mhook = (MSLLHOOKSTRUCT *)lParam;
+	struct mouse_msgbuf* input = NewArray( struct mouse_msgbuf, 1 );
+	/* wParam =  WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_MOUSEHWHEEL, WM_RBUTTONDOWN, or WM_RBUTTONUP. */
+	//lprintf( "LL Mouse: %d %d %d %d %d %d %d %d", code, wParam
+	//			, mhook->pt.x, mhook->pt.y
+	//			, mhook->mouseData, mhook->dwExtraInfo, mhook->flags, mhook->time );
+	if( code == HC_ACTION ) {
+		input->close = FALSE;
+		input->msgid = wParam;
+		input->data = mhook[0];
+
+		MouseObject *m;
+		INDEX idx;
+		LIST_FORALL( hidg.mouseEventHandlers, idx, MouseObject *, m ) {
+			if( !m->readCallback.IsEmpty() ) {
+				Hold( input );
+				EnqueLink( &m->mouseEvents, input );
+				if( m->ivm_hosted )
+					m->c->ivm_post( m->c->ivm_holder, std::make_unique<mouseAsyncTask>( m ) );
+				else
+					uv_async_send( &m->async );
+			}
+		}
+		Release( input );
+		//EnqueLink( &hidg.mouseEvents, input );
+		//uv_async_send( &hidg.mouseAsync );
+	}
+	return CallNextHookEx( 0 /*ignored*/, code, wParam, lParam );
 }
 
 uintptr_t InputThread( PTHREAD thread )
@@ -340,12 +245,9 @@ uintptr_t InputThread( PTHREAD thread )
 	//WH_KEYBOARD_LL
 	HMODULE xx;
 	xx = GetModuleHandle( "sack_vfs.node" );
-	//lprintf( "%p", xx );
 	hidg.hookHandleLL = SetWindowsHookEx( WH_KEYBOARD_LL, (HOOKPROC)KeyboardProcLL, xx, 0 );
-	hidg.hookHandle = SetWindowsHookEx( WH_KEYBOARD, KeyboardProc, xx, 0 );
-	//lprintf( "hook:%p %d", hidg.hookHandle, GetLastError() );
-	hidg.nWriteTimeout = 150; // at 9600 == 144 characters
-	if( MakeProxyWindow() ) {
+	//hidg.nWriteTimeout = 150; // at 9600 == 144 characters
+	{
 		MSG msg;
 		//lprintf( "Err:%d",GetLastError());
 		while( GetMessage( &msg, NULL, 0, 0 ) )
@@ -356,40 +258,93 @@ uintptr_t InputThread( PTHREAD thread )
 }
 
 
-static void asyncmsg( uv_async_t* handle );
+uintptr_t MouseInputThread( PTHREAD thread )
+{
+	HMODULE xx = GetModuleHandle( "sack_vfs.node" );
+	//lprintf( "%p", xx );
+	hidg.hookHandleMLL = SetWindowsHookEx( WH_MOUSE_LL, MouseProcLL, xx, 0 );
+	// initialize to the best state we can know.
+	// after this point, this will track with the low level messages received.
+	hidg.buttons = ( GetAsyncKeyState( VK_LBUTTON ) ? MK_LBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_RBUTTON ) ? MK_RBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_MBUTTON ) ? MK_MBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_XBUTTON1 ) ? MK_XBUTTON1 : 0 )
+		| ( GetAsyncKeyState( VK_XBUTTON2 ) ? MK_XBUTTON2 : 0 );
+	//hidg.hookHandleM = SetWindowsHookEx( WH_MOUSE, MouseProc, xx, 0 );
+	{
+		MSG msg;
+		while( GetMessage( &msg, NULL, 0, 0 ) )
+			DispatchMessage( &msg );
+		return msg.wParam;
+	}
+	return 0;
+}
+
 
 KeyHidObject::KeyHidObject(  ) {
-	readQueue = CreateLinkQueue();
-	hidg.eventHandler = this;
-	MSG msg;
-	// create message queue on main thread.
-	PeekMessage( &msg, NULL, 0, 0, PM_NOREMOVE );
-	ThreadTo( InputThread, 0 );
+	if( !hidg.keyThread )
+		hidg.keyThread = ThreadTo( InputThread, 0 );
 }
 
 KeyHidObject::~KeyHidObject() {
-    hidg.eventHandler = NULL; // no longer have a handler.
-
 }
 
 
 void KeyHidObject::Init( Isolate *isolate, Local<Object> exports ) {
 	Local<Context> context = isolate->GetCurrentContext();
-	Local<FunctionTemplate> comTemplate;
-
-	comTemplate = FunctionTemplate::New( isolate, New );
-	comTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.KeyHidEvents" ) );
-	comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
-
-																 // Prototype
-	NODE_SET_PROTOTYPE_METHOD( comTemplate, "onKey", onRead );
-	NODE_SET_PROTOTYPE_METHOD( comTemplate, "lock", lock );
-
+	Local<FunctionTemplate> keyTemplate;
 	class constructorSet* c = getConstructors( isolate );
 
-	c->KeyHidObject_constructor.Reset( isolate, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	//----------------------------------------------------------------
+	keyTemplate = FunctionTemplate::New( isolate, New );
+	keyTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.KeyHidEvents" ) );
+	keyTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
+																 // Prototype
+	NODE_SET_PROTOTYPE_METHOD( keyTemplate, "onKey", onRead );
+	NODE_SET_PROTOTYPE_METHOD( keyTemplate, "lock", lock );
+	NODE_SET_PROTOTYPE_METHOD( keyTemplate, "send", sendKey );
+
+	c->KeyHidObject_constructor.Reset( isolate, keyTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "Keyboard"
-		, comTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+		, keyTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+
+	//----------------------------------------------------------------
+	Local<FunctionTemplate> mouseTemplate;
+
+	mouseTemplate = FunctionTemplate::New( isolate, MouseObject::New );
+	mouseTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.MouseHidEvents" ) );
+	mouseTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
+
+																 // Prototype
+	NODE_SET_PROTOTYPE_METHOD( mouseTemplate, "onMouse", MouseObject::onRead );
+	NODE_SET_PROTOTYPE_METHOD( mouseTemplate, "close", MouseObject::close );
+
+	//NODE_SET_PROTOTYPE_METHOD( mouseTemplate, "lock", lock );
+
+	c->MouseHidObject_constructor.Reset( isolate, mouseTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
+	Local<Function> mouseInterface = mouseTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
+	SET_READONLY_METHOD( mouseInterface, "event", MouseObject::event );
+	SET_READONLY_METHOD( mouseInterface, "clickAt", MouseObject::clickAt );
+
+	Local<Object> buttonFlags = Object::New( isolate );
+	SET_READONLY( buttonFlags, "left", Integer::New( isolate, MK_LBUTTON ) );
+	SET_READONLY( buttonFlags, "right", Integer::New( isolate, MK_RBUTTON ) );
+	SET_READONLY( buttonFlags, "middle", Integer::New( isolate, MK_MBUTTON ) );
+	SET_READONLY( buttonFlags, "x1", Integer::New( isolate, MK_XBUTTON1 ) );
+	SET_READONLY( buttonFlags, "x2", Integer::New( isolate, MK_XBUTTON2 ) );
+	SET_READONLY( buttonFlags, "relative", Integer::New( isolate, 0x1000000 ) );
+	//SET_READONLY( wsWebStatesObject, "", Integer::New( isolate, wsReadyStates::LISTENING ) );
+	SET_READONLY( mouseInterface, "buttons", buttonFlags );
+
+	SET( exports, "Mouse", mouseInterface );
+
+	mouseInterface->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "cursor" )
+		, Function::New( context, getCursor ).ToLocalChecked()
+		, Function::New( context, setCursor ).ToLocalChecked()
+	);
+
+	//----------------------------------------------------------------
+
 }
 
 void KeyHidObjectInit( Isolate *isolate, Local<Object> exports ) {
@@ -397,42 +352,60 @@ void KeyHidObjectInit( Isolate *isolate, Local<Object> exports ) {
 
 }
 
-struct msgbuf {
-    LOGICAL close;
-	RAWINPUT event;
-	WCHAR ch;
-};
-
-static void uv_closed( uv_handle_t* handle ) {
-    KeyHidObject* myself = (KeyHidObject*)handle->data;
-
-    myself->readCallback.Reset();
-    myself->this_.Reset();
+static void uv_key_closed( uv_handle_t* handle ) {
+	PostThreadMessage( GetThreadID( hidg.keyThread ) & 0xFFFFFFFF, WM_QUIT, 0, 0 );
+	/*
+	KeyHidObject* myself;// = (KeyHidObject*)handle->data;
+	INDEX idx;
+	LIST_FORALL( hidg.keyEventHandlers, idx, KeyHidObject*, myself ) {
+		myself->readCallback.Reset();
+		myself->this_.Reset();
+	}
+	*/
 }
 
+static void uv_closed( uv_handle_t* handle ) {
+	PostThreadMessage( GetThreadID( hidg.mouseThread ) & 0xFFFFFFFF, WM_QUIT, 0, 0 );
+
+}
 void asyncmsg( uv_async_t* handle ) {
-	// Called by UV in main thread after our worker thread calls uv_async_send()
-	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 
-	KeyHidObject* myself = (KeyHidObject*)handle->data;
+	asyncmsg__( isolate, context, (KeyHidObject const *)handle->data );
+	{
+		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
+		class constructorSet *c = getConstructors( isolate );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( context, Null( isolate ), 0, NULL );
+		}
+	}
+}
+
+void asyncmsg__( v8::Isolate *isolate, Local<Context> context, KeyHidObject const * const myself ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
 
 	{
 		struct msgbuf *msg;
-        while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
-            if( msg->close ) {
-                uv_close( (uv_handle_t*)&myself->async, uv_closed );
-                break;
-            }
+		while( msg = (struct msgbuf *)DequeLink( (PLINKQUEUE*)&myself->keyEvents ) ) {
+			if( msg->close ) {
+				uv_close( (uv_handle_t*)&myself->keyAsync, uv_key_closed );
+				break;
+			}
 
 			Local<Object> eventObj = Object::New( isolate );
-			struct input_data *indev;
-			INDEX idx;
+			//struct input_data *indev;
+			//INDEX idx;
+			/*
+			if(0)
 			LIST_FORALL( hidg.inputs, idx, struct input_data *, indev ) {
 				if( indev->hDevice == msg->event.header.hDevice ) {
+					lprintf( "Found indev device? %s", indev->name );
 					if( indev->name ) {
+						lprintf( "Set name of indev to:%s", indev->name );
 						indev->v8name.Set( isolate, String::NewFromUtf8( isolate, indev->name, v8::NewStringType::kNormal ).ToLocalChecked() );
 						Release( indev->name );
 						indev->name = NULL;
@@ -440,24 +413,51 @@ void asyncmsg( uv_async_t* handle ) {
 					break;
 				}
 			}
-			SET( eventObj, "down", (msg->event.data.keyboard.Flags&RI_KEY_BREAK)?True(isolate):False(isolate) );
-			SET( eventObj, "char", String::NewFromTwoByte( isolate, (const uint16_t*)&msg->ch, NewStringType::kNormal, 1 ).ToLocalChecked() );
-			SET( eventObj, "id", Number::New( isolate,(double)idx ) );
-			SET( eventObj, "device", indev->v8name.Get(isolate) );
+			*/
+			SET( eventObj, "down", (msg->hookEvent.flags& LLKHF_UP )?False(isolate):True(isolate) );
+			SET( eventObj, "scan", Integer::New( isolate, msg->hookEvent.scanCode ) );
+			SET( eventObj, "vkey", Integer::New( isolate, msg->hookEvent.vkCode ) );
+			SET( eventObj, "time", Number::New( isolate, msg->hookEvent.time ) );
+			SET( eventObj, "extended", (msg->hookEvent.flags & LLKHF_EXTENDED)?True(isolate):False(isolate) );
 
+			SET( eventObj, "char", String::NewFromTwoByte( isolate, (const uint16_t*)&msg->ch, NewStringType::kNormal, 1 ).ToLocalChecked() );
+			//SET( eventObj, "id", Number::New( isolate,(double)idx ) );
+			/*
+			if( indev )
+				SET( eventObj, "device", indev->v8name.Get(isolate) );
+			else
+				SET( eventObj, "device", String::NewFromUtf8( isolate, "?" ).ToLocalChecked() );
+				*/
 
 			Local<Value> argv[] = { eventObj };
-			if( !myself->readCallback.IsEmpty() ) {
-				Local<Function> cb = Local<Function>::New( isolate, myself->readCallback );
-				{
-					MaybeLocal<Value> result = cb->Call( context, isolate->GetCurrentContext()->Global(), 1, argv );
+			//INDEX idx;
+			class KeyHidObject const * const handler = myself;
+			//LIST_FORALL( hidg.keyEventHandlers, idx, class KeyHidObject *, handler ) 
+			{
+				if( !handler->readCallback.IsEmpty() ) {
+					MaybeLocal<Value> result = handler->readCallback.Get( isolate )->Call( context, isolate->GetCurrentContext()->Global(), 1, argv );
 					if( result.IsEmpty() ) {
-						Deallocate( struct msgbuf*, msg );
+						//Deallocate( struct msgbuf*, msg );
+						msg->done = TRUE;
+						msg->used = FALSE;
+						WakeThread( msg->waiter );
 						return;
+					}
+					else {
+						msg->used = result.ToLocalChecked()->TOBOOL( isolate );
+						if( msg->used ) {
+							msg->done = TRUE;
+							WakeThread( msg->waiter );
+							break;
+						}
 					}
 				}
 			}
-			Deallocate( struct msgbuf *, msg );
+			if( !msg->done ) {
+				msg->done = TRUE;
+				msg->used = FALSE;
+				WakeThread( msg->waiter );
+			}
 		}
 	}
 }
@@ -467,42 +467,62 @@ void KeyHidObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 		// Invoked as constructor: `new MyObject(...)`
 		KeyHidObject* obj = new KeyHidObject( );
+
 		{
-			MemSet( &obj->async, 0, sizeof( obj->async ) );
+			//MemSet( &obj->async, 0, sizeof( obj->async ) );
 
 			class constructorSet *c = getConstructors( isolate );
-			uv_async_init( c->loop, &obj->async, asyncmsg );
-			obj->async.data = obj;
+			if( !obj->keyEvents ) {
+				obj->keyEvents = CreateLinkQueue();
+				obj->c = c;
+				if( c->ivm_post )
+					obj->ivm_hosted = true;
+				else {
+					uv_async_init( c->loop, &obj->keyAsync, asyncmsg );
+					obj->keyAsync.data = obj;
+				}
+			}
+			AddLink( &hidg.keyEventHandlers, obj );
 
 			obj->Wrap( args.This() );
 			obj->this_.Reset( isolate, args.This() );
 			args.GetReturnValue().Set( args.This() );
+
+			if( args.Length() > 0 ) {
+				if( args[0]->IsFunction() ) {
+					Local<Function> arg0 = Local<Function>::Cast( args[0] );
+					obj->readCallback.Reset( isolate, arg0 );
+				}
+			}
 		}
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		Local<Value>* argv = new Local<Value>[args.Length()];
+		for( int n = 0; n < args.Length(); n++ ) argv[n] = args[n];
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->KeyHidObject_constructor );
-		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), NULL, 0 ).ToLocalChecked() );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), args.Length(), argv ).ToLocalChecked() );
+		delete[] argv;
 	}
 }
 
 
 
-void CPROC dispatchKey( uintptr_t psv, RAWINPUT *event, WCHAR ch, int len ) {
-    struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
-    msgbuf->close = FALSE;
-    msgbuf->event = event[0];
-    msgbuf->ch = ch;
+void KeyHidObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
+	KeyHidObject* com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
+	com->this_.Reset();
+	com->readCallback.Reset();
 
-    KeyHidObject *com = (KeyHidObject*)psv;
-    EnqueLink( &com->readQueue, msgbuf );
-    uv_async_send( &com->async );
+	DeleteLink( &hidg.keyEventHandlers, com );
+	if( !GetLinkCount( hidg.keyEventHandlers ) ) {
+		struct msgbuf* msg = NewArray( struct msgbuf, 1 );
+		msg->close = TRUE;
+		EnqueLink( &com->keyEvents, msg );
+	}
 }
 
 void KeyHidObject::lock( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	KeyHidObject* com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
 	int argc = args.Length();
 	if( argc ) {
 		if( args[0].As<Boolean>()->IsTrue() ) {
@@ -524,26 +544,667 @@ void KeyHidObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 
 	KeyHidObject *com = ObjectWrap::Unwrap<KeyHidObject>( args.This() );
-        if( args[0]->IsNull() ) {
-            if( argc > 1 ) {
-                if( args[1]->IsTrue() ) {
-                    struct msgbuf *msgbuf = NewPlus( struct msgbuf, 1 );
-                    msgbuf->close = TRUE;
-                    EnqueLink( &com->readQueue, msgbuf );
-                    uv_async_send( &com->async );
-					return;
-                } 
-            }
-			com->readCallback.Reset();
-		}
-	else if( args[0]->IsFunction() ) {
-		Local<Function> arg0 = Local<Function>::Cast( args[0] );
-		com->readCallback = Persistent<Function, CopyablePersistentTraits<Function>>( isolate, arg0 );
+
+	if( args[0]->IsFunction() ) {
+		com->readCallback.Reset( isolate, Local<Function>::Cast(args[0]));
 	}
 	else {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Unhandled parameter value to keyboard reader." ) ) );
 	}
 }
 
+
+
+struct sendParam {
+	PDATALIST pdlInputs;//
+};
+static PTHREAD pSendKeyThread = NULL;
+static PLINKQUEUE plsKeys     = NULL;
+
+static uintptr_t KeySendThread( PTHREAD thread ) {
+	while( TRUE ) {
+		struct sendParam *param;
+		while( param = (struct sendParam *)DequeLink( &plsKeys ) ) {
+			struct sendParam *pend;
+			while( pend = (struct sendParam *)DequeLink( &plsKeys ) ) {
+				INDEX idx;
+				PINPUT pInput;
+				DATA_FORALL( pend->pdlInputs, idx, PINPUT, pInput ) { AddDataItem( &param->pdlInputs, pInput ); }
+			}
+			// lprintf( "thread Generating event: %d %d %d", param->used_inputs, param->inputs[ 0 ].ki.wScan
+			//        , param->inputs[ 0 ].ki.wVk );
+			BOOL b = SendInput( param->pdlInputs->Cnt, (INPUT*)param->pdlInputs->data, sizeof( INPUT ) );
+			if( !b ) {
+				lprintf( "SendInput failed. %d", GetLastError() );
+			}
+			DeleteDataList( &param->pdlInputs );
+			Release( param );
+		}
+		WakeableSleep( SLEEP_FOREVER );
+	}
+}
+
+
+static void generateKeys( Isolate *isolate, Local<Array> events ) {
+#ifdef _WIN32
+	Local<Context> context = isolate->GetCurrentContext();
+	struct sendParam *param = NewPlus( struct sendParam, 0 );
+	param->pdlInputs = CreateDataList( sizeof( INPUT ) );
+	INPUT input;
+	int event = 0;
+	input.type = INPUT_KEYBOARD;
+	input.ki.time = 0; // auto time
+	input.ki.dwExtraInfo = 0;
+
+	for( event = 0; event < events->Length(); event++ ) {
+		Local<Object> e = events->Get( context, event ).ToLocalChecked().As<Object>();
+		Local<Value> ex = e->Get( context, String::NewFromUtf8Literal( isolate, "key" ) ).ToLocalChecked();
+		Local<Value> ey = e->Get( context, String::NewFromUtf8Literal( isolate, "code" ) ).ToLocalChecked();
+		Local<Value> eb = e->Get( context, String::NewFromUtf8Literal( isolate, "down" ) ).ToLocalChecked();
+		Local<Value> esh = e->Get( context, String::NewFromUtf8Literal( isolate, "extended" ) ).ToLocalChecked();
+		input.ki.wVk = ex->IsNumber() ? ex.As<Number>()->IntegerValue( context ).ToChecked() : 0;
+		input.ki.wScan = ey->IsNumber() ? ey.As<Number>()->IntegerValue( context ).ToChecked() : 0;
+		input.ki.dwFlags =  eb->TOBOOL( isolate )?0:KEYEVENTF_KEYUP;
+		input.ki.dwFlags |=  esh->TOBOOL( isolate )?KEYEVENTF_EXTENDEDKEY:0;
+		AddDataItem( &param->pdlInputs, &input );
+	}
+
+	
+	EnqueLink( &plsKeys, param );
+	if( !pSendKeyThread )
+		pSendKeyThread = ThreadTo( KeySendThread, 0 );
+	else
+		WakeThread( pSendKeyThread );
+
+#endif
+}
+
+
+void KeyHidObject::sendKey( const v8::FunctionCallbackInfo<Value>& args ) {
+#ifdef WIN32
+	//static int old_x; // save old x,y to know whether current is a move or just a click
+	//static int old_y; 
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	int scan;
+	int vKey;
+	int down;
+	int ext;
+
+	if( args.Length() < 3 ) {
+		if( args[0]->IsArray() ) {
+			Local<Array> arr = Local<Array>::Cast( args[0] );
+			generateKeys( isolate, arr );
+			return;
+		}
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "At least 3 arguments must be specified for a key event (vKey, scanCode, isDown, extended)." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	} else {
+		vKey = (args.Length() > 0)?args[0]->IntegerValue( context ).ToChecked():0;
+		scan = (args.Length() > 1)?args[1]->IntegerValue( context ).ToChecked():0;
+		down = (args.Length() > 2)?args[2]->TOBOOL( isolate ):0;
+		ext = (args.Length() > 3)?args[3]->TOBOOL( isolate ):0;
+
+	}
+
+	struct sendParam *param = NewPlus( struct sendParam, 0 );
+	param->pdlInputs        = CreateDataList( sizeof( INPUT ) );
+	INPUT input;
+	//int used_inputs = 0;
+
+	input.type = INPUT_KEYBOARD;
+
+	{
+
+		input.ki.wVk = vKey;
+		input.ki.wScan = scan;
+		// normal buttons have no extra data either - only include their states in the first message.
+		input.ki.dwFlags |= 
+			( ext ? KEYEVENTF_EXTENDEDKEY : 0 ) 
+			| ( down ? 0 : KEYEVENTF_KEYUP )
+		     //| KEYEVENTF_SCANCODE
+		     //| KEYEVENTF_UNICODE
+		     ;
+		input.ki.time = 0; // auto time
+		input.ki.dwExtraInfo = 0;
+		AddDataItem( &param->pdlInputs, &input );
+	};
+	//lprintf( "Generating events: %d %d %d", param->used_inputs, inputs[ 0 ].ki.wScan, inputs[ 0 ].ki.wVk );
+	EnqueLink( &plsKeys, param );
+	if( !pSendKeyThread )
+		pSendKeyThread = ThreadTo( KeySendThread, 0 );
+	else
+		WakeThread( pSendKeyThread );
+	
+#endif
+}
+
+void mouse_asyncmsg( uv_async_t* handle ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	mouse_asyncmsg__( isolate, context, (MouseObject *)handle->data );
+	{
+		// This is hook into Node to dispatch Promises() that are created... all event loops should have this.
+		v8::Isolate *isolate    = v8::Isolate::GetCurrent();
+		class constructorSet *c = getConstructors( isolate );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
+	}
+}
+
+void mouse_asyncmsg__( v8::Isolate *isolate, Local<Context> context, MouseObject * myself ) {
+	// Called by UV in main thread after our worker thread calls uv_async_send()
+	//    I.e. it's safe to callback to the CB we defined in node!
+
+	//INDEX idx;
+	{
+		struct mouse_msgbuf *msg;
+        while( msg = (struct mouse_msgbuf *)DequeLink( &myself->mouseEvents ) ) {
+            if( msg->close ) {
+				uv_close( (uv_handle_t*)&myself->async, uv_closed );
+				DeleteLinkQueue( &myself->mouseEvents );
+                break;
+            }
+			Local<Object> eventObj = Object::New( isolate );
+			WPARAM hi_mdata = HIWORD( msg->data.mouseData );
+			int wheel = 0;
+			SET( eventObj, "op", Integer::New( isolate, (int)msg->msgid ) );
+			switch( msg->msgid ) {
+				//case WM_MOUSEHWHEEL:
+				//case WM_MOUSEVWHEEL:
+			case WM_MOUSEWHEEL:
+				wheel = HIWORD( msg->data.mouseData );
+				break;
+			case WM_XBUTTONDOWN:
+			case WM_NCXBUTTONDOWN:
+				if( hi_mdata & XBUTTON1 )
+					hidg.buttons |= MK_XBUTTON1;
+				if( hi_mdata & XBUTTON2 )
+					hidg.buttons |= MK_XBUTTON2;
+				break;
+			case WM_XBUTTONUP:
+			case WM_NCXBUTTONUP:
+				if( hi_mdata & XBUTTON1 )
+					hidg.buttons &= ~MK_XBUTTON1;
+				if( hi_mdata & XBUTTON2 )
+					hidg.buttons &= ~MK_XBUTTON2;
+				break;
+
+			case WM_NCLBUTTONDOWN:
+			case WM_LBUTTONDOWN: hidg.buttons |= MK_LBUTTON; break;
+			case WM_NCMBUTTONDOWN:
+			case WM_MBUTTONDOWN: hidg.buttons |= MK_MBUTTON; break;
+			case WM_NCRBUTTONDOWN:
+			case WM_RBUTTONDOWN: hidg.buttons |= MK_RBUTTON; break;
+			case WM_NCLBUTTONUP:
+			case WM_LBUTTONUP:   hidg.buttons &= ~MK_LBUTTON; break;
+			case WM_NCMBUTTONUP:
+			case WM_MBUTTONUP:   hidg.buttons &= ~MK_MBUTTON; break;
+			case WM_NCRBUTTONUP:
+			case WM_RBUTTONUP:   hidg.buttons &= ~MK_RBUTTON; break;
+
+			case WM_MOUSEMOVE:
+				break;
+				//case WM_
+			default:
+				lprintf( "Unhandled op:%d", msg->msgid );
+				break;
+				/*
+				case WM_LBUTTONDBLCLK:
+				case WM_MBUTTONDBLCLK:
+				case WM_RBUTTONDBLCLK:
+
+				case WM_NCLBUTTONDBLCLK:
+				case WM_NCMBUTTONDBLCLK:
+				case WM_NCRBUTTONDBLCLK:
+
+				case WM_XBUTTONDBLCLK:
+				case WM_NCXBUTTONDBLCLK:
+					break;
+				*/
+			}
+			hidg.mouseX = msg->data.pt.x;
+			hidg.mouseY = msg->data.pt.y;
+			SET( eventObj, "wheel", Integer::New( isolate, wheel ) );
+			SET( eventObj, "buttons", Integer::New( isolate, hidg.buttons ) );
+			SET( eventObj, "x", Integer::New( isolate, msg->data.pt.x ) );
+			SET( eventObj, "y", Integer::New( isolate, msg->data.pt.y ) );
+
+			Local<Value> argv[] = { eventObj };
+
+
+			//LIST_FORALL( hidg.mouseEventHandlers, idx, MouseObject*, myself ) 
+			{
+				if( !myself->readCallback.IsEmpty() ) {
+					MaybeLocal<Value> result = myself->readCallback.Get( isolate )->Call( context, myself->this_.Get( isolate ), 1, argv );
+					if( result.IsEmpty() ) {
+						// don't handle further events- allow processing the thrown exception.
+						Deallocate( struct mouse_msgbuf*, msg );
+						return;
+					}
+				}
+			}
+			Deallocate( struct mouse_msgbuf *, msg );
+		}
+	}
+}
+
+
+MouseObject::MouseObject() {
+	if( !hidg.mouseThread )
+		hidg.mouseThread = ThreadTo( MouseInputThread, 0 );
+}
+
+MouseObject::~MouseObject() {
+	//lprintf( "need to cleanup mouse object async handler." );
+	//hidg.mouseEventHandler = NULL; // no longer have a handler.
+}
+
+void MouseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
+		// Invoked as constructor: `new MyObject(...)`
+		MouseObject* obj = new MouseObject( );
+		{
+			class constructorSet *c = getConstructors( isolate );
+			if( !obj->mouseEvents ) {
+				obj->mouseEvents = CreateLinkQueue();
+				obj->c           = c;
+				if( c->ivm_post )
+					obj->ivm_hosted = true;
+				else {
+					uv_async_init( c->loop, &obj->async, mouse_asyncmsg );
+					obj->async.data = obj;
+				}
+			}
+			AddLink( &hidg.mouseEventHandlers, obj );
+
+			obj->Wrap( args.This() );
+			obj->this_.Reset( isolate, args.This() );
+			args.GetReturnValue().Set( args.This() );
+
+			if( args.Length() > 0 ) {
+				if( args[0]->IsFunction() ) {
+					Local<Function> arg0 = Local<Function>::Cast( args[0] );
+					obj->readCallback.Reset( isolate, arg0 );
+				}
+			}
+		}
+	}
+	else {
+		// Invoked as plain function `MyObject(...)`, turn into construct call.
+		class constructorSet* c = getConstructors( isolate );
+		Local<Value> *argv = new Local<Value>[args.Length()];
+		for( int n = 0; n < args.Length(); n++ ) argv[n] = args[n];
+		Local<Function> cons = Local<Function>::New( isolate, c->MouseHidObject_constructor );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), args.Length(), argv ).ToLocalChecked() );
+		delete[] argv;
+	}
+}
+
+void MouseObject::onRead( const v8::FunctionCallbackInfo<Value>& args ) {
+	// set read callback
+   Isolate *isolate = args.GetIsolate();
+	MouseObject* com = ObjectWrap::Unwrap<MouseObject>( args.This() );
+	if( args.Length() > 0 ) {
+		if( args[0]->IsFunction() ) {
+			Local<Function> arg0 = Local<Function>::Cast( args[0] );
+			com->readCallback.Reset( isolate, arg0 );
+		}
+	}
+}
+
+void MouseObject::close( const v8::FunctionCallbackInfo<Value>& args ) {
+	MouseObject* com = ObjectWrap::Unwrap<MouseObject>( args.This() );
+	com->this_.Reset();
+	com->readCallback.Reset();
+
+	struct mouse_msgbuf *msg = NewArray( struct mouse_msgbuf, 1 );
+	msg->close               = TRUE;
+	msg->msgid               = 0;
+	EnqueLink( &com->mouseEvents, msg );
+	if( com->ivm_hosted )
+		com->c->ivm_post( com->c->ivm_holder, std::make_unique<mouseAsyncTask>( com ) );
+	else
+		uv_async_send( &com->async );
+	// hidg.mouseThread = NULL;
+	DeleteLink( &hidg.mouseEventHandlers, com );
+
+	/*
+	struct mouse_msgbuf* msgbuf = NewPlus( struct mouse_msgbuf, 1 );
+	msgbuf->close = TRUE;
+	EnqueLink( &com->readQueue, msgbuf );
+	uv_async_send( &hidg.mouseAsync );
+	*/
+}
+
+static void generateEvents( Isolate *isolate, Local<Array> events ) {
+	Local<Context> context = isolate->GetCurrentContext();
+	int old_buttons;
+	POINT curPos;
+
+	//GetCursorPos( &curPos );
+	curPos.x = hidg.mouseX;
+	curPos.y = hidg.mouseY;
+	old_buttons = hidg.buttons;
+	PDATALIST pdlInputs = CreateDataList( sizeof( INPUT ) );
+	INPUT input;
+	int used_inputs = 0;
+	int event = 0;
+	input.type = INPUT_MOUSE;
+	input.mi.time = 0; // auto time
+	input.mi.dwExtraInfo = 0;
+
+	for( event = 0; event < events->Length(); event++ ) {
+		Local<Object> e = events->Get( context, event ).ToLocalChecked().As<Object>();
+		Local<Value> ex = e->Get( context, String::NewFromUtf8Literal( isolate, "x" ) ).ToLocalChecked();
+		Local<Value> ey = e->Get( context, String::NewFromUtf8Literal( isolate, "y" ) ).ToLocalChecked();
+		Local<Value> eb = e->Get( context, String::NewFromUtf8Literal( isolate, "buttons" ) ).ToLocalChecked();
+		Local<Value> esh = e->Get( context, String::NewFromUtf8Literal( isolate, "vscroll" ) ).ToLocalChecked();
+		Local<Value> esw = e->Get( context, String::NewFromUtf8Literal( isolate, "hscroll" ) ).ToLocalChecked();
+		int64_t x = ex->IsNumber() ? ex.As<Number>()->IntegerValue( context ).ToChecked() : curPos.x;
+		int64_t y = ey->IsNumber() ? ey.As<Number>()->IntegerValue( context ).ToChecked() : curPos.y;
+		int64_t b = eb->IsNumber() ? eb.As<Number>()->IntegerValue( context ).ToChecked() : old_buttons;
+		//int64_t realB = b; // we destroy b with certain button combinations...
+
+		//lprintf( "data: %d %d %d %d", x, y, b, old_buttons );
+		bool hasScroll1 = esh->IsNumber();
+		double down_up = hasScroll1 ? esh.As<Number>()->Value() : 0;
+		// even if there's a parameter, it might not be a command
+		if( !down_up ) hasScroll1 = false;
+		bool hasScroll2 = esw->IsNumber();
+		double right_left = hasScroll2 ? esw.As<Number>()->Value() : 0;
+		// even if there's a parameter, it might not be a command
+		if( !right_left ) hasScroll1 = false;
+		//lprintf( "has Scrolls:%d %d", hasScroll1, hasScroll2 );
+
+		bool has_x = false;
+		if( b & 0x1000000 ) {
+			x += curPos.x;
+			y += curPos.y;
+		}
+		used_inputs = 0; // used_inputs is for a subset of events that get genertaed... one move
+		do {
+			if( used_inputs ) {
+				//lprintf( "adding a second part of the event.." );
+				// don't NEED to set dx,dy to 0, but it's cleaner if we do
+				input.mi.dx = 0;
+				input.mi.dy = 0;
+				input.mi.dwFlags = 0;
+			} else {
+				if( x != curPos.x || y != curPos.y ) {
+					double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN ) - 1;
+					double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN ) - 1;
+					double const sx = 65535.0f / fScreenWidth;
+					double const sy = 65535.0f / fScreenHeight;
+					input.mi.dx = (LONG)ceil( x * sx );
+					input.mi.dy = (LONG)ceil( y * sy );
+					/* assume that this event WILL move the mouse */
+					//lprintf( "Updating the current mouse position... %d %d", x, y );
+					curPos.x = hidg.mouseX = x;
+					curPos.y = hidg.mouseY = y;
+					input.mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
+				} else {
+					//lprintf( "Same position as current?" );
+					// don't NEED to set dx,dy to 0, but it's cleaner if we do
+					input.mi.dx = 0;
+					input.mi.dy = 0;
+					input.mi.dwFlags = 0;
+					//lprintf( "no motion needed..." );
+				}
+
+				// normal buttons have no extra data either - only include their states in the first message.
+				input.mi.dwFlags |=
+					( ( ( b & MK_LBUTTON ) && !( old_buttons & MK_LBUTTON ) ) ? MOUSEEVENTF_LEFTDOWN : 0 )
+					| ( ( ( b & MK_RBUTTON ) && !( old_buttons & MK_RBUTTON ) ) ? MOUSEEVENTF_RIGHTDOWN : 0 )
+					| ( ( ( b & MK_MBUTTON ) && !( old_buttons & MK_MBUTTON ) ) ? MOUSEEVENTF_MIDDLEDOWN : 0 )
+					| ( ( !( b & MK_LBUTTON ) && ( old_buttons & MK_LBUTTON ) ) ? MOUSEEVENTF_LEFTUP : 0 )
+					| ( ( !( b & MK_RBUTTON ) && ( old_buttons & MK_RBUTTON ) ) ? MOUSEEVENTF_RIGHTUP : 0 )
+					| ( ( !( b & MK_MBUTTON ) && ( old_buttons & MK_MBUTTON ) ) ? MOUSEEVENTF_MIDDLEUP : 0 )
+					;
+				// button messages are only on transition, not hold-states; update old_buttons
+				// x1 and x2 states are updated as they are built into an event
+				old_buttons = ( old_buttons & ( MK_XBUTTON1 | MK_XBUTTON2 ) )
+					| ( b & ( MK_LBUTTON | MK_RBUTTON | MK_MBUTTON ) );
+			}
+
+			if( b & MK_XBUTTON1 && !( old_buttons & MK_XBUTTON1 ) ) {
+				input.mi.dwFlags |= MOUSEEVENTF_XDOWN;
+				input.mi.mouseData = XBUTTON1; // scroll wheel
+				b &= ~MK_XBUTTON1;
+				has_x = true;
+			} else if( !( b & MK_XBUTTON1 ) && ( old_buttons & MK_XBUTTON1 ) ) {
+				input.mi.dwFlags |= MOUSEEVENTF_XUP;
+				input.mi.mouseData = XBUTTON1; // scroll wheel
+				old_buttons &= ~MK_XBUTTON1;
+				has_x = true;
+			} else if( b & MK_XBUTTON2 && !( old_buttons & MK_XBUTTON2 ) ) {
+				input.mi.dwFlags |= MOUSEEVENTF_XDOWN;
+				input.mi.mouseData = XBUTTON2; // scroll wheel
+				b &= ~MK_XBUTTON2;
+				has_x = true;
+			} else if( !( b & MK_XBUTTON2 ) && ( old_buttons & MK_XBUTTON2 ) ) {
+				input.mi.dwFlags |= MOUSEEVENTF_XUP;
+				input.mi.mouseData = XBUTTON2; // scroll wheel
+				old_buttons &= ~MK_XBUTTON2;
+				has_x = true;
+			} else {
+				has_x = false;
+				if( hasScroll1 ) {
+					input.mi.dwFlags |= MOUSEEVENTF_WHEEL;
+					input.mi.mouseData = (DWORD)( down_up * WHEEL_DELTA );
+					hasScroll1 = false;
+				} else if( hasScroll2 ) {
+					input.mi.dwFlags |= MOUSEEVENTF_HWHEEL;
+					input.mi.mouseData = (DWORD)( right_left * WHEEL_DELTA );
+					hasScroll2 = false;
+				} else {
+					input.mi.mouseData = 0;
+				}
+			}
+
+			hidg.buttons = old_buttons;
+			//lprintf( "Adding events: x:%d y:%d f:%d ex:%d md:%d t:%d", input.mi.dx, input.mi.dy, input.mi.dwFlags, input.mi.dwExtraInfo, input.mi.mouseData, input.mi.time );
+			AddDataItem( &pdlInputs, &input );
+			used_inputs++;
+		} while( has_x || hasScroll1 || hasScroll2 );
+	}
+	if( 0 ) {
+		for( int i = 0; i < pdlInputs->Cnt; i++ ) {
+			INPUT* input = (INPUT*)GetDataItem( &pdlInputs, i );
+			lprintf( "Generating event: x:%d y:%d f:%d ex:%d md:%d t:%d", input->mi.dx, input->mi.dy, input->mi.dwFlags, input->mi.dwExtraInfo, input->mi.mouseData, input->mi.time );
+		}
+	}
+	
+	//int n = 
+	SendInput( pdlInputs->Cnt, (LPINPUT)pdlInputs->data, sizeof( INPUT ) );
+	//lprintf( "Send Inputreplied? %d", n );
+	DeleteDataList( &pdlInputs );
+
+}
+
+
+void MouseObject::event( const v8::FunctionCallbackInfo<Value>& args ) {
+	int old_buttons;
+	//static int old_x; // save old x,y to know whether current is a move or just a click
+	//static int old_y; 
+	POINT curPos;
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 3 ) {
+		if( args[0]->IsArray() ) {
+			Local<Array> arr = Local<Array>::Cast( args[0] );
+			generateEvents( isolate, arr );
+			return;
+		}
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "At least 3 arguments must be specified for a mouse event (x, y, buttons)." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+	Local<Context> context = isolate->GetCurrentContext();
+	GetCursorPos( &curPos );
+	/*
+	old_buttons = ( GetAsyncKeyState( VK_LBUTTON ) ? MK_LBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_RBUTTON ) ? MK_RBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_MBUTTON ) ? MK_MBUTTON : 0 )
+		| ( GetAsyncKeyState( VK_XBUTTON1 ) ? MK_XBUTTON1 : 0 )
+		| ( GetAsyncKeyState( VK_XBUTTON2 ) ? MK_XBUTTON2 : 0 );
+	*/
+	//lprintf( "current key state buttons: %08x %08x", old_buttons, hidg.buttons );
+	old_buttons = hidg.buttons;
+	int64_t x = args[0]->IsNumber() ? args[0].As<Number>()->IntegerValue( context ).ToChecked():curPos.x;
+	int64_t y = args[1]->IsNumber() ? args[1].As<Number>()->IntegerValue( context ).ToChecked():curPos.y;
+	int64_t b = args[2]->IsNumber() ? args[2].As<Number>()->IntegerValue( context ).ToChecked():old_buttons;
+	//int64_t realB = b; // we destroy b with certain button combinations...
+
+	bool hasScroll1 = (args.Length() > 3)?args[3]->IsNumber():false;
+	double down_up = hasScroll1?args[3].As<Number>()->Value():0;
+	// even if there's a parameter, it might not be a command
+	if( !down_up ) hasScroll1 = false;
+	bool hasScroll2 = ( args.Length() > 4 ) ? args[4]->IsNumber():false;
+	double right_left = hasScroll2?args[4].As<Number>()->Value():0;
+	// even if there's a parameter, it might not be a command
+	if( !right_left ) hasScroll1 = false;
+	//lprintf( "has Scrolls:%d %d", hasScroll1, hasScroll2 );
+
+	INPUT inputs[4];
+	int used_inputs = 0;
+	bool has_x = false;
+	if( b & 0x1000000 ) {
+		x += curPos.x;
+		y += curPos.y;
+	}
+
+	do {
+		inputs[used_inputs].type = INPUT_MOUSE;
+		if( used_inputs ) {
+			// don't NEED to set dx,dy to 0, but it's cleaner if we do
+			inputs[used_inputs].mi.dx = 0;
+			inputs[used_inputs].mi.dy = 0;
+			inputs[used_inputs].mi.dwFlags = 0;
+		} else {
+			if( x != curPos.x || y != curPos.y ) {
+				double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN )-1;
+				double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN )-1;
+				double const sx = 65535.0f / fScreenWidth;
+				double const sy = 65535.0f / fScreenHeight;
+				inputs[used_inputs].mi.dx = (LONG)ceil( x * sx );
+				inputs[used_inputs].mi.dy = (LONG)ceil( y * sy );
+				inputs[used_inputs].mi.dwFlags = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_MOVE;
+			} else {
+				// don't NEED to set dx,dy to 0, but it's cleaner if we do
+				inputs[used_inputs].mi.dx = 0;
+				inputs[used_inputs].mi.dy = 0;
+				inputs[used_inputs].mi.dwFlags = 0;
+				//lprintf( "no motion needed..." );
+			}
+
+			// normal buttons have no extra data either - only include their states in the first message.
+			inputs[used_inputs].mi.dwFlags |=
+				( ( ( b & MK_LBUTTON ) && !( old_buttons & MK_LBUTTON ) ) ? MOUSEEVENTF_LEFTDOWN : 0 )
+				| ( ( ( b & MK_RBUTTON ) && !( old_buttons & MK_RBUTTON ) ) ? MOUSEEVENTF_RIGHTDOWN : 0 )
+				| ( ( ( b & MK_MBUTTON ) && !( old_buttons & MK_MBUTTON ) ) ? MOUSEEVENTF_MIDDLEDOWN : 0 )
+				| ( ( !( b & MK_LBUTTON ) && ( old_buttons & MK_LBUTTON ) ) ? MOUSEEVENTF_LEFTUP : 0 )
+				| ( ( !( b & MK_RBUTTON ) && ( old_buttons & MK_RBUTTON ) ) ? MOUSEEVENTF_RIGHTUP : 0 )
+				| ( ( !( b & MK_MBUTTON ) && ( old_buttons & MK_MBUTTON ) ) ? MOUSEEVENTF_MIDDLEUP : 0 )
+				;
+			// button messages are only on transition, not hold-states; update old_buttons
+			// x1 and x2 states are updated as they are built into an event
+			old_buttons = ( old_buttons & ( MK_XBUTTON1 | MK_XBUTTON2 ) )
+				| ( b & ( MK_LBUTTON | MK_RBUTTON | MK_MBUTTON ) );
+		}
+
+		if( b & MK_XBUTTON1 && !( old_buttons & MK_XBUTTON1 ) ) {
+			inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_XDOWN;
+			inputs[used_inputs].mi.mouseData = XBUTTON1; // scroll wheel
+			b &= ~MK_XBUTTON1;
+			has_x = true;
+		} else if( !(b & MK_XBUTTON1) && ( old_buttons & MK_XBUTTON1 ) ) {
+			inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_XUP;
+			inputs[used_inputs].mi.mouseData = XBUTTON1; // scroll wheel
+			old_buttons &= ~MK_XBUTTON1;
+			has_x = true;
+		} else if( b & MK_XBUTTON2 && !(old_buttons&MK_XBUTTON2) ) {
+			inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_XDOWN;
+			inputs[used_inputs].mi.mouseData = XBUTTON2; // scroll wheel
+			b &= ~MK_XBUTTON2;
+			has_x = true;
+		} else if( !(b& MK_XBUTTON2) && ( old_buttons& MK_XBUTTON2 ) ) {
+			inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_XUP;
+			inputs[used_inputs].mi.mouseData = XBUTTON2; // scroll wheel
+			old_buttons &= ~MK_XBUTTON2;
+			has_x = true;
+		} else {
+			has_x = false;
+			if( hasScroll1 ) {
+				inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_WHEEL;
+				inputs[used_inputs].mi.mouseData = (DWORD)(down_up * WHEEL_DELTA );
+				hasScroll1 = false;
+			} else if( hasScroll2 ) {
+				inputs[used_inputs].mi.dwFlags |= MOUSEEVENTF_HWHEEL;
+				inputs[used_inputs].mi.mouseData = (DWORD)(right_left * WHEEL_DELTA );
+				hasScroll2 = false;
+			} else {
+				inputs[used_inputs].mi.mouseData = 0;
+			}
+		}
+
+		inputs[used_inputs].mi.time = 0; // auto time
+		inputs[used_inputs].mi.dwExtraInfo = 0;
+		hidg.buttons = old_buttons;
+		used_inputs++;
+	} while( has_x || hasScroll1 || hasScroll2 );
+	//lprintf( "Generating events: %d %d %d", used_inputs, inputs[0].mi.dx, inputs[0].mi.dy  );
+	SendInput( used_inputs, inputs, sizeof( INPUT ) );
+}
+
+void MouseObject::clickAt( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	POINT pt;
+	GetCursorPos( &pt );
+	double fScreenWidth = GetSystemMetrics( SM_CXVIRTUALSCREEN );
+	double fScreenHeight = GetSystemMetrics( SM_CYVIRTUALSCREEN );
+
+	int64_t x = args[0].As<Number>()->IntegerValue( context ).ToChecked();
+	int64_t y = args[1].As<Number>()->IntegerValue( context ).ToChecked();
+
+	double const sx = 65535.0f / fScreenWidth;
+	double const sy = 65535.0f / fScreenHeight;
+	double fx = x * sx;
+	double fy = y * sy;
+	//lprintf( "Clicking at %d %d   %1.4g %1.4g", x, y, fx, fy );
+	INPUT inputs[3];
+
+	inputs[0].type = INPUT_MOUSE;
+	inputs[0].mi.dx = (LONG)ceil(fx);
+	inputs[0].mi.dy = (LONG)ceil(fy);
+	inputs[0].mi.dwFlags = MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN;
+	inputs[0].mi.mouseData = 0; // scroll wheel
+	inputs[0].mi.time = 0; // auto time
+	inputs[0].mi.dwExtraInfo = 0;
+	
+	inputs[1].type = INPUT_MOUSE;
+	inputs[1].mi.dx = 0;
+	inputs[1].mi.dy = 0;
+	inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+	inputs[1].mi.mouseData = 0; // scroll wheel
+	inputs[1].mi.time = 0; // auto time
+	inputs[1].mi.dwExtraInfo = 0;
+
+	inputs[2].type = INPUT_MOUSE;
+	inputs[2].mi.dx = (LONG)ceil(sx * pt.x);
+	inputs[2].mi.dy = (LONG)ceil(sy * pt.y);
+	inputs[2].mi.dwFlags = MOUSEEVENTF_VIRTUALDESK | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_MOVE;
+	inputs[2].mi.mouseData = 0; // scroll wheel
+	inputs[2].mi.time = 0; // auto time
+	inputs[2].mi.dwExtraInfo = 0;
+	SendInput( 3, inputs, sizeof( INPUT ) );
+
+
+}
 
 #endif

@@ -1,0 +1,57 @@
+.button-service-manageradd-task {
+	float:right;
+}
+
+.task-log-listbox {
+    /* make scrollable */
+    height: 80vh;
+	width:60vw;
+	overflow:auto;
+	background:black;
+	border-style:inset;
+	border-width:3px;
+}
+
+.task-running:disabled, .task-running {
+	background: #088715;
+	color:white;
+}
+.task-stopped:disabled, .task-stopped {
+	background: #c9131f;
+	color:white;
+}
+.task-failed:disabled, .task-failed {
+	background: #dd3;
+	color:black;
+}
+
+.red {
+	background: #f00;
+	color:white;
+}
+
+.yellow {
+	background: #dd0;
+	color:white;
+}
+
+.pumpkin{
+	background: #970;
+	color:white;
+
+}
+
+.blue {
+	background: blue;
+	color:white;
+}
+
+.green {
+	background: green;
+	color:white;
+}
+
+.purple {
+	background: purple;
+	color:white;
+}

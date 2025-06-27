@@ -15,3 +15,5 @@ b.on( "click", function() {
 
 f.show();
 
+// some sort of f.wait() event is needed... maybe it's a promise that only resolves on close?
+function tick() { setTimeout( tick, 50000 );} tick();

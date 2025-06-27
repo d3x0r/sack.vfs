@@ -1,0 +1,1 @@
+call ..\makeTypes.bat db.mjs

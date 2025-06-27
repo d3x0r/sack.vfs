@@ -2,7 +2,7 @@
 
 var sack = require( ".." );
 
-var server = `ws://${process.argv[2]?process.argv[2]:"192.168.173.13"}:3000/`;
+var server = `ws://${process.argv[2]?process.argv[2]:"192.168.173.13"}/`;
 console.log( "connect to ", server );
 //var client = sack.WebSocket.Client( "ws://DESKTOP-EMFQ8QQ:8080/", ["a","b"], { perMessageDeflate: true } );
 
@@ -21,8 +21,8 @@ function open() {
 	        	console.log( "message Received:", msg );
                 	this.close();
         	} );
-		this.on( "close", function( msg ) {
-        		console.log( "opened connection closed" );
+		this.on( "close", function( code, reason ) {
+        		console.log( "opened connection closed", code, reason );
         	        //setTimeout( ()=> {console.log( "waited" )}, 3000 )
 	        } );
 		//client.send( "Connected!" );
@@ -31,7 +31,7 @@ function open() {
                 client.send( "." );
 	} );
 
-	client.on( "close", function( msg ) {
+	client.on( "close", function( code, reason ) {
       		console.log( "unopened connection closed" );
 	} );
 

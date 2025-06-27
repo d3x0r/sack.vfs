@@ -52,10 +52,9 @@ void ThreadObject::relinquish( const v8::FunctionCallbackInfo<Value>& args ) {
 		lprintf( "relinquish failed; no idle proc registered." );
 		return;
 	}
-	Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-	MaybeLocal<Value> r = cb->Call( isolate->GetCurrentContext(), Null(isolate), 0, NULL );
-	if( r.IsEmpty() ) {
-		// this should never happen... and I don't really care if there was an exception....
+	if( !c->ThreadObject_idleProc.IsEmpty() ) {
+		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+		MaybeLocal<Value> r = cb->Call( isolate->GetCurrentContext(), Null(isolate), 0, NULL );
 	}
 	// r was always undefined.... so inner must wake.
 	//String::Utf8Value fName( r->ToString() );

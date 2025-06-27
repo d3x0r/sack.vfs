@@ -60,6 +60,8 @@ enum GUI_eventType {
 	Event_Init,
 	Event_Mouse,
 	Event_Render_Mouse,
+	Event_Render_Touch,
+	Event_Render_Pen,
 	Event_Render_Key,
 	Event_Render_Draw,
 
@@ -114,6 +116,13 @@ struct event {
 			int32_t x, y;
 			uint32_t b;
 		}mouse;
+		struct {
+			struct pen_event event;
+		} pen;
+		struct {
+			PINPUT_POINT pTouches;
+			int nTouches;
+		} touch;
 		struct {
 			uint32_t w,h;
 			LOGICAL start;
@@ -180,5 +189,4 @@ struct global {
 void InitInterfaces( int opengl, int vulkan );
 uintptr_t MakeEvent( RenderObject*r, enum GUI_eventType type, ... );
 
-void InitSystray( Isolate* isolate, Local<Object> _exports );
 void enableEventLoop( class constructorSet *c ); // PSI control events.

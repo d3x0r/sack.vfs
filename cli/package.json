@@ -1,0 +1,33 @@
+{
+  "name": "@d3x0r/sack.vfs-cli",
+  "version": "1.0.0",
+  "description": "Some quick scripts which are handled by sack.vfs.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "link": "npm link sack.vfs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/d3x0r/sack.vfs.git"
+  },
+  "keywords": [
+    "sack",
+    "cli"
+  ],
+  "author": "d3x0r",
+  "license": "LGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/d3x0r/sack.vfs/issues"
+  },
+  "homepage": "https://github.com/d3x0r/sack.vfs#readme",
+  "bin": {
+    "sps": "./sps.cli.mjs",
+    "sack.http": "./shttp.cli.mjs",
+    "sping": "./sping.cli.mjs"
+  },
+   "private": false,
+  "dependencies": {
+    "sack.vfs": "https://github.com/d3x0r/sack.vfs"
+  }
+}

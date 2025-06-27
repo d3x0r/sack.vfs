@@ -1,0 +1,39 @@
+
+<html>
+<head>
+</head>
+
+<script>
+
+function test1() {
+const ws = new WebSocket( "http://10.1.2.3/", "test" );
+ws.onopen = function(a,b) {
+	console.log( "1 open:", a, b );
+}
+ws.onerror = function(a,b) {
+	console.log( "1 error:", a, b );
+}
+ws.onclose = function(a,b) {
+	console.log( "1 close:", a, b );
+}
+}
+function test2() {
+const ws = new WebSocket( "http://[2006::1]/", "test" );
+ws.onopen = function(a,b) {
+	console.log( "2 open:", a, b );
+}
+ws.onerror = function(a,b) {
+	console.log( "2 error:", a, b );
+}
+ws.onclose = function(a,b) {
+	console.log( "2 close:", a, b );
+}
+}
+
+test1();
+test2();
+
+debugger;
+</script>
+
+</html>

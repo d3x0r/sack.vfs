@@ -187,6 +187,20 @@ static void dispatchEvent( 	v8::Isolate* isolate
 		else evt->success = 0;
 		break;
 	}
+	case Event_Control_Key: {
+		Local<Object> jsEvent = Object::New( isolate );
+		jsEvent->Set( context, localStringExternal( isolate, "key" ), Integer::New( isolate, evt->data.key.code ) );
+		{
+			Local<Value> argv[1] = { jsEvent };
+			cb = Local<Function>::New( isolate, evt->control->registration->cbKeyEvent );
+			r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+			if( !r.IsEmpty() )
+				evt->success = (int)r->IntegerValue( context ).ToChecked();
+			else
+				evt->success = 1;
+		}
+		break;
+	}
 	case Event_Control_Mouse: {
 		//evt->data.controlMouse.target
 		Local<Object> jsEvent = Object::New( isolate );
@@ -286,19 +300,27 @@ static void asyncmsg( uv_async_t* handle ) {
 			DeleteFromSet( IS_EVENT, &psiLocal.event_pool, evt );
 		}
 		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		if(! cb.IsEmpty() )
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
 			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 	//lprintf( "done calling message notice." );
 }
 
 
 void enableEventLoop( class constructorSet *c ) {
+	//lprintf( "!!! Enable PSI Event Loop");
 	if( !c->eventLoopRegistered ) {
+		psiLocal.c = c;
 		c->eventLoopRegistered = TRUE;
 		MemSet( &c->psiLocal_async, 0, sizeof( &c->psiLocal_async ) );
-		uv_async_init( c->loop, &c->psiLocal_async, asyncmsg );
+		if( c->ivm_holder )
+			lprintf( "ivm event dispatch not completed." );
+		else {
+			uv_async_init( c->loop, &c->psiLocal_async, asyncmsg );
+			uv_unref( (uv_handle_t*)&c->psiLocal_async );
+		}
 	}
 	c->eventLoopEnables++;
 }
@@ -309,8 +331,8 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 #define e (*pe)
 	va_list args;
 	va_start( args, type );
-	if( type != Event_Control_Close_Loop && control )
-		enableEventLoop( control->isolateCons );
+	//if( type != Event_Control_Close_Loop && control )
+	//	enableEventLoop( control->isolateCons );
 	pe = GetFromSet( IS_EVENT, &psiLocal.event_pool );
 	e.type = type;
 	e.control = control;
@@ -327,7 +349,6 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		e.data.mouse.b = va_arg( args, uint32_t );
 		break;
 	case Event_Control_Draw:
-
 		break;
 	case Event_Control_Key:
 		e.data.key.code = va_arg( args, uint32_t );
@@ -347,15 +368,11 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 		e.data.popup.pmi = va_arg( args, MenuItemObject * );
 		break;
 	case Event_Control_Move:
-		if( control->cbMoveEvent.IsEmpty() )
-			return false;
 		e.data.move.x = va_arg( args, int32_t );
 		e.data.move.y = va_arg( args, int32_t );
 		e.data.move.start = va_arg( args, LOGICAL );
 		break;
 	case Event_Control_Resize:
-		if( control->cbSizeEvent.IsEmpty() )
-			return false;
 		e.data.size.w = va_arg( args, uint32_t );
 		e.data.size.h = va_arg( args, uint32_t );
 		e.data.size.start = va_arg( args, LOGICAL );
@@ -390,8 +407,12 @@ static uintptr_t MakePSIEvent( ControlObject *control, bool block, enum GUI_even
 }
 
 void disableEventLoop( class constructorSet *c ) {
+	lprintf( "Disable PSI Events...");
 	if( c->eventLoopRegistered ) {
-		if( !(--c->eventLoopEnables) ) {
+		lprintf( "... %d", c->eventLoopEnables );
+		if( !(--c->eventLoopEnables) ) 
+		{
+			lprintf( "..." );
 			c->eventLoopRegistered = FALSE;
 			MakePSIEvent( NULL, false, Event_Control_Close_Loop );
 		}
@@ -401,6 +422,7 @@ void disableEventLoop( class constructorSet *c ) {
 VoidObject::VoidObject( uintptr_t data ) {
 	this->data = data;
 }
+
 void VoidObject::Init( Isolate *isolate ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> voidTemplate;
@@ -593,6 +615,12 @@ void DeleteControlColors( Isolate *isolate, Local<Object> control, ControlObject
 	VoidObject::releaseSelf( v );
 }
 
+
+void ControlObject::sigint( Isolate *isolate ) {
+	if( psiLocal.c )
+		MakePSIEvent( NULL, false, Event_Control_Close_Loop );
+}
+
 void ControlObject::Init( Local<Object> _exports ) {
 	psiLocal.bindingDataId = PSI_AddBindingData( "Node" );
 
@@ -615,22 +643,19 @@ void ControlObject::Init( Local<Object> _exports ) {
 
 		VoidObject::Init( isolate );
 		//VulkanObject::Init( isolate, _exports );
-		if (!g.pii) {
-			// use loading image interface as one-shot init toggle...
-			// this ends up logging an error because it was previosly initialized
-			SimpleRegisterMethod("psi/control/rtti/extra init"
-				, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)");
-			SimpleRegisterMethod("psi/control/rtti/extra destroy"
-				, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)");
 
-			// get the current interfaces, and set PSI to them.
-			// (this will be delayed until require())
-				// and is generally redundant.
-			g.pii = GetImageInterface();
-			g.pdi = GetDisplayInterface();
-			SetControlImageInterface(g.pii);
-			SetControlInterface(g.pdi);
-		}
+		SimpleRegisterMethod( "psi/control/rtti/extra init"
+			, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)" );
+		SimpleRegisterMethod( "psi/control/rtti/extra destroy"
+			, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)" );
+
+		// get the current interfaces, and set PSI to them.
+		// (this will be delayed until require())
+			// and is generally redundant.
+		if( !g.pii ) g.pii = GetImageInterface();
+		g.pdi = GetDisplayInterface();
+		SetControlImageInterface( g.pii );
+		SetControlInterface( g.pdi );
 
 		_exports->Set( context, localStringExternal( isolate, "PSI" ), exports );
 		// Prepare constructor template
@@ -1053,12 +1078,15 @@ void ControlObject::setControlColor2( const FunctionCallbackInfo<Value>& args ) 
 }
 
 
-ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h ) {
+ControlObject::ControlObject( ControlObject *over, const char *type, const char *title, int x, int y, int w, int h, class constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	frame = over;
 	flags.tree = 0;
 	psiLocal.pendingCreate = this;
+	isolateCons = c;
+	enableEventLoop( c );
+
 	if( !title )
 		control = MakeNamedControl( over->control, type, x, y, w, h, 0 );
 	else
@@ -1066,29 +1094,34 @@ ControlObject::ControlObject( ControlObject *over, const char *type, const char 
 	psiLocal.pendingCreate = NULL;
 }
 
-ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over ) {
+ControlObject::ControlObject( const char *title, int x, int y, int w, int h, int border, ControlObject *over, class constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	frame = over;
 	flags.tree = 0;
 	psiLocal.pendingCreate = this;
+	
+	isolateCons = c;
+	enableEventLoop( c );
 	control = ::CreateFrame( title, x, y, w, h, border, over ? over->control : (PSI_CONTROL)NULL );
 	PSI_SetBindingData( control, psiLocal.bindingDataId, (uintptr_t)this );
 	psiLocal.pendingCreate = NULL;
 }
 
-ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h ) {
+ControlObject::ControlObject( const char *type, ControlObject *parent, int32_t x, int32_t y, uint32_t w, uint32_t h, class constructorSet*c ) {
 	registration = NULL;
 	image = NULL;
 	flags.tree = 0;
 	psiLocal.pendingCreate = this;
+	isolateCons = c;
+	enableEventLoop( c );
 	control = ::MakeNamedControl( parent->control, type, x, y, w, h, -1 );
 	psiLocal.pendingCreate = NULL;
 }
 
 
 ControlObject::~ControlObject() {
-
+	disableEventLoop( this->isolateCons );
 }
 ControlObject::ControlObject( PSI_CONTROL control ) {
 	//memcpy( this, &_blankObject, sizeof( *this ) );
@@ -1152,7 +1185,7 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		*/
 		// Invoked as constructor: `new MyObject(...)`
 		
-		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL );
+		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL, getConstructors( isolate ) );
 		ControlObject::wrapSelf( isolate, obj, args.This() );
 		args.GetReturnValue().Set( args.This() );
 		if( title )
@@ -1452,7 +1485,7 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 
 		// Invoked as constructor: `new MyObject(...)`
 		psiLocal.newControl = newControl;
-		ControlObject* obj = new ControlObject( container, type, title, x, y, w, h );
+		ControlObject* obj = new ControlObject( container, type, title, x, y, w, h, c );
 		ControlObject::wrapSelf( isolate, obj, newControl );
 
 		args.GetReturnValue().Set( newControl );
@@ -1470,6 +1503,7 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 		char *title = NULL;
 		int x = 0, y = 0, w = 1024, h = 768, border = 0;
 		ControlObject *parent = NULL;
+		class constructorSet* c = getConstructors( isolate );
 
 		int argc = args.Length();
 		if( argc > 0 ) {
@@ -1497,7 +1531,7 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 			}
 			 */
 		// Invoked as constructor: `new MyObject(...)`
-		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL );
+		ControlObject* obj = new ControlObject( title?title:"Node Application", x, y, w, h, border, NULL, c );
 		ControlObject::wrapSelf( isolate, obj, args.This() );
 		args.GetReturnValue().Set( args.This() );
 			if( title )
@@ -1618,9 +1652,11 @@ void ControlObject::get( const FunctionCallbackInfo<Value>& args ) {
 static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrMoved ) {
 	ControlObject *control = (ControlObject *)PSI_GetBindingData( pc, psiLocal.bindingDataId );
 	if( control ) {
+		if( control->cbMoveEvent.IsEmpty() )
+			return;
 		int32_t x, y;
 		GetFramePosition( pc, &x, &y );
-		GetPhysicalCoordinate( pc, &x, &y, TRUE );
+		GetPhysicalCoordinate( pc, &x, &y, TRUE, FALSE );
 		MakePSIEvent( control, false, Event_Control_Move, x, y, startOrMoved );
 	}
 }
@@ -1628,6 +1664,8 @@ static void OnMoveCommon( CONTROL_FRAME_NAME )( PSI_CONTROL pc, LOGICAL startOrM
 static void OnSizeCommon( CONTROL_FRAME_NAME )(PSI_CONTROL pc, LOGICAL startOrMoved) {
 	ControlObject *control = (ControlObject *)PSI_GetBindingData( pc, psiLocal.bindingDataId );
 	if( control ) {
+		if( control->cbSizeEvent.IsEmpty() )
+			return;
 		uint32_t w, h;
 		GetFrameSize( pc, &w, &h );
 		//lprintf( "Console frame size:%d %d", w, h );
@@ -2345,15 +2383,18 @@ static int CPROC onCreate( PSI_CONTROL pc ) {
 }
 
 RegistrationObject::RegistrationObject() {
+	MemSet( &r, 0, sizeof( r ) );
 }
 
 RegistrationObject::RegistrationObject( Isolate *isolate, const char *name ) {
 	struct registrationOpts opts;
+	MemSet( &r, 0, sizeof( r ) );
 	memset( &opts, 0, sizeof( struct registrationOpts ) );
 	opts.name = name;
 	InitRegistration( isolate, &opts );
 }
 RegistrationObject::RegistrationObject( Isolate *isolate, struct registrationOpts *opts ) {
+	MemSet( &r, 0, sizeof( r ) );
 	InitRegistration( isolate, opts );
 }
 
@@ -2464,7 +2505,9 @@ static int CPROC onDraw( PSI_CONTROL pc ) {
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
-
+	if( me[0]->registration->cbDrawEvent.IsEmpty() ){
+		return false;
+	}
 	return (int)MakePSIEvent( me[0], true, Event_Control_Draw, obj, me );
 }
 
@@ -2486,9 +2529,13 @@ void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 
 
 static int CPROC cbMouse( PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b ) {
+
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
+	if( me[0]->registration->cbMouseEvent.IsEmpty() ){
+		return false;
+	}
 
 	return (int)MakePSIEvent( me[0], true, Event_Control_Mouse, x, y, b );
 }
@@ -2513,6 +2560,9 @@ static int CPROC cbKey( PSI_CONTROL pc, uint32_t key ) {
 	CTEXTSTR name = GetControlTypeName( pc );
 	RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
+	if( me[0]->registration->cbKeyEvent.IsEmpty() ){
+		return false;
+	}
 
 	return (int)MakePSIEvent( me[0], true, Event_Control_Key, key );
 }

@@ -2,7 +2,7 @@
 #include "global.h"
 
 
-static Persistent<Function> monitorConstructor;
+//static Persistent<Function> monitorConstructor;
 
 enum fm_eventType {
 	FileMonitor_Event_Change,
@@ -23,7 +23,21 @@ struct changeEvent {
 
 };
 
+static void monitorAsyncMsg__( Isolate *isolate, Local<Context> context, struct changeTracker * handle );
+struct changeAsyncTask : SackTask {
+	struct changeTracker *myself;
+	changeAsyncTask( struct changeTracker *myself ): myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		monitorAsyncMsg__( isolate, context, this->myself );
+	}
+};
+
+
+
 struct changeTracker {
+	bool ivm_hosted;
+	class constructorSet *c;
+
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	Persistent<Function> cb;
 	PLINKQUEUE events;
@@ -52,10 +66,12 @@ public:
 };
 
 static void monitorAsyncMsg( uv_async_t* handle ) {
-	changeTracker * changes = (changeTracker*)handle->data;
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
+	monitorAsyncMsg__( isolate, context, (changeTracker *)handle->data );
+}
+static void monitorAsyncMsg__( Isolate *isolate, Local<Context> context, changeTracker * changes ) {
 	struct changeEvent *event;
 	Local<Value> argv[1];
 	Local<Object> o; 
@@ -83,8 +99,10 @@ static void monitorAsyncMsg( uv_async_t* handle ) {
 	}
 	{
 		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
 	}
 
 }
@@ -107,7 +125,10 @@ static int invokeEvent( uintptr_t psv
 		event->file.bDeleted = bDeleted;
 
 		EnqueLink( &tracker->events, event );
-		uv_async_send( &tracker->async );
+		if( tracker->ivm_hosted )
+			tracker->c->ivm_post( tracker->c->ivm_holder, std::make_unique<changeAsyncTask>( tracker ) );
+		else
+			uv_async_send( &tracker->async );
 	}
 	return 1; // dispatch next
 }
@@ -125,7 +146,11 @@ static void addMonitorFilter( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	AddLink( &me->trackers, tracker );
 	class constructorSet *c = getConstructors( isolate );
-	uv_async_init( c->loop, &tracker->async, monitorAsyncMsg );
+	tracker->c = c;
+	if( c->ivm_post )
+		tracker->ivm_hosted = true;
+	else
+		uv_async_init( c->loop, &tracker->async, monitorAsyncMsg );
  	tracker->async.data = tracker;
 
 	//AddFileChangeCallback( me->monitor, mask, callback,
@@ -146,9 +171,9 @@ static monitorWrapper* newMonitor( char *path, int delay ) {
 static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
-		int defaultDelay = 0;
+		int defaultDelay = 250;
 		String::Utf8Value path( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		if( args.Length() > 1 ) {
+		if( args.Length() > 1 && args[1]->IsNumber() ) {
 			defaultDelay = (int)args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
 		}
 		monitorWrapper* obj = newMonitor( *path, defaultDelay );
@@ -158,7 +183,8 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Function> cons = Local<Function>::New( isolate, monitorConstructor );
+		class constructorSet* c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->monitorConstructor );
 		Local<Value> *passArgs = new Local<Value>[args.Length()];
 		int n;
 		for( n = 0; n < args.Length(); n++ )
@@ -171,6 +197,7 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 
 void fileMonitorInit( Isolate* isolate, Local<Object> exports ) {
 	Local<FunctionTemplate> monitorTemplate;
+	class constructorSet* c = getConstructors( isolate );
 
 	monitorTemplate = FunctionTemplate::New( isolate, makeNewMonitor );
 	monitorTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.FileMonitor" ) );
@@ -179,7 +206,7 @@ void fileMonitorInit( Isolate* isolate, Local<Object> exports ) {
 
 	NODE_SET_PROTOTYPE_METHOD( monitorTemplate, "addFilter", addMonitorFilter );
 	//NODE_SET_PROTOTYPE_METHOD( monitorTemplate, "addObserver", addMonitorObserver );
-	monitorConstructor.Reset( isolate, monitorTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked()  );
+	c->monitorConstructor.Reset( isolate, monitorTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked()  );
 	SET_READONLY( exports, "FileMonitor", monitorTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked()  );
 
 }

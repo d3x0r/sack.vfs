@@ -166,11 +166,10 @@ void TLSObject::Init( Isolate *isolate, Local<Object> exports )
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<FunctionTemplate> tlsTemplate;
 
-OpenSSL_add_all_algorithms();
-ERR_load_crypto_strings();
+	ssl_InitLibrary();
 
 	tlsTemplate = FunctionTemplate::New( isolate, New );
-	tlsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.Volume" ) );
+	tlsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.vfs.TLS" ) );
 	tlsTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
 	// Prototype
@@ -186,6 +185,8 @@ ERR_load_crypto_strings();
 	SET( i, "validate", Function::New( context, validate ).ToLocalChecked() );
 	SET( i, "expiration", Function::New( context, expiration ).ToLocalChecked() );
 	SET( i, "certToString", Function::New( context, certToString ).ToLocalChecked() );
+	SET( i, "hosts", Function::New( context, getHosts ).ToLocalChecked() );
+
 
 	//constructor.Reset( isolate, tlsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 	SET( exports, "TLS", i );
@@ -201,6 +202,8 @@ TLSObject::~TLSObject()
 {
 }
 
+#if 0
+// goes through the error stack and logs all ssl errors....
 static void flushErrors(void) {
 	int err;
 	char buf[256];
@@ -210,6 +213,7 @@ static void flushErrors(void) {
 		lprintf( "OUtstanding SSL Error:%s", buf );
 	}
 }
+#endif
 
 static void _throwError( struct info_params *params, const char *message ) {
 	PVARTEXT pvt = VarTextCreate();
@@ -299,8 +303,8 @@ static EVP_PKEY *genKey( int kBits ) {
 }
 
 void TLSObject::New( const v8::FunctionCallbackInfo<Value>& args  ) {
-	Isolate* isolate = args.GetIsolate();
-	int argc = args.Length();
+	//Isolate* isolate = args.GetIsolate();
+	//int argc = args.Length();
 	if( args.IsConstructCall() ) {
 		TLSObject* obj;
 		obj = new TLSObject( );
@@ -309,7 +313,7 @@ void TLSObject::New( const v8::FunctionCallbackInfo<Value>& args  ) {
 		args.GetReturnValue().Set( args.This() );
 	} else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-		Local<Value> *argv = new Local<Value>[0];
+		//Local<Value> *argv = new Local<Value>[0];
 		//Local<Function> cons = Local<Function>::New( isolate, constructor );
 		//MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), 0, argv );
 		//if( !mo.IsEmpty() )
@@ -467,11 +471,11 @@ void MakeCert(  struct info_params *params )
 				# define KU_DECIPHER_ONLY        0x8000
 				*/
 			{
-				X509_EXTENSION *ext = NULL;// X509_get_ext();
+				//X509_EXTENSION *ext = NULL;// X509_get_ext();
 				//ASN1_OCTET_STRING *data;
 				{
 					ASN1_STRING *data = ASN1_STRING_new();
-					char *r = params->issuer?params->issuer:SRG_ID_Generator();
+					char *r = params->issuer?params->issuer:SRG_ID_ShortGenerator4();
 					ASN1_STRING_set( data, r, (int)strlen( r ) );
 					X509_add1_ext_i2d( x509, NID_subject_key_identifier, data, 0, X509V3_ADD_DEFAULT );
 
@@ -484,7 +488,7 @@ void MakeCert(  struct info_params *params )
 				}
 				{
 					BASIC_CONSTRAINTS bc;
-					bc.ca = 1;
+					bc.ca = 0xFF;
 					bc.pathlen = NULL;
 					X509_add1_ext_i2d( x509, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
 				}
@@ -690,6 +694,18 @@ void TLSObject::genCert( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
+#if 0
+// didn't end up using this function.
+static int add_ext(STACK_OF(X509_EXTENSION) *sk, int nid, char *value)
+	{
+	X509_EXTENSION *ex;
+	ex = X509V3_EXT_conf_nid(NULL, NULL, nid, value);
+	if (!ex)
+		return 0;
+	sk_X509_EXTENSION_push(sk, ex);
+	return 1;
+	}
+#endif
 
 void MakeReq( struct info_params *params )
 {
@@ -742,6 +758,7 @@ void MakeReq( struct info_params *params )
 				(unsigned char *)params->common, params->commonlen, -1, 0 );
 
 			{
+				STACK_OF( X509_EXTENSION) *exts = sk_X509_EXTENSION_new_null();
 				if( params->altSubject.DNS || params->altSubject.IP ) {
 					INDEX idx;
 					GENERAL_NAMES *names = GENERAL_NAMES_new();
@@ -787,17 +804,20 @@ void MakeReq( struct info_params *params )
 					//STACK_OF( X509_EXTENSION ) *extensions = X509_REQ_get_extensions( req );// , NID_subject_alt_name, data, 0, X509V3_ADD_DEFAULT );
 					//X509_REQ_set_extension_nids
 
-					STACK_OF( X509_EXTENSION) *exts = sk_X509_EXTENSION_new_null();
 					//unsigned char *val;
 					//i2d_GENERAL_NAMES( )
 					//unsigned char *out = NULL;
-					;
 					X509_EXTENSION *ex = X509V3_EXT_i2d( NID_subject_alt_name, 0, names );// X509V3_EXT_conf_nid( NULL, NULL, NID_subject_alt_name, (char*)out );
 					if( !ex ) {
 						throwError( params, "Something" );
 					}
 					sk_X509_EXTENSION_push( exts, ex );
+				  	//X509_EXTENSION_free(ex);
+				}
 
+				{
+					X509_EXTENSION *ex;
+					STACK_OF( X509_EXTENSION) *exts = sk_X509_EXTENSION_new_null();
 					const X509V3_EXT_METHOD *method = X509V3_EXT_get_nid( NID_certificate_policies );
 					void *ext_struc = (X509_EXTENSION*)method->r2i( method, NULL, "2.5.29.32.0" );
 					ex = X509V3_EXT_i2d( NID_certificate_policies, 0, ext_struc );
@@ -805,10 +825,14 @@ void MakeReq( struct info_params *params )
 						throwError( params, "Failed to make certificate policy extension" );
 					}
 					sk_X509_EXTENSION_push( exts, ex );
-
-					X509_REQ_add_extensions( req, exts );
-					sk_X509_EXTENSION_pop_free( exts, X509_EXTENSION_free );
+				  	//X509_EXTENSION_free(ex);
+						
 				}
+
+					//add_ext(exts, NID_key_usage, "critical,digitalSignature,keyEncipherment");
+
+				X509_REQ_add_extensions( req, exts );
+				sk_X509_EXTENSION_pop_free( exts, X509_EXTENSION_free );
 			}
 
 			if( X509_REQ_sign( req, pkey, EVP_sha256() ) < 0 )
@@ -1111,7 +1135,7 @@ static void SignReq( struct info_params *params )
 	{
 		{
 			ASN1_STRING *data = ASN1_STRING_new();
-			char *r = params->subject?params->subject:SRG_ID_Generator();
+			char *r = params->subject?params->subject:SRG_ID_ShortGenerator4();
 			ASN1_STRING_set( data, r, (int)strlen( r ) );
 			X509_add1_ext_i2d( cert, NID_subject_key_identifier, data, 0, X509V3_ADD_DEFAULT );
 
@@ -1157,7 +1181,7 @@ static void SignReq( struct info_params *params )
 			pathlen = sbc->pathlen ? ASN1_INTEGER_get( sbc->pathlen ) : 1;
 			if( pathlen > 0 ) {
 				BASIC_CONSTRAINTS bc;
-				bc.ca = 1;
+				bc.ca = 0xFF;
 				bc.pathlen = ASN1_INTEGER_new();;
 				ASN1_INTEGER_set( bc.pathlen, pathlen - 1 );
 				if( sbc->pathlen && pathlen == 1 )
@@ -1169,6 +1193,7 @@ static void SignReq( struct info_params *params )
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
 					X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
+
 				}
 				else {
 					//lprintf( "SET CA USAGE" );
@@ -1176,9 +1201,43 @@ static void SignReq( struct info_params *params )
 					ASN1_INTEGER *usage = ASN1_INTEGER_new();
 					ASN1_INTEGER_set( usage, _usage );
 					X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
+
+					X509_EXTENSION *ex = X509V3_EXT_conf_nid(NULL, NULL, NID_ext_key_usage, "serverAuth,clientAuth");
+					X509_add_ext(cert, ex, -1);
+				  	X509_EXTENSION_free(ex);
+
 				}
 			}
 			else {
+ 				BASIC_CONSTRAINTS bc;
+				bc.ca = 0;
+				
+				bc.pathlen = 0;
+				//lprintf( "This is actually terminal usage");
+				//ASN1_INTEGER_set( bc.pathlen, 0 );
+				X509_add1_ext_i2d( cert, NID_basic_constraints, &bc, 1, X509V3_ADD_DEFAULT );
+
+				//lprintf( "SET CA USAGE" );
+				int _usage = KU_KEY_ENCIPHERMENT | KU_DIGITAL_SIGNATURE;
+				ASN1_INTEGER *usage = ASN1_INTEGER_new();
+				ASN1_INTEGER_set( usage, _usage );
+				X509_add1_ext_i2d( cert, NID_key_usage, usage, 1, X509V3_ADD_DEFAULT );
+
+				//X509_set_extended_key_usage
+				//lprintf( "SET CA USAGE" );
+				//EXTENDED_KEY_USAGE
+				//
+				X509_EXTENSION *ex = X509V3_EXT_conf_nid(NULL, NULL, NID_ext_key_usage, "serverAuth,clientAuth");
+				// int result = 
+				X509_add_ext(cert, ex, -1);
+
+				X509_EXTENSION_free(ex);
+				  /*
+				int _ext_usage = XKU_SSL_SERVER | XKU_SSL_CLIENT;
+				ASN1_INTEGER *ext_usage = ASN1_INTEGER_new();
+				ASN1_INTEGER_set( ext_usage, _ext_usage );
+				X509_add1_ext_i2d( cert, NID_ext_key_usage, ext_usage, 0, X509V3_ADD_DEFAULT );
+					*/
 
 			}
 		}
@@ -1563,7 +1622,7 @@ static void DumpCert( X509 *x509 ) {
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
 				//akid->serial
-				GENERAL_NAMES *names = akid->issuer;
+				//GENERAL_NAMES *names = akid->issuer;
 				ASN1_OCTET_STRING *key = akid->keyid;
 				ASN1_INTEGER *ser = akid->serial;
 				LogBinary( key->data, key->length );
@@ -1907,7 +1966,7 @@ static Local<Value> Expiration( struct info_params *params ) {
 
 	const ASN1_TIME *before = X509_get_notAfter( x509 );
 	struct tm t;
-	char * timestring = (char*)before->data;
+	//char * timestring = (char*)before->data;
 
 	ConvertTimeString( &t, before );
 	X509_free( x509 );
@@ -1931,7 +1990,7 @@ void TLSObject::expiration( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
 	params.cert = *cert;
 	params.certlen = cert.length();
 
@@ -1969,6 +2028,132 @@ void  vtLogBinary( PVARTEXT pvt, uint8_t* buffer, size_t size  )
 	}
 }
 
+void TLSObject::getHosts( const v8::FunctionCallbackInfo<Value>& args ) {
+
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Array> result = Array::New( isolate );
+	int resultIndex = 0;
+	int argc = args.Length();
+	if( !argc ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "Missing required certificate data." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		return;
+	}
+
+	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
+
+	X509* x509 = NULL;
+
+	BIO* keybuf = BIO_new( BIO_s_mem() );
+
+	BIO_write( keybuf, *cert, cert.length() );
+	if( !PEM_read_bio_X509( keybuf, &x509, NULL, NULL ) ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8( isolate, TranslateText( "getHosts: failed to parse cert." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		BIO_free( keybuf );
+		args.GetReturnValue().Set( Undefined( isolate ) );
+
+		return;
+	}
+	BIO_free( keybuf );
+
+	//X509_NAME* name = X509_get_subject_name( x509 );
+
+	{
+		int extCount = X509_get_ext_count( x509 );
+		int n;
+		for( n = 0; n < extCount; n++ ) {
+			X509_EXTENSION* ext = X509_get_ext( x509, n );
+			ASN1_OBJECT* o = X509_EXTENSION_get_object( ext );
+			ASN1_STRING* v = (ASN1_STRING*)X509V3_EXT_d2i( ext );
+			int nid = OBJ_obj2nid( o );
+			//V_ASN1_OCTET_STRING
+			//vtprintf( pvt, "extension: %d %d  %s  %s  %d\n", X509_EXTENSION_get_critical( ext ) > 0 ? "critical" : "",
+			//	nid, OBJ_nid2ln( nid ), OBJ_nid2sn( nid ), v->type );
+			if( nid == NID_subject_alt_name ) {
+				const GENERAL_NAMES* names = (const GENERAL_NAMES*)v;
+				int n;
+				for( n = 0; n < sk_GENERAL_NAME_num( names ); n++ ) {
+					GENERAL_NAME* namePart = sk_GENERAL_NAME_value( names, n );
+					switch( namePart->type ) {
+					case GEN_DIRNAME:
+					{
+						//X509_NAME *dir = namePart->d.directoryName;
+						//int dn;
+						//for( dn = 0; dn < dir->entries; dn++ ) {
+
+						//}
+						lprintf( "unhandled DIRNAME\n" );
+					}
+					break;
+					case GEN_DNS:
+					{
+						ASN1_IA5STRING* string = namePart->d.dNSName;
+						//vtLogBinary( pvt, string->data, string->length + 1 );
+						//lprintf( pvt, "DNS:%s\n", string->data );
+						result->Set( context, resultIndex++, String::NewFromUtf8( isolate, (const char*)string->data, v8::NewStringType::kNormal, string->length ).ToLocalChecked() );
+					}
+					break;
+					case GEN_EDIPARTY:
+						lprintf( "unhandled EDIPARTY\n" );
+						break;
+					case GEN_OTHERNAME:
+						lprintf( "unhandled OTHERNAME\n" );
+						break;
+					case GEN_RID:
+						lprintf( "unhandled RID\n" );
+						break;
+					case GEN_URI:
+					{
+						ASN1_IA5STRING* name = namePart->d.uniformResourceIdentifier;
+						//vtLogBinary( pvt, name->data, name->length );
+						result->Set( context, resultIndex++, String::NewFromUtf8( isolate, (const char*)name->data, v8::NewStringType::kNormal, name->length ).ToLocalChecked() );
+					}
+					break;
+					case GEN_X400:
+						lprintf( "unhandled X400\n" );
+						break;
+					case GEN_EMAIL:
+					{
+						//ASN1_STRING* string = namePart->d.rfc822Name;
+						//vtLogBinary( pvt, string->data, string->length );
+						//vtprintf( pvt, "EMAIL:%*.*s", string->length, string->length, string->data );
+					}
+					break;
+					case GEN_IPADD:
+					{
+						SOCKADDR* addr = AllocAddr();
+						ASN1_OCTET_STRING* ip = namePart->d.iPAddress;
+
+						//LogBinary( ip->data, ip->length );
+						if( ip->length == 4 ) {
+							addr->sa_family = AF_INET;
+							memcpy( addr->sa_data+2, ip->data, ip->length );
+							( ( *(uintptr_t*)( ( (uintptr_t)( addr ) ) - 2 * sizeof( uintptr_t ) ) ) = sizeof( struct sockaddr_in ) );
+						} else if( ip->length == 16 ) {
+							addr->sa_family = AF_INET6;
+							memcpy( addr->sa_data+6, ip->data, ip->length );
+							( ( *(uintptr_t*)( ( (uintptr_t)( addr ) ) - 2 * sizeof( uintptr_t ) ) ) = sizeof( struct sockaddr_in6 ) );
+						} else {
+							lprintf( "unhandled GEN_IPADD length\n" );
+						}
+						const char *address = GetAddrString( addr );
+						result->Set( context, resultIndex++, String::NewFromUtf8( isolate, (const char*)address, v8::NewStringType::kNormal ).ToLocalChecked() );
+						ReleaseAddress( addr );
+						//Release( address );
+						//vtprintf( pvt, "unhandled IPADD\n" );
+					}
+						break;
+					}
+				}
+			}
+		}
+	}
+	X509_free( x509 );
+
+	args.GetReturnValue().Set( result );
+}
 
 static Local<Value> CertToString( struct info_params *params ) {
 
@@ -2091,7 +2276,7 @@ static Local<Value> CertToString( struct info_params *params ) {
 			if( nid == NID_authority_key_identifier ) {
 				AUTHORITY_KEYID *akid = (AUTHORITY_KEYID *)v;
 				//akid->serial
-				GENERAL_NAMES *names = akid->issuer;
+				//GENERAL_NAMES *names = akid->issuer;
 				ASN1_OCTET_STRING *key = akid->keyid;
 				ASN1_INTEGER *ser = akid->serial;
 				vtLogBinary( pvt, key->data, key->length );
@@ -2126,12 +2311,12 @@ static Local<Value> CertToString( struct info_params *params ) {
 					switch( namePart->type ) {
 					case GEN_DIRNAME:
 						{
-						X509_NAME *dir = namePart->d.directoryName;
+						//X509_NAME *dir = namePart->d.directoryName;
 						//int dn;
 						//for( dn = 0; dn < dir->entries; dn++ ) {
 
 						//}
-						vtprintf( pvt, "unhandled DIRNAME\n" );
+						vtprintf( pvt, "unhandled DIRNAME\n");
 						}
 						break;
 					case GEN_DNS:
@@ -2199,7 +2384,7 @@ void TLSObject::certToString( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	params.isolate = isolate;
 
-	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	String::Utf8Value cert( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
 	params.cert = *cert;
 	params.certlen = cert.length();
 

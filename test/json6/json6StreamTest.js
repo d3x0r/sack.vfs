@@ -105,7 +105,7 @@ describe('Stream testing', function () {
 		try {
 			parser.write( '} 0 ' );
 		} catch( err ) {
-			console.log( "This is still failed?", err );
+			//console.log( "This is still failed?", err );
 		}
 		parser.reset( );
 		parser.write( '"OK"' );

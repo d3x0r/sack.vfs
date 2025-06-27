@@ -60,21 +60,17 @@ static Local<Object> makeColor( Isolate *isolate, CDATA color ) {
 	return cObject;
 }
 
-static void imageAsyncmsg( uv_async_t* handle ) {
+static void imageAsyncmsg_( v8::Isolate* isolate, Local<Context> context, class constructorSet*c ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	//lprintf( "async message notice. %p", myself );
-	class constructorSet* c = getConstructors( isolate );
 	if( !c->imageResult.IsEmpty() )
 	{
 		Local<Function> cb = Local<Function>::New( isolate, c->imageResult );
 		Local<Object> _this = c->priorThis.Get( isolate );
 		Local<Value> argv[1] = { ColorObject::makeColor( isolate, imageLocal.color ) };
 		cb->Call( context, _this, 1, argv );
-		uv_close( (uv_handle_t*)&c->colorAsync, NULL );
+		if( !c->ivm_holder)
+			uv_close( (uv_handle_t*)&c->colorAsync, NULL );
 		c->imageResult.Reset();
 	}
 	if( !c->fontResult.IsEmpty() ) {
@@ -87,25 +83,48 @@ static void imageAsyncmsg( uv_async_t* handle ) {
 
 		Local<Value> argv[1] = { result };
 		cb->Call( context, result, 1, argv );
-
-		uv_close( (uv_handle_t*)&c->fontAsync, NULL );
+		if( !c->ivm_holder)
+			uv_close( (uv_handle_t*)&c->fontAsync, NULL );
 		c->fontResult.Reset();
-	}
-	{
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
 	}
 	//lprintf( "done calling message notice." );
 }
 
+static void imageAsyncmsg( uv_async_t* handle ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	class constructorSet* c = getConstructors( isolate );
+	imageAsyncmsg_( isolate, context, c );//(class constructorSet*)handle->data );
+	{
+		class constructorSet* c = getConstructors( isolate );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
+	}
+}
+
+struct imageAsyncTask: SackTask {
+	class constructorSet *c;
+	imageAsyncTask( class constructorSet *c ) : c( c ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		imageAsyncmsg_( isolate, context, c );
+	}
+};
 
 static uintptr_t fontPickThread( PTHREAD thread ) {
 	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
-	uv_async_init( uv_default_loop(), &c->fontAsync, imageAsyncmsg );
+	if(!c->fontAsyncActive) {
+		if( !c->ivm_holder)
+			uv_async_init( uv_default_loop(), &c->fontAsync, imageAsyncmsg );
+	}
 	enableEventLoop( c );
-	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL );
-	uv_async_send( &c->fontAsync );
+	imageLocal.fontResult = PickFont( 0, 0, NULL, NULL, NULL, NULL, 0 );
+	if( c->ivm_holder )
+		c->ivm_post( c->ivm_holder, std::make_unique<imageAsyncTask>( c ) );
+	else
+		uv_async_send( &c->fontAsync );
 	return 0;
 }
 
@@ -119,13 +138,18 @@ static void pickFont( const FunctionCallbackInfo<Value>&  args ) {
 	ThreadTo( fontPickThread, (uintptr_t)c );
 }
 
+static void getColor( uintptr_t psv, CDATA color, LOGICAL ok ){
+	class constructorSet* c = (class constructorSet* )psv;
+	if( ok ){
+		imageLocal.color = color;
+		if( c->ivm_holder )
+			c->ivm_post( c->ivm_holder, std::make_unique<imageAsyncTask>( c ) );
+		else
+			uv_async_send( &c->colorAsync );
+	}
+}
+
 static uintptr_t colorPickThread( PTHREAD thread ) {
-	class constructorSet* c = (class constructorSet*)GetThreadParam( thread );
-	uv_async_init( uv_default_loop(), &c->colorAsync, imageAsyncmsg );
-	CDATA color;
-	PickColor( &color, 0, NULL );
-	imageLocal.color = color;
-	uv_async_send( &c->colorAsync );
 	return 0;
 }
 
@@ -134,6 +158,14 @@ static void pickColor( const FunctionCallbackInfo<Value>&  args ) {
 	class constructorSet* c = getConstructors( isolate );
 	c->priorThis.Reset( isolate, args.This() );
 	c->imageResult.Reset( isolate, Local<Function>::Cast( args[0] ) );
+	c->colorAsync.data = c;
+	if( !c->colorAsyncActive) {
+		c->colorAsyncActive = TRUE;
+		if( !c->ivm_holder)
+			uv_async_init( uv_default_loop(), &c->colorAsync, imageAsyncmsg );
+	}
+	PickColor( NULL, 0, NULL, getColor, (uintptr_t)c );
+
 	ThreadTo( colorPickThread, (uintptr_t)c );
 }
 
@@ -161,8 +193,10 @@ void ImageObject::Init( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "lineOver", ImageObject::lineOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "plot", ImageObject::plot );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "plotOver", ImageObject::plotOver );
+
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImage", ImageObject::putImage );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
+	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageMS", ImageObject::putImageMultiShaded );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
 
 	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "png" )
@@ -222,6 +256,7 @@ void ImageObject::Init( Local<Object> exports ) {
 	SET_READONLY_METHOD( fontTemplate->GetFunction(context).ToLocalChecked(), "dialog", pickFont );
 
 	Local<Object> colors = Object::New( isolate );
+	if( !g.pii ) g.pii = GetImageInterface();
 	if( g.pii ) {
 		SET_READONLY( colors, "white", makeColor( isolate, BASE_COLOR_WHITE ) );
 		SET_READONLY( colors, "black", makeColor( isolate, BASE_COLOR_BLACK ) );
@@ -244,6 +279,8 @@ void ImageObject::Init( Local<Object> exports ) {
 		SET_READONLY( colors, "orange", makeColor( isolate, BASE_COLOR_ORANGE ) );
 		SET_READONLY( colors, "niceOrange", makeColor( isolate, BASE_COLOR_NICE_ORANGE ) );
 		SET_READONLY( colors, "purple", makeColor( isolate, BASE_COLOR_PURPLE ) );
+		SET_READONLY( colors, "transparent", makeColor( isolate, 0 ) );
+		SET_READONLY( colors, "clear", makeColor( isolate, 0 ) );
 	}
 	Local<Function> i = imageTemplate->GetFunction(context).ToLocalChecked();
 	SET_READONLY( i, "colors", colors );
@@ -261,16 +298,18 @@ void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 		size_t size;
 		if( PngImageFile( obj->image, &buf, &size ) )
 		{
-			Local<ArrayBuffer> arrayBuffer;
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, releaseBufferBackingStore, NULL );
-			arrayBuffer = ArrayBuffer::New( isolate, bs );
+			//lprintf( "png backing store for:%p", buf );
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, dontReleaseBufferBackingStore, NULL );
+			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
-			arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+#endif
 
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
 			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			//lprintf( "(2)png backing store for:%p", buf );
 			holder->buffer = buf;
 #endif
 			args.GetReturnValue().Set( arrayBuffer );
@@ -288,16 +327,17 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 		size_t size;
 		if( JpgImageFile( obj->image, &buf, &size, obj->jpegQuality ) )
 		{
-			Local<ArrayBuffer> arrayBuffer;
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, releaseBufferBackingStore, NULL );
-			arrayBuffer = ArrayBuffer::New( isolate, bs );
+			//lprintf( "jpg backing store for:%p", buf );
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)buf, size, dontReleaseBufferBackingStore, NULL );
+			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
-			arrayBuffer = ArrayBuffer::New( isolate, buf, size );
-
+			Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, buf, size );
+#endif
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
 			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			//lprintf( "(2)jpg backing store for:%p", buf );
 			holder->buffer = buf;
 #endif
 			args.GetReturnValue().Set( arrayBuffer );
@@ -394,25 +434,25 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 				Local<Uint8Array> u8arr = args[0].As<Uint8Array>();
 				Local<ArrayBuffer> myarr = u8arr->Buffer();
 #if ( NODE_MAJOR_VERSION >= 14 )
-				obj = (ImageObject*)myarr->GetBackingStore()->Data();
-#else
+				obj = new ImageObject( (uint8_t*)myarr->GetBackingStore()->Data(), myarr->ByteLength() );
+#else				
 				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
-#endif
+#endif				
 			} else if( args[0]->IsTypedArray() ) {
 				Local<TypedArray> u8arr = args[0].As<TypedArray>();
 				Local<ArrayBuffer> myarr = u8arr->Buffer();
 #if ( NODE_MAJOR_VERSION >= 14 )
-				obj = (ImageObject*)myarr->GetBackingStore()->Data();
-#else
+				obj = new ImageObject( (uint8_t*)myarr->GetBackingStore()->Data(), myarr->ByteLength() );
+#else				
 				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
-#endif
+#endif				
 			} else if( args[0]->IsArrayBuffer() ) {
 				Local<ArrayBuffer> myarr = args[0].As<ArrayBuffer>();
 #if ( NODE_MAJOR_VERSION >= 14 )
-				obj = (ImageObject*)myarr->GetBackingStore()->Data();
-#else
+				obj = new ImageObject( (uint8_t*)myarr->GetBackingStore()->Data(), myarr->ByteLength() );
+#else				
 				obj = new ImageObject( (uint8_t*)myarr->GetContents().Data(), myarr->ByteLength() );
-#endif
+#endif				
 			} else if( args[0]->IsNumber() )
 				w = (int)args[0]->NumberValue(context).ToChecked();
 			else {
@@ -533,8 +573,8 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
-  class constructorSet* c = getConstructors( isolate );
-  Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
 	obj->image = image;
@@ -604,7 +644,7 @@ void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	int x, y, w, h, c;
+	int x = 0, y = 0, w = io->image->width, h = io->image->height, c;
 	if( argc > 0 ) {
 		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
@@ -840,7 +880,7 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
-	int x = 0, y = 0, xTo, yTo, c;
+	int x = 0, y = 0, xTo, yTo, c, xAt, yAt, w, h;
 	if( argc > 0 ) {
 		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 	}
@@ -850,21 +890,146 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 	if( argc > 2 ) {
 		y = (int)args[2]->NumberValue(context).ToChecked();
 	}
-	if( argc > 2 ) {
-		xTo = (int)args[2]->NumberValue(context).ToChecked();
+	if( argc > 3 ) {
+		xAt = (int)args[ 3 ]->NumberValue( context ).ToChecked();
 
-		if( argc > 3 ) {
-			yTo = (int)args[3]->NumberValue(context).ToChecked();
-		}
 		if( argc > 4 ) {
-			c = (int)args[4]->NumberValue(context).ToChecked();
+			yAt = (int)args[ 4 ]->NumberValue( context ).ToChecked();
+		} else {
+			isolate->ThrowException(
+			     Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
+			return;
 		}
-		else {
+		if( argc > 5 ) {
+			w = (int)args[ 5 ]->NumberValue( context ).ToChecked();
+			if( argc > 6 ) {
+				h = (int)args[ 6 ]->NumberValue( context ).ToChecked();
+			}
+			if( argc > 7 ) {
+				int ow, oh;
+
+				ow  = xAt;
+				oh  = yAt;
+				xAt = w;
+				yAt = h;
+				if( argc > 7 ) {
+					w = (int)args[ 7 ]->NumberValue( context ).ToChecked();
+					if( w < 0 )
+						w = ii->image->width;
+				}
+				if( argc > 8 ) {
+					h = (int)args[ 8 ]->NumberValue( context ).ToChecked();
+					if( h < 0 )
+						h = ii->image->height;
+				}
+				if( ow && oh && w && h )
+					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT
+					                      , BLOT_COPY );
+			} else
+				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
+		} else {
+			w = xAt;
+			h = yAt;
+			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
 		}
 	}
 	else
 		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_COPY );
 }
+
+// {x, y output
+// w, h} output
+// {x, y input
+// w, h} input
+void ImageObject::putImageMultiShaded( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int argc = args.Length();
+	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int x = 0, y= 0, xAt, yAt;
+	int w, h;
+	if( argc > 3 ) {
+		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
+		if( !ii || !ii->image ) {
+			lprintf( "Bad First paraemter, must be an image to put?" );
+			return;
+		}
+		else {
+			w = ii->image->width;
+			h = ii->image->height;
+		}
+	}
+	else {
+		// throw error ?
+		return;
+	}
+	if( argc > 5 ) {
+		x = (int)args[1]->NumberValue(context).ToChecked();
+		y = (int)args[2]->NumberValue(context).ToChecked();
+	}
+	else {
+		x = 0;
+		y = 0;
+		//isolate->ThrowException( Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
+		//return;
+	}
+
+	int r = args[argc-3]->Int32Value(context).ToChecked();
+	int grn = args[ argc - 2 ]->Int32Value( context ).ToChecked();
+	int b   = args[ argc - 1 ]->Int32Value( context ).ToChecked();
+
+	if( argc > 6 ) {
+		xAt = (int)args[3]->NumberValue(context).ToChecked();
+
+		if( argc > 7 ) {
+			yAt = (int)args[4]->NumberValue(context).ToChecked();
+		}
+		else {
+			isolate->ThrowException( Exception::Error( localStringExternal( isolate, "Required parameters for position missing." ) ) );
+			return;
+		}
+		if( argc > 8 ) {
+			w = (int)args[5]->NumberValue(context).ToChecked();
+			if( argc > 9 ) {
+				h = (int)args[6]->NumberValue(context).ToChecked();
+			}
+			if( argc > 10 ) {
+				int ow, oh;
+		
+				ow = xAt;
+				oh = yAt;
+				xAt = w;
+				yAt = h;
+				if( argc > 10 ) {
+					w = (int)args[ 7 ]->NumberValue( context ).ToChecked();
+					if( w < 0 )
+						w = ii->image->width;
+				} else
+					w = ii->image->width;
+				if( argc > 11 ) {
+					h = (int)args[ 8 ]->NumberValue( context ).ToChecked();
+					if( h < 0 )
+						h = ii->image->height;
+				} else
+					h = ii->image->height;
+				if( ow && oh && w && h )
+					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+			}
+			else
+				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn
+				                , b );
+		}
+		else  {
+			w = xAt; 
+			h = yAt;
+			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+		}
+	}
+	else
+		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+}
+
 
 void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -873,16 +1038,18 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 
 	//Context::Global()
 	size_t length;
-	Local<SharedArrayBuffer> ab;
-
 #if ( NODE_MAJOR_VERSION >= 14 )
-	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length = io->image->height*io->image->pwidth*4, releaseBufferBackingStore, NULL );
-	ab = SharedArrayBuffer::New( isolate, bs );
-#else
-	ab= SharedArrayBuffer::New( isolate,
+	//lprintf( "IMAGE backing store for:%p", (POINTER)GetImageSurface( io->image ) );
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth, dontReleaseBufferBackingStore, NULL );
+	Local<SharedArrayBuffer> ab =
+		SharedArrayBuffer::New( isolate, bs );
+#else	
+	Local<SharedArrayBuffer> ab =
+		SharedArrayBuffer::New( isolate,
 			GetImageSurface( io->image ),
-			length = io->image->height * io->image->pwidth*4 );
-#endif
+			length = io->image->height * io->image->pwidth );
+#endif				
+
 	Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
 
 	args.GetReturnValue().Set( ui );
@@ -1186,4 +1353,17 @@ void ColorObject::setAlpha( const FunctionCallbackInfo<Value>&  args ) {
 	else if( val > 255 ) val = 255;
 	if( val > 0 && val <= 1.0 ) val = 255 * val;
 	co->color = SetAlphaValue( co->color, (COLOR_CHANNEL)val );
+}
+
+
+void ImageObject::shutdown( class constructorSet* c ) {
+	if( c->ivm_holder ) {
+
+	}else {
+		if( c->colorAsyncActive )
+			uv_close( (uv_handle_t*)&c->colorAsync, NULL );
+		if( c->fontAsyncActive )
+			uv_close( (uv_handle_t*)&c->fontAsync, NULL );
+	}
+
 }

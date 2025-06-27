@@ -11,6 +11,22 @@ Interface to the SACK System Library.  This provides some views into internal in
 |allowSpawn|  ()  | Return the status of whether spawning processes is allowed or not. |
 |disallowSpawn|  ()  | Disable spawning processes. |
 |enableThreadFileSystem|  () | Enable thread-local filesystem on this thread.  No filesystems will bemounted after this call |
+|reboot|  (mode)  | (Windows Only) Reboot or shutdown the current system.  Mode can be 'reboot' or 'shutdown' or empty which defaults to reboot. |
+|dumpMemory | (verbose,filename) | Dump C allocated memory.  `verbose` and `filename` are both optional.  `verbose` enables dumping each block. `filename` dumps the log to the specified file. |
+|logMemory | (true/false) | Enable logging allocation and deallocation/releases. (when compiled with _DEBUG which is CMAKE_BUILD_TYPE Debug or RelWithDebInfo)|
+|debugMemory | (true/false) | Enable additional debug tracking of memory blocks - on release stamps with a signature, and compares the sigutures later for out of bounds or update after free happes. Similarly blocks that are allocates are definitely not 0, and are stamped with a signagure |
+|enableExitSignal | (cb) | (Windows Only) Enable a callback which can be called when process exit event is triggered.  This disables the automatic exit, so this function should invoke process.exit() (The event cannot be triggered again). |
+|hideCursor | (timeout) | (Windows Only) Enables hiding the mouse cursor if it is stationary for an amount of time. Timeout parameter is in milliseconds |
+
+Some examples of using some of the system interfaces.
+
+``` js
+import {sack} from "sack.vfs"
+sack.system.dumpRegisteredNames();
+sack.system.reboot( "reboot" );
+sack.system.dumpMemory(); 
+```
+
 
 
 # File Monitor - provides event callbacks when directories in the file system change.\
@@ -19,7 +35,7 @@ This provides an interface to receive notifications when files are created, modi
 
 ``` js
 
-var sack = require( "." );
+var sack = require( "sack.vfs" );
 var monitor = sack.FileMonitor( <pathname>, idleDelay );
 monitor.addFilter( "*.jpg", /* imageChanged */ (info)=>{
 	// info.path, info.size, info.date, info.directory, info.created, info.deleted
@@ -46,6 +62,8 @@ Exposes OpenSSL library functions to create key pairs, cerficates, and certifica
      signcert( {options} ) - uses a certificate to sign a certificate request
      validate( {options} ) - validate a certificate against a certificate chain.
      expiration( certificate ) - gets the expiration of a certificate as a Date().     
+     certToString( certificate ) - dump information about cert into a string (may not be 100% of information)
+     hosts( certificate ) - gets the list of server names of a certificate as an array of strings.
   }
 ```
 
@@ -234,8 +252,24 @@ var val = vfs.registry.get( "HKCU/something" );
 
 # COM Ports
    (result from vfs.ComPort() )
- 
+
+Get a list of the com ports available (on windows)...
+
 ``` js
+import sack from "sack.vfs"
+const ports = sack.ComPort.ports;
+``` 
+
+
+This is the result of opening a com port object.  Com ports greater than 9 must be specified with `\\.\com#`.  Throws an error
+if the com port cannot be opened.
+
+``` js
+
+// open a com port with a reader
+const ComObject = sack.ComPort( "com1" );
+
+// this is bad syntax, but these are the methods available on the resulting object.
 ComObject = { 
      onRead( callback ) - sets a callback to be called with a uint8Array parameter when data arrives on the port.
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
@@ -344,65 +378,4 @@ These methods are on the (module).Config object itself, not on an instance of th
  
 
  ---
-
- ## Task
-
-Task interface for launching and monitoring tasks.  Windows tasks are launched first by name, 
-as processes, then as a shell execute (runs things like shortcut .lnk files), and then as 
-a `cmd.exe /c ... ` command to run batch files.  Linux processes are attempted first to exec by the
-name directly, and then try for each path set in PATH.
-
-Pipes are connected to a task's stdin/stdout/stderr inputs if a output callback is specified.  The pipes
-are left untouched otherwise.
-
-| Task Static Methods | description |
-| loadLibrary( libname ) | Load external shared library. ex: `sack.Task.loadLibrary( "xxx" );` |
-
-Having created a task instance with `sack.Task( {...} );` the following methods are available
-to interact with the process.
-
- | Task methods | Description |
- |----|----|
- |end() | attempt to cause a task to exit.  It will first dispatch ctrl-c, ctrl-break, post a WM_QUIT message, and if the program does not end soon enough, terminates the process.  (closing pipes to task could also be implemented?)| 
- |terminate() | Terminates the task.  Terminates the process. |
- |write(buf) | Writes data to the task's stdin. |
- |send(buf) | Writes data to the task's stdin. |
- |exitCode | After/during the `end` callback, this may be queried to get the return code of the task |
-
- Task Option object may contain these options to control how the task is spawned.
-
-| Task options | Type | Description |
-|----|----|-----|
-| work  | string | specify the directory the task will be started in |
-| bin | string | program to run |
-| args | string or [ string [, string]...] | an argument or array of arguments to pass to the program |
-| firstArgIsArg | bool | If false, first argument in `args` is program name and not an argument (POSIX exec); default is true, and the first argument in `args` is the first argument |
-| env | object | key:value pairs to write to the environment before launching the process |
-| binary | bool | if true, buffer to input callback will be an ArrayBuffer else it will be a string |
-| input | callback(buffer) | A callback function which will receive output from the task(would have to update lower level library to split/identify if the input was stdout or stderr) | 
-| end | callback() | This callback will be triggered when the task exits. |
-| impersonate | bool | (Needs work;updated compatibility... this is for a service to launch a task as a user which is now impossible(?)) |
-| hidden | bool | set windows UI flags such that the next process is created with a hidden window.  Default: false |
-| firstArgIsArg | bool | Specified if the first argument in the array or string is the first argument or is the program name.  If it the first element is the program name, set to false.  If it is the first argument set true.  Default: true |
-| newGroup | bool | create task as a new task group instead of a child of this group.  Default: false|
-| newConsole | bool | create a new console for the new task; instead of ineriting the existing console, default false |
-| suspend | bool | create task suspended.  Default: false |
-
-
-``` js
-var sack = require( "sack.vfs");
-
-// don't redirect/capture input/output
-var task1 = sack.Task( {bin:"echo", args:"hello, World"});
-
-// send tasks's output to console.log...
-var task2 = sack.Task( {bin:"echo", args:"hello, World", input:console.log });
-
-sack.Task( { bin: "notepad.exe", args:"test.txt" } );
-// default tasks exit when node does... or when garbage collected... 
-// unless end and or input event handlers are attached...
-setTimeout( ()=>{ }, 5000 );
-
-
-```
 

@@ -1,0 +1,1 @@
+node --import=sack.vfs/import test.mjs

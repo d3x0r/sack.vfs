@@ -1,7 +1,7 @@
 
 var sack = require( "../.." );
-sack.Sqlite.so( "SACK/PSI/Log Control Updates", 1 );
-console.log( "Dupolicate of test 5?" );
+sack.Sqlite.so( "SACK/PSI/Log Control Updates", 10);
+console.log( "Duplicate of test 5?" );
 
 var background = sack.Image( "the rror.jpg" );
 

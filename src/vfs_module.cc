@@ -5,6 +5,8 @@
 #endif
 #include "global.h"
 
+//#define DEBUG_EXIT
+
 PLIST VolumeObject::volumes = NULL;
 PLIST VolumeObject::transportDestinations = NULL;
 
@@ -13,9 +15,19 @@ struct volumeTransport {
 	class VolumeObject *wssi;
 };
 
+static void handlePostedVolume_( Isolate *isolate, Local<Context> context, struct volumeUnloadStation * unload );
+
+struct volumeUnloadStationTask : SackTask {
+	struct volumeUnloadStation *vus;
+	volumeUnloadStationTask( struct volumeUnloadStation *vus ) { this->vus = vus; }
+	void Run2( Isolate *isolate, Local<Context> context ) { handlePostedVolume_( isolate, context, this->vus ); }
+};
+
 struct volumeUnloadStation {
 	Persistent<Object> this_;
 	String::Utf8Value* s;  // destination address
+	bool ivm_hosted;
+	class constructorSet *c;
 	uv_async_t poster;
 	uv_loop_t  *targetThread;
 	Persistent<Function> cb; // callback to invoke 
@@ -62,72 +74,16 @@ Local<String> localString( Isolate *isolate, const char *data, int len ) {
 	Local<String> retval = String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
 	Release( (POINTER)data );
 	return retval;
-	/*
-	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
-	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
-	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-	PARRAY_BUFFER_HOLDER holder = GetHolder();
-	holder->s.Reset( isolate, arrayBuffer );
-	holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-	holder->buffer = (void*)data;
-	return arrayBuffer;
-	*/
 }
 
 Local<String> localStringExternal( Isolate *isolate, const char *data, int len, const char *real_root ) {
 	return String::NewFromUtf8( isolate, data, NewStringType::kNormal, len).ToLocalChecked();
-	/*
-	ExternalOneByteStringResourceImpl *obsr = new ExternalOneByteStringResourceImpl( (const char *)data, len );
-	MaybeLocal<String> _arrayBuffer = String::NewExternalOneByte( isolate, obsr );
-	Local<String> arrayBuffer = _arrayBuffer.ToLocalChecked();
-	static const char *prior_root;
-	if( prior_root != real_root )
-	{
-		prior_root = real_root;
-		PARRAY_BUFFER_HOLDER holder = GetHolder();
-		holder->s.Reset( isolate, arrayBuffer );
-		holder->s.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-		Hold( (char*)real_root );
-		holder->buffer = (void*)real_root;
-	}
-	return arrayBuffer;
-	*/
-}
-
-
-
-static void promiseResolveCallback( const v8::FunctionCallbackInfo<Value>& args ) {
-	v8::Local<v8::External> ext = args.Data().As<v8::External>();
-	PromiseWrapper* pw = static_cast<PromiseWrapper*>(ext->Value());
-	Local<Promise::Resolver> lpr = pw->resolver.Get( args.GetIsolate() );
-	lpr->Resolve( args.GetIsolate()->GetCurrentContext(), args[0] );
-}
-static void promiseRejectCallback( const v8::FunctionCallbackInfo<Value>& args ) {
-	v8::Local<v8::External> ext = args.Data().As<v8::External>();
-	PromiseWrapper* pw = static_cast<PromiseWrapper*>(ext->Value());
-	Local<Promise::Resolver> lpr = pw->resolver.Get( args.GetIsolate() );
-	lpr->Reject( args.GetIsolate()->GetCurrentContext(), args[0] );
-}
-
-
-struct PromiseWrapper *makePromise( Local<Context> context, Isolate *isolate ) {
-	struct PromiseWrapper *pw = new PromiseWrapper();
-	MaybeLocal<Promise::Resolver> ml_resolver = Promise::Resolver::New( context );
-	Local<Promise::Resolver> resolver = ml_resolver.ToLocalChecked();
-	Local<Promise> pr = resolver->GetPromise();
-	Local<External> lex_pw = External::New( isolate, (void *)pw );
-	MaybeLocal<Function> prsc = Function::New( context, promiseResolveCallback, lex_pw );
-	pw->resolve.Reset( isolate, prsc.ToLocalChecked() );
-	MaybeLocal<Function> prjc = Function::New( context, promiseRejectCallback, lex_pw );
-	pw->reject.Reset( isolate, prjc.ToLocalChecked() );
-	return pw;
-	//Local<Value> args[] = { prsc.ToLocalChecked(), prjc.ToLocalChecked() };
-
-
-
 }
 
 static void moduleExit( void *arg ) {
+#ifdef DEBUG_EXIT
+	fprintf( stderr, "moduleExit()\n" );
+#endif
 	//DebugDumpMem();
 	//SaveTranslationDataEx( "^/strings.dat" );
 	vfs_global_data.shutdown = 1;
@@ -158,7 +114,6 @@ static void vfs_u8xor(const v8::FunctionCallbackInfo<Value>& args ){
 		String::Utf8Value xor1( USE_ISOLATE( isolate ) args[0] );
 		Local<Object> key = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 		//Local<Object> 
-		Local<String> tmp;
 		Local<Value> keyValue = GET(key, "key" );
 		Local<Value> stepValue = GET(key, "step");
 		int step = (int)stepValue->IntegerValue( isolate->GetCurrentContext() ).FromMaybe(0);
@@ -184,6 +139,15 @@ static void idShortGenerator(const v8::FunctionCallbackInfo<Value>& args ){
 	char *r = SRG_ID_ShortGenerator4();
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, r, v8::NewStringType::kNormal ).ToLocalChecked() );
 	Deallocate( char*, r );
+}
+
+static void process_JS_sigint( const v8::FunctionCallbackInfo<Value>& args ) {
+#ifdef INCLUDE_GUI
+	Isolate *isolate = args.GetIsolate();
+	ControlObject::sigint(isolate);
+	RenderObject::sigint();
+	InterShellObject::sigint();
+#endif
 }
 
 static void loadComplete( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -223,7 +187,11 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 #if ( NODE_MAJOR_VERSION > 9 )
 static void CleanupThreadResources( void* arg_ ) {
 	class constructorSet *c = (class constructorSet*)arg_;
+#ifdef DEBUG_EXIT
+	fprintf( stderr, "CleanupThreadResources() (module exit if threaded)\n" );
+#endif	
 	//lprintf( "Shutdown called" );
+	//fprintf( stderr, "CleanupThreadResources (and Module exit if 0 left)\n" );
 	{
 		VolumeObject* vol;
 		INDEX idx;
@@ -231,6 +199,9 @@ static void CleanupThreadResources( void* arg_ ) {
 			vol->cleanupHappened = TRUE;
 		}
 	}
+#ifdef INCLUDE_GUI
+	ImageObject::shutdown( c );
+#endif	
 
 	DeleteLink( &vl.constructors, c );
 	delete c;
@@ -256,23 +227,253 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 static void postVolume( const v8::FunctionCallbackInfo<Value>& args );
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args );
 
-void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
-{
+/************************* support for import force module mode *****************************/
+
+static PLIST moduleList = NULL;
+
+static bool forceNextModule = false;
+static void forceNextModule_get( Local<Name> property, const v8::PropertyCallbackInfo<Value>& args ) {
+
+	args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), forceNextModule ) );
+
+}
+
+static void forceNextModule_set( Local<Name> property, Local<Value> value, const v8::PropertyCallbackInfo<void>& args ) {
+	forceNextModule = value->BooleanValue( args.GetIsolate() );
+}
+
+static void forceNextModule_add( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value module( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	AddLink( &moduleList, SegCreateFromCharLen( *module, module.length() ) );
+}
+
+
+static void forceNextModule_drop( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value module( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	INDEX idx, nidx = INVALID_INDEX;
+	PTEXT s;
+	LIST_FORALL( moduleList, idx, PTEXT, s ) {
+		if( TextIs( s, *module ) ) {
+			nidx = idx;
+			continue;
+		}
+		if( nidx != INVALID_INDEX ) {
+			SetLink( &moduleList, nidx++, s );
+			SetLink( &moduleList, idx, NULL );
+		}
+	}
+}
+
+static void forceNextModule_list( Local<Name> property, const v8::PropertyCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Array> a = Array::New( isolate );
+	INDEX idx;
+	PTEXT s;
+	LIST_FORALL( moduleList, idx, PTEXT, s ) {
+		SETN( a, idx, String::NewFromUtf8( isolate, GetText(s), v8::NewStringType::kNormal, GetTextSize(s) ).ToLocalChecked() );
+	}
+	args.GetReturnValue().Set( a );
+}
+
+/************************** replacement process.cwd ****************************/
+
+static void getCwd( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
+	static char buf[ 256 ];
+	GetCurrentPath( buf, sizeof( buf ) );
+	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), buf ).ToLocalChecked() );
+}
+
+
+/************************ replacement setTimeout,setInterval ******************************/
+
+static PLIST timerList = NULL;
+
+struct timerEvent : SackTask {
+	Persistent<Function> cb;
+	constructorSet *c;
+	int id;
+	uv_async_t async;
+	bool once = false;
+	// timerEvent( Local<Function> cb) {  }
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		if( !this->cb.IsEmpty() ) {
+			Local<Function> cb = this->cb.Get( isolate );
+			cb->Call( context, Null( isolate ), 0, NULL );
+			if( this->once ) {
+				this->cb.Reset();
+				// delete this;
+			}
+		}
+	}
+};
+
+void triggerTimeout( uintptr_t psvTimer ) {
+	timerEvent *to = (timerEvent *)psvTimer;
+	if( to->c->ivm_holder ) {
+		to->c->ivm_post( to->c->ivm_holder, std::unique_ptr<timerEvent>( to ) );
+	} else
+		uv_async_send( &to->async );
+}
+
+static void setTimeout( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	constructorSet *c      = getConstructors( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	timerEvent *te         = new timerEvent();
+	if( !c->ivm_holder ) {
+		uv_async_init( c->loop, &te->async, []( uv_async_t *handle ) {
+			timerEvent *te = (timerEvent *)handle->data;
+			te->Run2( te->c->isolate, te->c->isolate->GetCurrentContext() );
+		} );
+	}
+	te->once               = true;
+	te->cb.Reset( isolate, Local<Function>::Cast( args[ 0 ] ) );
+	te->c  = c;
+	te->id = AddTimerExx( args[ 1 ]->ToNumber( context ).ToLocalChecked()->Value(), 0, triggerTimeout
+	                    , (uintptr_t)te DBG_SRC );
+	AddLink( &timerList, te );
+	args.GetReturnValue().Set( Number::New( isolate, te->id + 1 ) );
+}
+
+static void setInterval( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	constructorSet *c      = getConstructors( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	timerEvent *te         = new timerEvent();
+	if( !c->ivm_holder ) {
+		uv_async_init( c->loop, &te->async, []( uv_async_t *handle ) {
+			timerEvent *te = (timerEvent *)handle->data;
+			te->Run2( te->c->isolate, te->c->isolate->GetCurrentContext() );
+		} );
+	}
+	te->cb.Reset( isolate, Local<Function>::Cast( args[ 0 ] ) );
+	te->c  = c;
+	te->id = AddTimer( args[ 1 ]->ToNumber( context ).ToLocalChecked()->Value(), triggerTimeout, (uintptr_t)te );
+	AddLink( &timerList, te );
+	args.GetReturnValue().Set( Number::New( isolate, te->id + 1 ) );
+}
+
+static void clearTimeout( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	INDEX idx;
+	struct timerEvent *te;
+	int findId = args[ 0 ]->ToNumber( context ).ToLocalChecked()->Value() - 1;
+	LIST_FORALL( timerList, idx, timerEvent *, te ) {
+		if( te->id == findId ) {
+			SetLink( &timerList, idx, NULL );
+			RemoveTimer( te->id );
+			te->cb.Reset();
+			//delete te;
+			break;
+		}
+	}
+}
+
+/******************************************************/
+
+/*
+void decodeFlags2( int flags ) {
+
+	fprintf( stderr, "FD FLAGS:%08x ", flags );
+	fprintf( stderr, "%08x\n", FD_CLOEXEC );
+}
+
+
+void decodeFlags( int flags ) {
+	if( flags & O_RDONLY ) fprintf( stderr, "rdonly " );
+	if( flags & O_WRONLY ) fprintf( stderr, "wronly " );
+	if( flags & O_RDWR ) fprintf( stderr, "rdwr " );
+	if( flags & O_CREAT ) fprintf( stderr, "create " );
+	if( flags & O_EXCL ) fprintf( stderr, "excl " );
+	if( flags & O_NONBLOCK ) fprintf( stderr, "noblock " );
+	if( flags & O_TRUNC ) fprintf( stderr, "trunc " );
+	if( flags & O_APPEND ) fprintf( stderr, "append " );
+	if( flags & O_DSYNC ) fprintf( stderr, "dsync " );
+	if( flags & FASYNC ) fprintf( stderr, "fasycn " );
+	if( flags & O_DIRECT ) fprintf( stderr, "direct " );
+	//if( flags & O_LARGEFILE ) fprintf( stderr, "largefile %08x ", O_LARGEFILE );
+	if( flags & O_DIRECTORY ) fprintf( stderr, "directory " );
+	if( flags & O_NOFOLLOW ) fprintf( stderr, "nofollow " );
+	if( flags & O_CLOEXEC ) fprintf( stderr, "cloexec " );
+	fprintf( stderr, "%08x\n", O_CLOEXEC );
+}
+*/
+
+void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool isolated ) {
 	static int runOnce = 1;
-	Isolate* isolate = Isolate::GetCurrent();
+	Isolate* isolate = context->GetIsolate();// Isolate::GetCurrent();
+#ifdef _WIN32
+	{
+#if 0
+		// debug attempt to figure out why ctrl-C event is not triggering node correctly.
+		DWORD dwInfoIn, dwInfoOut, dwInfoErr;
+		GetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), &dwInfoIn );
+		GetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), &dwInfoOut );
+		GetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), &dwInfoErr );
+		fprintf( stderr, "Default handles (in service?) %p %d %p %d %p %d"
+		       , GetStdHandle( STD_INPUT_HANDLE ), dwInfoIn
+		       , GetStdHandle( STD_OUTPUT_HANDLE ), dwInfoOut
+		       , GetStdHandle( STD_ERROR_HANDLE ), dwInfoErr );
+		BOOL a = AllocConsole();
+		fprintf( stderr, "Alloc Console : %d", a );
+#endif
+		SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+		SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+		SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
+	}
+#endif
+#ifdef __LINUX__
+		fcntl( 0, F_SETFD, fcntl( 0, F_GETFD ) & ~FD_CLOEXEC );
+		fcntl( 1, F_SETFD, fcntl( 1, F_GETFD ) & ~FD_CLOEXEC );
+		fcntl( 2, F_SETFD, fcntl( 2, F_GETFD ) & ~FD_CLOEXEC );
+
+/*
+		decodeFlags( fcntl( 0, F_GETFL, 0 ) );
+		decodeFlags( fcntl( 1, F_GETFL, 0 ) );
+		decodeFlags( fcntl( 2, F_GETFL, 0 ) );
+		decodeFlags2( fcntl( 0, F_GETFD, 0 ) );
+		decodeFlags2( fcntl( 1, F_GETFD, 0 ) );
+		decodeFlags2( fcntl( 2, F_GETFD, 0 ) );
+
+		fprintf( stderr, "Default handle inherit in node: %08x %08x %08x\n"
+		       , fcntl( 0, F_GETFL, 0 )
+		       , fcntl( 1, F_GETFL, 0 )
+		       , fcntl( 2, F_GETFL, 0 ) );
+*/
+#endif
 	if( runOnce ) {
+#ifdef __ANDROID__
+		{
+			//SACKSystemSetProgramPath( "" );
+			// maybe if this is set I can get the program path with the maps scanner?
+			SACKSystemSetProgramName( "node" );
+			char buf[1024];
+			getcwd( buf, 1024 );
+			SACKSystemSetWorkingPath( buf );
+			// this should have been filled by maps scan?
+			SACKSystemSetLibraryPath( TARGET_INSTALL_PREFIX );
+		}
+#endif
+
 		InvokeDeadstart();
+		MarkRootDeadstartComplete();
+
 
 		//SetAllocateLogging( TRUE );
-		//SetManualAllocateCheck( TRUE );
+		SetManualAllocateCheck( TRUE );
 		//SetAllocateDebug( FALSE );
 		//lprintf( "Do Init in modules (shouldn't do some of this)");
 		SetSystemLog( SYSLOG_FILE, stdout );
+		SetSystemLoggingLevel( 2000 ); // always log everything.
 
 		//LoadTranslationDataEx( "^/strings.dat" );
 		LoadTranslationDataEx( "@/../../strings.json" );
 		runOnce = 0;
-	}else {
+	} else {
 		GetThisThreadID();
 	}
 	//else
@@ -288,11 +489,25 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	Local<FunctionTemplate> volumeTemplate;
 
 	class constructorSet* c = getConstructors( isolate );
+	if( !isolated ) {
 #if ( NODE_MAJOR_VERSION > 9 )
-	node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, c );
+		node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, c );
 #else
-	node::AtExit( moduleExit );
+		node::AtExit( moduleExit );
 #endif
+	} else {
+		lprintf( "Isolated module, no cleanup hook(yet)" );
+		IsolateHolder* (*GetCurrentIsolate)( void ) = (IsolateHolder*(*)(void))LoadFunction( "isolated_vm.node", "GetCurrentIsolate" );
+		Local<Context> ( *GetDefaultContext )( void )
+		     = (Local<Context> ( * )( void ))LoadFunction( "isolated_vm.node", "GetDefaultContext" );
+		if( GetCurrentIsolate ) {
+			c->ivm_holder   = GetCurrentIsolate();
+			c->ivm_get_default_context = GetDefaultContext;
+			c->ivm_post = ( void ( * )( IsolateHolder *hIsolate, std::unique_ptr<Runnable> task ) )
+			     LoadFunction( "isolated_vm.node", "ScheduleTask" );
+		}
+		//lprintf( "Good pointers? %p %p", c->holder, c->ivm_post );
+	}
 
 	ThreadObject::Init( exports );
 	FileObject::Init();
@@ -301,27 +516,58 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	InitJSOX( isolate, exports );
 	InitJSON( isolate, exports );
 	InitSRG( isolate, exports );
-	InitWebSocket( isolate, exports );
-	InitUDPSocket( isolate, exports );
 	InitTask( isolate, exports );
 	ObjectStorageInit( isolate, exports );
 	fileMonitorInit( isolate, exports );
 	SystemInit( isolate, exports );
+	ConfigScriptInit( isolate, exports );
 	textObjectInit( isolate, exports );
 #ifdef INCLUDE_GUI
 	ImageObject::Init( exports );
 	RenderObject::Init( exports );
 	ControlObject::Init( exports );
 	InterShellObject::Init( exports );
-	InitSystray( isolate, exports );
 #endif
 
 #ifdef WIN32
 	RegObject::Init( exports );
 	KeyHidObjectInit( isolate, exports );
 	SoundInit( isolate, exports );
+	InitSystray( isolate, exports );
+	InitWifiInterface( isolate, exports );
 #endif
+	InitWebSocket( isolate, exports );
+	InitUDPSocket( isolate, exports );
 	TLSObject::Init( isolate, exports );
+	SSH2_Object::Init( isolate, exports );
+
+
+	{
+		Local<Object> importObject = Object::New( isolate );
+		importObject->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "forceNextModule" )
+			, forceNextModule_get
+			, forceNextModule_set
+			, Local<Value>()
+			, PropertyAttribute::None
+			, SideEffectType::kHasSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+		SET_READONLY_METHOD( importObject, "force", forceNextModule_add );
+		SET_READONLY_METHOD( importObject, "forget", forceNextModule_drop );
+		//SET_READONLY_METHOD( importObject, "modules", forceNextModule_list );
+		importObject->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "modules" )
+			, forceNextModule_list
+			, nullptr
+			, Local<Value>()
+			, PropertyAttribute::ReadOnly
+			, SideEffectType::kHasSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+
+		//SET_READONLY_METHOD( importObject, "forceNextModule", forceNextModule );
+		SET_READONLY( exports, "import", importObject );
+	}
+
 
 	// Prepare constructor template
 	volumeTemplate = FunctionTemplate::New( isolate, New );
@@ -342,6 +588,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "write", fileWrite );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "flush", flush );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "mkdir", makeDirectory );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "chdir", changeDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "Sqlite", openVolDb );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "delete", fileVolDelete );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "unlink", fileVolDelete );
@@ -359,9 +606,22 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	SET_READONLY_METHOD( exports, "log", logString );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
+	SET_READONLY_METHOD( VolFunc, "chdir", chDir );
+
+	VolFunc->SetNativeDataProperty(
+	     context, String::NewFromUtf8Literal( isolate, "cwd" ), getCwd, nullptr // Local<Function>()
+	                              , Local<Value>(), PropertyAttribute::ReadOnly, SideEffectType::kHasNoSideEffect
+	                              , SideEffectType::kHasSideEffect );
+
 	//SET_READONLY_METHOD( VolFunc, "rekey", volRekey );
 	SET_READONLY_METHOD( exports, "u8xor", vfs_u8xor );
 	SET_READONLY_METHOD( exports, "b64xor", vfs_b64xor );
+	if( isolated ) {
+		SET_READONLY_METHOD( exports, "setTimeout", setTimeout );
+		SET_READONLY_METHOD( exports, "setInterval", setInterval );
+		SET_READONLY_METHOD( exports, "clearTimeout", clearTimeout );
+		SET_READONLY_METHOD( exports, "clearInterval", clearTimeout );
+	}
 	// this is an export under SaltyRNG
 	SET_READONLY_METHOD( exports, "id", idGenerator );
 	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
@@ -386,6 +646,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 	}
 
 	SET_READONLY_METHOD( exports, "loadComplete", loadComplete );
+	SET_READONLY_METHOD( exports, "sigint", process_JS_sigint );
 	c->volConstructor.Reset( isolate, volumeTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked() );
 	//NODE_SET_METHOD( exports, "InitFS", InitFS );
 }
@@ -393,11 +654,11 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports )
 void VolumeObject::Init( Local<Object> exports, Local<Value> val, void* p )  {
 	Isolate* isolate = Isolate::GetCurrent();
 	Local<Context> context = isolate->GetCurrentContext();
-	doInit( context, exports );	
+	doInit( context, exports, false );
 }
 
-void VolumeObject::Init( Local<Context> context, Local<Object> exports )  {
-	doInit( context, exports );
+void VolumeObject::Init( Local<Context> context, Local<Object> exports, bool isolated )  {
+	doInit( context, exports, isolated );
 }
 
 VolumeObject::VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority )  {
@@ -454,7 +715,7 @@ void logBinary( char *x, int n )
 
 void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
+	//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 
 	class constructorSet* c = getConstructors( isolate );
 	Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
@@ -466,8 +727,8 @@ void VolumeObject::vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args
 
 
 void VolumeObject::volDecrypt( const v8::FunctionCallbackInfo<Value>& args ){
-	Isolate* isolate = args.GetIsolate();
-	int argc = args.Length();
+	//Isolate* isolate = args.GetIsolate();
+	//int argc = args.Length();
 	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.This() );
 	sack_vfs_decrypt_volume( vol->vol );
 }
@@ -500,6 +761,34 @@ void VolumeObject::mkdir( const v8::FunctionCallbackInfo<Value>& args ){
 	}
 }
 
+
+void VolumeObject::changeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		if( vol ) {
+			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+			if( vol->volNative ) {
+				// no directory support; noop.
+				if( vol->fsInt->_mkdir )
+					vol->fsInt->_mkdir( sack_get_mounted_filesystem_instance( vol->fsMount ), *fName );
+			} else {
+				sack_chdirEx( 0, *fName, vol->fsMount );
+			}
+		}
+	}
+}
+
+void VolumeObject::chDir( const v8::FunctionCallbackInfo<Value>& args ){
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if( argc > 0 ) {
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+		sack_chdirEx( 0, *fName, NULL );
+	}
+}
+
 void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
@@ -520,11 +809,11 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 
 
 void VolumeObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-	if( vol ) {
+	//Isolate* isolate = args.GetIsolate();
+	//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+	//if( vol ) {
 		// this is a noop.  mmap is assumed commited if the memory is written to; and the process exists and closes the handles.
-	}
+	//}
 
 }
 
@@ -569,7 +858,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			char dbName[256];
  			snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
-			createSqlObject( dbName, args.This() );
+			createSqlObject( dbName, isolate, args.This() );
 
 			args.GetReturnValue().Set( args.This() );
 		}
@@ -657,7 +946,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = json6_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = json6_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
 						struct reviver_data r;
@@ -700,7 +989,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = json6_parse_add_data( parser, buf, newRead ));
 						result > 0; 
 						result = json6_parse_add_data(parser, NULL, 0) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = json_parse_get_data( parser );
 						if( data->Cnt ) {
@@ -758,7 +1047,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = jsox_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = jsox_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = jsox_parse_get_data( parser );
 						struct reviver_data r;
@@ -804,7 +1093,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 					for( (result = jsox_parse_add_data( parser, buf, newRead ));
 						result > 0;
 						result = jsox_parse_add_data( parser, NULL, 0 ) ) {
-						Local<Object> obj = Object::New( isolate );
+						//Local<Object> obj = Object::New( isolate );
 						PDATALIST data;
 						data = jsox_parse_get_data( parser );
 						if( data->Cnt ) {
@@ -837,6 +1126,11 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 		}
 	}
+
+void dontReleaseBufferBackingStore(void* data, size_t length, void* deleter_data) {
+	(void)length;
+	(void)deleter_data;;
+}
 
 void releaseBufferBackingStore( void* data, size_t length, void* deleter_data ) {
 	(void)length;
@@ -978,6 +1272,8 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		size_t len;
 		Persistent<Function> *f;
 		Persistent<Object> _this;
+		bool ivm_hosted;
+		class constructorSet *c;
 		uv_async_t async;
 	};
 
@@ -995,8 +1291,10 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		Release( myself );
 		{
 			class constructorSet* c = getConstructors( isolate );
-			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+			if( !c->ThreadObject_idleProc.IsEmpty() ) {
+				Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+				cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+			}
 		}
 	}
 
@@ -1051,7 +1349,11 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				pargs->f->Reset( isolate, Local<Function>::Cast( args[1] ) );
 				pargs->_this.Reset( isolate, args.This() );
 				class constructorSet *c = getConstructors( isolate );
-				uv_async_init( c->loop, &pargs->async, preloadCallback );
+				if( c->ivm_holder ) {
+					pargs->c = c;
+					pargs->ivm_hosted = true;
+				} else
+					uv_async_init( c->loop, &pargs->async, preloadCallback );
 				pargs->async.data = pargs;
 				ThreadTo( preloadFile, (uintptr_t)pargs );
 			}
@@ -1383,7 +1685,10 @@ static LOGICAL PostVolume( Isolate *isolate, String::Utf8Value *name, VolumeObje
 			if( memcmp( *station->s[0], *(name[0]), (name[0]).length() ) == 0 ) {
 				AddLink( &station->transport, trans );
 				//lprintf( "Send Post Request %p", station->poster );
-				uv_async_send( &station->poster );
+				if( station->ivm_hosted ) 
+					station->c->ivm_post( station->c->ivm_holder, std::make_unique<volumeUnloadStationTask>(station) );
+				else
+					uv_async_send( &station->poster );
 				break;
 			}
 		}
@@ -1415,40 +1720,14 @@ static void postVolume( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 }
 
-
-
-static void postVolumeObject( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	if( args.Length() < 1 ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Required parameter missing: (unique)" ) ) );
-		return;
-	}
-	
-	VolumeObject* obj = VolumeObject::Unwrap<VolumeObject>( args.This() );
-	if( obj ){
-		String::Utf8Value s( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		if( PostVolume( isolate, &s, obj ) ) 
-			args.GetReturnValue().Set( True(isolate) );
-		else
-			args.GetReturnValue().Set( False(isolate) );
-	}
-	else {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Object is not an accepted socket" ) ) );
-	}
-}
-
-
 static void finishPostClose( uv_handle_t *async ) {
 	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
 	delete unload->s;
 	delete unload;
 }
 
-static void handlePostedVolume( uv_async_t* async ) {
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	struct volumeUnloadStation* unload = ( struct volumeUnloadStation* )async->data;
+
+void handlePostedVolume_( Isolate*isolate, Local<Context> context, struct volumeUnloadStation *unload ) {
 	Local<Function> f = unload->cb.Get( isolate );
 	INDEX idx;
 	struct volumeTransport* trans;
@@ -1486,10 +1765,20 @@ static void handlePostedVolume( uv_async_t* async ) {
 		unload->this_.Reset();
 		DeleteLink( &VolumeObject::transportDestinations, unload );
 		SetLink( &unload->transport, 0, NULL );
-		uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
+		//uv_close( (uv_handle_t*)async, finishPostClose ); // have to hold onto the handle until it's freed.
 		break;
 	}
 }
+
+static void handlePostedVolume( uv_async_t *async ) {
+	v8::Isolate *isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context             = isolate->GetCurrentContext();
+	struct volumeUnloadStation *unload = (struct volumeUnloadStation *)async->data;
+	handlePostedVolume_( isolate, context, unload );
+	uv_close( (uv_handle_t *)async, finishPostClose ); // have to hold onto the handle until it's freed.
+}
+
 
 static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -1506,7 +1795,11 @@ static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args 
 	unloader->transport = NULL;
 	//lprintf( "New async event handler for this unloader%p", &unloader->clientSocketPoster );
 
-	uv_async_init( unloader->targetThread, &unloader->poster, handlePostedVolume );
+	unloader->c            = c;
+	if( c->ivm_holder ) {
+		unloader->ivm_hosted = true;
+	} else
+		uv_async_init( unloader->targetThread, &unloader->poster, handlePostedVolume );
 
 	AddLink( &VolumeObject::transportDestinations, unloader );
 }
@@ -1517,13 +1810,14 @@ static void setClientVolumeHandler( const v8::FunctionCallbackInfo<Value>& args 
 
 void FileObject::Emitter(const v8::FunctionCallbackInfo<Value>& args)
 {
+#if NOT_INCOMPLETE
 	Isolate* isolate = Isolate::GetCurrent();
 	//HandleScope scope;
 	Local<Value> argv[2] = {
 		v8::String::NewFromUtf8Literal( isolate, "ping" ), // event name
 		args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked()  // argument
 	};
-
+#endif
 	//node::MakeCallback(isolate, args.This(), "emit", 2, argv);
 }
 
@@ -1568,6 +1862,7 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		int whence;
 		if( args.Length() == 1 ) {
 			length = args[1]->Int32Value(isolate->GetCurrentContext()).FromMaybe(0);
+			position = 0;
 			whence = SEEK_CUR;
 		}
 		else if( args.Length() == 2 ) {
@@ -1585,12 +1880,16 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 			file->buf = NewArray( char, length );
 			file->size = length;
 		}
+		if (file->vol->volNative) {
+			sack_vfs_seek( file->file, position, whence );
+			sack_vfs_read( file->file, file->buf, file->size );
+		}
+		else {
+			sack_fseek( file->cfile, position, whence );
+			file->size = sack_fread(file->buf, file->size, 1, file->cfile);
+		}
+
 	}
-}
-
-
-static void vfs_string_read( char buf, size_t maxlen, struct sack_vfs_file *file ) {
-	lprintf( "volume string read is not implemented yet." );
 }
 
 void FileObject::readLine(const v8::FunctionCallbackInfo<Value>& args) {
@@ -1663,7 +1962,7 @@ void FileObject::writeFile(const v8::FunctionCallbackInfo<Value>& args) {
 				ArrayBuffer::Contents contents = ab->GetContents();
 				//file->buf = (char*)contents.Data();
 				//file->size = contents.ByteLength();
-				buf = contents.Data();
+				buf = (uint8_t*)contents.Data();
 				length = contents.ByteLength();
 #endif
 			}
@@ -1710,12 +2009,16 @@ void FileObject::writeLine(const v8::FunctionCallbackInfo<Value>& args) {
 			if( file->vol->volNative ) {
 				if( setOffset )
 					sack_vfs_seek( file->file, offset, SEEK_SET );
-				sack_vfs_write( file->file, *data, data.length() );
+				else
+					sack_vfs_seek( file->file, 0, SEEK_END );
+				sack_vfs_write( file->file, *data, datalen );
 				sack_vfs_write( file->file, "\n", 1 );
 			}
 			else {
 				if( setOffset )
 					sack_fseek( file->cfile, offset, SEEK_SET );
+				else
+					sack_fseek( file->cfile, 0, SEEK_END );
 				sack_fputs( *data, file->cfile );
 				sack_fputs( "\n", file->cfile );
 			}
@@ -1752,6 +2055,18 @@ void FileObject::truncateFile(const v8::FunctionCallbackInfo<Value>& args) {
 		sack_ftruncate( file->cfile );
 }
 
+
+void FileObject::closeFile( const v8::FunctionCallbackInfo<Value>& args ) {
+	FileObject* file = ObjectWrap::Unwrap<FileObject>( args.This() );
+	if( file->vol->volNative ) {
+		sack_vfs_close( file->file );
+		file->file = NULL;
+	} else {
+		sack_fclose( file->cfile );
+		file->cfile = NULL;
+	}
+}
+
 void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 	Local<Context> context = Isolate::GetCurrent()->GetCurrentContext();
 	//size_t num1 = (size_t)args[0]->ToNumber( context ).FromMaybe( Local<Number>() )->Value();
@@ -1777,7 +2092,7 @@ void FileObject::seekFile(const v8::FunctionCallbackInfo<Value>& args) {
 
 void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = Isolate::GetCurrent();
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 	FileObject *file = ObjectWrap::Unwrap<FileObject>( args.This() );
 	if( file->vol->volNative )
 		args.GetReturnValue().Set( Number::New( isolate, (double)sack_vfs_tell( file->file ) ) );
@@ -1806,7 +2121,9 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "seek", seekFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pos", tellFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "trunc", truncateFile );
+		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "close", closeFile );
 		// read stream methods
+		/*
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "pause", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "resume", openFile );
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setEncoding", openFile );
@@ -1820,6 +2137,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		NODE_SET_PROTOTYPE_METHOD( fileTemplate, "setDefaultEncoding", openFile );
 
 		//NODE_SET_PROTOTYPE_METHOD( fileTemplate, "isPaused", openFile );
+		*/
 
 		c->fileConstructor.Reset( isolate, fileTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 		//exports->Set( String::NewFromUtf8Literal( isolate, "File" ),
@@ -1914,29 +2232,43 @@ FileObject::~FileObject() {
 	//printf( "File object evaporated.\n" );
 	if( buf )
 		Deallocate( char*, buf );
-	if( vol->volNative )
-		sack_vfs_close( file );
-	else
-		sack_fclose( cfile );
+	if( vol->volNative ) {
+		if( file ) sack_vfs_close( file );
+	} else {
+		if( cfile ) sack_fclose( cfile );
+	}
 	volume.Reset();
 }
 
 #if ( NODE_MAJOR_VERSION > 9 )
 //-----------------------------------------------------------
 //https://nodejs.org/docs/latest-v10.x/api/addons.html#addons_context_aware_addons
+
+#if 0
+// this was an example expansion from a few versions ago... but this is the sort of thing that NODE_MODULE_INIT turns into...
+extern "C" __declspec(dllexport) void node_register_module_v127(v8::Local<v8::Object> exports, v8::Local<v8::Value> module, v8::Local<v8::Context> context); extern "C" { static node::node_module _module = { 127, 0, 0, "M:\\javascript\\sack.vfs\\src\\vfs_module.cc", 0, (node::addon_context_register_func)(node_register_module_v127), "sack_vfs", 0, 0 }; static void __cdecl _register_sack_vfs(void); namespace {
+	struct _register_sack_vfs_ {
+		_register_sack_vfs_() {
+			_register_sack_vfs();
+		};
+	} _register_sack_vfs_v_;
+} static void __cdecl _register_sack_vfs(void) {
+	node_module_register(&_module);
+} } void node_register_module_v127(v8::Local<v8::Object> exports, v8::Local<v8::Value> module, v8::Local<v8::Context> context)
+#endif
 #  if !defined( NODE_WANT_INTERNALS )
 	NODE_MODULE_INIT( /*Local<Object> exports,
 		Local<Value>Module,
 		Local<Context> context*/ ) {
 		
 		//printf( "called?\n");
-		VolumeObject::Init(context,exports);		
+		VolumeObject::Init(context,exports, FALSE);
 	}
 #  else
 	static void internalReg( Local<Object> exports,
 		Local<Value>Module,
 		Local<Context> context ) {
-		VolumeObject::Init( context, exports );
+		VolumeObject::Init( context, exports, FALSE );
 	}
 	NODE_MODULE_CONTEXT_AWARE_INTERNAL( sack, internalReg );
 #  endif
@@ -1944,3 +2276,7 @@ FileObject::~FileObject() {
 	NODE_MODULE( vfs_module, VolumeObject::Init)
 #endif
 
+extern "C" PUBLIC_METHOD void InitForContext( v8::Isolate *isolate, v8::Local<v8::Context> context
+                                        , v8::Local<v8::Object> target ) {
+		VolumeObject::Init( context, target, TRUE );
+}

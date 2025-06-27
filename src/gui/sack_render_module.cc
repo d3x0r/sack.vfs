@@ -1,7 +1,9 @@
 
 #include "../global.h"
 
-
+struct render_private_data {
+	PLIST renderers;
+} render_global;
 
 struct optionStrings {
 	Isolate* isolate;
@@ -13,7 +15,9 @@ struct optionStrings {
 	Eternal<String>* createString;
 	Eternal<String>* drawString;
 	Eternal<String>* mouseString;
-	Eternal<String>* keyString;
+	Eternal<String> *touchString;
+	Eternal<String> *penString;
+	Eternal<String> *keyString;
 	Eternal<String>* destroyString;
 	Eternal<String>* xString;
 	Eternal<String>* yString;
@@ -48,7 +52,9 @@ static struct optionStrings* getStrings( Isolate* isolate ) {
 		check->borderString = new Eternal<String>( isolate, localStringExternal( isolate, "border" ) );
 		check->createString = new Eternal<String>( isolate, localStringExternal( isolate, "create" ) );
 		check->mouseString = new Eternal<String>( isolate, localStringExternal( isolate, "mouse" ) );
-		check->drawString = new Eternal<String>( isolate, localStringExternal( isolate, "draw" ) );
+		check->touchString   = new Eternal<String>( isolate, localStringExternal( isolate, "touch" ) );
+		check->penString   = new Eternal<String>( isolate, localStringExternal( isolate, "pen" ) );
+		check->drawString    = new Eternal<String>( isolate, localStringExternal( isolate, "draw" ) );
 		check->keyString = new Eternal<String>( isolate, localStringExternal( isolate, "key" ) );
 		check->destroyString = new Eternal<String>( isolate, localStringExternal( isolate, "destroy" ) );
 		makeString( x, "x" );
@@ -75,18 +81,79 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 	//Local<Object> object = Object::New( isolate );
 	Local<Object> object;
 	Local<Context> context = isolate->GetCurrentContext();
-
+	constructorSet *c      = getConstructors( isolate );
 
 	switch( evt->type ) {
+	case Event_Render_Pen: {
+			if( c->pen_object.IsEmpty() ) {
+				object = Object::New( isolate );
+				c->pen_object.Reset( isolate, object );
+			} else
+				object = c->pen_object.Get( isolate );
+
+			Local<Array> pens = Array::New( isolate );
+
+			object->Set( context, localStringExternal( isolate, "x" ), Number::New( isolate, evt->data.pen.event.x ) );
+			object->Set( context, localStringExternal( isolate, "y" ), Number::New( isolate, evt->data.pen.event.y ) );
+			object->Set( context, localStringExternal( isolate, "flags" )
+			           , Number::New( isolate, evt->data.pen.event.penFlags ) );
+			object->Set( context, localStringExternal( isolate, "mask" )
+			           , Number::New( isolate, evt->data.pen.event.penMask ) );
+			object->Set( context, localStringExternal( isolate, "tiltX" ), Number::New( isolate, evt->data.pen.event.tiltX ) );
+			object->Set( context, localStringExternal( isolate, "tiltY" ), Number::New( isolate, evt->data.pen.event.tiltY ) );
+			object->Set( context, localStringExternal( isolate, "pressure" )
+			           , Number::New( isolate, evt->data.pen.event.pressure ) );
+			object->Set( context, localStringExternal( isolate, "rotation" )
+			           , Number::New( isolate, evt->data.pen.event.rotation) );
+
+			pens->Set( context, 0, object );
+			for( int i = 0; i < evt->data.pen.event.nOverflow; i++ ) {
+			   Local<Object> object = Object::New( isolate );
+			   object->Set( context, localStringExternal( isolate, "x" ), Number::New( isolate, evt->data.pen.event.pOverflow[i].x ) );
+			   object->Set( context, localStringExternal( isolate, "y" )
+			              , Number::New( isolate, evt->data.pen.event.pOverflow[ i ].y ) );
+			   object->Set( context, localStringExternal( isolate, "flags" )
+			              , Number::New( isolate, evt->data.pen.event.pOverflow[ i ].penFlags ) );
+			   object->Set( context, localStringExternal( isolate, "mask" )
+			              , Number::New( isolate, evt->data.pen.event.pOverflow[ i ].penMask ) );
+			   object->Set( context, localStringExternal( isolate, "tiltX" )
+			              , Number::New( isolate, evt->data.pen.event.pOverflow[ i ].tiltX ) );
+			   object->Set( context, localStringExternal( isolate, "tiltY" )
+			              , Number::New( isolate, evt->data.pen.event.pOverflow[ i ].tiltY ) );
+			   object->Set( context, localStringExternal( isolate, "pressure" )
+			              , Number::New( isolate, evt->data.pen.event.pOverflow[ i ].pressure ) );
+			   object->Set( context, localStringExternal( isolate, "rotation" )
+			              , Number::New( isolate, evt->data.pen.event.pOverflow[ i ].rotation ) );
+			   pens->Set( context, i + 1, object );
+			}
+		} 
+		break;
+	case Event_Render_Touch: {
+			Local<Array> touches = Array::New( isolate );
+			for( int n = 0; n < evt->data.touch.nTouches; n++ ) {
+				Local<Object> touch = Object::New( isolate );
+				touch->Set( context, localStringExternal( isolate, "new" )
+						  , evt->data.touch.pTouches[ n ].flags.new_event ? True( isolate ) : False( isolate ) );
+				touch->Set( context, localStringExternal( isolate, "end" )
+						  , evt->data.touch.pTouches[ n ].flags.end_event ? True( isolate ) : False( isolate ) );
+				touch->Set( context, localStringExternal( isolate, "x" )
+						  , Number::New( isolate, evt->data.touch.pTouches[ n ].x ) );
+				touch->Set( context, localStringExternal( isolate, "y" )
+						  , Number::New( isolate, evt->data.touch.pTouches[ n ].y ) );
+				touches->Set( context, n, touch );
+			}
+			Deallocate( PINPUT_POINT, evt->data.touch.pTouches );
+			object = touches;
+		}
+		break;
 	case Event_Render_Mouse:
 		{
-			static Persistent<Object> mo;
-			if( mo.IsEmpty() ) {
-				object = Object::New( isolate );
-				mo.Reset( isolate, object );
+			if( c->mouse_object.IsEmpty() ) {
+					object = Object::New( isolate );
+				c->mouse_object.Reset( isolate, object );
 			}
 			else
-				object = Local<Object>::New( isolate, mo );
+				object = c->mouse_object.Get( isolate );
 
 			object->Set( context, localStringExternal( isolate, "x" ), Number::New( isolate, evt->data.mouse.x ) );
 			object->Set( context, localStringExternal( isolate, "y" ), Number::New( isolate, evt->data.mouse.y ) );
@@ -106,13 +173,9 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 	return object;
 }
 
-static void asyncmsg( uv_async_t* handle ) {
+static void asyncmsg_( v8::Isolate* isolate, Local<Context>context, RenderObject *myself ) {
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
-	v8::Isolate* isolate = v8::Isolate::GetCurrent();
-	HandleScope scope( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
-	RenderObject* myself = (RenderObject*)handle->data;
 	{
 		struct event *evt;
 
@@ -122,6 +185,12 @@ static void asyncmsg( uv_async_t* handle ) {
 			Local<Value> argv[] = { object };
 			Local<Function> cb;
 			switch( evt->type ){
+			case Event_Render_Pen:
+				cb = Local<Function>::New( isolate, myself->cbPen );
+				break;
+			case Event_Render_Touch:
+				cb = Local<Function>::New( isolate, myself->cbTouch );
+				break;
 			case Event_Render_Mouse:
 				cb = Local<Function>::New( isolate, myself->cbMouse );
 				break;
@@ -143,16 +212,39 @@ static void asyncmsg( uv_async_t* handle ) {
 			}
 		}
 	}
-	{
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
-	}
 	//lprintf( "done calling message notice." );
 }
 
+static void asyncmsg( uv_async_t* handle ) {
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	RenderObject* myself = (RenderObject*)handle->data;
+	asyncmsg_( isolate, context, myself );
+	{
+		class constructorSet* c = getConstructors( isolate );
+		if( !c->ThreadObject_idleProc.IsEmpty() ) {
+			Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
+			cb->Call( isolate->GetCurrentContext(), Null( isolate ), 0, NULL );
+		}
+	}
+}
 
+struct asyncMsgTask : SackTask {
+	RenderObject *myself;
+	asyncMsgTask( RenderObject *myself ) : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		asyncmsg_( isolate, context, myself );
+	}
+};
 
+void RenderObject::sigint( void ) {
+	RenderObject *r;
+	INDEX idx;
+	LIST_FORALL( render_global.renderers, idx, RenderObject *, r ){
+		r->do_close();
+	}
+}
 
 void RenderObject::Init( Local<Object> exports ) {
 	{
@@ -172,6 +264,8 @@ void RenderObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "getImage", RenderObject::getImage );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "setDraw", RenderObject::setDraw );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "setMouse", RenderObject::setMouse );
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "setTouch", RenderObject::setTouch );
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "setPen", RenderObject::setPen );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "setKey", RenderObject::setKey );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "show", RenderObject::show );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "hide", RenderObject::hide );
@@ -206,8 +300,9 @@ void RenderObject::Init( Local<Object> exports ) {
 	}
 
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
+	AddLink( &render_global.renderers, this );
 	if( title )
-		r = OpenDisplayAboveSizedAt( DISPLAY_ATTRIBUTE_LAYERED, w, h, x, y, over ? over->r : NULL );
+		r = OpenDisplayAboveSizedAt( 0, w, h, x, y, over ? over->r : NULL );
 	else
 		r = NULL;
 	receive_queue = NULL;
@@ -219,6 +314,7 @@ void RenderObject::setRenderer(PRENDERER r) {
 }
 
 RenderObject::~RenderObject() {
+	DeleteLink( &render_global.renderers, this );
 }
 
 	void RenderObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -261,7 +357,10 @@ RenderObject::~RenderObject() {
 			RenderObject* obj = new RenderObject( title?title:"Node Application", x, y, w, h, parent );
 			obj->this_.Reset( isolate, args.This() );
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
-			uv_async_init( uv_default_loop(), &obj->async, asyncmsg );
+			obj->c = getConstructors( isolate );
+			if( !( obj->ivm_hosted = ( obj->c->ivm_holder != nullptr ) ) )
+				uv_async_init( obj->c->loop, &obj->async, asyncmsg );
+			//uv_unref( (uv_handle_t*)obj->async );
 			obj->isolate = isolate;
 			obj->eventThread = MakeThread();
 
@@ -358,15 +457,20 @@ void RenderObject::setCoordinate( const FunctionCallbackInfo<Value>& args ) {
 
 }
 
+void RenderObject::do_close( void ) {
+	if( !this->closed ) {
+		this->closed = TRUE;
+		lprintf( "Close async" );
+		uv_unref( (uv_handle_t*)&this->async );
+
+		//uv_close( (uv_handle_t*)&this->async, NULL );
+	}
+}
 
 
 void RenderObject::close( const FunctionCallbackInfo<Value>& args ) {
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
-	if( !r->closed ) {
-		r->closed = TRUE;
-		lprintf( "Close async" );
-		uv_close( (uv_handle_t*)&r->async, NULL );
-	}
+	r->do_close();
 }
 
 void RenderObject::getImage( const FunctionCallbackInfo<Value>& args ) {
@@ -389,6 +493,7 @@ void RenderObject::update( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	int argc = args.Length();
+	lprintf( "update??" );
 	if( argc > 3 ) {
 		int x, y, w, h;
 		x = (int)args[0]->IntegerValue(context).ToChecked();
@@ -430,7 +535,7 @@ void RenderObject::getDisplay( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void RenderObject::show( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	// UpdateDisplay deadlocks; so use this method instead....
 	// this means the display is not nessecarily shown when this returns, but will be.
@@ -438,13 +543,13 @@ void RenderObject::show( const FunctionCallbackInfo<Value>& args ) {
 }
 
 void RenderObject::hide( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	HideDisplay( r->r );
 }
 
 void RenderObject::reveal( const FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
+	//Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	RestoreDisplay( r->r );
 }
@@ -461,12 +566,49 @@ void RenderObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	Local<Function> arg0 = Local<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
-	r->cbMouse = cb;
+	r->cbMouse.Reset( isolate, arg0 );
 	SetMouseHandler( r->r, doMouse, (uintptr_t)r );
 }
 
-static void CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
+static int CPROC doTouch( uintptr_t psvUser, PINPUT_POINT pTouches, int nTouches ) {
+	RenderObject *r = (RenderObject *)psvUser;
+	if( !r->closed ) {
+		PINPUT_POINT p = NewArray( struct input_point, nTouches );
+		MemCpy( p, pTouches, sizeof( struct input_point ) * nTouches );
+		return MakeEvent( r, Event_Render_Touch, p, nTouches );
+	}
+	return 0;
+}
+
+void RenderObject::setTouch( const FunctionCallbackInfo<Value> &args ) {
+#ifndef NO_TOUCH
+	Isolate *isolate     = args.GetIsolate();
+	RenderObject *r      = ObjectWrap::Unwrap<RenderObject>( args.This() );
+	Local<Function> arg0 = Local<Function>::Cast( args[ 0 ] );
+	r->cbTouch.Reset( isolate, arg0 );
+	SetTouchHandler( r->r, doTouch, (uintptr_t)r );
+#endif
+}
+
+
+static int CPROC doPen( uintptr_t psvUser, PPEN_EVENT pEvent ) {
+	RenderObject *r = (RenderObject *)psvUser;
+	if( !r->closed )
+		return MakeEvent( r, Event_Render_Pen, pEvent );
+	return 0;
+}
+
+void RenderObject::setPen( const FunctionCallbackInfo<Value> &args ) {
+#ifndef NO_PEN
+	Isolate *isolate     = args.GetIsolate();
+	RenderObject *r      = ObjectWrap::Unwrap<RenderObject>( args.This() );
+	Local<Function> arg0 = Local<Function>::Cast( args[ 0 ] );
+	r->cbMouse.Reset( isolate, arg0 );
+	SetPenHandler( r->r, doPen, (uintptr_t)r );
+#endif
+}
+
+static int CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
 	RenderObject *r = (RenderObject *)psv;
 	PTHREAD waiter = MakeThread();
 	// sometimes the redraw event can happen on the same thread.
@@ -477,19 +619,26 @@ static void CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
 			Local<Value> argv[] = { Local<Object>::New( r->isolate, r->surface ) };
 			Local<Function> cb;
 			cb = Local<Function>::New( r->isolate, r->cbDraw );
-			cb->Call( r->isolate->GetCurrentContext(), Local<Object>::New( r->isolate, r->this_ ), 1, argv );
+			//lprintf( "Dispatch to JS callback (redraw)");
+			Local<Value> result = cb->Call( r->isolate->GetCurrentContext(), Local<Object>::New( r->isolate, r->this_ ), 1, argv ).ToLocalChecked();
+			//lprintf( "callback result: %d", result.IsEmpty() );
+			if( !result.IsEmpty() ) {
+				//lprintf( "callback result: %d", result->IntegerValue(r->isolate->GetCurrentContext()).ToChecked() );
+				return (int)result->IntegerValue(r->isolate->GetCurrentContext()).ToChecked();
+			}
+			return 0;
 		}
 		else
-			MakeEvent( r, Event_Render_Draw );
+			return MakeEvent( r, Event_Render_Draw );
+	return 0;
 }
 
 void RenderObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	Local<Function> arg0 = Local<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
 	SetRedrawHandler( r->r, doRedraw, (uintptr_t)r );
-	r->cbDraw = cb;
+	r->cbDraw.Reset( isolate, arg0 );
 	
 }
 
@@ -506,9 +655,8 @@ void RenderObject::setKey( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	Local<Function> arg0 = Local<Function>::Cast( args[0] );
-	Persistent<Function> cb( isolate, arg0 );
 	SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
-	r->cbKey = cb;
+	r->cbKey.Reset( isolate, arg0 );
 }
 
 void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
@@ -528,19 +676,28 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 
 	String::Utf8Value fName( isolate, args[0] );
 	if( StrCmp( *fName, "draw" ) == 0 ) {
-		Persistent<Function> cb( isolate, arg1 );
 		SetRedrawHandler( r->r, doRedraw, (uintptr_t)r );
-		r->cbDraw = cb;
+		r->cbDraw.Reset( isolate, arg1 );
 	}
 	else if( StrCmp( *fName, "mouse" ) == 0 ) {
-		Persistent<Function> cb( isolate, arg1 );
 		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
-		r->cbMouse = cb;
+		r->cbMouse.Reset( isolate, arg1 );
+	}
+	else if( StrCmp( *fName, "touch" ) == 0 ) {
+#ifndef NO_TOUCH
+		SetTouchHandler( r->r, doTouch, (uintptr_t)r );
+		r->cbTouch.Reset( isolate, arg1 );
+#endif
+	}
+	else if( StrCmp( *fName, "pen" ) == 0 ) {
+#ifndef NO_PEN
+		SetPenHandler( r->r, doPen, (uintptr_t)r );
+		r->cbPen.Reset( isolate, arg1 );
+#endif
 	}
 	else if( StrCmp( *fName, "key" ) == 0 ) {
-		Persistent<Function> cb( isolate, arg1 );
 		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
-		r->cbKey = cb;
+		r->cbKey.Reset( isolate, arg1 );
 	}
 }
 
@@ -552,6 +709,17 @@ uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 	e.type = type;
 	e.waiter = MakeThread();
 	switch( type ) {
+#ifndef NO_PEN
+	case Event_Render_Pen:
+		e.data.pen.pEvent = va_arg( args, PPEN_EVENT );
+		break;
+#endif
+#ifndef NO_TOUCH
+	case Event_Render_Touch:
+		e.data.touch.pTouches = va_arg( args, PINPUT_POINT );
+		e.data.touch.nTouches = va_arg( args, int );
+		break;
+#endif
 	case Event_Render_Mouse:
 		e.data.mouse.x = va_arg( args, int32_t );
 		e.data.mouse.y = va_arg( args, int32_t );
@@ -562,12 +730,16 @@ uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 	case Event_Render_Key:
 		e.data.key.code = va_arg( args, uint32_t );
 		break;
+	default:
+		lprintf( "Unhandled event requested %d", type );
+		break;
 	}
 
 	e.flags.complete = 0; 
 	e.success = 0;
 	EnqueLink( queue, &e );
-	uv_async_send( &r->async );
+	if( r->ivm_hosted ) r->c->ivm_post( r->c->ivm_holder, std::make_unique<asyncMsgTask>( r ) );
+	else uv_async_send( &r->async );
 
 	while( !e.flags.complete ) IdleFor( 1000 );
 

@@ -274,3 +274,54 @@ It receives a standard browser event object.
 	}
 ```
 
+# HTTP GET
+
+This is an example GET.
+
+
+``` js
+		const opts = {  hostname: 'localhost',
+					  port : 80,
+					  method : "GET",
+					  path : "/loginSomething"
+					};
+		const res = http.get( opts );
+
+
+```
+
+Async get example.  This is the same as POST except for the `method` field.
+
+``` js
+		const opts = {  hostname: 'localhost',
+					  port : 80,
+					  method : "GET",
+					  path : "/loginSomething"
+                 onReply(res) {
+							console( "result:", res );
+						}
+					};
+		http.get( opts );
+
+
+```
+
+The result fields are defined [here](../README_HTTP.md).
+
+
+# HTTP POST
+
+This is an example POST.
+
+``` js
+		const opts = {  hostname: 'localhost',
+					  port : 80,
+					  method : "POST",
+					  content : "Content sent in post",
+					  path : "/loginSomething"
+					};
+		const res = http.get( opts );
+
+```
+
+The result fields are defined [here](../README_HTTP.md).

@@ -52,3 +52,5 @@ dialog.on( "abort", ()=>{
 dialog.show();
 
 
+// keep alive (dialog itself doesn't anymore)
+function tick() {setTimeout( tick, 50000 );}tick();

@@ -1,15 +1,63 @@
-cmake_minimum_required(VERSION 3.0)
-
+cmake_minimum_required(VERSION 3.21)
+# limited by ubuntu 18 to 3.10
+#cmake_minimum_required(VERSION 3.10)
+#cmake_policy( SET CMP0092 NEW )
+set_property(GLOBAL PROPERTY USE_FOLDERS On)
 
 project (sack_vfs)
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
+set(FORCE_C20 ON )
+if( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
+	SET( __ANDROID__ ON )
+endif( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
+
+OPTION( HOST_NWJS "Target is hosted in NWJS which isn't quite node. " ${HOST_NWJS} )
+
+IF( HOST_NWJS )
+   ADD_DEFINITIONS( -DHOST_NWJS )
+	set( NODE_RUNTIMEVERSION "23.3.0" )
+	#message( "OVERRIDE CMAKE_JS_INC: ${CMAKE_JS_INC}" )
+	set( CMAKE_JS_INC ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/include )
+	set( CMAKE_JS_INC ${CMAKE_JS_INC} ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/include/v8 )
+	set( CMAKE_JS_INC ${CMAKE_JS_INC} ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/include/node )
+	set( CMAKE_JS_INC ${CMAKE_JS_INC} ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/include/libc++ )
+	LINK_DIRECTORIES( ${CMAKE_CURRENT_SOURCE_DIR}/nw.js/lib )
+	ADD_DEFINITIONS( -D_LIBCPP_SHARED_PTR_DEFINE_LEGACY_INLINE_FUNCTIONS )
+ENDIF( HOST_NWJS )
+
+## Compute node version...
+string(REPLACE "." ";" VERSION_LIST ${NODE_RUNTIMEVERSION})
+list(GET VERSION_LIST 0 NODE_VERSION_MAJOR)
+list(GET VERSION_LIST 1 NODE_VERSION_MINOR)
+list(GET VERSION_LIST 2 NODE_VERSION_PATCH)
+########
+
+#message( "WHAT? ${NODE_RUNTIMEVERSION} ${NONDE_VERSION_MAJOR}" )
+message( "COMPILER: ${CMAKE_CXX_COMPILER_ID}" )
+if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
+	add_definitions( -Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion -Wno-unused-parameter )
+	add_definitions( -Wno-deprecated-volatile)
+endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+
 
 if( MSVC )
   #add_definitions( -D_CRT_SECURE_NO_WARNINGS -wd4995 -wd4996 )
   #add_definitions( -wd4996 )
+# 4197 - top-level volatile in cast is ignored (so?)
+# 4090 - 'function': different 'volatile' qualifiers (usually don't care)
+  add_definitions( -wd4197 -wd4090 )
+
+
 
   SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP8")
+  if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 22 )
+	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++20")
+  elseif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
+	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
+  else( )
+	  SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++14")
+  endif( )
   SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP8")
 
   SET( CMAKE_CXX_FLAGS_RELEASE  "${CMAKE_CXX_FLAGS_RELEASE}  /GS-" )
@@ -23,19 +71,19 @@ if( MSVC )
 endif( MSVC )
 
 
-#if( GNUC )
-#  SET( CMAKE_CXX_FLAGS_DEBUG  "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG" )
-#  SET( CMAKE_C_FLAGS_DEBUG  "${CMAKE_C_FLAGS_DEBUG}  -D_DEBUG" )
-#  SET( CMAKE_CXX_FLAGS_RELWITHDEBINFO  "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -D_DEBUG" )
-#  SET( CMAKE_C_FLAGS_RELWITHDEBINFO  "${CMAKE_C_FLAGS_RELWITHDEBINFO}  -D_DEBUG" )
-#endif( GNUC )
-
-#include_directories( "../node_modules/nan" )
-
+OPTION( USE_SACK_ALLOCATOR "Use SACK custom memory allocator (debug/debug)" ON )
 
 if( NOT WIN32 )
     ADD_DEFINITIONS( -D__LINUX__ )
     ADD_DEFINITIONS( -D__MANUAL_PRELOAD__ )
+	string( REGEX MATCH "arch" os_version ${CMAKE_SYSTEM} )
+	if( ".${os_version}" STREQUAL "." ) 
+		set( ARCH_SYSTEM_DISTRO OFF )
+	else() 
+		set( ARCH_SYSTEM_DISTRO ON )
+	endif()
+	OPTION( USE_SYSTEM_SSL "Use System OpenSSL Library instead of node included (Arch)" ${ARCH_SYSTEM_DISTRO} )
+
 else( NOT WIN32 )
     ADD_DEFINITIONS( -D_CRT_NONSTDC_NO_DEPRECATE )
 endif( NOT WIN32 )
@@ -45,18 +93,25 @@ endif( NOT WIN32 )
 #endif( CMAKE_SIZEOF_VOID_P EQUAL 8 )
 
 
+#ADD_DEFINITIONS( -fsanitize=address )
 ADD_DEFINITIONS( -DNO_OPEN_MACRO )
+
+if( ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
+   ADD_DEFINITIONS( -D_REL_DEBUG )
+endif()
 
 if( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
    OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
    ADD_DEFINITIONS( -D_DEBUG )
-endif( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
-   OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
+endif()
 
 if( WIN32 )
 	set( SACK_BASE M:/sack )
 else( WIN32 )
 	set( SACK_BASE ${CMAKE_SOURCE_DIR}/../../sack )
+	if( NOT EXISTS ${SACK_BASE} )
+		set( SACK_BASE ${CMAKE_SOURCE_DIR}/../sack )
+	endif( NOT EXISTS ${SACK_BASE} )
 endif( WIN32 )
 
 # __NO_OPTIONS__ __NO_INTERFACE_SUPPORT__ __NO_ODBC__
@@ -68,10 +123,26 @@ set( DEFINITIONS   __STATIC__ __STATIC_GLOBALS__
 		__DISABLE_UDP_SYSLOG__  # there's no options to enable this so just don't include it.
 		__DISABLE_SYSLOGD_SYSLOG__  # there's no options to enable this so just don't include it.
 		xOPENSSL_API_LEVEL=10100 
-		OPENSSL_API_COMPAT=10101
+		#OPENSSL_API_COMPAT=10101
+		"TARGET_INSTALL_PREFIX=\"${CMAKE_CURRENT_SOURCE_DIR}/build/${CMAKE_BUILD_TYPE}\""
                  )
 
-set( MOREDEFS  "DEFAULT_OUTPUT_STDERR=1" )
+if( __ANDROID__ )
+	SET( DEFINITIONS ${DEFINITIONS} __ANDROID__ )
+endif( __ANDROID__ )
+
+if( USE_SYSTEM_SSL ) 
+	add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/include/openssl
+			COMMAND ${CMAKE_COMMAND} -E create_symlink /usr/include/openssl ${CMAKE_CURRENT_SOURCE_DIR}/include/openssl
+		)			
+
+	add_custom_target( dossl DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/include/openssl )
+
+endif( USE_SYSTEM_SSL )
+
+# may need to be enabled for some early logging
+# vfs_module initialized system log to use the stderr FILE* anyway.
+#set( MOREDEFS  "DEFAULT_OUTPUT_STDERR=1" )
 
 if( APPLE )
   set( DEFINITIONS ${DEFINITIONS} __MAC__ )
@@ -86,6 +157,7 @@ set( INCLUDES
  )
 
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
+FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc "// clang-format off\n" )
 
 
 foreach( DEF ${DEFINITIONS} )
@@ -95,11 +167,13 @@ ENDFOREACH()
 
 FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NO_AUTO_VECTLIB_NAMES\n" )
 FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define NODE_ADDON_BUILD\n" )
+#FILE( APPEND ${CMAKE_BINARY_DIR}/config.ppc  "#define SHA2_LOCAL\n" )
 
 
 SET( EXTRA_HEADERS
 	${SACK_BASE}/include/stdhdrs.h
         ${SACK_BASE}/include/network.h
+        ${SACK_BASE}/include/sack_ssh.h
         ${SACK_BASE}/include/pssql.h
         ${SACK_BASE}/include/sqlgetoption.h
         ${SACK_BASE}/include/idle.h
@@ -114,11 +188,20 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/http.h
         ${SACK_BASE}/include/procreg.h
         ${SACK_BASE}/include/configscript.h
-	${SACK_BASE}/include/salty_generator.h
+        ${SACK_BASE}/include/salty_generator.h
         ${SACK_BASE}/include/sackcomm.h
-	${SACK_BASE}/include/translation.h
+        ${SACK_BASE}/include/translation.h
         ${SACK_BASE}/include/construct.h
+        ${SACK_BASE}/include/systray.h	
+        ${SACK_BASE}/include/md5.h	
+        ${SACK_BASE}/include/sha1.h	
+        ${SACK_BASE}/include/sha2.h	
+	${SACK_BASE}/include/listports.h
 )
+
+if( WIN32 )
+	SET( SYSTRAY_SOURCES ${SACK_BASE}/src/systraylib/systray.c )
+endif( WIN32 )
 
 SET( EXTRA_SOURCES
 	${SACK_BASE}/src/utils/virtual_file_system/vfs.c
@@ -154,7 +237,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/typelib/http.c
 	${SACK_BASE}/src/typelib/url.c
 	
-        ${SACK_BASE}/src/commlib/sackcomm.c
+	${SACK_BASE}/src/commlib/sackcomm.c
 
 	${SACK_BASE}/src/netlib/html5.websocket/html5.websocket.common.c
 	${SACK_BASE}/src/netlib/html5.websocket/client/html5.websocket.client.c
@@ -169,35 +252,43 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/netlib/network_addresses.c
 	${SACK_BASE}/src/netlib/tcpnetwork.c
 	${SACK_BASE}/src/netlib/udpnetwork.c
-        ${SACK_BASE}/src/netlib/net_winsock2.c
+	${SACK_BASE}/src/netlib/netstat_win32.c
+	${SACK_BASE}/src/netlib/netstat_linux.c
+	${NETWORK_MORE_SOURCES}
+	${SACK_BASE}/src/netlib/net_winsock2.c
+	${SACK_BASE}/src/netlib/ping.c
 	${SACK_BASE}/src/netlib/ssl_layer.c
+	${SACK_BASE}/src/netlib/ssh_layer.c
 
-        ${SACK_BASE}/src/salty_random_generator/salty_generator.c
-        ${SACK_BASE}/src/salty_random_generator/crypt_util.c
-        ${SACK_BASE}/src/salty_random_generator/block_shuffle.c
+	${SACK_BASE}/src/salty_random_generator/salty_generator.c
+	${SACK_BASE}/src/salty_random_generator/crypt_util.c
+	${SACK_BASE}/src/salty_random_generator/block_shuffle.c
 
-        ${SACK_BASE}/src/contrib/md5lib/md5c.c
-        ${SACK_BASE}/src/contrib/sha1lib/sha1.c
-        ${SACK_BASE}/src/contrib/sha2lib/sha2.c
-        ${SACK_BASE}/src/contrib/sha3lib/sha3.c
-        ${SACK_BASE}/src/contrib/K12/lib/KangarooTwelve.c
+	${SACK_BASE}/src/contrib/md5lib/md5c.c
+	${SACK_BASE}/src/contrib/sha1lib/sha1.c
+	${SACK_BASE}/src/contrib/sha2lib/sha2.c
+	${SACK_BASE}/src/contrib/sha3lib/sha3.c
+	${SACK_BASE}/src/contrib/K12/lib/KangarooTwelve.c
 
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
-        ${SACK_BASE}/src/SQLlib/sqlstruc.h
-        ${SACK_BASE}/src/configlib/configscript.c
-        ${SACK_BASE}/src/SQLlib/sqlstub.c
-        ${SACK_BASE}/src/SQLlib/sqlwrap.c
-        ${SACK_BASE}/src/SQLlib/sqlutil.c
-        ${SACK_BASE}/src/SQLlib/guid.c
-        ${SACK_BASE}/src/SQLlib/sqlparse3.c
-        ${SACK_BASE}/src/SQLlib/optlib/getoption.c
-        ${SACK_BASE}/src/SQLlib/optlib/getoption_v4.c
-        ${SACK_BASE}/src/SQLlib/optlib/optionutil.c
-        ${SACK_BASE}/src/SQLlib/optlib/optionutil_v4.c
+	${SACK_BASE}/src/SQLlib/sqlstruc.h
+	${SACK_BASE}/src/configlib/configscript.c
+	${SACK_BASE}/src/SQLlib/sqlstub.c
+	${SACK_BASE}/src/SQLlib/sqlwrap.c
+	${SACK_BASE}/src/SQLlib/sqlutil.c
+	${SACK_BASE}/src/SQLlib/guid.c
+	${SACK_BASE}/src/SQLlib/sqlparse3.c
+	${SACK_BASE}/src/SQLlib/optlib/getoption.c
+	${SACK_BASE}/src/SQLlib/optlib/getoption_v4.c
+	${SACK_BASE}/src/SQLlib/optlib/optionutil.c
+	${SACK_BASE}/src/SQLlib/optlib/optionutil_v4.c
 
 	${SACK_BASE}/src/windows_hardware_library/listhids.c
+	${SACK_BASE}/src/windows_hardware_library/listports.c
 
 	${SACK_BASE}/src/translationlib/translate.c
+	${SACK_BASE}/src/systraylib/systray.c
+	${SYSTRAY_SOURCES}
 
 	${SACK_BASE}/src/deadstart/deadstart_lib.c
 )
@@ -256,19 +347,50 @@ set( UUID_SOURCES
 SET( BUILD_AMALGAM on )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.33.0-TableAlias/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.45.0-TableAlias/sqlite3.c
 )
+
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 			COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
 		)			
+
+if( MSVC )
+	set( EXTRA_DEPENDS COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_SOURCE_DIR}/src/sack )
+else()
+	set( EXTRA_DEPENDS DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack )
+endif( )
+
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
-				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-                                   DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
+	${EXTRA_DEPENDS}
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+
+if( CMAKE_VERSION VERSION_GREATER 3.21 )
+
+foreach( path libssh2 libssh2/cmake libssh2/include libssh2/LICENSES libssh2/src )
+	#message( "process path: ${path}" )
+	FILE( MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/${path} )
+	FILE( GLOB files RELATIVE  ${SACK_BASE}/src/contrib/libssh2 ${SACK_BASE}/src/contrib/${path}/* )
+	foreach( file ${files} )
+		#message( "addfile: ${path} ${file}" )
+		if( NOT IS_DIRECTORY ${SACK_BASE}/src/contrib/libssh2/${file} ) 
+			FILE( COPY_FILE ${SACK_BASE}/src/contrib/libssh2/${file} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/${file} ONLY_IF_DIFFERENT )
+		endif()
+	endforeach()
+endforeach()
+#FILE( COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/local/CMakeLists.txt ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/CMakeLists.txt )
+#FILE( COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/src/local/CMakeLists.txt ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/src/CMakeLists.txt )
+else()
+message( "No copy rule for libssh2 updates" )
+endif()
+
 
 if( WIN32 )
 	set( PPCTOOL c:/tools/ppc.exe )
+	if( NOT EXISTS ${PPCTOOL} )
+		set( PPCTOOL c:/general/tools/ppc.exe )
+	endif( NOT EXISTS ${PPCTOOL} )
 elseif( APPLE )
 	set( PPCTOOL /usr/local/bin/ppc )
 else()
@@ -276,21 +398,31 @@ else()
 	if( NOT EXISTS ${PPCTOOL} )
 		set( PPCTOOL /usr/local/bin/ppc )
 	endif( NOT EXISTS ${PPCTOOL} )
+	if( NOT EXISTS ${PPCTOOL} )
+		set( PPCTOOL $ENV{HOME}/bin/ppc )
+	endif( NOT EXISTS ${PPCTOOL} )
+	if( NOT EXISTS ${PPCTOOL} )
+		set( PPCTOOL TileFails/ppx )
+	endif( NOT EXISTS ${PPCTOOL} )
 endif( WIN32 )
+
 
 if( EXISTS ${PPCTOOL} )
   set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc ${EXTRA_SOURCES} )
   set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.h ${EXTRA_HEADERS} )
 
   add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
-  			#COMMAND cmake -E echo ${AMALG_COMMAND}
-   			 COMMAND ${AMALG_COMMAND}
-                        #COMMAND cmake -E echo ${AMALG_COMMAND2}
-   			COMMAND ${AMALG_COMMAND2}
-                   DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
-				   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+		#COMMAND cmake -E echo ${AMALG_COMMAND}
+		${EXTRA_DEPENDS}
+		COMMAND ${AMALG_COMMAND}
+		#COMMAND cmake -E echo ${AMALG_COMMAND2}
+		COMMAND ${AMALG_COMMAND2}
+		DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
+		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
+  SET_TARGET_PROPERTIES(doit PROPERTIES FOLDER "SACK Amalgamator" )
+
 endif( EXISTS ${PPCTOOL} )
 
 else( EXISTS ${SACK_BASE} )
@@ -301,18 +433,62 @@ ENDFOREACH()
 
 endif( EXISTS ${SACK_BASE} )
 
-include_directories(${CMAKE_JS_INC} ${INCLUDES} src/sack )
+
+   set( LIBRESSL_VERSION 3.9.2 )
+	set( LIBRESSL_SKIP_INSTALL ON CACHE BOOL "" )
+	set( LIBRESSL_APPS OFF CACHE BOOL "" )
+	set( LIBRESSL_TESTS OFF CACHE BOOL "" )
+   if( NOT WIN32 )
+      set( OPENSSLDIR "/" )
+   endif( NOT WIN32 )
+	if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
+		set( CMAKE_C_FLAGS_ORIG ${CMAKE_C_FLAGS} )
+		set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-c++17-extensions -Wno-sign-compare -Wno-missing-field-initializers" )
+	endif()
+	add_subdirectory( src/sack/libressl/${LIBRESSL_VERSION} )
+	if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
+		set( CMAKE_C_FLAGS ${CMAKE_C_FLAGS_ORIG} )
+	endif()
+   include_directories( ${CMAKE_BINARY_DIR}/include )
+   include_directories( src/sack/libressl/${LIBRESSL_VERSION}/include )
+   set( SSL_LIBS ssl crypto tls )
+	ADD_DEFINITIONS( -DLIBRESSL_DISABLE_OVERRIDE_WINCRYPT_DEFINES_WARNING )
+
+
+include_directories( ./include ${CMAKE_JS_INC} src/sack )
 
 if( WIN32 )
 	set( MORE_MODULE_SOURCES src/reg_access.cc
 		src/hid_module.cc
 		src/playSound_module.cc
+		src/win32/commandline.cc
+		src/win32/window_shell.cc
+		src/win32/wifiInterface.cc
+#		src/win32/service.cc
+		src/gui/sack_systray.cc
 #		src/fixup_windows_executable.cc
 		)
+elseif( UNIX )
+	set( MORE_MODULE_SOURCES 
+		src/linux/commandline.cc
+	)
 endif( WIN32 )
 
-set( PROJECT sack_vfs )
-add_library(${PROJECT} SHARED
+if( HOST_NWJS )
+	set( MORE_MODULE_SOURCES ${MORE_MODULE_SOURCES} src/nwjs.cc )
+endif( HOST_NWJS )
+
+
+if( HOST_NWJS )
+  set( NWJS_CPP_SOURCES 	nw.js/win_delay_load_hook.cc )
+#  STRING( REPLACE "/DELAYLOAD:NODE.EXE" "" CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS}" )
+  set( NODE_LIBS ${NODE_LIBS};${CMAKE_CURRENT_SOURCE_DIR}/nw.js/lib/node.lib;${CMAKE_CURRENT_SOURCE_DIR}/nw.js/lib/nw.lib )
+else()
+  set( NODE_LIBS ${NODE_LIBS};${CMAKE_JS_LIB} )
+endif( HOST_NWJS )
+
+SET( CPP_SOURCES
+	${NWJS_CPP_SOURCES}
 	src/vfs_module.cc
 	src/objStore_module.cc
 	src/thread_module.cc
@@ -329,38 +505,139 @@ add_library(${PROJECT} SHARED
 	src/fileMonitor_module.cc
 	src/system_module.cc
 	src/text_object.cc
+	src/ssh2_module.cc
 	${MORE_MODULE_SOURCES}
-	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
-        )
+)
+SET( C_SOURCES
+	${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
+)
+
+
+#    SET( ZBASEDIR src/sack/zlib-1.3 )
+#    include( ${ZBASEDIR}/CMakeLists.part )
+#    source_group("Source Files\\zlib-1.3 Library" FILES ${ZLIB_SOURCE})
+
+
+   SET( LIBSSH2_SKIP_INSTALL ON )
+   set( LIBSSH2_BUILD_SHARED_LIBS OFF )
+   SET( LIBSSH2_SKIP_DOCS ON )
+	set( LIBSSH2_BUILD_DOCS OFF )
+   SET( LIBSSH2_BUILD_DEBUG ON )
+   set( LIBSSH2_BUILD_EXAMPLES OFF )
+   set( LIBSSH2_BUILD_TESTING OFF ) 
+   SET( ENABLE_ZLIB_COMPRESSION ON )
+   
+   SET( OPENSSL_ROOT_DIR ../libressl/3.9.2 )
+   add_subdirectory( src/sack/libssh2 )
+   include_directories( src/sack/libssh2/include )
+   
+
+
+set( PROJECT sack_vfs )
+add_library(${PROJECT} SHARED 	${CPP_SOURCES} ${ZLIB_SOURCE} ${C_SOURCES}  )
+
+
 
 set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c PROPERTIES 
 	COMPILE_DEFINITIONS "SQLITE_ENABLE_LOCKING_STYLE=0;SQLITE_THREADSAFE=0;SQLITE_OMIT_UTF16;SQLITE_ENABLE_COLUMN_METADATA;SQLITE_ENABLE_STAT4" )
-set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
-	COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+
+# reduces possible issues between release and debug runtimes.
+if( USE_SACK_ALLOCATOR )
+	set( MOREDEFS  "${MOREDEFS};USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+	set_source_files_properties( ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc PROPERTIES 
+		COMPILE_DEFINITIONS "USE_SACK_CUSTOM_MEMORY_ALLOCATION" )
+endif( USE_SACK_ALLOCATOR )
+
+if( WIN32 )
+#  force using native CS (which are slightly slower than SACK's implementation) (test/debug option)
+#  set( MOREDEFS  "${MOREDEFS};USE_NATIVE_CRITICAL_SECTION" )
+   SET( MOREDEFS "${MOREDEFS};_WIN32_WINNT=0x601" )
+endif( WIN32 )
 
 if( UNIX )
   add_definitions( -D__INTERNAL_UUID__ )
   add_definitions( -DUUID_SOURCE )
-  #add_definitions( -D__NO_ODBC__ )	
+  set( EXTRA_LD_OPTS -Wl,-Bsymbolic )
+  #add_definitions( -D__NO_ODBC__ )
 endif( UNIX )
 
 set_target_properties(${PROJECT} PROPERTIES PREFIX "" SUFFIX ".node")
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+   # so picky about not setting c++17 for C files - who cares?
+  if( FORCE_C20  OR ( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 22 ) )
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "/std:c++20" )
+
+  elseif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "/std:c++17" )
+  endif()
+
+	if( WIN32 )
+		execute_process( COMMAND cmd.exe /c where clang-clx OUTPUT_VARIABLE CLANG_WHERE ERROR_VARIABLE CLANG_WHERE_ERROR )
+		#message( "VAR:${CLANG_WHERE} OR ${CLANG_WHERE_ERROR}" )
+		if( "x${CLANG_WHERE_ERROR}" STREQUAL "x" )
+			#message( "PROCESS PATH: ${CLANG_WHERE}" )
+			get_filename_component( CLANG_PATH ${CLANG_WHERE} DIRECTORY )
+			get_filename_component( CLANG_INSTALL_PATH ${CLANG_PATH} DIRECTORY )
+			#message( "CLANG_WHERE ${CLANG_WHERE} PATH:${CLANG_INSTALL_PATH} (END)" )
+			FILE( WRITE  ${CMAKE_BINARY_DIR}/Directory.build.props "<Project>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t<PropertyGroup>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t\t<LLVMInstallDir>${CLANG_INSTALL_PATH}</LLVMInstallDir>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t\t<LLVMToolsVersion>18.0.0</LLVMToolsVersion>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "\t</PropertyGroup>\n" )
+			FILE( APPEND ${CMAKE_BINARY_DIR}/Directory.build.props "</Project>\n" )
+		endif()
+	endif()
+endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+
+
+
 if( CMAKE_COMPILER_IS_GNUCC )
-   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-std=c++14 -Wno-unused-result -Wno-address-of-packed-member")
+
+  if( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 23 )
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "-std=c++20" )
+  elseif( ${NODE_VERSION_MAJOR}  GREATER_EQUAL 19 )
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "-std=c++17" )
+  endif()
+
+	LIST( GET CPP_SOURCES 1 ONE_CPP_SOURCE)
+	get_source_file_property( OLD_CPP_SOURCE_FLAGS ${ONE_CPP_SOURCE}  COMPILE_FLAGS ) 
+	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+			COMPILE_FLAGS "${OLD_CPP_SOURCE_FLAGS} -Wno-volatile" )
+
+   set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation" )
 endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
-target_link_libraries(${PROJECT} ${CMAKE_JS_LIB})
+
+#if( USE_SYSTEM_SSL )
+	# make sure ssl is linked to be used locally
+#	add_dependencies( ${PROJECT} dossl )
+#endif( USE_SYSTEM_SSL )
+
+target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${NODE_LIBS} libssh2 )
 if( WIN32 )
-   target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui )
+   target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui wlanapi )
 endif( WIN32 )
 if( UNIX )
    target_link_libraries( ${PROJECT} odbc	 )
    if( NOT APPLE )
        target_link_libraries( ${PROJECT} uuid )
+       #target_link_libraries( ${PROJECT} asan )
    endif( NOT APPLE )
 endif( UNIX )
 
+if( __ANDROID__ )
+	target_link_libraries( ${PROJECT} log )
+endif( __ANDROID__ )
+
+SET_TARGET_PROPERTIES(${SSL_LIBS} PROPERTIES FOLDER "LibreSSL" )
+SET_TARGET_PROPERTIES(bs_obj crypto_obj ssl_obj tls_obj tls_compat_obj compat_obj PROPERTIES FOLDER "LibreSSL" )
+SET_TARGET_PROPERTIES( libssh2 PROPERTIES FOLDER "LibSSH2" )
 
 
 #add_library( ntdll SHARED ntdll.c )

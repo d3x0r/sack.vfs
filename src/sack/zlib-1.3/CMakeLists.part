@@ -1,0 +1,21 @@
+
+
+
+SET( ZLIB_SRCS  adler32.c compress.c crc32.c  uncompr.c deflate.c trees.c  
+           zutil.c inflate.c inftrees.c  inffast.c infback.c 
+#           infblock.c infcodes.c infutil.c
+   )
+   
+   if( NOT __ARM__ )
+   # under arm we don't really NEED direct FILEIO stuffs.
+SET( ZLIB_SRCS ${ZLIB_SRCS}   gzclose.c gzlib.c gzread.c gzwrite.c )
+    endif( NOT __ARM__ )
+
+FOREACH( SRC ${ZLIB_SRCS} )
+	LIST(APPEND ZLIB_SOURCE ${ZBASEDIR}/${SRC})
+        SET_SOURCE_FILES_PROPERTIES( ${ZBASEDIR}/${SRC} COMPILE_FLAGS "-DZLIB_DLL" )
+ENDFOREACH()
+include_directories( ${ZBASEDIR} )
+
+
+

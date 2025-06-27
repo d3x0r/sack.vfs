@@ -47,6 +47,7 @@ udp2.send( "Hello World" );
 | close | () | Close the socket. |
 | on | (eventName, callback) | Set message or close callbacks on the socket. |
 | setBroadcast | (bool) | enable broadcast messages |
+| readStrings | setter true/false | controls whether the next read is text or a byte buffer |
 
 #### Udp Events
 

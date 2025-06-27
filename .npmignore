@@ -5,10 +5,10 @@
 build
 build-*
 build.log
-err
 tests
 test
 xx
 zz
 .vscode
 *.tgz
+cli

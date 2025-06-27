@@ -10,6 +10,13 @@ db.do ("PRAGMA journal_mode=PERSIST" );
 db.do ("PRAGMA synchronous = 0" );
 db.do ("PRAGMA locking_mode = EXCLUSIVE" );
 
+try {
+	db.do( "select 1+1zz" );
+
+} catch(err) {
+	console.log( "Got error right?", err );
+}
+
 db.makeTable( "create table a (a int PRIMARY KEY, b int )" );
 var n = 0;
 for( n = 0; n < 10; n++ ) {
