@@ -17,9 +17,10 @@ if( !sack )
   if( process.platform === 'browser' ) { // electron
       try {
 			if( gui && basePath )
-				process.env.PATH = basePath
-					+";"+__dirname+"\\build\\Release\\bin"
+				process.env.PATH = ''
+					+__dirname+"\\build\\Release\\bin"
 					+";"+__dirname+"\\build\\Release\\share\\SACK\\plugins"
+					+";"+basePath
           sack = require( "./build/Release/" + name );
       } catch( err ){
         errN.push(err);
@@ -27,9 +28,10 @@ if( !sack )
 		if( !sack )
           try {
 				if( gui && basePath )
-					process.env.PATH = basePath
-						+";"+__dirname+"\\build\\Debug\\bin"
+					process.env.PATH = ''
+						+__dirname+"\\build\\Debug\\bin"
 						+";"+__dirname+"\\build\\Debug\\share\\SACK\\plugins"
+						+";"+basePath
               sack = require( "./build/Debug/" + name );
           } catch( err ){
             errN.push(err);
@@ -37,9 +39,10 @@ if( !sack )
 		if( !sack )
 			try {
 				if( gui && basePath )
-					process.env.PATH = basePath
-						+";"+__dirname+"\\build\\RelWithDebInfo\\bin"
+					process.env.PATH = ''
+						+__dirname+"\\build\\RelWithDebInfo\\bin"
 						+";"+__dirname+"\\build\\RelWithDebInfo\\share\\SACK\\plugins"
+						+";"+basePath
 				sack = require( "./build/RelWithDebInfo/" + name );
 			} catch( err ){
             errN.push(err);
@@ -50,9 +53,10 @@ if( !sack )
 		   || ( Number(process.version.split('.')[0].split('v')[1]) >= 16 ) 
 		   || ( Number(process.version.split('.')[0].split('v')[1]) < 12 ) ) {
 			if( gui && basePath )
-				process.env.PATH = basePath
-					+";"+__dirname+"\\build\\Debug\\bin"
+				process.env.PATH = ''
+					+ __dirname+"\\build\\Debug\\bin"
 					+";"+__dirname+"\\build\\Debug\\share\\SACK\\plugins"
+					+";"+basePath
 			sack = require( "./build/Debug/" + name );
 		}
     } catch( err ){
@@ -62,9 +66,10 @@ if( !sack )
 	if( process.config.target_defaults.default_configuration === 'Release' ) {
 		try {
 			if( gui && basePath )
-				process.env.PATH = basePath
-					+";"+__dirname+"\\build\\RelWithDebInfo\\bin"
+				process.env.PATH = ''
+					+__dirname+"\\build\\RelWithDebInfo\\bin"
 					+";"+__dirname+"\\build\\RelWithDebInfo\\share\\SACK\\plugins"
+					+";"+basePath
           sack = require( "./build/RelWithDebInfo/" + name );
       } catch( err ){
         errN.push(err);
@@ -72,8 +77,8 @@ if( !sack )
 		if( !sack )
       try {
 			if( gui && basePath )
-				process.env.PATH = basePath
-					+";"+__dirname+"\\build\\Release\\bin"
+				process.env.PATH = ''
+					+__dirname+"\\build\\Release\\bin"
 					+";"+__dirname+"\\build\\Release\\share\\SACK\\plugins"
           sack = require( "./build/Release/" + name );
       } catch( err ){
@@ -84,9 +89,10 @@ if( !sack )
     if( !sack )
       try {
 			if( gui && basePath )
-				process.env.PATH = basePath
-					+";"+__dirname+"\\build\\RelWithDebInfo\\bin"
+				process.env.PATH = ''
+					+__dirname+"\\build\\RelWithDebInfo\\bin"
 					+";"+__dirname+"\\build\\RelWithDebInfo\\share\\SACK\\plugins"
+					+";"+basePath
           sack = require( "./build/RelWithDebInfo/" + name );
       } catch( err ){
         errN.push(err);
@@ -94,9 +100,10 @@ if( !sack )
     if( !sack )
       try {
 			if( gui && basePath )
-				process.env.PATH = basePath
-					+";"+__dirname+"\\build\\Debug\\bin"
+				process.env.PATH = ''
+					+__dirname+"\\build\\Debug\\bin"
 					+";"+__dirname+"\\build\\Debug\\share\\SACK\\plugins"
+					+";"+basePath
         sack = require( "./build/Debug/" + name );
       } catch( err ){
         errN.push(err);
@@ -104,9 +111,10 @@ if( !sack )
     if( !sack )
       try {
 			if( gui && basePath )
-				process.env.PATH = basePath
-					+";"+__dirname+"\\build\\Release\\bin"
+				process.env.PATH = ''
+					+__dirname+"\\build\\Release\\bin"
 					+";"+__dirname+"\\build\\Release\\share\\SACK\\plugins"
+					+";"+basePath
 			sack = require( "./build/Release/" + name );
       } catch( err ){
         errN.push(err);
@@ -120,7 +128,7 @@ if( !sack ) {
 		log( errN.join(',') );
 	}
 	const util = require('util');
-  throw new Error( util.format( "Failed to match configuration:", process && process.config && process.config.target_defaults && process.config.target_defaults.default_configuration, "\n", errN.join(',') ) );
+  throw new Error( util.format( "Failed to match configuration:", process && process.config && process.config.target_defaults && process.config.target_defaults.default_configuration, "\n", errN.join(',\n') ) );
 }
 
 module.exports=exports=sack;
