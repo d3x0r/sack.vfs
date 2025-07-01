@@ -54,7 +54,8 @@ void ThreadObject::relinquish( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	if( !c->ThreadObject_idleProc.IsEmpty() ) {
 		Local<Function>cb = Local<Function>::New( isolate, c->ThreadObject_idleProc );
-		MaybeLocal<Value> r = cb->Call( isolate->GetCurrentContext(), Null(isolate), 0, NULL );
+		//MaybeLocal<Value> r = 
+		cb->Call( isolate->GetCurrentContext(), Null(isolate), 0, NULL );
 	}
 	// r was always undefined.... so inner must wake.
 	//String::Utf8Value fName( r->ToString() );

@@ -766,7 +766,7 @@ void VolumeObject::changeDirectory( const v8::FunctionCallbackInfo<Value>& args 
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 		if( vol ) {
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			if( vol->volNative ) {
@@ -793,7 +793,7 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 		if( vol ) {
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			if( vol->volNative ) {
@@ -810,7 +810,7 @@ void VolumeObject::makeDirectory( const v8::FunctionCallbackInfo<Value>& args ){
 
 void VolumeObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-	//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+	//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 	//if( vol ) {
 		// this is a noop.  mmap is assumed commited if the memory is written to; and the process exists and closes the handles.
 	//}
@@ -821,7 +821,7 @@ void VolumeObject::isDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc > 0 ) {
-		VolumeObject* vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject* vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 		if( vol ) {
 			String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 			if( vol->volNative ) {
@@ -847,7 +847,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 		else {
 
-			VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked():args.Holder() );
+			VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked():getHolder(args) );
 			if( !vol->mountName )
 			{
 				isolate->ThrowException( Exception::Error(
@@ -866,7 +866,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		// Invoked as plain function `MyObject(...)`, turn into construct call.
-  		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked():args.Holder() );
+  		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( (argc > 1)?args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked():getHolder(args) );
   		if( !vol->mountName )
   		{
   			isolate->ThrowException( Exception::Error(
@@ -879,7 +879,7 @@ void VolumeObject::openVolDb( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
   		snprintf( dbName, 256, "$sack@%s$%s", vol->mountName, (*fName) );
   		argv[0] = String::NewFromUtf8( isolate, dbName, v8::NewStringType::kNormal ).ToLocalChecked();
-		argv[1] = args.Holder();
+		argv[1] = getHolder(args);
 		
 		args.GetReturnValue().Set( newSqlObject( isolate, argc, argv ) );
 		delete[] argv;
@@ -921,7 +921,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	void VolumeObject::fileReadJSON( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
@@ -1023,7 +1023,7 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	void VolumeObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
 				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open and data callback" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1161,7 +1161,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
@@ -1236,7 +1236,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void VolumeObject::fileReadString( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
@@ -1314,7 +1314,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void VolumeObject::fileReadMemory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 
 		if( args.Length() < 1 ) {
 			isolate->ThrowException( Exception::TypeError(
@@ -1365,7 +1365,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void VolumeObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 
 		if( args.Length() < 2 ) {
 			isolate->ThrowException( Exception::TypeError(
@@ -1489,7 +1489,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void VolumeObject::fileExists( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		if( vol->volNative ) {
 			args.GetReturnValue().Set( sack_vfs_exists( vol->vol, *fName ) );
@@ -1500,7 +1500,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 
 	void VolumeObject::renameFile( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
 		String::Utf8Value fNameTo( USE_ISOLATE( isolate )args[1] );
 		if( vol->volNative ) {
@@ -1513,7 +1513,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	
 	void VolumeObject::fileVolDelete( const FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
 		if( vol->volNative ) {
 			args.GetReturnValue().Set( Boolean::New( isolate, sack_vfs_unlink_file( vol->vol, *fName ) != 0 ) );
@@ -1532,7 +1532,7 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	void VolumeObject::getDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		Local<Context> context = isolate->GetCurrentContext();
-		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
+		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
 		struct find_cursor *fi;
 		if( args.Length() > 0 ) {
 			String::Utf8Value path( USE_ISOLATE( isolate )args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -2158,8 +2158,8 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 			// Invoked as constructor: `new MyObject(...)`
 			FileObject* obj;
 			if( args.Length() < 2 ) {
-				vol = ObjectWrap::Unwrap<VolumeObject>( args.Holder() );
-				obj = new FileObject( vol, *fName, isolate, args.Holder() );
+				vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
+				obj = new FileObject( vol, *fName, isolate, getHolder(args) );
 			}
 			else {
 				vol = ObjectWrap::Unwrap<VolumeObject>( args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -2185,7 +2185,7 @@ void FileObject::tellFile( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 		else {
 			const int argc = 2;
-			Local<Value> argv[argc] = { args[0], args.Holder() };
+			Local<Value> argv[argc] = { args[0], getHolder(args) };
 			class constructorSet *c = getConstructors( isolate );
 			Local<Function> cons = Local<Function>::New( isolate, c->fileConstructor );
 			MaybeLocal<Object> file = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );

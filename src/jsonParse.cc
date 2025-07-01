@@ -127,13 +127,13 @@ parseObject::~parseObject() {
 #define logTick(n) do { uint64_t tick = GetCPUTick(); if( n >= 0 ) timings.deltas[n] += tick-timings.start; timings.start = tick; } while(0)
 
 void parseObject::reset( const v8::FunctionCallbackInfo<Value>& args ) {
-	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	parseObject *parser = ObjectWrap::Unwrap<parseObject>( getHolder(args) );
 	json_parse_clear_state( parser->state );
 }
 
 void parseObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	parseObject *parser = ObjectWrap::Unwrap<parseObject>( getHolder( args ) );
 	int argc = args.Length();
 
 	String::Utf8Value* data_;
@@ -219,14 +219,14 @@ void parseObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 void parseObject::reset6( const v8::FunctionCallbackInfo<Value>& args ) {
-	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	parseObject* parser = ObjectWrap::Unwrap<parseObject>( getHolder(args) );
 	json_parse_clear_state( parser->state );
 }
 
 
 void parseObject::write6(const v8::FunctionCallbackInfo<Value>& args) {
 	Isolate* isolate = args.GetIsolate();
-	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	parseObject *parser = ObjectWrap::Unwrap<parseObject>( getHolder(args) );
 	int argc = args.Length();
 	String::Utf8Value* data_;
 	if( argc > 0 ) data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -309,14 +309,14 @@ void parseObject::New6( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 void parseObject::reset6v( const v8::FunctionCallbackInfo<Value>& args ) {
-	parseObject* parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	parseObject* parser = ObjectWrap::Unwrap<parseObject>( getHolder(args) );
 	vesl_parse_clear_state( parser->vstate );
 }
 
 
 void parseObject::write6v( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	parseObject *parser = ObjectWrap::Unwrap<parseObject>( args.Holder() );
+	parseObject *parser = ObjectWrap::Unwrap<parseObject>( getHolder(args) );
 	int argc = args.Length();
 	
 	String::Utf8Value *data_;
@@ -593,7 +593,7 @@ void parseJSON( const v8::FunctionCallbackInfo<Value>& args )
 
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
-			r._this = args.Holder();
+			r._this = getHolder(args);
 			r.value = String::NewFromUtf8Literal( r.isolate, "" );
 			r.reviver = Local<Function>::Cast( args[1] );
 			r.revive = TRUE;
@@ -699,7 +699,7 @@ void parseJSON6( const v8::FunctionCallbackInfo<Value>& args )
 	msg = *tmp;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
-			r._this = args.Holder();
+			r._this = getHolder(args);
 			r.value = String::NewFromUtf8Literal( r.isolate, "" );
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );
@@ -788,7 +788,7 @@ void parseJSON6v( const v8::FunctionCallbackInfo<Value>& args )
 	msg = *tmp;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
-			r._this = args.Holder();
+			r._this = getHolder(args);
 			r.value = String::NewFromUtf8Literal( r.isolate, "" );
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );

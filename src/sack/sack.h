@@ -10524,6 +10524,10 @@ NETWORK_PROC( struct ssh_session*, sack_ssh_session_init )( uintptr_t psv );
 * if the host string includes a port, it will be used instead of the port parameter
 */
 NETWORK_PROC( void, sack_ssh_session_connect )( struct ssh_session* session, CTEXTSTR host, int port, ssh_handshake_cb cb );
+typedef void (*ssh_session_read_cb)( uintptr_t psv, uint8_t *buffer, size_t length );
+typedef void (*ssh_session_write_cb)( uintptr_t psv, uint8_t *buffer, size_t length );
+ // connection wants to close
+typedef void (*ssh_session_close_cb)( uintptr_t psv );
 /*
 * enable debugging on a session
 */
@@ -15651,9 +15655,12 @@ SYSTRAY_PROC void ChangeIconEx( CTEXTSTR icon DBG_PASS );
 #define ChangeIcon(icon) ChangeIconEx( icon DBG_SRC )
 SYSTRAY_PROC void UnregisterIcon( void );
 SYSTRAY_PROC void SetIconDoubleClick( void (*DoubleClick)(void ) );
+SYSTRAY_PROC void SetIconDoubleClick_v2( void ( *DoubleClick )( uintptr_t ), uintptr_t );
 SYSTRAY_PROC void TerminateIcon( void );
-SYSTRAY_PROC void AddSystrayMenuFunction( CTEXTSTR text, void (CPROC*function)(void) );
-SYSTRAY_PROC void AddSystrayMenuFunction_v2( CTEXTSTR text, void (CPROC* function)(uintptr_t), uintptr_t );
+SYSTRAY_PROC INDEX AddSystrayMenuFunction( CTEXTSTR text, void (CPROC*function)(void) );
+SYSTRAY_PROC INDEX AddSystrayMenuFunction_v2( CTEXTSTR text, void( CPROC * function )( uintptr_t ), uintptr_t );
+SYSTRAY_PROC void CheckSystrayMenuItem( INDEX id, LOGICAL checked );
+SYSTRAY_PROC void SetSystrayMenuItemText( INDEX id, CTEXTSTR text );
 // this may be important one day!
 //void SetIconMenu( HMENU menu );
 // $Log: systray.h,v $
