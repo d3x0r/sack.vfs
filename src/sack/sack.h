@@ -9511,7 +9511,36 @@ PROCREG_PROC( PCLASSROOT, GetClassRootEx )( PCLASSROOT root, PCLASSROOT name_cla
 #endif
 /* Fills a string with the path name to the specified node */
 PROCREG_PROC( int, GetClassPath )( TEXTSTR out, size_t len, PCLASSROOT root );
+/* Sets the interface configuration file to be used by the
+	registry. This is the file that will be used to save the
+	configuration of the interface, and will be loaded at startup.
+	If this is not set, then the default interface configuration
+	file will be used.
+	Parameters
+	filename :  The name of the file to use for the interface
+	         configuration.  the file is duplicated, so the value
+			 may be deallocated after this.
+	Example
+	<code lang="c++">
+	char *filename = strdup( "my_interface.cfg" );
+	SetInterfaceConfigFile( filename );
+	free( filename );
+	</code>                                                                 */
 PROCREG_PROC( void, SetInterfaceConfigFile )( TEXTCHAR *filename );
+/* Sets the interface configuration file to be used by the
+	registry. This is the file that will be used to save the
+	configuration of the interface, and will be loaded at startup.
+	If this is not set, then the default interface configuration
+	file will be used.
+	Parameters
+	filename :  The name of the file to use for the interface
+	         configuration.  The pointer passed is retained,
+			 and is not duplicated.
+	Example
+	<code lang="c++">
+	  SetStaticInterfaceConfigFile( "my_interface.cfg" );
+	</code>                                                                 */
+PROCREG_PROC( void, SetStaticInterfaceConfigFile )( CTEXTSTR filename );
 /* Get[First/Next]RegisteredName( "classname", &amp;data );
    these operations are not threadsafe and multiple thread
    accesses will cause mis-stepping
@@ -15905,6 +15934,8 @@ typedef struct
 	CTEXTSTR lpFriendlyName;
 							 /* instance "Infrared serial port (COM4)" */
 	CTEXTSTR lpTechnology;
+	CTEXTSTR lpDevName;
+	CTEXTSTR lpDevNum;
 }LISTPORTS_PORTINFO;
 typedef LOGICAL (CPROC* ListPortsCallback)( uintptr_t psv, LISTPORTS_PORTINFO* lpPortInfo );
 /* User provided callback funtion that receives the information on each

@@ -506,7 +506,7 @@ endif()
 if( NOT CRYPTO_BACKEND )
     set(CRYPTO_BACKEND "LibreSSL")
     set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
-    set(CRYPTO_BACKEND_INCLUDE_DIR ../../libressl/3.9.2/include)
+    set(CRYPTO_BACKEND_INCLUDE_DIR ../../libressl/4.1.0/include)
     list(APPEND LIBRARIES ssl crypto tls )
 endif()
 
