@@ -281,10 +281,10 @@ class constructorSet {
 #ifdef _WIN32
 	uv_async_t serviceAsync; // keep this instance around for as long as we might need to do the periodic callback
 	uv_async_t wifiAsync;
+#endif
+
 	uv_async_t systrayAsync; // keep this instance around for as long as we might need to do the periodic callback
 	v8::Persistent<v8::Function> systrayItemConstructor;
-	
-#endif
 
 #ifdef INCLUDE_GUI
 	uv_async_t psiLocal_async;
