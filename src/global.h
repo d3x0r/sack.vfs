@@ -85,6 +85,12 @@
 #endif
 
 
+#if NODE_MAJOR_VERSION >= 24
+#  define getHolder( args ) ( args ).HolderV2()
+#else
+#  define getHolder(args) (args).Holder()
+#endif
+
 // probably didn't need the copyable persistent trait thing anyway?
 #if V8_MAJOR_VERSION >= 13 || ( V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 9 )
 #define PERSISTENT_FUNCTION Persistent<Function>
@@ -275,6 +281,9 @@ class constructorSet {
 #ifdef _WIN32
 	uv_async_t serviceAsync; // keep this instance around for as long as we might need to do the periodic callback
 	uv_async_t wifiAsync;
+	uv_async_t systrayAsync; // keep this instance around for as long as we might need to do the periodic callback
+	v8::Persistent<v8::Function> systrayItemConstructor;
+	
 #endif
 
 #ifdef INCLUDE_GUI

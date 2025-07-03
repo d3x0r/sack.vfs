@@ -23,6 +23,7 @@ struct eventState {
 };
 
 struct device {
+	int number;
 	char *name;
 	GUID guid;
 	DWORD status;
@@ -38,28 +39,22 @@ void getInterfaces_( ReturnValue<Value> *returnValue, Isolate *isolate, LOGICAL 
 		result = Array::New( isolate );
 	PWLAN_INTERFACE_INFO_LIST list;
 	WlanEnumInterfaces( hWlan, NULL, &list );
-
+	struct device *pDev;
+	INDEX idx;
+	LIST_FORALL( devices, idx, struct device *, pDev ) {
+		// delete all devices.
+		pDev->number = -1;
+	}
 	for( int i = 0; i < list->dwNumberOfItems; i++ ) {
-		Local<Object> intr;
-		if( buildObject ) {
-			Local<Context> context = isolate->GetCurrentContext();
-			intr = Object::New( isolate );
-			SET( intr, "device"
-			   , String::NewFromTwoByte( isolate, (uint16_t *)list->InterfaceInfo[ i ].strInterfaceDescription )
-			          .ToLocalChecked() );
-
-			SET( intr, "state", Number::New( isolate, list->InterfaceInfo[ i ].isState ) );
-		}
-		struct device *pDev;
-		INDEX idx;
 		LIST_FORALL( devices, idx, struct device *, pDev ) {
 			if( MemCmp( &pDev->guid, &list->InterfaceInfo[ i ].InterfaceGuid, sizeof( GUID ) ) == 0 ) {
+				pDev->number = i;
 				break;
 			}
 		}
 		if( !pDev ) {
 			pDev         = NewArray( struct device, 1 );
-			int x        = StringFromGUID2( list->InterfaceInfo[ i ].InterfaceGuid, (LPOLESTR)&pDev->GuidString
+			StringFromGUID2( list->InterfaceInfo[ i ].InterfaceGuid, (LPOLESTR)&pDev->GuidString
 			                              , sizeof( pDev->GuidString ) / sizeof( *pDev->GuidString ) );
 
 			pDev->name   = WcharConvert( list->InterfaceInfo[ i ].strInterfaceDescription );
@@ -85,49 +80,60 @@ void getInterfaces_( ReturnValue<Value> *returnValue, Isolate *isolate, LOGICAL 
 					lprintf( "Probably had bad key so this is bad? %d %p %s", dwStatus, hTemp, pValue );
 				RegCloseKey( hTemp );
 				StrCpyEx( pDev->friendlyname, pValue, sizeof( pDev->friendlyname ) );
-				if( buildObject ) {
-					Local<Context> context = isolate->GetCurrentContext();
-					SET( intr, "name"
-					   , String::NewFromUtf8( isolate, pDev->friendlyname, v8::NewStringType::kNormal ).ToLocalChecked() );
-				}
 			}
-			lprintf( "String:%d %ls %s", x, pDev->GuidString, pDev->friendlyname );
+			// lprintf( "String:%d %ls %s", x, pDev->GuidString, pDev->friendlyname );
 			AddLink( &devices, pDev );
+			pDev->number = FindLink( &devices, pDev );
+
 		}
 		pDev->status = list->InterfaceInfo[ i ].isState;
-		if( buildObject ) {
-			Local<Context> context = isolate->GetCurrentContext();
-			switch( list->InterfaceInfo[ i ].isState ) {
-			case wlan_interface_state_not_ready:
-				SET( intr, "status", String::NewFromUtf8Literal( isolate, "ready" ) );
-				break;
-			case wlan_interface_state_connected:
-				SET( intr, "status", String::NewFromUtf8Literal( isolate, "connected" ) );
-				break;
-			case wlan_interface_state_ad_hoc_network_formed:
-				SET( intr, "status", String::NewFromUtf8Literal( isolate, "adhoc" ) );
-				break;
-			case wlan_interface_state_disconnecting:
-				SET( intr, "status", String::NewFromUtf8Literal( isolate, "diconnecting" ) );
-				break;
-			case wlan_interface_state_disconnected:
-				SET( intr, "status", String::NewFromUtf8Literal( isolate, "disconnected" ) );
-				break;
-			case wlan_interface_state_associating:
-				SET( intr, "status", String::NewFromUtf8Literal( isolate, "associating" ) );
-				break;
-			case wlan_interface_state_discovering:
-				SET( intr, "status", String::NewFromUtf8Literal( isolate, "discovering" ) );
-				break;
-			case wlan_interface_state_authenticating:
-				SET( intr, "status", String::NewFromUtf8Literal( isolate, "authenticating" ) );
-				break;
-			}
-			// list->InterfaceInfo[i].
-			SETN( result, i, intr );
-		}
 	}
-	returnValue->Set( result );
+
+	if( buildObject ) LIST_FORALL( devices, idx, struct device *, pDev ) {
+			if( pDev->number < 0 )
+				continue; // not in the list.
+		Local<Context> context = isolate->GetCurrentContext();
+		Local<Object> intr;
+		intr = Object::New( isolate );
+		SET( intr, "device"
+			, String::NewFromUtf8/*NewFromTwoByte*/( isolate, pDev->name )
+			        .ToLocalChecked() );
+
+		SET( intr, "state", Number::New( isolate, pDev->status ) );
+
+		SET( intr, "name"
+			, String::NewFromUtf8( isolate, pDev->friendlyname, v8::NewStringType::kNormal ).ToLocalChecked() );
+		switch( pDev->status ) {
+		case wlan_interface_state_not_ready:
+			SET( intr, "status", String::NewFromUtf8Literal( isolate, "ready" ) );
+			break;
+		case wlan_interface_state_connected:
+			SET( intr, "status", String::NewFromUtf8Literal( isolate, "connected" ) );
+			break;
+		case wlan_interface_state_ad_hoc_network_formed:
+			SET( intr, "status", String::NewFromUtf8Literal( isolate, "adhoc" ) );
+			break;
+		case wlan_interface_state_disconnecting:
+			SET( intr, "status", String::NewFromUtf8Literal( isolate, "diconnecting" ) );
+			break;
+		case wlan_interface_state_disconnected:
+			SET( intr, "status", String::NewFromUtf8Literal( isolate, "disconnected" ) );
+			break;
+		case wlan_interface_state_associating:
+			SET( intr, "status", String::NewFromUtf8Literal( isolate, "associating" ) );
+			break;
+		case wlan_interface_state_discovering:
+			SET( intr, "status", String::NewFromUtf8Literal( isolate, "discovering" ) );
+			break;
+		case wlan_interface_state_authenticating:
+			SET( intr, "status", String::NewFromUtf8Literal( isolate, "authenticating" ) );
+			break;
+		}
+		// list->InterfaceInfo[i].
+		SETN( result, pDev->number, intr );
+	}
+	if( !result.IsEmpty() )
+		returnValue->Set( result );
 	WlanFreeMemory( list );
 
 }
@@ -140,19 +146,13 @@ void getInterfaces( Local<Name> property, const PropertyCallbackInfo<Value> &arg
 void connectWifi( const v8::FunctionCallbackInfo<Value> &args ) {
 	Isolate *isolate       = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	// Local<Object> options = args[0]->ToObject( context ).ToLocalChecked();
-	// BOOL option = options->TOBOOL( isolate );
-
-	DWORD WlanConnect( [in] HANDLE hClientHandle, [in] const GUID *pInterfaceGuid
-	                 , [in] const PWLAN_CONNECTION_PARAMETERS pConnectionParameters, PVOID pReserved );
 	DOT11_SSID ssid_data;
 	WLAN_CONNECTION_PARAMETERS params;
-	params.dot11BssType = dot11_BSS_type_any;
+	params.dot11BssType      = dot11_BSS_type_infrastructure; //dot11_BSS_type_any;
 	params.pDesiredBssidList = NULL;
 	params.dwFlags           = 0;
 	//params.dwFlags |= WLAN_CONNECTION_HIDDEN_NETWORK; // if the network is hidden
 	//params.dwFlags |= WLAN_CONNECTION_ADHOC_JOIN_ONLY; // if the network is adhoc
-	//params.dwFlags |= WLAN_CONNECTION_PERSIST;        // if the network should be persistent
 	//params.dwFlags |= WLAN_CONNECTION_IGNORE_PRIVACY_BIT;
 	//params.dwFlags |= WLAN_CONNECTION_EAPOL_PASSTHROUGH;
 	//params.dwFlags |= WLAN_CONNECTION_PERSIST_DISCOVERY_PROFILE; 
@@ -164,7 +164,11 @@ void connectWifi( const v8::FunctionCallbackInfo<Value> &args ) {
 	
 	if( args[ 0 ]->IsNumber() ) {
 		index = args[ 0 ]->ToInteger( context ).ToLocalChecked()->Value();
-		dev   = (struct device*)GetLink( &devices, index );
+		INDEX idx;
+		LIST_FORALL( devices, idx, struct device *, dev ) {
+			if( dev->number == index )
+				break;
+		}
 	} else {
 		String::Utf8Value devname( isolate, args[ 0 ]->ToString(context).ToLocalChecked() );
 		LIST_FORALL( devices, index, struct device *, dev ) {
@@ -186,7 +190,7 @@ void connectWifi( const v8::FunctionCallbackInfo<Value> &args ) {
 	params.strProfile = CharWConvert( *profile ); 
 	//lprintf( "Profile:%ls", params.strProfile );
 	params.pDot11Ssid = &ssid_data;
-	params.wlanConnectionMode = wlan_connection_mode_discovery_secure;
+	params.wlanConnectionMode = wlan_connection_mode_profile;
 	MemCpy( params.pDot11Ssid->ucSSID, *ssid, 32 );
 	//lprintf( "profile %s", *profile);
 	params.pDot11Ssid->uSSIDLength = StrLen( *ssid );
@@ -194,7 +198,7 @@ void connectWifi( const v8::FunctionCallbackInfo<Value> &args ) {
 	if( params.pDot11Ssid->uSSIDLength > 32 )
 		params.pDot11Ssid->uSSIDLength = 32;
 	
-	DWORD dwStausConnect = WlanConnect( hWlan, &dev->guid, &params, NULL );
+	DWORD dwStatusConnect = WlanConnect( hWlan, &dev->guid, &params, NULL );
 
 	args.GetReturnValue().Set( Integer::New( isolate, dwStatusConnect ) );
 	//lprintf( "Connect Failed? %d", dwStausConnect );
@@ -203,6 +207,43 @@ void connectWifi( const v8::FunctionCallbackInfo<Value> &args ) {
 
 }
 //static nStrings1 = {
+
+
+void disconnectWifi( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate       = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	// Local<Object> options = args[0]->ToObject( context ).ToLocalChecked();
+	// BOOL option = options->TOBOOL( isolate );
+
+	int index;
+	struct device *dev;
+
+	if( args[ 0 ]->IsNumber() ) {
+		index = args[ 0 ]->ToInteger( context ).ToLocalChecked()->Value();
+		INDEX idx;
+		LIST_FORALL( devices, idx, struct device *, dev ) {
+			if( dev->number == index )
+				break;
+		}
+	} else {
+		String::Utf8Value devname( isolate, args[ 0 ]->ToString( context ).ToLocalChecked() );
+		LIST_FORALL( devices, index, struct device *, dev ) {
+			// lprintf( "Looking for:%s %s", dev->friendlyname, *devname );
+			if( StrCmp( dev->friendlyname, *devname ) == 0 ) {
+				break;
+			}
+		}
+		if( !dev ) {
+			lprintf( "No Such Device: %s", *devname );
+			return;
+		}
+	}
+	DWORD dwStatusConnect = WlanDisconnect( hWlan, &dev->guid, NULL );
+
+	args.GetReturnValue().Set( Integer::New( isolate, dwStatusConnect ) );
+	// lprintf( "Connect Failed? %d", dwStausConnect );
+}
+
 
 static void handleNotifications( PWLAN_NOTIFICATION_DATA data, PVOID unused ) { 
 	/*
@@ -231,22 +272,26 @@ static void handleNotifications( PWLAN_NOTIFICATION_DATA data, PVOID unused ) {
 
 		}
 	}
-	if( data->pData 
-			&& data->NotificationCode != wlan_notification_acm_operational_state_change
-			&& ( data->NotificationCode != wlan_notification_acm_scan_complete || data->dwDataSize != 12 )
-			&& ( data->NotificationCode != wlan_notification_acm_scan_fail || data->dwDataSize != 4 )
-			&& data->NotificationCode != wlan_notification_acm_profile_unblocked
-			&& data->NotificationCode != wlan_notification_acm_connection_start
-			&& data->NotificationCode != wlan_notification_acm_disconnecting
-			&& data->NotificationCode != wlan_notification_acm_autoconf_enabled 
-			&& data->NotificationCode != wlan_notification_acm_autoconf_disabled
-	         && data->NotificationCode != wlan_notification_acm_background_scan_disabled 
-			&& data->NotificationCode != wlan_notification_acm_bss_type_change
-			&& data->NotificationCode != wlan_notification_acm_background_scan_enabled
-			&& data->NotificationCode != wlan_notification_acm_connection_complete
+	if( data->pData
+	  && data->NotificationCode != wlan_notification_acm_operational_state_change
+	  && ( data->NotificationCode != wlan_notification_acm_scan_complete || data->dwDataSize != 12 )
+	  && ( data->NotificationCode != wlan_notification_acm_scan_fail || data->dwDataSize != 4 )
+	  && data->NotificationCode != wlan_notification_acm_profile_unblocked
+	  && data->NotificationCode != wlan_notification_acm_connection_start
+	  && data->NotificationCode != wlan_notification_acm_disconnecting
+	  && data->NotificationCode != wlan_notification_acm_autoconf_enabled
+	  && data->NotificationCode != wlan_notification_acm_autoconf_disabled
+	  && data->NotificationCode != wlan_notification_acm_background_scan_disabled
+	  && data->NotificationCode != wlan_notification_acm_bss_type_change
+	  && data->NotificationCode != wlan_notification_acm_background_scan_enabled
+	  && data->NotificationCode != wlan_notification_acm_connection_complete
 	  && data->NotificationCode != wlan_notification_acm_disconnected
-		)
-		lprintf( "Event has extra data with it: %d %d %d", data->dwDataSize, data->NotificationSource, data->NotificationCode );
+	  && data->NotificationCode != wlan_notification_acm_connection_attempt_fail
+	  && data->NotificationCode != 0x10000002 //
+	)
+		;  // this was debugging to catch information that might be useful... I think I'm happy now with what I do know...
+		//lprintf( "Event has extra data with it: %d %d %d", data->dwDataSize, data->NotificationSource
+		//       , data->NotificationCode );
 	struct device *pDev;
 	INDEX idx;
 	char *text_msgbuf = NULL;
@@ -264,9 +309,9 @@ static void handleNotifications( PWLAN_NOTIFICATION_DATA data, PVOID unused ) {
 			}
 		}
 		if( !pDev ) {
-			lprintf( "Found a new device? do a new enum?" );
+			//lprintf( "Found a new device? do a new enum?" );
+			return;
 		}
-		return;
 	}
 
 
@@ -336,6 +381,8 @@ static void handleNotifications( PWLAN_NOTIFICATION_DATA data, PVOID unused ) {
 		INDEX idx;
 		struct eventState *es;
 		LIST_FORALL( eventStates, idx, struct eventState *, es ) {
+			if( es->cb.IsEmpty() )
+				continue;
 			struct wifi_event_message *msgbuf
 			     = NewPlus( struct wifi_event_message, sizeof( wifi_event_message ) + data->dwDataSize );
 			msgbuf->notice         = *data;
@@ -384,8 +431,7 @@ static void wifi_asyncmsg__( Isolate *isolate, Local<Context> context, struct ev
 				break;
 			}
 		}
-	
-		SET( event, "interface", Integer::New( isolate, idx ) );
+		SET( event, "interface", Integer::New( isolate, pDev?pDev->number:-2 ) );
 		SET( event, "source", Integer::New( isolate, msg->notice.NotificationSource ) );
 		SET( event, "sourceText", String::NewFromUtf8( isolate, msg->source ).ToLocalChecked() );
 		SET( event, "code", Integer::New( isolate, msg->notice.NotificationCode ) );
@@ -398,6 +444,11 @@ static void wifi_asyncmsg__( Isolate *isolate, Local<Context> context, struct ev
 				SET( event, "index", Integer::New( isolate, ( (ULONG *)msg->notice.pData )[ 0 ] ) );
 				SET( event, "v1", Integer::New( isolate, ( (ULONG *)msg->notice.pData )[ 1 ] ) );
 				SET( event, "v2", Integer::New( isolate, ( (ULONG *)msg->notice.pData )[ 2 ] ) );
+			} else {
+				// no results?
+				SET( event, "index", Integer::New( isolate, -1 ) );
+				SET( event, "v1", Integer::New( isolate, -1 ) );
+				SET( event, "v2", Integer::New( isolate, -1 ) );
 			}
 		} else if( msg->notice.NotificationCode == wlan_notification_acm_profile_unblocked ) {
 			SET( event, "name", String::NewFromTwoByte( isolate, (uint16_t *) (((ULONG*)msg->notice.pData)+1) ).ToLocalChecked() );
@@ -410,6 +461,7 @@ static void wifi_asyncmsg__( Isolate *isolate, Local<Context> context, struct ev
 			|| msg->notice.NotificationCode == wlan_notification_acm_background_scan_enabled
 		         || msg->notice.NotificationCode == wlan_notification_acm_connection_complete
 		         || msg->notice.NotificationCode == wlan_notification_acm_disconnected
+		         || msg->notice.NotificationCode == wlan_notification_acm_connection_attempt_fail
 			) {
 			if( msg->notice.pData ) {
 				struct buf {
@@ -453,11 +505,19 @@ static void registerEventCallback( const v8::FunctionCallbackInfo<Value> &args )
 	class constructorSet *c = getConstructors( isolate );
 	INDEX idx;
 	struct eventState *es;
+	// wait until someone wants events to register for events.
+
 	LIST_FORALL( eventStates, idx, struct eventState *, es ) {
 		if( es->c == c ) {
 			break;
 		}
 	}
+
+	if( es && !es->c->wifiAsync.data ) {
+		es->c->wifiAsync.data = es;
+		uv_async_init( c->loop, &c->wifiAsync, handleWifiMsg );
+	}
+
 
 	if( args.Length() > 0 && args[ 0 ]->IsFunction() ) {
 		Local<Function> cb = Local<Function>::Cast( args[ 0 ] );
@@ -473,11 +533,9 @@ void InitWifiInterface( Isolate *isolate, Local<Object>exports ){
 	Local<Context> context = isolate->GetCurrentContext();
 	constructorSet *c          = getConstructors(isolate);
 	struct eventState *es      = new eventState();
-	c->wifiAsync.data          = es;
 	es->c                      = c;
 	es->eventQueue             = CreateLinkQueue();
 	AddLink( &eventStates, es );
-	uv_async_init( c->loop, &c->wifiAsync, handleWifiMsg );
 
 	Local<Object> o2 = Object::New( isolate );
 
@@ -493,6 +551,7 @@ void InitWifiInterface( Isolate *isolate, Local<Object>exports ){
 	SET_READONLY_METHOD( o2, "onEvent", registerEventCallback );
 
 	SET_READONLY_METHOD( o2, "connect", connectWifi );
+	SET_READONLY_METHOD( o2, "disconnect", disconnectWifi );
 	SET_READONLY( exports, "WIFI", o2 );
 }
 

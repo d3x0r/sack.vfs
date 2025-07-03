@@ -58,3 +58,10 @@ The callback function is passed an event object with the following fields
 
 returns with numeric error code, 0 is ERROR_SUCCESS
 
+
+## Disconnect
+
+`sack.WIFI.connect( device number or name )`
+
+returns with numeric error code, 0 is ERROR_SUCCESS
+
