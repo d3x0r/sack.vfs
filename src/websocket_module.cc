@@ -2909,9 +2909,15 @@ static void ParseWssHostOption( struct optionStrings *strings
 	}
 
 	if( hostOpt->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		newOpt->cert_chain = StrDup( *cert );
-		newOpt->cert_chain_len = cert.length();
+		Local<Value> val = GETV( hostOpt, optName );
+		if( val->IsNull() ) {
+			newOpt->cert_chain = NULL;
+			newOpt->cert_chain_len = 0;
+		} else {
+			String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			newOpt->cert_chain = StrDup( *cert );
+			newOpt->cert_chain_len = cert.length();
+		}
 	}
 
 	if( hostOpt->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
