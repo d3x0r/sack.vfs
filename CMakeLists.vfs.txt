@@ -434,7 +434,7 @@ ENDFOREACH()
 endif( EXISTS ${SACK_BASE} )
 
 
-   set( LIBRESSL_VERSION 3.9.2 )
+   set( LIBRESSL_VERSION 4.1.0 )
 	set( LIBRESSL_SKIP_INSTALL ON CACHE BOOL "" )
 	set( LIBRESSL_APPS OFF CACHE BOOL "" )
 	set( LIBRESSL_TESTS OFF CACHE BOOL "" )
@@ -528,7 +528,7 @@ SET( C_SOURCES
    set( LIBSSH2_BUILD_TESTING OFF ) 
    SET( ENABLE_ZLIB_COMPRESSION ON )
    
-   SET( OPENSSL_ROOT_DIR ../libressl/3.9.2 )
+   SET( OPENSSL_ROOT_DIR ../libressl/${LIBRESSL_VERSION} )
    add_subdirectory( src/sack/libssh2 )
    include_directories( src/sack/libssh2/include )
    
