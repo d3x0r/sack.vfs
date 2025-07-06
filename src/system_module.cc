@@ -272,6 +272,11 @@ static void exitAsyncMsg( uv_async_t* handle ) {
 	exitAsyncMsg_( c->isolate, c->isolate->GetCurrentContext(), c );
 }
 
+static void setProgramName( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	String::Utf8Value what( args.GetIsolate(), args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	SetProgramName( *what );
+}
 
 static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
@@ -545,6 +550,9 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   NODE_SET_METHOD( systemInterface, "reboot", reboot );
   NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
   NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
+  // used for name of event 'enableExitSignal'
+  // and to somehow distinguish between 'node' and 'node'
+  NODE_SET_METHOD( systemInterface, "setProgramName", setProgramName );
 #ifdef _WIN32
   //SET_READONLY_METHOD( systemInterface, "createConsole", create );
   SET_READONLY_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
