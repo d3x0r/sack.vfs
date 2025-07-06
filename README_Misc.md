@@ -15,6 +15,7 @@ Interface to the SACK System Library.  This provides some views into internal in
 |dumpMemory | (verbose,filename) | Dump C allocated memory.  `verbose` and `filename` are both optional.  `verbose` enables dumping each block. `filename` dumps the log to the specified file. |
 |logMemory | (true/false) | Enable logging allocation and deallocation/releases. (when compiled with _DEBUG which is CMAKE_BUILD_TYPE Debug or RelWithDebInfo)|
 |debugMemory | (true/false) | Enable additional debug tracking of memory blocks - on release stamps with a signature, and compares the sigutures later for out of bounds or update after free happes. Similarly blocks that are allocates are definitely not 0, and are stamped with a signagure |
+|setProgramName | (string) | Used to condition what the name of the program is rather than 'node' which would be the default for most applications. |
 |enableExitSignal | (cb) | (Windows Only) Enable a callback which can be called when process exit event is triggered.  This disables the automatic exit, so this function should invoke process.exit() (The event cannot be triggered again). |
 |hideCursor | (timeout) | (Windows Only) Enables hiding the mouse cursor if it is stationary for an amount of time. Timeout parameter is in milliseconds |
 
