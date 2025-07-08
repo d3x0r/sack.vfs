@@ -243,35 +243,6 @@ static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 #endif
 
-static void exitAsyncMsg_( Isolate *isolate, Local<Context>context, constructorSet *c );
-struct exitAsyncTask: SackTask {
-	constructorSet *c;
-	exitAsyncTask( constructorSet *c ) : c( c ) {}
-	void Run2(Isolate *isolate, Local<Context>context) {
-		exitAsyncMsg_( isolate, context, c );
-	}
-};
-
-static int exitEvent( uintptr_t psv ) {
-	class constructorSet* c = (class constructorSet*)psv;
-	if( c->ivm_holder )
-		c->ivm_post( c->ivm_holder, std::make_unique<exitAsyncTask>( c ) );
-	uv_async_send( &c->exitAsync );
-	return 1; // don't exit yet; dispatch the event instead.
-}
-
-void exitAsyncMsg_( Isolate *isolate, Local<Context>context, constructorSet *c ) {
-	if( !c->exitCallback.IsEmpty() ) {
-		c->exitCallback.Get( c->isolate )->Call( context, Null( c->isolate ), 0, NULL );
-	}
-}
-
-static void exitAsyncMsg( uv_async_t* handle ) {
-	class constructorSet* c = (class constructorSet* )handle->data;
-	HandleScope scope( c->isolate );
-	exitAsyncMsg_( c->isolate, c->isolate->GetCurrentContext(), c );
-}
-
 HCURSOR hCursor;
 #define ALL_CURSORS 17
 int oldCursors[ALL_CURSORS] = {
@@ -517,6 +488,34 @@ static void getProgramName( Local<Name> name, const v8::PropertyCallbackInfo<Val
 	Isolate *isolate = args.GetIsolate();
 	Local<String> what( String::NewFromUtf8( isolate, GetProgramName() ).ToLocalChecked() );
 	args.GetReturnValue().Set( what );
+}
+
+static void exitAsyncMsg_( Isolate *isolate, Local<Context> context, constructorSet * c );
+struct exitAsyncTask : SackTask {
+	constructorSet *c;
+	exitAsyncTask( constructorSet *c )
+	    : c( c ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { exitAsyncMsg_( isolate, context, c ); }
+};
+
+static int exitEvent( uintptr_t psv ) {
+	class constructorSet *c = (class constructorSet *)psv;
+	if( c->ivm_holder )
+		c->ivm_post( c->ivm_holder, std::make_unique<exitAsyncTask>( c ) );
+	uv_async_send( &c->exitAsync );
+	return 1; // don't exit yet; dispatch the event instead.
+}
+
+void exitAsyncMsg_( Isolate *isolate, Local<Context> context, constructorSet * c ) {
+	if( !c->exitCallback.IsEmpty() ) {
+		c->exitCallback.Get( c->isolate )->Call( context, Null( c->isolate ), 0, NULL );
+	}
+}
+
+static void exitAsyncMsg( uv_async_t *handle ) {
+	class constructorSet *c = (class constructorSet *)handle->data;
+	HandleScope scope( c->isolate );
+	exitAsyncMsg_( c->isolate, c->isolate->GetCurrentContext(), c );
 }
 
 static void enableExitEvent( const v8::FunctionCallbackInfo<Value> &args ) {
