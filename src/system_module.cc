@@ -545,23 +545,23 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
 
   //regInterface->Set( String::NewFromUtf8Literal( isolate, "get" ),
 
-  NODE_SET_METHOD( systemInterface, "enableThreadFileSystem", enableThreadFS );
-  NODE_SET_METHOD( systemInterface, "allowSpawn", allowSpawn );
-  NODE_SET_METHOD( systemInterface, "disallowSpawn", disallowSpawn );
-  NODE_SET_METHOD( systemInterface, "openMemory", openMemory );
-  NODE_SET_METHOD( systemInterface, "logMemory", logMemory );
-  NODE_SET_METHOD( systemInterface, "debugMemory", debugMemory );
-  NODE_SET_METHOD( systemInterface, "createMemory", createMemory );
-  NODE_SET_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
-  NODE_SET_METHOD( systemInterface, "reboot", reboot );
-  NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
-  NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
+  SET_READONLY_METHOD( systemInterface, "enableThreadFileSystem", enableThreadFS );
+  SET_READONLY_METHOD( systemInterface, "allowSpawn", allowSpawn );
+  SET_READONLY_METHOD( systemInterface, "disallowSpawn", disallowSpawn );
+  SET_READONLY_METHOD( systemInterface, "openMemory", openMemory );
+  SET_READONLY_METHOD( systemInterface, "logMemory", logMemory );
+  SET_READONLY_METHOD( systemInterface, "debugMemory", debugMemory );
+  SET_READONLY_METHOD( systemInterface, "createMemory", createMemory );
+  SET_READONLY_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
+  SET_READONLY_METHOD( systemInterface, "reboot", reboot );
+  SET_READONLY_METHOD( systemInterface, "dumpMemory", dumpMemory );
+  SET_READONLY_METHOD( systemInterface, "testCritSec", testCritSec );
   // used for name of event 'enableExitSignal'
   // and to somehow distinguish between 'node' and 'node'
   //NODE_SET_METHOD( systemInterface, "setProgramName", setProgramName );
+  SET_READONLY_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
 #ifdef _WIN32
   //SET_READONLY_METHOD( systemInterface, "createConsole", create );
-  SET_READONLY_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
   SET_READONLY_METHOD( systemInterface, "hideCursor", hideCursor );
   SET_READONLY_METHOD( systemInterface, "isElevated", isElevated );
   SET_READONLY_METHOD( systemInterface, "triggerLogin", beginWindowsShell );
