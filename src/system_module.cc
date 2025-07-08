@@ -272,36 +272,6 @@ static void exitAsyncMsg( uv_async_t* handle ) {
 	exitAsyncMsg_( c->isolate, c->isolate->GetCurrentContext(), c );
 }
 
-static void setProgramName( Local<Name> name, Local<Value> value, const v8::PropertyCallbackInfo<void> &args ) {
-	Isolate* isolate = args.GetIsolate();
-	String::Utf8Value what( isolate, value->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-	SetProgramName( StrDup( *what ) );
-}
-
-static void getProgramName( Local<Name> name, const v8::PropertyCallbackInfo<Value> &args ) {
-	Isolate *isolate = args.GetIsolate();
-	Local<String> what( String::NewFromUtf8( isolate, GetProgramName() ).ToLocalChecked() );
-	args.GetReturnValue().Set( what );
-}
-
-static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	if( !local.enabledExit ) {
-		EnableExitEvent();
-		local.enabledExit = TRUE;
-	}
-	//lprintf( "Setting callback with isolate:%p", isolate );
-	class constructorSet* c = getConstructors( isolate );
-	AddKillSignalCallback( exitEvent, (uintptr_t)c );
-	if( c->ivm_holder ) {
-		;// all information is in `c` and that's what's used as argument
-	}else
-		uv_async_init( c->loop, &c->exitAsync, exitAsyncMsg );
-	c->exitAsync.data = c;
-	if( args.Length() > 0 )
-		c->exitCallback.Reset( isolate, Local<Function>::Cast( args[0]) );
-}
-
 HCURSOR hCursor;
 #define ALL_CURSORS 17
 int oldCursors[ALL_CURSORS] = {
@@ -537,6 +507,35 @@ static void hideCursor( const v8::FunctionCallbackInfo<Value>& args ) {
 #endif
 
 
+static void setProgramName( Local<Name> name, Local<Value> value, const v8::PropertyCallbackInfo<void> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	String::Utf8Value what( isolate, value->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	SetProgramName( StrDup( *what ) );
+}
+
+static void getProgramName( Local<Name> name, const v8::PropertyCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	Local<String> what( String::NewFromUtf8( isolate, GetProgramName() ).ToLocalChecked() );
+	args.GetReturnValue().Set( what );
+}
+
+static void enableExitEvent( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	if( !local.enabledExit ) {
+		EnableExitEvent();
+		local.enabledExit = TRUE;
+	}
+	// lprintf( "Setting callback with isolate:%p", isolate );
+	class constructorSet *c = getConstructors( isolate );
+	AddKillSignalCallback( exitEvent, (uintptr_t)c );
+	if( c->ivm_holder ) {
+		; // all information is in `c` and that's what's used as argument
+	} else
+		uv_async_init( c->loop, &c->exitAsync, exitAsyncMsg );
+	c->exitAsync.data = c;
+	if( args.Length() > 0 )
+		c->exitCallback.Reset( isolate, Local<Function>::Cast( args[ 0 ] ) );
+}
 
 void SystemInit( Isolate* isolate, Local<Object> exports )
 {
