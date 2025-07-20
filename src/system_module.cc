@@ -243,59 +243,6 @@ static void create( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 #endif
 
-static void exitAsyncMsg_( Isolate *isolate, Local<Context>context, constructorSet *c );
-struct exitAsyncTask: SackTask {
-	constructorSet *c;
-	exitAsyncTask( constructorSet *c ) : c( c ) {}
-	void Run2(Isolate *isolate, Local<Context>context) {
-		exitAsyncMsg_( isolate, context, c );
-	}
-};
-
-static int exitEvent( uintptr_t psv ) {
-	class constructorSet* c = (class constructorSet*)psv;
-	if( c->ivm_holder )
-		c->ivm_post( c->ivm_holder, std::make_unique<exitAsyncTask>( c ) );
-	uv_async_send( &c->exitAsync );
-	return 1; // don't exit yet; dispatch the event instead.
-}
-
-void exitAsyncMsg_( Isolate *isolate, Local<Context>context, constructorSet *c ) {
-	if( !c->exitCallback.IsEmpty() ) {
-		c->exitCallback.Get( c->isolate )->Call( context, Null( c->isolate ), 0, NULL );
-	}
-}
-
-static void exitAsyncMsg( uv_async_t* handle ) {
-	class constructorSet* c = (class constructorSet* )handle->data;
-	HandleScope scope( c->isolate );
-	exitAsyncMsg_( c->isolate, c->isolate->GetCurrentContext(), c );
-}
-
-static void setProgramName( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	String::Utf8Value what( args.GetIsolate(), args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-	SetProgramName( *what );
-}
-
-static void enableExitEvent( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	if( !local.enabledExit ) {
-		EnableExitEvent();
-		local.enabledExit = TRUE;
-	}
-	//lprintf( "Setting callback with isolate:%p", isolate );
-	class constructorSet* c = getConstructors( isolate );
-	AddKillSignalCallback( exitEvent, (uintptr_t)c );
-	if( c->ivm_holder ) {
-		;// all information is in `c` and that's what's used as argument
-	}else
-		uv_async_init( c->loop, &c->exitAsync, exitAsyncMsg );
-	c->exitAsync.data = c;
-	if( args.Length() > 0 )
-		c->exitCallback.Reset( isolate, Local<Function>::Cast( args[0]) );
-}
-
 HCURSOR hCursor;
 #define ALL_CURSORS 17
 int oldCursors[ALL_CURSORS] = {
@@ -531,6 +478,63 @@ static void hideCursor( const v8::FunctionCallbackInfo<Value>& args ) {
 #endif
 
 
+static void setProgramName( Local<Name> name, Local<Value> value, const v8::PropertyCallbackInfo<void> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	String::Utf8Value what( isolate, value->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	SetProgramName( StrDup( *what ) );
+}
+
+static void getProgramName( Local<Name> name, const v8::PropertyCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	Local<String> what( String::NewFromUtf8( isolate, GetProgramName() ).ToLocalChecked() );
+	args.GetReturnValue().Set( what );
+}
+
+static void exitAsyncMsg_( Isolate *isolate, Local<Context> context, constructorSet * c );
+struct exitAsyncTask : SackTask {
+	constructorSet *c;
+	exitAsyncTask( constructorSet *c )
+	    : c( c ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) { exitAsyncMsg_( isolate, context, c ); }
+};
+
+static int exitEvent( uintptr_t psv ) {
+	class constructorSet *c = (class constructorSet *)psv;
+	if( c->ivm_holder )
+		c->ivm_post( c->ivm_holder, std::make_unique<exitAsyncTask>( c ) );
+	uv_async_send( &c->exitAsync );
+	return 1; // don't exit yet; dispatch the event instead.
+}
+
+void exitAsyncMsg_( Isolate *isolate, Local<Context> context, constructorSet * c ) {
+	if( !c->exitCallback.IsEmpty() ) {
+		c->exitCallback.Get( c->isolate )->Call( context, Null( c->isolate ), 0, NULL );
+	}
+}
+
+static void exitAsyncMsg( uv_async_t *handle ) {
+	class constructorSet *c = (class constructorSet *)handle->data;
+	HandleScope scope( c->isolate );
+	exitAsyncMsg_( c->isolate, c->isolate->GetCurrentContext(), c );
+}
+
+static void enableExitEvent( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	if( !local.enabledExit ) {
+		EnableExitEvent();
+		local.enabledExit = TRUE;
+	}
+	// lprintf( "Setting callback with isolate:%p", isolate );
+	class constructorSet *c = getConstructors( isolate );
+	AddKillSignalCallback( exitEvent, (uintptr_t)c );
+	if( c->ivm_holder ) {
+		; // all information is in `c` and that's what's used as argument
+	} else
+		uv_async_init( c->loop, &c->exitAsync, exitAsyncMsg );
+	c->exitAsync.data = c;
+	if( args.Length() > 0 )
+		c->exitCallback.Reset( isolate, Local<Function>::Cast( args[ 0 ] ) );
+}
 
 void SystemInit( Isolate* isolate, Local<Object> exports )
 {
@@ -539,23 +543,23 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
 
   //regInterface->Set( String::NewFromUtf8Literal( isolate, "get" ),
 
-  NODE_SET_METHOD( systemInterface, "enableThreadFileSystem", enableThreadFS );
-  NODE_SET_METHOD( systemInterface, "allowSpawn", allowSpawn );
-  NODE_SET_METHOD( systemInterface, "disallowSpawn", disallowSpawn );
-  NODE_SET_METHOD( systemInterface, "openMemory", openMemory );
-  NODE_SET_METHOD( systemInterface, "logMemory", logMemory );
-  NODE_SET_METHOD( systemInterface, "debugMemory", debugMemory );
-  NODE_SET_METHOD( systemInterface, "createMemory", createMemory );
-  NODE_SET_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
-  NODE_SET_METHOD( systemInterface, "reboot", reboot );
-  NODE_SET_METHOD( systemInterface, "dumpMemory", dumpMemory );
-  NODE_SET_METHOD( systemInterface, "testCritSec", testCritSec );
+  SET_READONLY_METHOD( systemInterface, "enableThreadFileSystem", enableThreadFS );
+  SET_READONLY_METHOD( systemInterface, "allowSpawn", allowSpawn );
+  SET_READONLY_METHOD( systemInterface, "disallowSpawn", disallowSpawn );
+  SET_READONLY_METHOD( systemInterface, "openMemory", openMemory );
+  SET_READONLY_METHOD( systemInterface, "logMemory", logMemory );
+  SET_READONLY_METHOD( systemInterface, "debugMemory", debugMemory );
+  SET_READONLY_METHOD( systemInterface, "createMemory", createMemory );
+  SET_READONLY_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
+  SET_READONLY_METHOD( systemInterface, "reboot", reboot );
+  SET_READONLY_METHOD( systemInterface, "dumpMemory", dumpMemory );
+  SET_READONLY_METHOD( systemInterface, "testCritSec", testCritSec );
   // used for name of event 'enableExitSignal'
   // and to somehow distinguish between 'node' and 'node'
-  NODE_SET_METHOD( systemInterface, "setProgramName", setProgramName );
+  //NODE_SET_METHOD( systemInterface, "setProgramName", setProgramName );
+  SET_READONLY_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
 #ifdef _WIN32
   //SET_READONLY_METHOD( systemInterface, "createConsole", create );
-  SET_READONLY_METHOD( systemInterface, "enableExitSignal", enableExitEvent );
   SET_READONLY_METHOD( systemInterface, "hideCursor", hideCursor );
   SET_READONLY_METHOD( systemInterface, "isElevated", isElevated );
   SET_READONLY_METHOD( systemInterface, "triggerLogin", beginWindowsShell );
@@ -563,6 +567,11 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   SET_READONLY_METHOD( systemInterface, "lock", lockStation );
   SET_READONLY_METHOD( systemInterface, "disableTaskManager", disableTaskManager );
 #endif
+
+  systemInterface->SetNativeDataProperty(
+	    context, String::NewFromUtf8Literal( isolate, "programName" ), getProgramName, setProgramName
+	    , Local<Value>(), PropertyAttribute::None, SideEffectType::kHasSideEffect, SideEffectType::kHasSideEffect );
+
 
   SET( exports, "system", systemInterface );
 
