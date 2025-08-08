@@ -259,8 +259,18 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.122(in progress)
-- 1.3.121(in progress)
+- 1.3.123(in progress)
+- 1.3.122
+   - Add to windows WIFI interface to allow scripts to monitor, connect, and disconnect the wifi device given existing configurations.
+   - Protect against null tick callback.
+   - Improve windows system tray icon interface; allow changing the text of menu items after creating them, apply check mark to menu items, sort the items so the program name is on top and exit is last.
+   - Add ability to set program name, which affects what the default system tray icon title is.
+   - Improve windows keyboard/mouse interface to support multiple instances of the event handlers.
+   - Improve COM port interface to get more information about the COM port.
+   - Restore ability to open second listener for any address to listen on ::0 and 0.0.0.0.  Otherwise the listener will listen to only the specified address.
+   - Updated libssh2, libressl.
+   - Improve HTTPS hosting with multiple certificates.
+- 1.3.121
    - Implements interface compatible with isolated-vm.
    - Adds some utility functions to support isolated-vm; setTimeout and setInterval for examples.
    - Fixes some small limits of set size in SACK threads; migrate small dynamic object THREAD_EVENT to a set managed object.

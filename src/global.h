@@ -85,10 +85,10 @@
 #endif
 
 
-#if NODE_MAJOR_VERSION >= 24
+#if V8_MAJOR_VERSION >= 14
 #  define getHolder( args ) ( args ).HolderV2()
 #else
-#  define getHolder(args) (args).Holder()
+#  define getHolder(args) (args).This()
 #endif
 
 // probably didn't need the copyable persistent trait thing anyway?
