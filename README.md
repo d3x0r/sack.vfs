@@ -259,7 +259,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.123(in progress)
+- 1.3.124(in progress)
+- 1.3.123
+   = Apply actual fix for libressl clang windows build.
 - 1.3.122
    - Add to windows WIFI interface to allow scripts to monitor, connect, and disconnect the wifi device given existing configurations.
    - Protect against null tick callback.
