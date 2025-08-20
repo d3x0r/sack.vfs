@@ -122,6 +122,9 @@ const extMap = { '.js': 'text/javascript'
 		, ".gltf":"model/gltf+json"
 		, ".glb":"model/gltf+binary"
 		, ".obj":"model/obj"
+		, ".bin":"application/octet-stream"
+		, ".mtl":"model/mtl"
+
 		}
 
 const requests = [];
