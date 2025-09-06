@@ -625,7 +625,7 @@ set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_E
 
 target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${NODE_LIBS} libssh2 )
 if( WIN32 )
-   target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui wlanapi )
+   target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui wlanapi Cfgmgr32 Setupapi )
 endif( WIN32 )
 if( UNIX )
    target_link_libraries( ${PROJECT} odbc	 )
