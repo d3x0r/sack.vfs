@@ -1,9 +1,24 @@
 
 #include "global.h"
 
+#ifdef _WIN32
+// device something?
+#include <dbt.h>
+#include <cfgmgr32.h> 
+#include <initguid.h>
+#include <devpkey.h>
+#include <setupapi.h>
+#endif
+
+enum msgbuf_op {
+	MSG_OP_DATA = 0,
+	MSG_OP_CLOSE,
+	MSG_OP_REMOVE,
+	MSG_OP_ADDED,
+};
 
 struct msgbuf {
-	int closeEvent;
+	int op;
 	size_t buflen;
 	uint8_t buf[1];
 };
@@ -22,20 +37,28 @@ struct comAsyncTask : SackTask {
 class ComObject : public node::ObjectWrap {
 public:
 	bool ivm_hosted = false;
+	static bool _ivm_hosted;
 	class constructorSet *c;
+	static class constructorSet* _c;
 	int handle;
 	char* name;
 	//static Persistent<Function> constructor;
 	bool rts = 1;
 	Persistent<Function>* readCallback; //
+	static Persistent<Function> removeCallback; //
+	static Persistent<Function> addCallback; //
 	uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
+	static uv_async_t _async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE readQueue;
+	static PLINKQUEUE _readQueue;
 
 public:
 
 	static void Init( Local<Object> exports );
 	ComObject( char* name );
 	Persistent<Object> jsObject;
+	static void onRemove(Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& info);
+	static void onAdd(Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& info);
 
 private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
@@ -50,12 +73,20 @@ private:
 	~ComObject();
 };
 
+Persistent<Function> ComObject::removeCallback; //
+Persistent<Function> ComObject::addCallback; //
+uv_async_t ComObject::_async; // keep this instance around for as long as we might need to do the periodic callback
+class constructorSet* ComObject::_c;
+bool ComObject::_ivm_hosted = false;
+PLINKQUEUE ComObject::_readQueue;
 
 
 ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
 	this->name = name;
 	handle = SackOpenComm( name, 0, 0 );
+	uintptr_t CPROC RegisterAndCreateMonitor(PTHREAD thread);
+	ThreadTo( RegisterAndCreateMonitor, 0 );
 }
 
 ComObject::~ComObject() {
@@ -77,7 +108,8 @@ void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<Context> context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> comTemplate;
-
+		void reEnablePort(char const* port);
+			reEnablePort("");
 		comTemplate = FunctionTemplate::New( isolate, New );
 		comTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ComPort" ) );
 		comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
@@ -140,6 +172,22 @@ void ComObject::Init( Local<Object> exports ) {
 			, SideEffectType::kHasSideEffect
 		);
 		
+		ComFunc->SetNativeDataProperty(context, String::NewFromUtf8Literal(isolate, "onRemove")
+			, nullptr
+			, ComObject::onRemove
+			, Local<Value>()
+			, PropertyAttribute::None
+			, SideEffectType::kHasSideEffect
+			, SideEffectType::kHasSideEffect
+		);
+		ComFunc->SetNativeDataProperty(context, String::NewFromUtf8Literal(isolate, "onAdd")
+			, nullptr
+			, ComObject::onAdd
+			, Local<Value>()
+			, PropertyAttribute::None
+			, SideEffectType::kHasSideEffect
+			, SideEffectType::kHasSideEffect
+		);
 
 		class constructorSet *c = getConstructors( isolate );
 		c->comConstructor.Reset( isolate, ComFunc );
@@ -198,40 +246,57 @@ static void asyncmsg__( Isolate *isolate, Local<Context> context, ComObject * my
 	//    I.e. it's safe to callback to the CB we defined in node!
 	{
 		struct msgbuf *msg;
-		while( msg = (struct msgbuf *)DequeLink( &myself->readQueue ) ) {
+		while( (myself && (msg = (struct msgbuf *)DequeLink( &myself->readQueue ))) ||
+			   (!myself && (msg = (struct msgbuf *)DequeLink( &ComObject::_readQueue))) ) {
 			size_t length;
-			if( msg->closeEvent ) {
+			if( msg->op == MSG_OP_CLOSE ) {
 				myself->jsObject.Reset();
 				Release( msg );
 				uv_close( (uv_handle_t*)&myself->async, NULL ); // have to hold onto the handle until it's freed.
 				return;
 			}
+			else if (msg->op == MSG_OP_DATA) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( msg->buf, length=msg->buflen, dont_releaseBufferBackingStore, NULL );
-			Local<ArrayBuffer> ab = ArrayBuffer::New( isolate, bs );
+				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(msg->buf, length = msg->buflen, dont_releaseBufferBackingStore, NULL);
+				Local<ArrayBuffer> ab = ArrayBuffer::New(isolate, bs);
 #else
-			Local<ArrayBuffer> ab =
-				ArrayBuffer::New( isolate,
-											  msg->buf,
-											  length = msg->buflen );
+				Local<ArrayBuffer> ab =
+					ArrayBuffer::New(isolate,
+						msg->buf,
+						length = msg->buflen);
 
 #endif
 
-			Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
+				Local<Uint8Array> ui = Uint8Array::New(ab, 0, length);
 
-			Local<Value> argv[] = { ui };
-			Local<Function> cb = Local<Function>::New( isolate, myself->readCallback[0] );
-			//lprintf( "callback ... %p", myself );
-			// using obj->jsThis  fails. here...
-			{
-				MaybeLocal<Value> result = cb->Call( isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, argv );
-				if( result.IsEmpty() ) {
-					Deallocate( struct msgbuf *, msg );
-					return;
+				Local<Value> argv[] = { ui };
+				Local<Function> cb = Local<Function>::New(isolate, myself->readCallback[0]);
+				//lprintf( "callback ... %p", myself );
+				// using obj->jsThis  fails. here...
+				{
+					MaybeLocal<Value> result = cb->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, argv);
+					if (result.IsEmpty()) {
+						Deallocate(struct msgbuf*, msg);
+						return;
+					}
+				}
+				//lprintf( "called ..." );	
+				Deallocate(struct msgbuf*, msg);
+			}
+			else if (msg->op == MSG_OP_REMOVE) {
+				if (!ComObject::removeCallback.IsEmpty()) {
+					Local<Value> argv[] = { String::NewFromUtf8(isolate, (char const*)msg->buf, v8::NewStringType::kNormal, msg->buflen).ToLocalChecked() };
+					Local<Function> cb = Local<Function>::New(isolate, ComObject::removeCallback);
+					cb->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, argv);
 				}
 			}
-			//lprintf( "called ..." );	
-			Deallocate( struct msgbuf *, msg );
+			else if (msg->op == MSG_OP_ADDED) {
+				if (!ComObject::addCallback.IsEmpty()) {
+					Local<Value> argv[] = { String::NewFromUtf8( isolate, (char const*)msg->buf, v8::NewStringType::kNormal, msg->buflen ).ToLocalChecked() };
+					Local<Function> cb = Local<Function>::New(isolate, ComObject::addCallback);
+					cb->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, argv);
+				}
+			}
 		}
 	}
 	//lprintf( "done calling message notice." );
@@ -258,6 +323,14 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				return;
 			}
 			// Invoked as constructor: `new MyObject(...)`
+#ifdef _WIN32			
+			if (portName[4] != 0 && portName[0] != '\\') {
+				char* newPort = NewArray(char, 12);
+				snprintf(newPort, 12, "\\\\.\\%s", portName);
+				Deallocate(char*, portName);
+				portName = newPort;
+			}
+#endif
 			ComObject* obj = new ComObject( portName );
 			if( obj->handle < 0 )
 			{
@@ -301,7 +374,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int len ) {
 	struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
 	//lprintf( "got read: %p %d", buffer, len );
-	msgbuf->closeEvent = 0;
+	msgbuf->op = MSG_OP_DATA;
 	MemCpy( msgbuf->buf, buffer, len );
 	msgbuf->buflen = len;
 	ComObject *com = (ComObject*)psv;
@@ -311,6 +384,37 @@ static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int 
 			com->c->ivm_post( com->c->ivm_holder, std::make_unique<comAsyncTask>( com ) );
 		else
 			uv_async_send( &com->async );
+	}
+}
+static void CPROC dispatchAdd(char const* name, size_t len) {
+	struct msgbuf* msgbuf = NewPlus(struct msgbuf, len);
+	//lprintf( "got read: %p %d", buffer, len );
+	msgbuf->op = MSG_OP_ADDED;
+	MemCpy(msgbuf->buf, name, len);
+	msgbuf->buflen = len;
+	if (!ComObject::removeCallback.IsEmpty()) {
+		EnqueLink(&ComObject::_readQueue, msgbuf);
+		if (ComObject::_ivm_hosted)
+			ComObject::_c->ivm_post(ComObject::_c->ivm_holder, std::make_unique<comAsyncTask>((ComObject*)NULL));
+		else
+			uv_async_send(&ComObject::_async);
+	}
+}
+
+
+
+static void CPROC dispatchRemove(char const *name, size_t len) {
+	struct msgbuf* msgbuf = NewPlus(struct msgbuf, len);
+	//lprintf( "got read: %p %d", buffer, len );
+	msgbuf->op = MSG_OP_REMOVE;
+	MemCpy(msgbuf->buf, name, len);
+	msgbuf->buflen = len;
+	if (!ComObject::removeCallback.IsEmpty()) {
+		EnqueLink(&ComObject::_readQueue, msgbuf);
+		if (ComObject::_ivm_hosted)
+			ComObject::_c->ivm_post(ComObject::_c->ivm_holder, std::make_unique<comAsyncTask>((ComObject*)NULL));
+		else
+			uv_async_send(&ComObject::_async);
 	}
 }
 
@@ -382,7 +486,7 @@ void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	{
 		//lprintf( "Garbage collected" );
 		struct msgbuf* msgbuf = NewPlus( struct msgbuf, 0 );
-		msgbuf->closeEvent = 1;
+		msgbuf->op = MSG_OP_CLOSE;
 		EnqueLink( &com->readQueue, msgbuf );
 		if( com->ivm_hosted )
 			com->c->ivm_post( com->c->ivm_holder, std::make_unique<comAsyncTask>( com ) );
@@ -392,6 +496,31 @@ void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
+
+void ComObject::onRemove(Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args) {
+	Isolate* isolate = args.GetIsolate();
+	ComObject::removeCallback.Reset(isolate, value.As<Function>());
+	if (!ComObject::_c) {
+		ComObject::_c = getConstructors(isolate);
+		if (ComObject::_c->ivm_post) {
+			ComObject::_ivm_hosted = true;
+		}
+		else
+			uv_async_init( ComObject::_c->loop, &ComObject::_async, asyncmsg);
+	}
+}
+void ComObject::onAdd(Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args) {
+	Isolate* isolate = args.GetIsolate();
+	ComObject::addCallback.Reset(isolate, value.As<Function>());
+	if (!ComObject::_c) {
+		ComObject::_c = getConstructors(isolate);
+		if (ComObject::_c->ivm_post) {
+			ComObject::_ivm_hosted = true;
+		}
+		else
+			uv_async_init(ComObject::_c->loop, &ComObject::_async, asyncmsg);
+	}
+}
 
 struct port_info {
 	size_t portLen;
@@ -439,3 +568,252 @@ void ComObject::getPorts( Local<Name> property, const PropertyCallbackInfo<Value
 	//lprintf( "Returning %d ports", idx );
 	args.GetReturnValue().Set( jsList );	
 }
+
+#if defined( _WIN32 )
+
+static LONG CALLBACK MonitorMessageHandler( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
+	switch( uMsg ) {
+	case WM_DEVICECHANGE: {
+		switch( wParam ) {
+			case DBT_DEVICEARRIVAL: {
+					DEV_BROADCAST_HDR* msg = (DEV_BROADCAST_HDR*)lParam;
+					switch (msg->dbch_devicetype) {
+						default:
+							lprintf("Unhandled device type: %d", msg->dbch_devicetype);
+							break;
+						case DBT_DEVTYP_PORT: {
+							DEV_BROADCAST_PORT_A* msg = (DEV_BROADCAST_PORT_A*)lParam;
+							//lprintf("Added device: %s", msg->dbcp_name);
+							dispatchAdd(msg->dbcp_name, msg->dbcp_size - sizeof(DEV_BROADCAST_HDR));
+						}
+						break;
+					}
+				}
+				break;
+			case DBT_DEVICEREMOVECOMPLETE: {
+				DEV_BROADCAST_HDR *msg = (DEV_BROADCAST_HDR *)lParam;
+				switch( msg->dbch_devicetype ) {
+				default:
+					lprintf("Unhandled device type: %d", msg->dbch_devicetype);
+					break;
+				case DBT_DEVTYP_PORT: {
+					DEV_BROADCAST_PORT_A* msg = (DEV_BROADCAST_PORT_A*)lParam;
+					//lprintf("Removed device: %s", msg->dbcp_name);
+					dispatchRemove(msg->dbcp_name, msg->dbcp_size - sizeof(DEV_BROADCAST_HDR));
+				}
+						
+					break;
+				}
+			}
+				break;
+			case DBT_DEVNODES_CHANGED:
+				// no further information, just look at the port list?
+				break;
+			default: 
+				lprintf( "Unhandled device change: %d", wParam );
+				break;
+			}
+			return TRUE; // allow.
+		}
+	}
+	return DefWindowProc( hWnd, uMsg, wParam, lParam );
+}
+
+
+static uintptr_t CPROC RegisterAndCreateMonitor( PTHREAD thread )
+{
+  // zero init.
+	static WNDCLASS wc;
+	static HWND ghWndIcon;
+	static ATOM ac;
+	static PTHREAD pMyThread;
+	if( !ac )
+	{
+		//WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+		memset( &wc, 0, sizeof( WNDCLASS ) );
+		wc.lpfnWndProc   = (WNDPROC)MonitorMessageHandler;
+		wc.hInstance     = GetModuleHandle( NULL ) ;
+		wc.lpszClassName = "ComPortDeviceMonitor";
+		if( !( ac = RegisterClass(&wc) ) )
+		{
+			TEXTCHAR byBuf[256];
+			if( GetLastError() != ERROR_CLASS_ALREADY_EXISTS )
+			{
+				tnprintf( byBuf, sizeof( byBuf ), "RegisterClassError: %p %d", GetModuleHandle( NULL ), GetLastError() );
+				MessageBox( NULL, byBuf, "BAD", MB_OK );
+   // stop thread
+				return FALSE;
+			}
+		}
+		pMyThread = MakeThread();
+		//AddIdleProc( systrayidle, 0 );
+	}
+	if( !ghWndIcon )
+	{
+		TEXTCHAR wndname[256];
+		tnprintf( wndname, sizeof( wndname ), "ComPortDeviceMonitor:%s", GetProgramName() );
+		ghWndIcon = CreateWindow( MAKEINTATOM(ac),
+										 wndname,
+										 0,0,0,0,0,NULL,NULL,NULL,NULL);
+	}
+	if( !ghWndIcon )
+	{
+		MessageBox( NULL, "Device Monitor cannot load (no window)", "Exiting now", MB_OK );
+		return FALSE;
+	}
+	if( thread )
+	{
+		MSG msg;
+		/*
+		DEV_BROADCAST_PORT_A devmsg;
+		DEV_BROADCAST_HDR *hdr   = (DEV_BROADCAST_HDR *)&devmsg;
+		hdr->dbch_size = sizeof( DEV_BROADCAST_PORT_A );
+		hdr->dbch_devicetype   = DBT_DEVTYP_PORT;
+		hdr->dbch_reserved     = 0;
+		// this fails if devtype_port is used anyway :) 
+		HANDLE hDeviceNotication = RegisterDeviceNotification( (HANDLE)ghWndIcon, &devmsg, DEVICE_NOTIFY_WINDOW_HANDLE );
+		*/
+		// thread_ready = TRUE;
+		while( GetMessage( &msg, NULL, 0, 0 ) )
+			DispatchMessage( &msg );
+		return 0;
+	}
+	return TRUE;
+}
+
+void reEnablePort( char const *port ) {
+	DEVINST inst;
+
+    GUID classGuid;
+    ULONG classIndex = 0;
+    CONFIGRET cr;
+    lprintf("Enumerating Device Setup Classes:");
+
+    do {
+        cr = CM_Enumerate_Classes(classIndex, &classGuid, 0); // Enumerate device setup classes
+
+        if (cr == CR_SUCCESS) {
+            // Convert GUID to string for printing
+            WCHAR guidString[MAX_GUID_STRING_LEN];
+            StringFromGUID2(classGuid, guidString, MAX_GUID_STRING_LEN);
+            lprintf("  Class GUID: %S", guidString);
+
+
+			DEVPROPTYPE propType;
+			std::vector<BYTE> propertyBuffer(256); // Start with a reasonable buffer size.
+			ULONG propertyBufferSize = (ULONG)propertyBuffer.size();
+
+			// Retrieve the class name property (DEVPKEY_NAME).
+			cr = CM_Get_Class_Property_ExW(
+				&classGuid,
+				&DEVPKEY_NAME,
+				&propType,
+				propertyBuffer.data(),
+				&propertyBufferSize,
+				0,
+				0
+			);
+			if (cr == CR_BUFFER_SMALL) {
+				// Buffer was too small, resize and try again.
+				propertyBuffer.resize(propertyBufferSize);
+				cr = CM_Get_Class_Property_ExW(
+					&classGuid,
+					&DEVPKEY_NAME,
+					&propType,
+					propertyBuffer.data(),
+					&propertyBufferSize,
+					0,
+					0
+				);
+			}
+
+			if (cr == CR_SUCCESS) {
+				// DEVPKEY_NAME returns a DEVPROP_TYPE_STRING type.
+				if (propType == DEVPROP_TYPE_STRING) {
+					const wchar_t* className = reinterpret_cast<const wchar_t*>(propertyBuffer.data());
+					lprintf( "  - %S  (GUID: {%S}) ", className, classGuid );
+					TEXTSTR t_className = WcharConvert((const wchar_t*)className);
+					lprintf("(%s) (%s)", t_className, "Ports (COM & LPT)");
+					if ( 1 || StrCmp(t_className, "Ports (COM & LPT)") == 0) {
+						lprintf("So we should see what devices are there..");
+						// GUID_DEVCLASS_PORTS
+						HDEVINFO hdi = SetupDiGetClassDevs(&classGuid, NULL, NULL, DIGCF_PRESENT);
+							//SetupDiCreateDeviceInfoList(&classGuid, NULL);
+						DWORD devId = 0;
+						SP_DEVINFO_DATA data;
+						SP_DEVICE_INTERFACE_DATA intData;
+						data.cbSize = sizeof(data);
+						while (1) {
+
+							if (SetupDiEnumDeviceInfo(hdi, devId, &data)) {
+								//data.InterfaceClassGuid
+								//data.Flags
+								// is this the right device though?
+
+								lprintf("Got a device... %d", data.DevInst);
+								DWORD instId = 0;
+								DEVPROPKEY keys[12];
+								ULONG     keyCount = 12;
+								if (!CM_Get_DevNode_Property_Keys(
+									(DEVINST)data.DevInst,
+									&keys[0],
+									&keyCount,
+									0
+								)) {
+								}
+								else {
+									lprintf("Got keys?");
+									for (int i = 0; i < keyCount; i++) {
+										lprintf( "something %d", keys[i].pid);
+									}
+								}
+
+								if (SetupDiEnumDeviceInterfaces(hdi, &data, &classGuid, instId, &intData)) {
+									lprintf("Got intdata?");
+									//SetupDiGetDeviceInterfaceDetail(hdi,
+								}
+								else {
+									DWORD dwError = GetLastError();
+									lprintf("intdata Err: %d", dwError);
+								}
+
+							}
+							else {
+								DWORD dwError = GetLastError();
+								lprintf("Err: %d", dwError );
+								if (dwError == ERROR_NO_MORE_ITEMS) break;
+							}
+							devId++;
+						}
+						SetupDiDestroyDeviceInfoList(hdi);
+
+					}
+				}
+			}
+			else {
+				lprintf( "CM_Get_Class_Property failed for a class with error: %d", cr );
+			}
+
+			
+
+        } else if (cr == CR_NO_SUCH_VALUE) {
+            // End of enumeration
+            break;
+        } else if (cr == CR_INVALID_DATA) {
+            // Ignore invalid data entries and continue enumeration
+            lprintf("  Warning: Invalid data encountered for class index %lu. Skipping.", classIndex);
+        } else {
+            lprintf("  Error enumerating classes: %lu", cr);
+            break;
+        }
+        classIndex++;
+    } while (TRUE);	
+
+
+	CONFIGRET r1 = CM_Disable_DevNode( inst, CM_DISABLE_UI_NOT_OK );
+	CONFIGRET r2 = CM_Enable_DevNode( inst, 0 );
+	
+}
+
+
+#endif
