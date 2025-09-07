@@ -1,4 +1,4 @@
-
+#define FIX_RELEASE_COM_COLLISION
 #include "global.h"
 
 #ifdef _WIN32
@@ -8,20 +8,32 @@
 #include <initguid.h>
 #include <devpkey.h>
 #include <setupapi.h>
+#include <guiddef.h>
+#include <ntstatus.h>
+
+#include "makepkeytable.h"
+void updateNames( void );
+
 #endif
 
-enum msgbuf_op {
+enum com_interface_msgbuf_op {
 	MSG_OP_DATA = 0,
 	MSG_OP_CLOSE,
 	MSG_OP_REMOVE,
 	MSG_OP_ADDED,
 };
 
-struct msgbuf {
+struct com_interface_msgbuf {
 	int op;
 	size_t buflen;
 	uint8_t buf[1];
 };
+
+static struct com_port_local {
+	PLIST ports;
+	PLIST want_enable;
+	PTHREAD event_monitor; // windows message thread for device changes
+} l;
 
 static void asyncmsg__( Isolate *isolate, Local<Context> context, class ComObject * myself );
 struct comAsyncTask : SackTask {
@@ -42,8 +54,10 @@ public:
 	static class constructorSet* _c;
 	int handle;
 	char* name;
+	char *portName; // pointer into `name` that is just the last com port name part
 	//static Persistent<Function> constructor;
 	bool rts = 1;
+	bool wantEnable;
 	Persistent<Function>* readCallback; //
 	static Persistent<Function> removeCallback; //
 	static Persistent<Function> addCallback; //
@@ -70,6 +84,12 @@ private:
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
 	static void closeCom( const v8::FunctionCallbackInfo<Value>& args );
+	static void resetCom( const v8::FunctionCallbackInfo<Value> &args );
+	static void resetComByName( const v8::FunctionCallbackInfo<Value> &args );
+	static void disableComByName( const v8::FunctionCallbackInfo<Value> &args );
+	static void enableComByName( const v8::FunctionCallbackInfo<Value> &args );
+	static void getProperties( Local<Name> property, const PropertyCallbackInfo<Value> &args );
+	
 	~ComObject();
 };
 
@@ -80,17 +100,28 @@ class constructorSet* ComObject::_c;
 bool ComObject::_ivm_hosted = false;
 PLINKQUEUE ComObject::_readQueue;
 
+static	uintptr_t CPROC RegisterAndCreateMonitor( PTHREAD thread );
+static void reEnablePort( char const *port, bool enable = false );
+static void getPortProperties( char const*com, Isolate * isolate, Local<Object> result );
+int64_t FiletimeToJavascriptTick( FILETIME ft );
+
 
 ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
 	this->name = name;
+	this->portName  = name;
+	AddLink( &l.ports, this );
+	if( this->portName[ 0 ] == '\\' )
+		this->portName += 4;
 	handle = SackOpenComm( name, 0, 0 );
-	uintptr_t CPROC RegisterAndCreateMonitor(PTHREAD thread);
+	// when opening a port, start monitoring for change events.
+
 	ThreadTo( RegisterAndCreateMonitor, 0 );
 }
 
 ComObject::~ComObject() {
-	if( handle >=0 )
+	DeleteLink( &l.ports, this );
+	if( handle >= 0 )
 		SackCloseComm( handle );
   	Deallocate( char*, name );
 }
@@ -108,9 +139,13 @@ void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<Context> context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> comTemplate;
-		void reEnablePort(char const* port);
-			reEnablePort("");
-		comTemplate = FunctionTemplate::New( isolate, New );
+	   updateNames(); // this is used for port[].properties
+	   if(0)
+	   {
+		   ThreadTo( RegisterAndCreateMonitor, 0 );
+	   }
+		//reEnablePort("");
+	   comTemplate = FunctionTemplate::New( isolate, New );
 		comTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ComPort" ) );
 		comTemplate->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
 
@@ -118,13 +153,14 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "onRead", onRead );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "write", writeCom );
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
+	   NODE_SET_PROTOTYPE_METHOD( comTemplate, "reset", resetCom );
 
 #if ( NODE_MAJOR_VERSION >= 22 )
 		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" )
 			, ComObject::getRTS2
 			, ComObject::setRTS2
 			, Local<Value>()
-			, PropertyAttribute::ReadOnly
+			, PropertyAttribute::None // readonly blocks setter from happening.
 			, SideEffectType::kHasNoSideEffect
 			, SideEffectType::kHasSideEffect
 		);
@@ -162,7 +198,11 @@ void ComObject::Init( Local<Object> exports ) {
 		//info->set_getter_side_effect_type( getter_side_effect_type );
 		//info->set_setter_side_effect_type( setter_side_effect_type );
 
-		
+		SET( ComFunc, "reset", Function::New( context, resetComByName ).ToLocalChecked() );
+	   SET( ComFunc, "disable", Function::New( context, disableComByName ).ToLocalChecked() );
+	   SET( ComFunc, "enable", Function::New( context, enableComByName ).ToLocalChecked() );
+
+
 		ComFunc->SetNativeDataProperty( context, String::NewFromUtf8Literal( isolate, "ports" )
 			, ComObject::getPorts
 			, nullptr //Local<Function>()
@@ -245,13 +285,13 @@ static void asyncmsg__( Isolate *isolate, Local<Context> context, ComObject * my
 	// Called by UV in main thread after our worker thread calls uv_async_send()
 	//    I.e. it's safe to callback to the CB we defined in node!
 	{
-		struct msgbuf *msg;
-		while( (myself && (msg = (struct msgbuf *)DequeLink( &myself->readQueue ))) ||
-			   (!myself && (msg = (struct msgbuf *)DequeLink( &ComObject::_readQueue))) ) {
+		struct com_interface_msgbuf *msg;
+		while( ( myself && ( msg = (struct com_interface_msgbuf *)DequeLink( &myself->readQueue ) ) )
+		     || ( !myself && ( msg = (struct com_interface_msgbuf *)DequeLink( &ComObject::_readQueue ) ) ) ) {
 			size_t length;
 			if( msg->op == MSG_OP_CLOSE ) {
 				myself->jsObject.Reset();
-				Release( msg );
+				Deallocate( struct com_interface_msgbuf *, msg );
 				uv_close( (uv_handle_t*)&myself->async, NULL ); // have to hold onto the handle until it's freed.
 				return;
 			}
@@ -276,12 +316,12 @@ static void asyncmsg__( Isolate *isolate, Local<Context> context, ComObject * my
 				{
 					MaybeLocal<Value> result = cb->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, argv);
 					if (result.IsEmpty()) {
-						Deallocate(struct msgbuf*, msg);
+						Deallocate( struct com_interface_msgbuf *, msg );
 						return;
 					}
 				}
 				//lprintf( "called ..." );	
-				Deallocate(struct msgbuf*, msg);
+				Deallocate( struct com_interface_msgbuf *, msg );
 			}
 			else if (msg->op == MSG_OP_REMOVE) {
 				if (!ComObject::removeCallback.IsEmpty()) {
@@ -326,11 +366,16 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef _WIN32			
 			if (portName[4] != 0 && portName[0] != '\\') {
 				char* newPort = NewArray(char, 12);
-				snprintf(newPort, 12, "\\\\.\\%s", portName);
+				snprintf(newPort, 12, "\\\\.\\COM", portName+3);
 				Deallocate(char*, portName);
 				portName = newPort;
-			}
+		   } else {
+			   portName[ 0 ] = 'C';
+			   portName[ 1 ] = 'O';
+			   portName[ 2 ] = 'M';
+		   }
 #endif
+			
 			ComObject* obj = new ComObject( portName );
 			if( obj->handle < 0 )
 			{
@@ -372,7 +417,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int len ) {
-	struct msgbuf *msgbuf = NewPlus( struct msgbuf, len );
+	struct com_interface_msgbuf *msgbuf = NewPlus( struct com_interface_msgbuf, len );
 	//lprintf( "got read: %p %d", buffer, len );
 	msgbuf->op = MSG_OP_DATA;
 	MemCpy( msgbuf->buf, buffer, len );
@@ -387,8 +432,12 @@ static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int 
 	}
 }
 static void CPROC dispatchAdd(char const* name, size_t len) {
-	struct msgbuf* msgbuf = NewPlus(struct msgbuf, len);
+	struct com_interface_msgbuf* msgbuf = NewPlus(struct com_interface_msgbuf, len);
 	//lprintf( "got read: %p %d", buffer, len );
+	size_t reallen                      = 0;
+	while( name[ reallen++ ] );
+	if( reallen <= len )
+		len = reallen-1;
 	msgbuf->op = MSG_OP_ADDED;
 	MemCpy(msgbuf->buf, name, len);
 	msgbuf->buflen = len;
@@ -404,9 +453,13 @@ static void CPROC dispatchAdd(char const* name, size_t len) {
 
 
 static void CPROC dispatchRemove(char const *name, size_t len) {
-	struct msgbuf* msgbuf = NewPlus(struct msgbuf, len);
+	struct com_interface_msgbuf* msgbuf = NewPlus(struct com_interface_msgbuf, len);
 	//lprintf( "got read: %p %d", buffer, len );
 	msgbuf->op = MSG_OP_REMOVE;
+	size_t reallen                      = 0;
+	while( name[ reallen++ ] );
+	if( reallen <= len )
+		len = reallen-1;
 	MemCpy(msgbuf->buf, name, len);
 	msgbuf->buflen = len;
 	if (!ComObject::removeCallback.IsEmpty()) {
@@ -476,6 +529,38 @@ void ComObject::writeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 
 }
 
+void ComObject::resetComByName( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	String::Utf8Value port( isolate, args[ 0 ].As<String>() );
+	//com->wantEnable = true;
+	AddLink( &l.want_enable, StrDup( *port ) );
+	reEnablePort( *port, false );
+}
+
+void ComObject::disableComByName( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	String::Utf8Value port( isolate, args[ 0 ].As<String>() );
+	reEnablePort( *port, false );
+}
+void ComObject::enableComByName( const v8::FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	String::Utf8Value port( isolate, args[ 0 ].As<String>() );
+	reEnablePort( *port, true );
+}
+
+
+
+
+void ComObject::resetCom( const v8::FunctionCallbackInfo<Value> &args ) {
+	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
+	if( com->handle >= 0 ) {
+		SackCloseComm( com->handle );
+	}
+	com->wantEnable = true;
+	reEnablePort( com->portName, false );
+}
+	
+
 void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 	
 	ComObject *com = ObjectWrap::Unwrap<ComObject>( args.This() );
@@ -485,7 +570,7 @@ void ComObject::closeCom( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	{
 		//lprintf( "Garbage collected" );
-		struct msgbuf* msgbuf = NewPlus( struct msgbuf, 0 );
+		struct com_interface_msgbuf* msgbuf = NewPlus( struct com_interface_msgbuf, 0 );
 		msgbuf->op = MSG_OP_CLOSE;
 		EnqueLink( &com->readQueue, msgbuf );
 		if( com->ivm_hosted )
@@ -501,7 +586,8 @@ void ComObject::onRemove(Local<Name> property, Local<Value> value, const Propert
 	Isolate* isolate = args.GetIsolate();
 	ComObject::removeCallback.Reset(isolate, value.As<Function>());
 	if (!ComObject::_c) {
-		ComObject::_c = getConstructors(isolate);
+		ThreadTo( RegisterAndCreateMonitor, 0 );
+		ComObject::_c = getConstructors( isolate );
 		if (ComObject::_c->ivm_post) {
 			ComObject::_ivm_hosted = true;
 		}
@@ -513,13 +599,26 @@ void ComObject::onAdd(Local<Name> property, Local<Value> value, const PropertyCa
 	Isolate* isolate = args.GetIsolate();
 	ComObject::addCallback.Reset(isolate, value.As<Function>());
 	if (!ComObject::_c) {
-		ComObject::_c = getConstructors(isolate);
+		ThreadTo( RegisterAndCreateMonitor, 0 );
+		ComObject::_c = getConstructors( isolate );
 		if (ComObject::_c->ivm_post) {
 			ComObject::_ivm_hosted = true;
 		}
 		else
 			uv_async_init(ComObject::_c->loop, &ComObject::_async, asyncmsg);
 	}
+}
+
+
+void ComObject::getProperties( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	//ComObject *com   = ObjectWrap::Unwrap<ComObject>( args.This() );
+	String::Utf8Value port( USE_ISOLATE( isolate ) args.This()
+	             ->Get( isolate->GetCurrentContext(), String::NewFromUtf8Literal( isolate, "port" ) )
+	             .ToLocalChecked().As<String>() );
+	Local<Object> result = Object::New( isolate );
+	getPortProperties( *port, isolate, result );
+	args.GetReturnValue().Set( result );
 }
 
 struct port_info {
@@ -562,6 +661,12 @@ void ComObject::getPorts( Local<Name> property, const PropertyCallbackInfo<Value
 		SET( info, "port", String::NewFromUtf8( isolate, pi->buf, v8::NewStringType::kNormal, pi->portLen ).ToLocalChecked() );
 		SET( info, "name", String::NewFromUtf8( isolate, pi->buf+pi->portLen, v8::NewStringType::kNormal, pi->nameLen ).ToLocalChecked() );
 		SET( info, "technology", String::NewFromUtf8( isolate, pi->buf+pi->portLen+pi->nameLen, v8::NewStringType::kNormal, pi->techLen ).ToLocalChecked() );
+
+		info->SetNativeDataProperty( context, 
+		     String::NewFromUtf8Literal( isolate, "properties" ), ComObject::getProperties, nullptr, Local<Value>()
+		     , PropertyAttribute::ReadOnly, SideEffectType::kHasNoSideEffect, SideEffectType::kHasSideEffect );
+
+
 		SETN( jsList, idx, info );
 		Deallocate( struct port_info*, pi );
 	}
@@ -574,6 +679,7 @@ void ComObject::getPorts( Local<Name> property, const PropertyCallbackInfo<Value
 static LONG CALLBACK MonitorMessageHandler( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam ) {
 	switch( uMsg ) {
 	case WM_DEVICECHANGE: {
+		//lprintf( "Device change message %d", wParam );
 		switch( wParam ) {
 			case DBT_DEVICEARRIVAL: {
 					DEV_BROADCAST_HDR* msg = (DEV_BROADCAST_HDR*)lParam;
@@ -599,6 +705,27 @@ static LONG CALLBACK MonitorMessageHandler( HWND hWnd, UINT uMsg, WPARAM wParam,
 				case DBT_DEVTYP_PORT: {
 					DEV_BROADCAST_PORT_A* msg = (DEV_BROADCAST_PORT_A*)lParam;
 					//lprintf("Removed device: %s", msg->dbcp_name);
+				   INDEX idx;
+				   ComObject *com;
+				   LIST_FORALL(l.ports, idx, ComObject*, com) {
+					   if( StrCmp( com->portName, msg->dbcp_name ) == 0 ) {
+						   if( com->wantEnable ) {
+							   reEnablePort( com->portName, true );
+							   com->wantEnable = false;
+						   }
+						   break;
+					   }
+				   }
+				   char *portname;
+				   LIST_FORALL(l.want_enable, idx, char*, portname) {
+					   if( StrCmp( portname, msg->dbcp_name ) == 0 ) {
+						   reEnablePort( portname, true );
+						   SetLink( &l.want_enable, idx, NULL );
+						   Deallocate( char *, portname );
+						   break;
+					   }
+				   }
+
 					dispatchRemove(msg->dbcp_name, msg->dbcp_size - sizeof(DEV_BROADCAST_HDR));
 				}
 						
@@ -608,6 +735,7 @@ static LONG CALLBACK MonitorMessageHandler( HWND hWnd, UINT uMsg, WPARAM wParam,
 				break;
 			case DBT_DEVNODES_CHANGED:
 				// no further information, just look at the port list?
+			   //lprintf( "something changed somewhere..." );
 				break;
 			default: 
 				lprintf( "Unhandled device change: %d", wParam );
@@ -620,13 +748,14 @@ static LONG CALLBACK MonitorMessageHandler( HWND hWnd, UINT uMsg, WPARAM wParam,
 }
 
 
-static uintptr_t CPROC RegisterAndCreateMonitor( PTHREAD thread )
+uintptr_t CPROC RegisterAndCreateMonitor( PTHREAD thread )
 {
   // zero init.
 	static WNDCLASS wc;
 	static HWND ghWndIcon;
 	static ATOM ac;
-	static PTHREAD pMyThread;
+	if( l.event_monitor )
+		return 0; // already running
 	if( !ac )
 	{
 		//WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
@@ -645,8 +774,7 @@ static uintptr_t CPROC RegisterAndCreateMonitor( PTHREAD thread )
 				return FALSE;
 			}
 		}
-		pMyThread = MakeThread();
-		//AddIdleProc( systrayidle, 0 );
+		l.event_monitor = thread;
 	}
 	if( !ghWndIcon )
 	{
@@ -681,139 +809,544 @@ static uintptr_t CPROC RegisterAndCreateMonitor( PTHREAD thread )
 	return TRUE;
 }
 
-void reEnablePort( char const *port ) {
+	DEFINE_GUID( ComPortsClass, 0x4D36E978, 0xe325, 0x11ce, 0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18 );
+
+void getPortProperties( char const*com, Isolate * isolate, Local<Object> result ) {
+	   Local<Array> unnamed   = Array::New( isolate );
+	   int last_unnamed       = 0; // we don't have just 'push'
+
+	   Local<Context> context = isolate->GetCurrentContext();
+	   SET( result, "unnamed", unnamed );
+	   DEVINST inst;
+
+	   GUID classGuid = ComPortsClass;
+	   //= 4D36E978 - E325 - 11CE-BFC1 - 08002BE10318;
+	   CONFIGRET cr;
+	   // 4D36E978-E325-11CE-BFC1-08002BE10318
+
+	   //lprintf( "Enumerating Device Setup Classes:" );
+
+	   // cr = CM_Enumerate_Classes(classIndex, &classGuid, 0); // Enumerate device setup classes
+
+	   // if (cr == CR_SUCCESS)
+	   {
+		   // Convert GUID to string for printing
+		   // WCHAR guidString[ MAX_GUID_STRING_LEN ];
+		   // StringFromGUID2( classGuid, guidString, MAX_GUID_STRING_LEN );
+		   // lprintf( "  Class GUID: %S", guidString );
+
+		   DEVPROPTYPE propType;
+		   size_t bufferLen         = 1024;
+		   POINTER propertyBuffer   = NewArray( uint8_t, bufferLen );
+		   // std::vector<BYTE> propertyBuffer( 256 ); // Start with a reasonable buffer size.
+		   ULONG propertyBufferSize = (ULONG)bufferLen;
+
+		   // Retrieve the class name property (DEVPKEY_NAME).
+		   cr = CM_Get_Class_Property_ExW( &ComPortsClass, &DEVPKEY_NAME, &propType, (PBYTE)propertyBuffer
+		                                 , &propertyBufferSize, 0, 0 );
+		   if( cr == CR_NO_SUCH_REGISTRY_KEY ) {
+			   lprintf( "Bad GUID Initialization..." );
+		   }
+		   if( cr == CR_BUFFER_SMALL ) {
+			   // Buffer was too small, resize and try again.
+			   propertyBuffer = ReallocateEx( propertyBuffer, propertyBufferSize DBG_SRC );
+			   cr             = CM_Get_Class_Property_ExW( &ComPortsClass, &DEVPKEY_NAME, &propType, (PBYTE)propertyBuffer
+			                                             , &propertyBufferSize, 0, 0 );
+		   }
+
+		   if( cr == CR_SUCCESS ) {
+			   // DEVPKEY_NAME returns a DEVPROP_TYPE_STRING type.
+			   if( propType == DEVPROP_TYPE_STRING ) {
+				   // const wchar_t *className = reinterpret_cast<const wchar_t *>( propertyBuffer );
+				   // lprintf( "  - %S  (GUID: {%S}) ", className, guidString );
+				   // TEXTSTR t_className = WcharConvert( (const wchar_t *)className );
+				   // lprintf( "(%s) (%s)", t_className, "Ports (COM & LPT)" );
+				   if( 1 ) { //|| StrCmp( t_className, "Ports (COM & LPT)" ) == 0 ) {
+
+					   lprintf( "So we should see what devices are there.." );
+					   // GUID_DEVCLASS_PORTS
+					   HDEVINFO hdi = SetupDiGetClassDevs( &classGuid, NULL, NULL, DIGCF_PRESENT );
+
+					   // SetupDiCreateDeviceInfoList(&classGuid, NULL);
+					   DWORD devId  = 0;
+					   SP_DEVINFO_DATA data;
+					   SP_DEVICE_INTERFACE_DATA intData;
+					   data.cbSize = sizeof( data );
+					   // enumerate devices...
+					   while( 1 ) {
+						   if( !SetupDiEnumDeviceInfo( hdi, devId, &data ) ) {
+							   DWORD dwError = GetLastError();
+							   if( dwError == ERROR_NO_MORE_ITEMS )
+								   break;
+							   lprintf( "Err: %d", dwError );
+							   break;
+						   }
+
+						   {
+							   // data.InterfaceClassGuid
+							   // data.Flags
+							   //  is this the right device though?
+
+							   lprintf( "Got a device... %d", data.DevInst );
+
+							   HKEY hKey = SetupDiOpenDevRegKey( hdi, &data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE );
+							   DWORD dwError = GetLastError();
+							   char namebuf[ 256 ];
+							   DWORD namebuflen = 256;
+							   int queryErr = RegQueryValueEx( hKey, "PortName", NULL, NULL, (LPBYTE)namebuf, &namebuflen );
+							   // lprintf( "Device: %.*s", namebuflen, namebuf );
+
+							   // not zero is mis-match.
+							   if( StrCmp( com, namebuf ) ) {
+								   devId++;
+								   continue;
+							   }
+
+							   // this code gets all the known properties of a device, and should be moved to
+							   // something that gets the port info, separete from the eanble
+							   {
+								   DWORD instId = 0;
+								   DEVPROPKEY *keys;
+								   ULONG keyCount = 0;
+
+								   // get how many there are expected...
+								   if( !CM_Get_DevNode_Property_Keys( (DEVINST)data.DevInst, &keys[ 0 ], &keyCount, 0 ) ) {
+								   } else {
+									   keys = NewArray( DEVPROPKEY, keyCount );
+								   }
+								   // get all the property names.
+								   if( CM_Get_DevNode_Property_Keys( (DEVINST)data.DevInst, keys, &keyCount, 0 )
+								     != CR_SUCCESS ) {
+									   lprintf( "not enough keys? %d", GetLastError() );
+								   } else {
+									   // lprintf( "Got keys?" );
+									   for( int i = 0; i < keyCount; i++ ) {
+										   // lprintf( "something %d", keys[ i ].pid );
+										   // WCHAR psz[ 256 ];
+										   // HRESULT res1 = PSStringFromPropertyKey( (PROPERTYKEY const &)( keys[ i ] ), psz, 256
+										   // ); lprintf( "KeyVal? %S", psz );
+
+										   MaybeLocal<String> use_name;
+										   bool use_index = false;
+
+										   {
+											   PWSTR name;
+											   HRESULT hr = PSGetNameFromPropertyKey( (PROPERTYKEY const &)( keys[ i ] ), &name );
+											   if( hr == S_OK ) {
+												   use_name  = String::NewFromTwoByte( isolate, (uint16_t const *)name );
+												   use_index = false;
+												   //lprintf( "Key Name: %S", name );
+											   } else {
+												   if( hr == TYPE_E_ELEMENTNOTFOUND ) {
+													   int n;
+													   for( n = 0; pkey_table[ n ].name; n++ ) {
+														   if( MemCmp( keys + i, &pkey_table[ n ].key, sizeof( PROPERTYKEY ) )
+														     == 0 ) {
+															   use_name  = String::NewFromUtf8( isolate, pkey_table[ n ].niceName );
+															   use_index = false;
+															   // lprintf( "Recovered Key Name: %s", pkey_table[ n ].niceName );
+															   break;
+														   }
+													   }
+													   if( !pkey_table[ n ].name ) {
+														   use_index = true;
+														   //lprintf( "Failed to find as a predefined key... ---------------- (val "
+														   //         "only?)" );
+													   }
+												   } else
+													   lprintf( "Key Error: %08x", hr );
+											   }
+											   CoTaskMemFree( name );
+										   }
+
+										   BYTE buffer[ 1024 ];
+										   ULONG buflen = 1024;
+										   DEVPROPTYPE propType;
+										   CM_Get_DevNode_PropertyW( (DEVINST)data.DevInst, keys + i, &propType, buffer, &buflen
+										                           , 0 );
+										   switch( propType ) {
+										   default:
+											   lprintf( "Unhandled type: %d(%08x)", propType, propType );
+											   break;
+										   case DEVPROP_TYPE_STRING_LIST: {
+											   Local<Array> list = Array::New( isolate );
+											   int insertat      = 0;
+											   WCHAR *start = (WCHAR *)buffer;
+											   while( start[ 0 ] ) {
+												   //lprintf( "StringListVal: %S", start );
+												   list->Set( context, insertat++, String::NewFromTwoByte( isolate, (uint16_t const*)start ).ToLocalChecked() );
+												   while( start[ 0 ] )
+													   start++;
+											   }
+
+											   if( use_index ) {
+												   unnamed->Set( context, last_unnamed++, list );
+											   } else {
+												   result->Set( context, use_name.ToLocalChecked()
+												              , list );
+											   }
+										   } break;
+										   case DEVPROP_TYPE_STRING:
+											   if( use_index ) {
+												   unnamed->Set( context, last_unnamed++
+												               , String::NewFromTwoByte( isolate, (uint16_t const *)buffer )
+												                      .ToLocalChecked() );
+											   } else {
+												   result->Set( context, use_name.ToLocalChecked()
+												              , String::NewFromTwoByte( isolate, (uint16_t const *)buffer )
+												                     .ToLocalChecked() );
+											   }
+											   // lprintf( "WString: %S", buffer );
+											   break;
+										   case DEVPROP_TYPE_FILETIME:
+											   //lprintf( "FileTime: %ulld", ( (FILETIME *)buffer )[ 0 ] );
+										   {
+												   int64_t jstick = FiletimeToJavascriptTick( ( (FILETIME *)buffer )[0] );
+												if( use_index ) {
+													unnamed->Set( context, last_unnamed++
+													            , Date::New( context, jstick ).ToLocalChecked() );
+												} else {
+													result->Set( context, use_name.ToLocalChecked()
+													           , Date::New( context, jstick ).ToLocalChecked() );
+												}
+
+										   }
+											   break;
+										   case DEVPROP_TYPE_UINT32:
+											   if( use_index ) {
+												   unnamed->Set( context, last_unnamed++
+												               , Integer::NewFromUnsigned( isolate, ( (uint32_t *)buffer )[ 0 ] ) );
+											   } else {
+												   result->Set( context, use_name.ToLocalChecked()
+												              , Integer::NewFromUnsigned( isolate, ( (uint32_t *)buffer )[ 0 ] ) );
+											   }
+											   // lprintf( "UINT32:%d", ( (uint32_t *)buffer )[ 0 ] );
+											   break;
+										   case DEVPROP_TYPE_BOOLEAN:
+											   if( use_index ) {
+												   unnamed->Set( context, last_unnamed++
+												               , Boolean::New( isolate, ( (bool *)buffer )[ 0 ] ) );
+											   } else {
+												   result->Set( context, use_name.ToLocalChecked()
+												              , Boolean::New( isolate, ( (bool *)buffer )[ 0 ] ) );
+											   }
+											   // lprintf( "BOOLEAN:%s", ( (bool *)buffer )[ 0 ] ? "TRUE" : "FALSE" );
+											   break;
+										   case DEVPROP_TYPE_GUID: {
+											   WCHAR guidString[ MAX_GUID_STRING_LEN ];
+											   StringFromGUID2( classGuid, guidString, MAX_GUID_STRING_LEN );
+											   //lprintf( "GUID Val: %S", guidString );
+											   if( use_index ) {
+												   unnamed->Set( context, last_unnamed++
+												               , String::NewFromTwoByte( isolate, (uint16_t const *)guidString )
+												                      .ToLocalChecked() );
+											   } else {
+												   result->Set( context, use_name.ToLocalChecked()
+												              , String::NewFromTwoByte( isolate, (uint16_t const *)guidString )
+												                     .ToLocalChecked() );
+											   }
+										   }
+
+										   break;
+										   case DEVPROP_TYPE_BINARY:
+											   //lprintf( "Binary value..." );
+											   //LogBinary( buffer, buflen );
+											   break;
+										   }
+
+										   // DEVPROPTYPE propType;
+										   size_t bufferLen         = 1024;
+										   POINTER propertyBuffer   = NewArray( uint8_t, bufferLen );
+										   // std::vector<BYTE> propertyBuffer( 256 ); // Start with a reasonable buffer size.
+										   ULONG propertyBufferSize = (ULONG)bufferLen;
+
+										   /*
+										   if( !CM_Get_Class_Property_ExW( (DEVINST)data.DevInst, &keys[ 0 ], &keyCount, 0 ) ) {
+										   } else {
+										      keys = NewArray( DEVPROPKEY, keyCount );
+										   }
+										   */
+										   // Retrieve the class name property (DEVPKEY_NAME).
+										   cr = CM_Get_Class_Property_ExW( &ComPortsClass, NULL, &propType, (PBYTE)propertyBuffer
+										                                 , &propertyBufferSize, 0, 0 );
+										   if( cr == CR_NO_SUCH_REGISTRY_KEY ) {
+											   lprintf( "Bad GUID Initialization..." );
+										   }
+										   if( cr == CR_NO_SUCH_VALUE ) {
+											   lprintf( "NO such value..." );
+										   }
+										   if( cr == CR_BUFFER_SMALL ) {
+											   // Buffer was too small, resize and try again.
+											   propertyBuffer = ReallocateEx( propertyBuffer, propertyBufferSize DBG_SRC );
+											   cr             = CM_Get_Class_Property_ExW( &ComPortsClass, &DEVPKEY_NAME, &propType
+											                                             , (PBYTE)propertyBuffer, &propertyBufferSize, 0, 0 );
+										   }
+										   if( cr == ERROR_SUCCESS ) {
+											   if( propType == DEVPROP_TYPE_STRING ) {
+												   TEXTSTR t_className = WcharConvert( (const wchar_t *)propertyBuffer );
+												   lprintf( "Property name:%s", t_className );
+											   } else {
+												   lprintf( "unsupported format %d", propType );
+											   }
+										   }
+									   }
+								   }
+							   }
+						   }
+						   devId++;
+					   }
+					   SetupDiDestroyDeviceInfoList( hdi );
+				   }
+			   }
+		   } else {
+			   lprintf( "CM_Get_Class_Property failed for a class with error: %d", cr );
+		   }
+	   }
+	   /*
+	   } else if (cr == CR_NO_SUCH_VALUE) {
+	       // End of enumeration
+	     //  break;
+	   } else if (cr == CR_INVALID_DATA) {
+	       // Ignore invalid data entries and continue enumeration
+	       lprintf("  Warning: Invalid data encountered for class index %lu. Skipping.", classIndex);
+	   } else {
+	       lprintf("  Error enumerating classes: %lu", cr);
+	    //   break;
+	   }
+	          */
+
+	   // CONFIGRET r1 = CM_Disable_DevNode( inst, CM_DISABLE_UI_NOT_OK );
+	   // CONFIGRET r2 = CM_Enable_DevNode( inst, 0 );
+   }
+
+
+void reEnablePort( char const *port, bool enable ) {
 	DEVINST inst;
 
-    GUID classGuid;
+    GUID classGuid = ComPortsClass;
+	//= 4D36E978 - E325 - 11CE-BFC1 - 08002BE10318;
     ULONG classIndex = 0;
     CONFIGRET cr;
-    lprintf("Enumerating Device Setup Classes:");
+	// 4D36E978-E325-11CE-BFC1-08002BE10318
+	
+    //lprintf("Enumerating Device Setup Classes:");
 
-    do {
-        cr = CM_Enumerate_Classes(classIndex, &classGuid, 0); // Enumerate device setup classes
+    //do 
+	{
+        //cr = CM_Enumerate_Classes(classIndex, &classGuid, 0); // Enumerate device setup classes
 
-        if (cr == CR_SUCCESS) {
-            // Convert GUID to string for printing
-            WCHAR guidString[MAX_GUID_STRING_LEN];
-            StringFromGUID2(classGuid, guidString, MAX_GUID_STRING_LEN);
-            lprintf("  Class GUID: %S", guidString);
+        //if (cr == CR_SUCCESS) 
+		{
+			  // Convert GUID to string for printing
+			  //WCHAR guidString[ MAX_GUID_STRING_LEN ];
+			  //StringFromGUID2( classGuid, guidString, MAX_GUID_STRING_LEN );
+			  //lprintf( "  Class GUID: %S", guidString );
+
+			  DEVPROPTYPE propType;
+			  size_t bufferLen = 1024;
+			  POINTER propertyBuffer   = NewArray( uint8_t, bufferLen );
+			  //std::vector<BYTE> propertyBuffer( 256 ); // Start with a reasonable buffer size.
+			  ULONG propertyBufferSize = (ULONG)bufferLen;
 
 
-			DEVPROPTYPE propType;
-			std::vector<BYTE> propertyBuffer(256); // Start with a reasonable buffer size.
-			ULONG propertyBufferSize = (ULONG)propertyBuffer.size();
+			  // Retrieve the class name property (DEVPKEY_NAME).
+			  cr = CM_Get_Class_Property_ExW( &ComPortsClass, &DEVPKEY_NAME, &propType, (PBYTE)propertyBuffer
+			                                , &propertyBufferSize, 0, 0 );
+			  if( cr == CR_NO_SUCH_REGISTRY_KEY ) {
+				  lprintf( "Bad GUID Initialization..." );
+			  }
+			  if( cr == CR_BUFFER_SMALL ) {
+				  // Buffer was too small, resize and try again.
+				  propertyBuffer = ReallocateEx( propertyBuffer, propertyBufferSize DBG_SRC );
+				  cr = CM_Get_Class_Property_ExW( &ComPortsClass, &DEVPKEY_NAME, &propType, (PBYTE)propertyBuffer
+				                                , &propertyBufferSize, 0, 0 );
+			  }
 
-			// Retrieve the class name property (DEVPKEY_NAME).
-			cr = CM_Get_Class_Property_ExW(
-				&classGuid,
-				&DEVPKEY_NAME,
-				&propType,
-				propertyBuffer.data(),
-				&propertyBufferSize,
-				0,
-				0
-			);
-			if (cr == CR_BUFFER_SMALL) {
-				// Buffer was too small, resize and try again.
-				propertyBuffer.resize(propertyBufferSize);
-				cr = CM_Get_Class_Property_ExW(
-					&classGuid,
-					&DEVPKEY_NAME,
-					&propType,
-					propertyBuffer.data(),
-					&propertyBufferSize,
-					0,
-					0
-				);
-			}
+			  if( cr == CR_SUCCESS ) {
+				  // DEVPKEY_NAME returns a DEVPROP_TYPE_STRING type.
+				  if( propType == DEVPROP_TYPE_STRING ) {
+					  //const wchar_t *className = reinterpret_cast<const wchar_t *>( propertyBuffer );
+					  //lprintf( "  - %S  (GUID: {%S}) ", className, guidString );
+					  //TEXTSTR t_className = WcharConvert( (const wchar_t *)className );
+					  //lprintf( "(%s) (%s)", t_className, "Ports (COM & LPT)" );
+					  if( 1 ) {// || StrCmp( t_className, "Ports (COM & LPT)" ) == 0 ) {
+						  //lprintf( "So we should see what devices are there.." );
+						  // GUID_DEVCLASS_PORTS
+						  HDEVINFO hdi = SetupDiGetClassDevs( &classGuid, NULL, NULL, DIGCF_PRESENT );
 
-			if (cr == CR_SUCCESS) {
-				// DEVPKEY_NAME returns a DEVPROP_TYPE_STRING type.
-				if (propType == DEVPROP_TYPE_STRING) {
-					const wchar_t* className = reinterpret_cast<const wchar_t*>(propertyBuffer.data());
-					lprintf( "  - %S  (GUID: {%S}) ", className, classGuid );
-					TEXTSTR t_className = WcharConvert((const wchar_t*)className);
-					lprintf("(%s) (%s)", t_className, "Ports (COM & LPT)");
-					if ( 1 || StrCmp(t_className, "Ports (COM & LPT)") == 0) {
-						lprintf("So we should see what devices are there..");
-						// GUID_DEVCLASS_PORTS
-						HDEVINFO hdi = SetupDiGetClassDevs(&classGuid, NULL, NULL, DIGCF_PRESENT);
-							//SetupDiCreateDeviceInfoList(&classGuid, NULL);
-						DWORD devId = 0;
-						SP_DEVINFO_DATA data;
-						SP_DEVICE_INTERFACE_DATA intData;
-						data.cbSize = sizeof(data);
-						while (1) {
+						  // SetupDiCreateDeviceInfoList(&classGuid, NULL);
+						  DWORD devId  = 0;
+						  SP_DEVINFO_DATA data;
+						  SP_DEVICE_INTERFACE_DATA intData;
+						  data.cbSize = sizeof( data );
+						  while( 1 ) {
+							  if( !SetupDiEnumDeviceInfo( hdi, devId, &data ) )
+								  break;
+							  {
+								  //lprintf( "Got a device... %d", data.DevInst );
 
-							if (SetupDiEnumDeviceInfo(hdi, devId, &data)) {
-								//data.InterfaceClassGuid
-								//data.Flags
-								// is this the right device though?
+								  HKEY hKey
+								       = SetupDiOpenDevRegKey( hdi, &data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE );
+								  DWORD dwError = GetLastError();
+								  char namebuf[ 256 ];
+								  DWORD namebuflen = 256;
+								  int queryErr = RegQueryValueEx( hKey, "PortName", NULL, NULL, (LPBYTE)namebuf, &namebuflen );
+								  namebuf[ namebuflen ] = 0;
+								  //lprintf( "Device: %.*s", namebuflen, namebuf );
 
-								lprintf("Got a device... %d", data.DevInst);
-								DWORD instId = 0;
-								DEVPROPKEY keys[12];
-								ULONG     keyCount = 12;
-								if (!CM_Get_DevNode_Property_Keys(
-									(DEVINST)data.DevInst,
-									&keys[0],
-									&keyCount,
-									0
-								)) {
-								}
-								else {
-									lprintf("Got keys?");
-									for (int i = 0; i < keyCount; i++) {
-										lprintf( "something %d", keys[i].pid);
-									}
-								}
+								  if( !port || !port[ 0 ] || StrCmp( port, namebuf ) == 0 ) {
 
-								if (SetupDiEnumDeviceInterfaces(hdi, &data, &classGuid, instId, &intData)) {
-									lprintf("Got intdata?");
-									//SetupDiGetDeviceInterfaceDetail(hdi,
-								}
-								else {
-									DWORD dwError = GetLastError();
-									lprintf("intdata Err: %d", dwError);
-								}
+									  if( !enable ) {
+										  bool skip_disable = false;
+										  ULONG ulStatus;
+										  ULONG ulProblem;
 
-							}
-							else {
-								DWORD dwError = GetLastError();
-								lprintf("Err: %d", dwError );
-								if (dwError == ERROR_NO_MORE_ITEMS) break;
-							}
-							devId++;
-						}
-						SetupDiDestroyDeviceInfoList(hdi);
+										  // Get the status and problem code of the device
+										  CONFIGRET cr = CM_Get_DevNode_Status( &ulStatus, &ulProblem, data.DevInst, 0 );
 
-					}
-				}
-			}
-			else {
-				lprintf( "CM_Get_Class_Property failed for a class with error: %d", cr );
-			}
+										  if( cr == CR_SUCCESS ) {
+											  // Check if the device is disabled (problem code CM_PROB_DISABLED)
+											  if( ulProblem == CM_PROB_DISABLED ) {
+												  // was already disabled, disable won't give an event
+												  // just do the enable.
+												  CONFIGRET r2 = CM_Enable_DevNode( data.DevInst, 0 );
+												  skip_disable = true;
+												  lprintf( "Enable dev? %d"
+												         , r2 );
+												  
+											  }
+										  }
 
-			
+										  if( !skip_disable ) {
+											  CONFIGRET r1 = CM_Disable_DevNode( data.DevInst, CM_DISABLE_UI_NOT_OK );
+											  if( r1 == CR_REMOVE_VETOED ) {
+												  lprintf( "Cannot remove the device." );
+											  } else {
+												  //lprintf( "Should this wait some time? %d", r1 );
+											  }
+										  }
+									  } else {
+										  // enabling an enabled node doesn't matter...
+										  // no need to require that it's disabled...
+										  // it's just that the disable is intended to be followed by an enable
 
+										  CONFIGRET r2 = CM_Enable_DevNode( data.DevInst, 0 );
+										  if( r2 )
+											lprintf( "Device enable Failed? %d(%08x)", r2, r2 );
+									  }
+									  // found the match, done.
+									  if( port && port[ 0 ] )
+										  break;
+								  }
+							  }
+
+							  devId++;
+						  }
+						  SetupDiDestroyDeviceInfoList( hdi );
+					  }
+				  }
+			  } else {
+				  lprintf( "CM_Get_Class_Property failed for a class with error: %d", cr );
+			  }
+		  }
+		  /*
         } else if (cr == CR_NO_SUCH_VALUE) {
             // End of enumeration
-            break;
+          //  break;
         } else if (cr == CR_INVALID_DATA) {
             // Ignore invalid data entries and continue enumeration
             lprintf("  Warning: Invalid data encountered for class index %lu. Skipping.", classIndex);
         } else {
             lprintf("  Error enumerating classes: %lu", cr);
-            break;
+         //   break;
         }
+			      */
         classIndex++;
-    } while (TRUE);	
+	 };// while( TRUE );	
 
 
-	CONFIGRET r1 = CM_Disable_DevNode( inst, CM_DISABLE_UI_NOT_OK );
-	CONFIGRET r2 = CM_Enable_DevNode( inst, 0 );
+	//CONFIGRET r1 = CM_Disable_DevNode( inst, CM_DISABLE_UI_NOT_OK );
+	//CONFIGRET r2 = CM_Enable_DevNode( inst, 0 );
 	
 }
 
+
+void updateNames( void ) {
+	int i;
+	for( i = 0; pkey_table[ i ].name; i++ ) {
+		char const *last = StrRChr( pkey_table[ i ].name, '_' );
+		int spaces = 0;
+		LOGICAL isCap    = FALSE;
+		int ofs = 0;
+		while( last[ ofs ] ) {
+			if( last[ ofs ] >= 'A' && last[ ofs ] <= 'Z' ) {
+				isCap = TRUE;
+			} else if( last[ ofs ] >= 'a' && last[ ofs ] <= 'z' ) {
+				if( isCap ) {
+					// one space before the previous cap.
+					spaces++;
+					isCap = FALSE;
+				}
+			}
+			ofs++;
+		}
+		char *fname = NewArray( char, ofs + spaces + 1 );
+		int out     = 0;
+		ofs         = 0;
+		while( last[ ofs ] ) {
+			if( last[ ofs ] >= 'A' && last[ ofs ] <= 'Z' ) {
+				fname[ out++ ] = last[ofs];
+				isCap          = TRUE;
+			} else if( last[ ofs ] >= 'a' && last[ ofs ] <= 'z' ) {
+				if( isCap ) {
+					// one space before the previous cap.
+					if( out > 1 ) {
+						fname[ out ] = fname[ out - 1 ];
+						fname[ out - 1 ] = ' ';
+						out++;
+					} 
+					spaces++;
+					isCap = FALSE;
+				}
+				fname[ out++ ] = last[ ofs ];
+			}
+			ofs++;
+		}
+		fname[ out++ ] = 0;
+		pkey_table[ i ].niceName = fname;
+	}
+}
+
+
+// Constant for the number of 100-nanosecond intervals between Jan 1, 1601 and Jan 1, 1970
+// This value is 116444736000000000LL
+const int64_t WINDOWS_TICK_TO_UNIX_EPOCH_OFFSET    = 116444736000000000LL;
+
+// Constant for converting 100-nanosecond intervals to milliseconds
+const int64_t WINDOWS_TICK_TO_MILLISECONDS_DIVISOR = 10000;
+
+int64_t FiletimeToJavascriptTick( FILETIME ft ) {
+	// Combine the high and low parts of the FILETIME into a 64-bit integer.
+	ULARGE_INTEGER uli;
+	uli.LowPart          = ft.dwLowDateTime;
+	uli.HighPart         = ft.dwHighDateTime;
+
+	// The result needs to be a signed 64-bit integer to handle the subtraction.
+	int64_t windowsTicks = uli.QuadPart;
+
+	// Adjust for the different epochs.
+	int64_t unixTicks    = windowsTicks - WINDOWS_TICK_TO_UNIX_EPOCH_OFFSET;
+
+	// Convert from 100-nanosecond intervals to milliseconds.
+	int64_t jsTicks      = unixTicks / WINDOWS_TICK_TO_MILLISECONDS_DIVISOR;
+
+	return jsTicks;
+}
+
+#else
+
+void getPortProperties(ComObject *com, Isolate* isolate, Local<Object> result) {
+
+}
 
 #endif
