@@ -252,6 +252,7 @@ var val = vfs.registry.get( "HKCU/something" );
 
 
 # COM Ports
+
    (result from vfs.ComPort() )
 
 Get a list of the com ports available (on windows)...
@@ -261,9 +262,29 @@ import sack from "sack.vfs"
 const ports = sack.ComPort.ports;
 ``` 
 
+These methods are added to base ComPort function.
 
-This is the result of opening a com port object.  Com ports greater than 9 must be specified with `\\.\com#`.  Throws an error
-if the com port cannot be opened.
+
+| method | description |
+|---|---|
+|	reset( portname ) | closes the port, disables the comport device and reenables it.|
+|   enable( portname ) | enable comport.|
+|   disable( portname ) | disable comport device.|
+
+
+``` js
+const port = sack.ComPort( "com1" );
+// would need to close the port first
+port.close();
+
+sack.ComPort.disable( portname );
+```
+
+This is the result of opening a com port object.  ~~Com ports greater than 9 must be specified with `\\.\com#`~~.  
+Port name is always figured out to be the correct format; `\\.\com1` would become `COM1`, port `com12` would become `\\.\COM12` appropriately.
+Internally the device subsystem for enabling/disabling the port only knows the` COM##` name.
+
+Throws an error if the com port cannot be opened.  (already open?)
 
 ``` js
 
@@ -276,6 +297,9 @@ ComObject = {
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
      rts = true/false - set rts flag.
      close() - close the com port.
+	reset() - closes the port, disables the comport device and reenables it.
+   enable() - enable comport.
+   disable() - disable comport device.
 }
 
 COM port settings are kept in the default option database under 
