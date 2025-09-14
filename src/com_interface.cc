@@ -366,7 +366,7 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef _WIN32			
 			if (portName[4] != 0 && portName[0] != '\\') {
 				char* newPort = NewArray(char, 12);
-				snprintf(newPort, 12, "\\\\.\\COM", portName+3);
+				snprintf(newPort, 12, "\\\\.\\COM%s", portName+3);
 				Deallocate(char*, portName);
 				portName = newPort;
 		   } else {
@@ -861,10 +861,10 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 				   // lprintf( "  - %S  (GUID: {%S}) ", className, guidString );
 				   // TEXTSTR t_className = WcharConvert( (const wchar_t *)className );
 				   // lprintf( "(%s) (%s)", t_className, "Ports (COM & LPT)" );
-				   if( 1 ) { //|| StrCmp( t_className, "Ports (COM & LPT)" ) == 0 ) {
 
-					   lprintf( "So we should see what devices are there.." );
+					   //lprintf( "So we should see what devices are there.." );
 					   // GUID_DEVCLASS_PORTS
+					   // this id only com port class.
 					   HDEVINFO hdi = SetupDiGetClassDevs( &classGuid, NULL, NULL, DIGCF_PRESENT );
 
 					   // SetupDiCreateDeviceInfoList(&classGuid, NULL);
@@ -874,6 +874,8 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 					   data.cbSize = sizeof( data );
 					   // enumerate devices...
 					   while( 1 ) {
+						   // in loop to enum all devices.
+						   // get the data.
 						   if( !SetupDiEnumDeviceInfo( hdi, devId, &data ) ) {
 							   DWORD dwError = GetLastError();
 							   if( dwError == ERROR_NO_MORE_ITEMS )
@@ -887,7 +889,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 							   // data.Flags
 							   //  is this the right device though?
 
-							   lprintf( "Got a device... %d", data.DevInst );
+							   //lprintf( "Got a device... %d", data.DevInst );
 
 							   HKEY hKey = SetupDiOpenDevRegKey( hdi, &data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE );
 							   DWORD dwError = GetLastError();
@@ -1012,6 +1014,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 
 										   }
 											   break;
+										   case DEVPROP_TYPE_NTSTATUS:
 										   case DEVPROP_TYPE_UINT32:
 											   if( use_index ) {
 												   unnamed->Set( context, last_unnamed++
@@ -1096,7 +1099,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 						   devId++;
 					   }
 					   SetupDiDestroyDeviceInfoList( hdi );
-				   }
+				
 			   }
 		   } else {
 			   lprintf( "CM_Get_Class_Property failed for a class with error: %d", cr );
@@ -1209,10 +1212,9 @@ void reEnablePort( char const *port, bool enable ) {
 											  if( ulProblem == CM_PROB_DISABLED ) {
 												  // was already disabled, disable won't give an event
 												  // just do the enable.
-												  CONFIGRET r2 = CM_Enable_DevNode( data.DevInst, 0 );
+												  //CONFIGRET r2 = CM_Enable_DevNode( data.DevInst, 0 );
 												  skip_disable = true;
-												  lprintf( "Enable dev? %d"
-												         , r2 );
+												  //lprintf( "Enable dev? %d", r2 );
 												  
 											  }
 										  }
