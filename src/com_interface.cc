@@ -139,11 +139,13 @@ void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<Context> context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> comTemplate;
+#ifdef _WIN32
 	   updateNames(); // this is used for port[].properties
 	   if(0)
 	   {
 		   ThreadTo( RegisterAndCreateMonitor, 0 );
 	   }
+#endif
 		//reEnablePort("");
 	   comTemplate = FunctionTemplate::New( isolate, New );
 		comTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ComPort" ) );
