@@ -177,8 +177,8 @@ void ComObject::Init( Local<Object> exports ) {
 #else
 		
 		comTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "rts" )
-			, FunctionTemplate::New( isolate, ComObject::getRTS )
-			, FunctionTemplate::New( isolate, ComObject::setRTS )
+			, FunctionTemplate::New( isolate, ComObject::getRTS2 )
+			, FunctionTemplate::New( isolate, ComObject::setRTS2 )
 		);
 #endif
 		Local<Function> ComFunc = comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
