@@ -55,8 +55,8 @@ public:
 	int last_count_handled;
 	int closing;
 	PTHREAD event_waker;
-	PLIST opening;
-	PLIST requests;
+	PLIST opening = NULL;
+	PLIST requests = NULL;
 	uv_async_t async = {}; // keep this instance around for as long as we might need to do the periodic callback
 	class constructorSet *c;
 
@@ -74,7 +74,7 @@ public:
 	* this is the general async callback event being served
 	* it somces from 
 	*/
-	struct wssEvent* eventMessage;
+	struct wssEvent* eventMessage = NULL;
 	bool ssl;
 	enum wsReadyStates readyState;
 	bool immediateEvent;
