@@ -15958,3 +15958,7 @@ SACKCOMMLIST_PROC( LOGICAL, ListPorts )( ListPortsCallback lpCallback, uintptr_t
 #elif VERSION_LISTPORTS!=0x00020000
 #error You have included two LISTPORTS.H with different version numbers
 #endif
+#ifdef offsetof
+#  undef offsetof
+#  define offsetof( a, b ) ( &((a *)(0))->b )
+#endif
