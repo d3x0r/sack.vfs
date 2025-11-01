@@ -462,10 +462,10 @@ static void newBorder( const FunctionCallbackInfo<Value>& args ) {
 		Local<Function> cons = Local<Function>::New( isolate, c->VoidObject_constructor );
 		Local<Object> borderObj = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		VoidObject *v = VoidObject::Unwrap<VoidObject>( borderObj );
-		Image image;
-		int32_t width, height;
-		int32_t anchors;
-		int definesColors;
+		Image image = NULL;
+		int32_t width = 256, height = 255;
+		int32_t anchors = 0;
+		int definesColors = 0;
 		struct optionStrings *strings = getStrings( isolate );
 		Local<String> optString;
 		if( config->Has( context, optString = strings->imageString->Get( isolate ) ).ToChecked() ) {
@@ -1201,7 +1201,7 @@ void ControlObject::New( const FunctionCallbackInfo<Value>& args ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -1547,7 +1547,7 @@ void ControlObject::createFrame( const FunctionCallbackInfo<Value>& args ) {
 
 		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_constructor2 );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -2166,8 +2166,8 @@ void ListboxItemObject::setText( const FunctionCallbackInfo<Value>& args ) {
 
 void ListboxItemObject::getOpen( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	ListboxItemObject* me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );
-	args.GetReturnValue().Set( False(isolate) );
+	ListboxItemObject* me = ObjectWrap::Unwrap<ListboxItemObject>( args.This() );	
+	args.GetReturnValue().Set(PSI_Listbox_IsItemOpen(me->pli)?True(isolate):False(isolate) );
 }
 void ListboxItemObject::setOpen( const FunctionCallbackInfo<Value>& args ) {
 	bool open = args[0]->BooleanValue( args.GetIsolate() );
@@ -2469,7 +2469,7 @@ void RegistrationObject::NewRegistration( const FunctionCallbackInfo<Value>& arg
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_registrationConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -2530,8 +2530,8 @@ void RegistrationObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 
 static int CPROC cbMouse( PSI_CONTROL pc, int32_t x, int32_t y, uint32_t b ) {
 
-	CTEXTSTR name = GetControlTypeName( pc );
-	RegistrationObject *obj = findRegistration( name );
+	//CTEXTSTR name = GetControlTypeName( pc );
+	//RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
 	if( me[0]->registration->cbMouseEvent.IsEmpty() ){
 		return false;
@@ -2557,8 +2557,8 @@ void RegistrationObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
 
 
 static int CPROC cbKey( PSI_CONTROL pc, uint32_t key ) {
-	CTEXTSTR name = GetControlTypeName( pc );
-	RegistrationObject *obj = findRegistration( name );
+	//CTEXTSTR name = GetControlTypeName( pc );
+	//RegistrationObject *obj = findRegistration( name );
 	ControlObject **me = ControlData( ControlObject **, pc );
 	if( me[0]->registration->cbKeyEvent.IsEmpty() ){
 		return false;
@@ -2568,10 +2568,12 @@ static int CPROC cbKey( PSI_CONTROL pc, uint32_t key ) {
 }
 
 void RegistrationObject::setKey( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
+		//Isolate* isolate = args.GetIsolate();
+	lprintf("keyboard event not registered...");
 }
 void RegistrationObject::setTouch( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
+		//Isolate* isolate = args.GetIsolate();
+	lprintf("touch event not connected...");
 }
 
 static int onTouch( PSI_CONTROL pc, PINPUT_POINT pPoints, int nPoints ) {

@@ -311,7 +311,7 @@ void ImageObject::getPng( const FunctionCallbackInfo<Value>& args ) {
 			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			//lprintf( "(2)png backing store for:%p", buf );
 			holder->buffer = buf;
-#endif
+
 			args.GetReturnValue().Set( arrayBuffer );
 		}
 	}
@@ -339,7 +339,6 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
 			//lprintf( "(2)jpg backing store for:%p", buf );
 			holder->buffer = buf;
-#endif
 			args.GetReturnValue().Set( arrayBuffer );
 		}
 	}
@@ -496,7 +495,7 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 		Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -547,7 +546,7 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
     class constructorSet* c = getConstructors( isolate );
     Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -596,7 +595,7 @@ void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
-	int x, y, w, h, c = BASE_COLOR_BLACK;
+	int x = 0, y = 0, w = io->image->width, h = io->image->height, c = BASE_COLOR_BLACK;
 	if( argc == 1 ) {
 		if( args[0]->IsObject() ) {
 			ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args[0]->ToObject( context).ToLocalChecked() );
@@ -644,7 +643,7 @@ void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	int x = 0, y = 0, w = io->image->width, h = io->image->height, c;
+	int x = 0, y = 0, w = io->image->width, h = io->image->height, c = BASE_COLOR_BLACK;
 	if( argc > 0 ) {
 		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
@@ -674,7 +673,7 @@ void ImageObject::plot( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	int x, y, c;
+	int x = 0, y = 0, c = BASE_COLOR_BLACK;
 	if( argc > 0 ) {
 		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
@@ -699,7 +698,7 @@ void ImageObject::plotOver( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	int x, y, c;
+	int x = 0, y = 0, c = BASE_COLOR_BLACK;
 	if( argc > 0 ) {
 		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
@@ -724,7 +723,7 @@ void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	int argc = args.Length();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	int x, y, xTo, yTo, c;
+	int x = 0, y = 0, xTo = 100, yTo = 100, c = BASE_COLOR_BLACK;
 	if( argc > 0 ) {
 		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
@@ -760,7 +759,7 @@ void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
-	int x, y, xTo, yTo, c;
+	int x = 0, y = 0, xTo = 100, yTo = 100, c = BASE_COLOR_BLACK;
 	if( argc > 0 ) {
 		x = (int)args[0]->NumberValue(context).ToChecked();
 	}
@@ -801,8 +800,8 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
 	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	int x = 0, y= 0, xAt, yAt;
-	int w, h;
+	int x = 0, y = 0, xAt = 0, yAt = 0;
+	int w = io->image->width, h = io->image->height;
 	if( argc > 0 ) {
 		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 		if( !ii || !ii->image ) {
@@ -815,6 +814,7 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 	else {
+		lprintf("Bad First paraemter, must be an image to put?");
 		// throw error ?
 		return;
 	}
@@ -880,7 +880,7 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	ImageObject *ii;// = ObjectWrap::Unwrap<ImageObject>( args.This() );
 	int argc = args.Length();
-	int x = 0, y = 0, xTo, yTo, c, xAt, yAt, w, h;
+	int x = 0, y = 0, xAt, yAt, w, h;
 	if( argc > 0 ) {
 		ii = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 	}
@@ -1106,11 +1106,12 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 		// Invoked as constructor: `new MyObject(...)`
 		FontObject* obj;
-		if( filename )
-			obj = new FontObject( filename, w, h, flags );
+		if (filename) {
+			obj = new FontObject(filename, w, h, flags);
 
-		obj->Wrap( args.This() );
-		args.GetReturnValue().Set( args.This() );
+			obj->Wrap(args.This());
+			args.GetReturnValue().Set(args.This());
+		}
 
 	}
 	else {
@@ -1123,7 +1124,7 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->FontObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
@@ -1248,6 +1249,9 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 			else if( args[0]->IsString() ) {
 				// parse string color....
 				//Config
+				isolate->ThrowException(Exception::Error(localStringExternal(isolate, "String parameter to color constructor isn't handled yet...")));
+				return;
+
 			}
 
 		}
@@ -1275,7 +1279,7 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->ColorObject_constructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-		delete argv;
+		delete[] argv;
 	}
 }
 
