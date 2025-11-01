@@ -773,7 +773,10 @@ void mouse_asyncmsg__( v8::Isolate *isolate, Local<Context> context, MouseObject
 			SET( eventObj, "buttons", Integer::New( isolate, hidg.buttons ) );
 			SET( eventObj, "x", Integer::New( isolate, msg->data.pt.x ) );
 			SET( eventObj, "y", Integer::New( isolate, msg->data.pt.y ) );
-
+			/*
+			lprintf( "Mouse Event: %d x:%d y:%d md:%08x %d %d %d", msg->msgid, msg->data.pt.x, msg->data.pt.y
+			       , msg->data.mouseData, msg->data.dwExtraInfo, msg->data.flags, msg->data.time );
+			*/
 			Local<Value> argv[] = { eventObj };
 
 

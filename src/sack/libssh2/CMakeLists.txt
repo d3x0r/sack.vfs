@@ -318,6 +318,8 @@ if(WIN32)
     set(HAVE_STRTOLL 1)
   elseif(MSVC)
     set(HAVE_GETTIMEOFDAY 0)
+    set(HAVE_UNISTD_H 0)
+    set(HAVE_SYS_TIME_H 0)
     if(MSVC_VERSION GREATER_EQUAL 1800)
       set(HAVE_INTTYPES_H 1)
       set(HAVE_STRTOLL 1)
@@ -332,14 +334,14 @@ if(WIN32)
       set(HAVE_SNPRINTF 0)
     endif()
   endif()
+  set(HAVE_POLL 0)
+  set(HAVE_SELECT 1)
 endif()
 
 ## Platform checks
 check_include_files("inttypes.h" HAVE_INTTYPES_H)
-if(NOT MSVC)
-  check_include_files("unistd.h" HAVE_UNISTD_H)
-  check_include_files("sys/time.h" HAVE_SYS_TIME_H)
-endif()
+check_include_files("unistd.h" HAVE_UNISTD_H)
+check_include_files("sys/time.h" HAVE_SYS_TIME_H)  # Available on all non-Windows and mingw-w64
 if(NOT WIN32)
   check_include_files("sys/select.h" HAVE_SYS_SELECT_H)
   check_include_files("sys/uio.h" HAVE_SYS_UIO_H)
@@ -393,14 +395,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR
   # not having reliable timeout support
   # inconsistent return of POLLHUP where other implementations give POLLIN
   message(STATUS "poll use is disabled on this platform")
-elseif(NOT WIN32)
+else()
   check_function_exists("poll" HAVE_POLL)
 endif()
-if(WIN32)
-  set(HAVE_SELECT 1)
-else()
-  check_function_exists("select" HAVE_SELECT)
-endif()
+check_function_exists("select" HAVE_SELECT)
 
 # Non-blocking socket support tests. Use a separate, yet unset variable
 # for the socket libraries to not link against the other configured
@@ -469,7 +467,7 @@ if(CRYPTO_BACKEND STREQUAL "OpenSSL" OR NOT CRYPTO_BACKEND AND NOT CRYPTO_NO_OPE
   endif()
 endif()
 
-if(CRYPTO_BACKEND STREQUAL "wolfSSL" OR NOT CRYPTO_BACKEND)
+if(CRYPTO_BACKEND STREQUAL "wolfSSL" )
   find_package(WolfSSL ${_specific_crypto_requirement})
   if(WOLFSSL_FOUND)
     set(CRYPTO_BACKEND "wolfSSL")
@@ -483,7 +481,7 @@ if(CRYPTO_BACKEND STREQUAL "wolfSSL" OR NOT CRYPTO_BACKEND)
   endif()
 endif()
 
-if(CRYPTO_BACKEND STREQUAL "Libgcrypt" OR NOT CRYPTO_BACKEND)
+if(CRYPTO_BACKEND STREQUAL "Libgcrypt" )
   find_package(Libgcrypt ${_specific_crypto_requirement})
   if(LIBGCRYPT_FOUND)
     set(CRYPTO_BACKEND "Libgcrypt")
@@ -492,7 +490,7 @@ if(CRYPTO_BACKEND STREQUAL "Libgcrypt" OR NOT CRYPTO_BACKEND)
   endif()
 endif()
 
-if(CRYPTO_BACKEND STREQUAL "mbedTLS" OR NOT CRYPTO_BACKEND)
+if(CRYPTO_BACKEND STREQUAL "mbedTLS" )
   find_package(MbedTLS ${_specific_crypto_requirement})
   if(MBEDTLS_FOUND)
     set(CRYPTO_BACKEND "mbedTLS")
@@ -503,15 +501,7 @@ endif()
 
 # Detect platform-specific crypto-backends last:
 
-if( NOT CRYPTO_BACKEND )
-    set(CRYPTO_BACKEND "LibreSSL")
-    set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
-    set(CRYPTO_BACKEND_INCLUDE_DIR ../../libressl/4.1.0/include)
-    list(APPEND LIBRARIES ssl crypto tls )
-endif()
-
-
-if(CRYPTO_BACKEND STREQUAL "WinCNG" OR NOT CRYPTO_BACKEND)
+if(CRYPTO_BACKEND STREQUAL "WinCNG" )
   if(WIN32)
     set(CRYPTO_BACKEND "WinCNG")
     set(CRYPTO_BACKEND_DEFINE "LIBSSH2_WINCNG")
@@ -531,6 +521,17 @@ if(CRYPTO_BACKEND STREQUAL "WinCNG" OR NOT CRYPTO_BACKEND)
     message(FATAL_ERROR "WinCNG not available")
   endif()
 endif()
+
+# default fallback
+if( NOT CRYPTO_BACKEND )
+    set(CRYPTO_BACKEND "LibreSSL")
+    set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
+    set(CRYPTO_BACKEND_INCLUDE_DIR ../../libressl/4.1.0/include)
+	INCLUDE_DIRECTORIES( "../zlib-1.3" )
+    list(APPEND LIBRARIES ssl crypto tls )
+endif()
+
+
 
 # Global functions
 

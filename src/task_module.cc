@@ -1223,7 +1223,7 @@ static BOOL addMonitor( HMONITOR hMonitor,
 	
 	for( int numStart = 0; monitorInfo.szDevice[numStart]; numStart++ ) {
 		if( monitorInfo.szDevice[numStart] >= '0' && monitorInfo.szDevice[numStart] <= '9' ) {
-			devNum = atoi( monitorInfo.szDevice + numStart );
+			devNum = atoi( monitorInfo.szDevice + numStart ); // from here to end of string is parsed.
 			break;
 		}
 	}
@@ -1255,6 +1255,11 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 	int i;
 	DISPLAY_DEVICE dev;
 	DEVMODE dm;
+	struct monitorInfo {
+		CTEXTSTR sourceName; 
+		CTEXTSTR monitorName;
+	};
+	PLIST infos                   = NULL;
 	struct optionStrings* strings = getStrings( isolate );
 
 	SETV( result, strings->monitorString->Get( isolate ), array_monitors );
@@ -1275,6 +1280,77 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 			, (LPARAM)&data
 		);
 
+		{
+			std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+			std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+			UINT32 flags = QDC_ONLY_ACTIVE_PATHS;
+			LONG isError = ERROR_INSUFFICIENT_BUFFER;
+
+			UINT32 pathCount, modeCount;
+			isError = GetDisplayConfigBufferSizes( flags, &pathCount, &modeCount );
+
+			if( isError ) {
+				return;
+			}
+
+			// Allocate the path and mode arrays
+			paths.resize( pathCount );
+			modes.resize( modeCount );
+
+			// Get all active paths and their modes
+			isError = QueryDisplayConfig( flags, &pathCount, paths.data(), &modeCount, modes.data(), nullptr );
+
+			// The function may have returned fewer paths/modes than estimated
+			paths.resize( pathCount );
+			modes.resize( modeCount );
+
+			if( isError ) {
+				return;
+			}
+
+			// For each active path
+			int len = paths.size();
+			for( int i = 0; i < len; i++ ) {
+				// Find the target (monitor) friendly name
+				DISPLAYCONFIG_TARGET_DEVICE_NAME targetName = {};
+				targetName.header.adapterId                 = paths[ i ].targetInfo.adapterId;
+				targetName.header.id                        = paths[ i ].targetInfo.id;
+				targetName.header.type                      = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+				targetName.header.size                      = sizeof( targetName );
+				isError                                     = DisplayConfigGetDeviceInfo( &targetName.header );
+
+				if( isError ) {
+					return;
+				}
+
+				// Find the adapter device name (PATH not name...)
+				DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName = {};
+				sourceName.header.adapterId                 = paths[ i ].sourceInfo.adapterId;
+				sourceName.header.id                        = paths[ i ].sourceInfo.id;
+				sourceName.header.type                      = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+				sourceName.header.size                      = sizeof( sourceName );
+
+				DWORD result                                = DisplayConfigGetDeviceInfo( &sourceName.header );
+				if( result != ERROR_SUCCESS ) {
+					
+					lprintf( "error getting adapater! %d", result );
+					//return ;
+				}
+
+				// QString mon_name = "Unknown";
+				if( targetName.flags.friendlyNameFromEdid ) {
+					//lprintf( "Monitor found: %S", targetName.monitorFriendlyDeviceName );
+				}
+				struct monitorInfo *monitor = NewArray( struct monitorInfo, 1 );
+				monitor->sourceName         = WcharConvert( sourceName.viewGdiDeviceName );
+				monitor->monitorName        = WcharConvert( targetName.monitorFriendlyDeviceName );
+				//lprintf( "Adding MOnitor: %s %s", monitor->sourceName, monitor->monitorName );
+				AddLink( &infos, monitor );
+				// qDebug() << "Monitor " << mon_name;
+			}
+		}
+
+
 		for( i = 0;
 			// all devices
 			EnumDisplayDevices( NULL
@@ -1282,15 +1358,32 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 				, &dev
 				, 0
 			); i++ ) {
+
+
+
 			int numStart;
 			if( EnumDisplaySettings( dev.DeviceName, ENUM_CURRENT_SETTINGS, &dm ) ) {
 				if( dm.dmPelsWidth && dm.dmPelsHeight ) {
 					for( numStart = 0; dev.DeviceName[numStart]; numStart++ ) {
 						if( dev.DeviceName[numStart] >= '0' && dev.DeviceName[numStart] <= '9' ) break;
 					}
+					INDEX idx;
+					struct monitorInfo *info;
+					LIST_FORALL(infos, idx, struct monitorInfo*, info) {
+						if( StrCmp( info->sourceName, dev.DeviceName ) == 0 )
+							break;
+					}
+					if( !info ) {
+						lprintf( "Failed to match device to monitor! %s", dev.DeviceName );
+					}
 					//if( l.flags.bLogDisplayEnumTest )
 					display = Object::New( isolate );
+
 					SETV( display, strings->displayString->Get( isolate ), Number::New( isolate, atoi( dev.DeviceName + numStart ) ) );
+					SETV( display, strings->deviceString->Get( isolate ), String::NewFromUtf8( isolate, dev.DeviceString).ToLocalChecked() );
+					SETV( display, strings->monitorString->Get( isolate )
+					    , String::NewFromUtf8( isolate, info->monitorName ).ToLocalChecked() );
+					
 					SETV( display, strings->xString->Get( isolate ), Number::New( isolate, dm.dmPosition.x ) );
 					SETV( display, strings->yString->Get( isolate ), Number::New( isolate, dm.dmPosition.y ) );
 					SETV( display, strings->widthString->Get( isolate ), Number::New( isolate, dm.dmPelsWidth ) );
@@ -1309,6 +1402,7 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 					//if( l.flags.bLogDisplayEnumTest )
 					display = Object::New( isolate );
 					SETV( display, strings->displayString->Get( isolate ), Number::New( isolate, atoi( dev.DeviceName + numStart ) ) );
+					SETV( display, strings->deviceString->Get( isolate ), String::NewFromUtf8( isolate, dev.DeviceString).ToLocalChecked() );
 					SETV( display, strings->xString->Get( isolate ), Number::New( isolate, dm.dmPosition.x ) );
 					SETV( display, strings->yString->Get( isolate ), Number::New( isolate, dm.dmPosition.y ) );
 					SETV( display, strings->widthString->Get( isolate ), Number::New( isolate, dm.dmPelsWidth ) );
@@ -1322,8 +1416,18 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 				lprintf( "Found display name, but enum current settings failed? %d", GetLastError() );
 				continue;
 			}
+
 		}
 	}
+
+	INDEX idx;
+	struct monitorInfo *info;
+	LIST_FORALL( infos, idx, struct monitorInfo *, info ) {
+		Release( info->monitorName );
+		Release( info->sourceName );
+		Release( info );
+	}
+	DeleteList( &infos );
 
 	args.GetReturnValue().Set( result );
 }

@@ -119,6 +119,12 @@ const extMap = { '.js': 'text/javascript'
 			, '.cmd':'application/x-msdownload'
 			, '.com':'application/x-msdownload'
 			, '.msi':'application/x-msdownload'
+		, ".gltf":"model/gltf+json"
+		, ".glb":"model/gltf+binary"
+		, ".obj":"model/obj"
+		, ".bin":"application/octet-stream"
+		, ".mtl":"model/mtl"
+
 		}
 
 const requests = [];
@@ -136,7 +142,8 @@ function logRequests() {
 //exports.getRequestHandler = getRequestHandler;
 export function getRequestHandler( serverOpts ) {
 	serverOpts = serverOpts || {};
-	let resourcePath = serverOpts.resourcePath || ".";
+	const resourcePath = serverOpts.resourcePath || ".";
+	const commonPath = serverOpts?.commonPath || ".";
 	const npm_path = serverOpts.npmPath || ".";
 
 	return function( req, res ) {
@@ -156,6 +163,10 @@ export function getRequestHandler( serverOpts ) {
 		      || req.url.startsWith( "/node_modules/jsox" )
 		      || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) )
 			filePath=npm_path  + unescape(req.url);
+
+		if( req.url.startsWith( "/common/" ) )
+			filePath = commonPath + decodeURI(req.url).replace( "/common", "" );
+
 		let extname = path.extname(filePath);		
 		let contentEncoding = encMap[extname];
 		if( contentEncoding ) {
@@ -256,7 +267,7 @@ server.addHandler( app.handle );
 
 		let filePath;
 		if( req.url.startsWith( "/common/" ) ) {
-			filePath = commonRoot + decodeURI(req.url).replace( "/common", "" );
+			filePath = commonPath + decodeURI(req.url).replace( "/common", "" );
 		}else {
 			filePath = serverOpts.resourcePath + req.url;
 		}

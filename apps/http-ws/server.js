@@ -17,17 +17,32 @@ const extMap = { '.js': 'text/javascript'
               ,'.html':'text/html'
               ,'.htm':'text/html'
               ,'.jpg':'image/jpg'
+              ,'.webm':'video/webm'
               ,'.mp4':'video/mp4'
               ,'.svg':'image/svg+xml'
               ,'.wav':'audio/wav'
               ,'.crt':'application/x-x509-ca-cert'
               ,'.pem':'application/x-pem-file'
               ,'.wasm': 'application/wasm'
-              , '.asm': 'application/wasm' }
+              , '.asm': 'application/wasm' 
+			, '.bat':'application/x-msdownload'
+			, '.dll':'application/x-msdownload'
+			, '.exe':'application/x-msdownload'
+			, '.cmd':'application/x-msdownload'
+			, '.com':'application/x-msdownload'
+			, '.msi':'application/x-msdownload'
+		, ".gltf":"model/gltf+json"
+		, ".glb":"model/gltf+binary"
+		, ".obj":"model/obj"
+		, ".bin":"application/octet-stream"
+		, ".mtl":"model/mtl"
+
+		}
 
 const requests = [];
 let reqTimeout = 0;
 let lastFilePath = null;
+let commonRoot = ".";
 function logRequests() {
 	const log = requests.join(', ');
 	requests.length = 0;
@@ -39,7 +54,7 @@ function getRequestHandler( serverOpts ) {
 	let resourcePath = serverOpts.resourcePath || ".";
 	const npm_path = serverOpts.npmPath || ".";
 	const disk = sack.Volume();
-
+	commonRoot = serverOpts?.commonPath || ".";
 	return function( req, res ) {
 		/*
 			this is the request remote address if required....
@@ -59,6 +74,10 @@ function getRequestHandler( serverOpts ) {
 		      || req.url.startsWith( "/node_modules/jsox" )
 		      || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) )
 			filePath=npm_path  + unescape(req.url);
+
+		if( req.url.startsWith( "/common/" ) ) {
+			filePath = commonRoot + decodeURI(req.url).replace( "/common", "" );
+
 		let extname = path.extname(filePath);		
 		let contentEncoding = encMap[extname];
 		if( contentEncoding ) {
@@ -100,7 +119,7 @@ server.addHandler( app.handle );
 
 app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
 
-	console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
+	//console.log( "express hook?", req.url , serverOpts.resourcePath + req.url);
 	const headers = {
 		'Content-Type': "text/javascript",
 	}
@@ -111,7 +130,6 @@ app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
 		}else {
 			filePath = serverOpts.resourcePath + req.url;
 		}
-
 	const config = disk.read( filePath );
 	if( config ) {
 		res.writeHead( 200, headers );

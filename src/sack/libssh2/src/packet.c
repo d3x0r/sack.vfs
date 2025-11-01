@@ -1366,14 +1366,14 @@ libssh2_packet_add_jump_authagent:
         if( channelp && channelp->data_cb )
             if( channelp->close_state == libssh2_NB_state_idle ) { // not closed...
                 if( ( data[0] == SSH_MSG_CHANNEL_DATA ) || ( data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA ) ) {
-                    if( ( data[0] == SSH_MSG_CHANNEL_DATA ) ) {
+                    if( data[0] == SSH_MSG_CHANNEL_DATA ) {
                         LIBSSH2_CHANNEL_DATA( session, channelp, 0, data + data_head, datalen - data_head );
-                    } else if( ( data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA ) ) {
+                    } else if( data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA ) {
                         uint32_t sid = _libssh2_ntohu32( data + 5 );
-                        if( ( sid == SSH_EXTENDED_DATA_STDERR ) ) {
+                        if( sid == SSH_EXTENDED_DATA_STDERR ) {
                             LIBSSH2_CHANNEL_DATA( session, channelp, 1, data + data_head, datalen - data_head );
-                        }  if( ( channelp->remote.extended_data_ignore_mode ==
-                            LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE ) ) {
+                        }  if( channelp->remote.extended_data_ignore_mode ==
+                            LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE ) {
                             LIBSSH2_CHANNEL_DATA( session, channelp, sid, data + data_head, datalen - data_head );
                         }
                     }

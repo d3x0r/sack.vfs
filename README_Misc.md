@@ -15,7 +15,8 @@ Interface to the SACK System Library.  This provides some views into internal in
 |dumpMemory | (verbose,filename) | Dump C allocated memory.  `verbose` and `filename` are both optional.  `verbose` enables dumping each block. `filename` dumps the log to the specified file. |
 |logMemory | (true/false) | Enable logging allocation and deallocation/releases. (when compiled with _DEBUG which is CMAKE_BUILD_TYPE Debug or RelWithDebInfo)|
 |debugMemory | (true/false) | Enable additional debug tracking of memory blocks - on release stamps with a signature, and compares the sigutures later for out of bounds or update after free happes. Similarly blocks that are allocates are definitely not 0, and are stamped with a signagure |
-|enableExitSignal | (cb) | (Windows Only) Enable a callback which can be called when process exit event is triggered.  This disables the automatic exit, so this function should invoke process.exit() (The event cannot be triggered again). |
+|setProgramName | (string) | Used to condition what the name of the program is rather than 'node' which would be the default for most applications. |
+|enableExitSignal | (cb) | Enable a callback which can be called when process exit event is triggered.  This disables the automatic exit, so this function should invoke process.exit() (The event cannot be triggered again). |
 |hideCursor | (timeout) | (Windows Only) Enables hiding the mouse cursor if it is stationary for an amount of time. Timeout parameter is in milliseconds |
 
 Some examples of using some of the system interfaces.
@@ -251,6 +252,7 @@ var val = vfs.registry.get( "HKCU/something" );
 
 
 # COM Ports
+
    (result from vfs.ComPort() )
 
 Get a list of the com ports available (on windows)...
@@ -260,9 +262,29 @@ import sack from "sack.vfs"
 const ports = sack.ComPort.ports;
 ``` 
 
+These methods are added to base ComPort function.
 
-This is the result of opening a com port object.  Com ports greater than 9 must be specified with `\\.\com#`.  Throws an error
-if the com port cannot be opened.
+
+| method | description |
+|---|---|
+|	reset( portname ) | closes the port, disables the comport device and reenables it.|
+|   enable( portname ) | enable comport.|
+|   disable( portname ) | disable comport device.|
+
+
+``` js
+const port = sack.ComPort( "com1" );
+// would need to close the port first
+port.close();
+
+sack.ComPort.disable( portname );
+```
+
+This is the result of opening a com port object.  ~~Com ports greater than 9 must be specified with `\\.\com#`~~.  
+Port name is always figured out to be the correct format; `\\.\com1` would become `COM1`, port `com12` would become `\\.\COM12` appropriately.
+Internally the device subsystem for enabling/disabling the port only knows the` COM##` name.
+
+Throws an error if the com port cannot be opened.  (already open?)
 
 ``` js
 
@@ -275,6 +297,9 @@ ComObject = {
      write( uint8Array ) - write buffer specfied to com port; only accepts uint8array.
      rts = true/false - set rts flag.
      close() - close the com port.
+	reset() - closes the port, disables the comport device and reenables it.
+   enable() - enable comport.
+   disable() - disable comport device.
 }
 
 COM port settings are kept in the default option database under 

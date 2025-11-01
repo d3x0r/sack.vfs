@@ -234,13 +234,13 @@ struct wssEvent {
 			int error;
 			const char *buffer;
 			size_t buflen;
-			int fallback_ssl;
+			volatile int fallback_ssl;
 		} error;
 	}data;
 	PLIST send;
 	PCLIENT pc;
 	PTHREAD waiter;
-	LOGICAL done;
+	volatile LOGICAL done;
 	class wssiObject *result;
 	int uses;
 };
@@ -294,6 +294,8 @@ struct socketTransport {
 };
 
 static void handlePostedClient__( v8::Isolate *isolate, Local<Context> context, struct socketUnloadStation * myself );
+static void webSockHttpClose( PCLIENT pc, uintptr_t psv );
+static void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len );
 
 struct clientSocketPostTask : SackTask {
 	struct socketUnloadStation *myself;
@@ -1120,7 +1122,7 @@ static void wssiAsyncMsg__( Isolate *isolate, Local<Context> context, wssiObject
 				Deallocate( CPOINTER, eventMessage->buf );
 				break;
 			case WS_EVENT_CLOSE:
-				//lprintf( "Send wssi close");
+				//lprintf( "Send call wssi close");
 				argv[0] = Integer::New( isolate, eventMessage->code );
 				if( eventMessage->buf ) {
 					MaybeLocal<String> buf = String::NewFromUtf8( isolate, (const char*)eventMessage->buf, NewStringType::kNormal, (int)eventMessage->buflen );
@@ -1224,6 +1226,13 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 				}
 			} else if( eventMessage->eventType == WS_EVENT_REQUEST ) {
+				if (!eventMessage->pc) {
+					//lprintf( "event canceled before dispatch!" );
+					eventMessage->done = 1;
+					if( eventMessage->waiter )
+						WakeThread( eventMessage -> waiter );
+					continue;
+				}
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
 					class constructorSet *c = getConstructors( isolate );
@@ -1242,6 +1251,8 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 					httpInternal->wss = myself;
 					if( eventMessage->pc )
 						httpInternal->ssl = ssl_IsClientSecure( eventMessage->pc );
+					if( httpInternal->ssl )
+						lprintf( "Still SSL??" );
 					int sslRedirect = (httpInternal->ssl != myself->ssl);
 					httpInternal->pc = eventMessage->pc;
 #if USE_NETWORK_AGGREGATE 
@@ -1294,6 +1305,7 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 				} else {
 					//lprintf( "(pc)Next calls looked in accept with server's psv_on");
 					WebSocketSetOnPSV( eventMessage->pc, (uintptr_t)wssiInternal );
+					SetWebSocketHttpCloseCallback( eventMessage->pc, NULL );
 					wssiInternal->pc = eventMessage->pc;
 					wssiInternal->wsPipe = NULL;
 				}
@@ -1419,9 +1431,11 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 			}
 
 			myself->eventMessage = NULL;
-			eventMessage->done = TRUE;
-			if( eventMessage->waiter )
-				WakeThread( eventMessage->waiter );
+			if( !eventMessage->done ) { // only set done on messages that weren't previously done.
+				eventMessage->done = TRUE;
+				if( eventMessage->waiter )
+					WakeThread( eventMessage->waiter );
+			}
 			DropWssEvent( eventMessage );
 		}
 		myself->last_count_handled = handled;
@@ -2062,7 +2076,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 
 static void webSockServerCloseEvent( wssObject *wss ) {
 	struct wssEvent *pevt = GetWssEvent();
-	//lprintf( "Server Websocket closed; post to javascript %p", wss );
+	lprintf( "Server Websocket closed(almost never happens); post to javascript %p", wss, wss->pc );
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wss;
 	wss->closing = 1;
@@ -2091,11 +2105,13 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 {
 	//class wssObject *wss = (class wssObject*)psv;
 	class wssiObjectReference *wssiRef = (class wssiObjectReference*)psv;
+	if( !psv )
+		return;
 	class wssiObject *wssi = wssiRef->wssi;
 	//lprintf( "Close happened %p %p", wssiRef, wssi );
 	if( wssi ) {
 		struct wssiEvent *pevt = GetWssiEvent();
-		//lprintf( "Server Websocket closed; post to javascript %p  %p", pc, wssi );
+		//lprintf( "Server Websocket Instance(accepted) closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
 		(*pevt).code = code;
@@ -2375,7 +2391,9 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 	else {
-		lprintf("Failed to find HTTP state to write to?? %p", obj->pc);
+		// probably the socket closed while handling the request....
+		// and this is OK.
+		//lprintf("Failed to find HTTP state to write to?? %p", obj->pc);
 	}
 }
 
@@ -2502,7 +2520,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				ssl_Send( obj->pc, content, contentLen );
 			}
 		} else {
-			if( obj->pc ) {
+			if( obj->pc && sack_network_is_active( obj->pc ) ) {
 #ifdef DEBUG_AGGREGATE_WRITES
 				lprintf( "Sending header buffer: %p  %d", obj->pc, GetTextSize(buffer) );
 				LogBinary( GetText( buffer ), GetTextSize( buffer ) );
@@ -2520,7 +2538,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				// no content is allowed.
 				//else
 				//	lprintf( "Content disappeared?" );
-			} else {
+			} else if( obj->wss->wsPipe ) {
 #ifdef DEBUG_AGGREGATE_WRITES
 				lprintf( "Send to pipe somehow??" );
 #endif
@@ -2563,6 +2581,15 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 
 					struct wssEvent *pevt = GetWssEvent();
 					//lprintf( "A posting request event to JS %p %s", obj->pc, GetText( GetHttpRequest( pHttpState ) ) );
+					if( obj->pc ) {
+						AddNetWork( obj->pc, (uintptr_t)obj );
+						// lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) )
+						// ) );
+						SetWebSocketHttpCloseCallback( obj->pc, webSockHttpClose );
+						SetNetworkWriteComplete( obj->pc, webSocketWriteComplete );
+					}
+
+
 					(*pevt).eventType = WS_EVENT_REQUEST;
 					//(*pevt).waiter = MakeThread();
 					(*pevt).pc = obj->pc;
@@ -2592,22 +2619,30 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	VarTextEmpty( obj->pvtResult );
 }
 
-static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
+void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	//uintptr_t psvServer = WebSocketGetServerData( pc );
 	if( wss ) {
 		httpObject *req;
 		INDEX idx;
-		//int tot = 0;
+		int tot = 0;
 		LOGICAL requested = FALSE;
+		struct wssEvent *pevt;
 		// close on wssObjectEvent; may have served HTTP requests
+		//lprintf( "Are there outstanding requests?" );
+		for( idx = 0; pevt = (struct wssEvent *)PeekQueueEx( wss->eventQueue, idx ); idx++ ) {
+			if (pevt->pc == pc) {
+				//lprintf( "Found pending request...%d", idx);
+				pevt->pc = NULL;
+			}
+		}
 		LIST_FORALL( wss->requests, idx, httpObject *, req ) {
-			//tot++;
+			tot++;
 			if( req->pc == pc ) {
 				//lprintf( "Removing request from wss %d %d", idx, tot );
 				SetLink( &wss->requests, idx, NULL );
 				requested = TRUE;
-				//tot--;
+				tot--;
 				//return;
 			}
 		}
@@ -2640,7 +2675,7 @@ static void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 
 }
 
-static void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len ) {
+void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len ) {
 	if( buffer ) {
 		INDEX idx;
 		struct pendingWrite* write;
@@ -2674,6 +2709,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		if( pc ) {
 			AddNetWork( pc, psv );
 			//lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) ) ) );
+			// this socket should close as an HTTP request backed by a wssObject
 			SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
 			SetNetworkWriteComplete( pc, webSocketWriteComplete );
 		}
@@ -2685,7 +2721,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		(*pevt)._this = wss;
 		EnqueLink( &wss->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
-		lprintf( "socket HTTP Request Send %p", &wss->async );
+		lprintf( "socket HTTP Request Send %p %p", &wss->async, pc );
 #endif		
 		if( wss->ivm_hosted )
 			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
@@ -2714,8 +2750,9 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 	switch( error ) {
 	default:
 		break;
-	case SACK_NETWORK_ERROR_SSL_HANDSHAKE:
+	case SACK_NETWORK_ERROR_SSL_HANDSHAKE: // first packet handshake fail
 		(*pevt).data.error.buffer = va_arg( args, const char * );
+		//( ( *pevt ).data.error.buffer ); // keep the buffer, allow SSL to 
 		(*pevt).data.error.buflen = va_arg( args, size_t );
 		(*pevt).data.error.fallback_ssl = 0; // make sure this is cleared.
 		break;
@@ -2738,10 +2775,14 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 		uv_async_send( &wss->async );
 	while( !(*pevt).done )
 		WakeableSleep( 1000 );
+	//lprintf( "probably doing endsecure on %p %d", pc, ( *pevt ).data.error.fallback_ssl );
 
-	if( (*pevt).data.error.fallback_ssl )
-		ssl_EndSecure( pc, (POINTER)(*pevt).data.error.buffer, (*pevt).data.error.buflen );
-
+	if( ( *pevt ).data.error.fallback_ssl ) {
+		// increment this, so the caller can recognize the fallback happened...
+		( *pevt ).data.error.fallback_ssl++;
+		ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
+	} else
+		lprintf( "didn't end secure on %p", pc );
 	DropWssEvent( pevt );
 }
 
@@ -2770,10 +2811,6 @@ wssObject::wssObject( struct wssOptions *opts ) : task(this) {
 	last_count_handled = 0;
 	closing = 0;
 	readyState = INITIALIZING;
-	eventQueue = NULL;
-	requests = NULL;
-	opening = FALSE;
-	eventMessage = NULL;
 	if( !opts->url ) {
 		if( opts->address ) {
 			if( strchr( opts->address, ':' ) )
@@ -2829,6 +2866,7 @@ wssObject::wssObject( struct wssOptions *opts ) : task(this) {
 		//event_waker = ThreadTo( catchLostEvents, (uintptr_t)this );
 
 		SetWebSocketHttpCallback( pc, webSockHttpRequest );
+		//SetWebSocketHttpCloseCallback( pc, webSockHttpClose );
 
 		if( opts->deflate ) {
 			SetWebSocketDeflate( pc, WEBSOCK_DEFLATE_ENABLE );
@@ -2910,9 +2948,15 @@ static void ParseWssHostOption( struct optionStrings *strings
 	}
 
 	if( hostOpt->Has( context, optName = strings->certString->Get( isolate ) ).ToChecked() ) {
-		String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-		newOpt->cert_chain = StrDup( *cert );
-		newOpt->cert_chain_len = cert.length();
+		Local<Value> val = GETV( hostOpt, optName );
+		if( val->IsNull() ) {
+			newOpt->cert_chain = NULL;
+			newOpt->cert_chain_len = 0;
+		} else {
+			String::Utf8Value cert( USE_ISOLATE( isolate ) GETV( hostOpt, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			newOpt->cert_chain = StrDup( *cert );
+			newOpt->cert_chain_len = cert.length();
+		}
 	}
 
 	if( hostOpt->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
@@ -3150,20 +3194,31 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 }
 
 void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
+	// at this point there is a socket, but it's not a JS object yet even...
+	// so we can't set that it is NOT SSL?
+
 	//Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
 	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR ) {
 		// delay until we return to the thread that dispatched this error.
 		obj->eventMessage->data.error.fallback_ssl = 1;
+		// allow this to return immediately, so the SSL layer will give up its lock.
+		obj->eventMessage->done                    = 1;
+		WakeThread( obj->eventMessage->waiter );
+		// confirm that the fallback happened?  Otherwise this could result with a ssl
+		// enabled socket in the end().
+		while (obj->eventMessage->data.error.fallback_ssl < 2) {
+			Relinquish();
+		}
 		//ssl_EndSecure( obj->eventMessage->pc, (POINTER)obj->eventMessage->data.error.buffer, obj->eventMessage->data.error.buflen );
-	}
+	} else
+		lprintf( "cannot disable SSL outside of error event" );
 }
 
 void wssObject::close( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
 	obj->readyState = CLOSING;
-	lprintf( "remove client." );
 	if( obj->pc )
 		RemoveClient( obj->pc );
 	if( obj->wsPipe ) {

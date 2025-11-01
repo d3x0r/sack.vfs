@@ -5,11 +5,20 @@ let interfaces = sack.WIFI.interfaces;
 let autoConnect = false;
 
 
-sack.Systray.set(  !interfaces.find( i=>i.status !== "connected" )?"../gui/pfull.ico":"../gui/pdown.ico", ()=>{
+sack.Systray.set( ( interfaces.length && !interfaces.find( i=>i.status !== "connected" ) )?"../gui/pfull.ico":"../gui/pdown.ico", ()=>{
 	// only saves the first function
 	interfaces.forEach( (i,idx)=> (i.status=== "disconnected")&&sack.WIFI.connect( idx, "MobleyPlace", "MobleyPlace" ) );
 	
 } );
+
+const ac = sack.Systray.on( "Auto Connect", ( )=>{
+	const val = (ac.checked = !ac.checked);
+	if( val ) ac.text = "Leave Disconnected";
+	else ac.text = "Auto Connect";
+	autoConnect = val;
+	if( ac.checked ) connectAll()
+} );
+ac.checked = autoConnect;
 
 sack.Systray.on( "Connect All", ( )=>{
 	console.log( "Connect all(except connected)" );
@@ -25,6 +34,12 @@ sack.Systray.on( "Close All Connections", ( )=>{
 } );
 
 
+function connectAll( ) {
+	for( let i = 0; i < interfaces.length; i++ ) {
+		if( interfaces[i].status === "disconnected" )
+			sack.WIFI.connect( i, "MobleyPlace", "MobleyPlace" );
+	}
+}
 
 const imap = new Map();
 
@@ -51,18 +66,23 @@ sack.WIFI.onEvent( (event)=>{
 	}
 	if( event.code === 27 ) {
 		if( event.mode === 1 ) {
+			interfaces = sack.WIFI.interfaces
 			console.log( "Turn Off" );			
 			return
 		}
 		if( event.mode === 2 ) {
+			interfaces = sack.WIFI.interfaces
+			if( autoConnect ) connectAll()
 			console.log( "Turn On" );
 			return
 		}
 		if( event.mode === 3 ) {
+			interfaces = sack.WIFI.interfaces
 			console.log( "Turning Off" );			
 			return
 		}
 		if( event.mode === 4 ) {
+			interfaces = sack.WIFI.interfaces
 			console.log( "Turning On" );
 			return
 		}
@@ -70,11 +90,13 @@ sack.WIFI.onEvent( (event)=>{
 	} else if( event.code === 13 ) {
 		// interface arrival (enable in control panel)
 		interfaces = sack.WIFI.interfaces
+		if( autoConnect ) connectAll()
 		console.log( "during arrival... Interfaces?", interfaces );
 		return;
 	} else if( event.code === 14 ) {
 		// interface removal (disable in control panel)
 		interfaces = sack.WIFI.interfaces
+		if( autoConnect ) connectAll()
 		console.log( "during remove ... Interfaces?", interfaces );
 		return;
 	} /*else if( event.code === 7 ) {
@@ -101,7 +123,6 @@ sack.WIFI.onEvent( (event)=>{
 	} else if( event.code === 20 ) {
 		interfaces[event.interface].state = 3;
 		interfaces[event.interface].status = "disconnecting";
-		console.log( "no disconnecting?" );
 		sack.Systray.set( "../gui/pdown.ico" );
 		return;
 	} else if( event.code === 21 ) {
@@ -139,8 +160,6 @@ function tick() {
 			if( int.status === "disconnected" ) {
 				if( lastStatus[i] !== "disconnected" ) {
 					console.log( "This is first polled connect, this could connect" );
-					//const x = sack.WIFI.connect( event.interface, "MobleyPlace", "MobleyPlace" );
-					
 				}
 			}
 		}
