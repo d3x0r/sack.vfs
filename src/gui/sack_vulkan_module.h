@@ -1,7 +1,32 @@
 
 
 
+class VulkanCommandObject : public node::ObjectWrap {
+ public:
+	VulkanCommandObject();
+	static void New( const FunctionCallbackInfo<Value> &args );
+	// begin (re)recording commands
+	static void record( const FunctionCallbackInfo<Value> &args );
+	// play recorded commands
+	static void play( const FunctionCallbackInfo<Value> &args );
+};
 
+class VulkanBufferObject : public node::ObjectWrap {
+ public:
+	int dirty; // if true, then the buffer needs to be updated
+	VulkanBufferObject();
+	static void New( const FunctionCallbackInfo<Value> &args );
+
+	// set content of an array buffer to transmit
+	static void bufferGetter( const FunctionCallbackInfo<Value> &args );
+};
+
+class VulkanShaderObject : public node::ObjectWrap {
+ public:
+
+	VulkanShaderObject();
+	static void New( const FunctionCallbackInfo<Value> &args );
+};
 
 class VulkanObject : public node::ObjectWrap {
 
@@ -19,7 +44,16 @@ public:
 	VulkanObject();
 
 	static void New( const FunctionCallbackInfo<Value>& args );
-	
+
+	// a camera has a render surface, aspect, width and height, position
+	// probably since this is a visible object it can be placed on the display with 
+	// a percentage?
+	static void addCamera( const FunctionCallbackInfo<Value> &args );
+
+	static void addCommand( const FunctionCallbackInfo<Value> &args );
+
+
+
 	static void getFrameBuffer( const FunctionCallbackInfo<Value>& args );
 	//static void getFrameBuffer( const FunctionCallbackInfo<Value>& args );
 

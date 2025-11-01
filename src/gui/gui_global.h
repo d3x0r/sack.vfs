@@ -190,3 +190,5 @@ void InitInterfaces( int opengl, int vulkan );
 uintptr_t MakeEvent( RenderObject*r, enum GUI_eventType type, ... );
 
 void enableEventLoop( class constructorSet *c ); // PSI control events.
+
+void InitDekware( Isolate *isolate, Local<Object> exports );

@@ -302,7 +302,7 @@ void RenderObject::Init( Local<Object> exports ) {
 RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
 	AddLink( &render_global.renderers, this );
 	if( title )
-		r = OpenDisplayAboveSizedAt( 0, w, h, x, y, over ? over->r : NULL );
+		r = OpenDisplayAboveSizedAt( DISPLAY_ATTRIBUTE_LAYERED, w, h, x, y, over ? over->r : NULL );
 	else
 		r = NULL;
 	receive_queue = NULL;
@@ -381,7 +381,7 @@ RenderObject::~RenderObject() {
 			class constructorSet* c = getConstructors( isolate );
 			Local<Function> cons = Local<Function>::New( isolate, c->RenderObject_constructor );
 			args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
-			delete argv;
+			delete[] argv;
 		}
 	}
 
@@ -493,7 +493,6 @@ void RenderObject::update( const FunctionCallbackInfo<Value>& args ) {
 	Local<Context> context = isolate->GetCurrentContext();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	int argc = args.Length();
-	lprintf( "update??" );
 	if( argc > 3 ) {
 		int x, y, w, h;
 		x = (int)args[0]->IntegerValue(context).ToChecked();
@@ -711,7 +710,19 @@ uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 	switch( type ) {
 #ifndef NO_PEN
 	case Event_Render_Pen:
-		e.data.pen.pEvent = va_arg( args, PPEN_EVENT );
+		PPEN_EVENT pen_event; 
+		pen_event = va_arg( args, PPEN_EVENT );
+		e.data.pen.event.penFlags = pen_event->penFlags;
+		e.data.pen.event.penMask          = pen_event->penMask;
+		e.data.pen.event.pressure         = pen_event->pressure;
+		e.data.pen.event.rotation         = pen_event->rotation;
+		e.data.pen.event.tiltX            = pen_event->tiltX;
+		e.data.pen.event.tiltY            = pen_event->tiltY;
+		e.data.pen.event.x                = pen_event->x;
+		e.data.pen.event.y                = pen_event->y;
+		e.data.pen.event.nOverflow        = pen_event->nOverflow;
+		e.data.pen.event.pOverflow        = NewArray( struct pen_event, pen_event->nOverflow );
+		MemCpy( e.data.pen.event.pOverflow, pen_event->pOverflow, sizeof( struct pen_event ) * pen_event->nOverflow );
 		break;
 #endif
 #ifndef NO_TOUCH
