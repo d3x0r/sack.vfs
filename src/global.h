@@ -71,6 +71,9 @@
 #if NODE_MAJOR_VERSION >= 17
 //#  include <openssl/configuration.h>
 #endif
+#ifndef LIBRESSL_DISABLE_OVERRIDE_WINCRYPT_DEFINES_WARNING
+#  define LIBRESSL_DISABLE_OVERRIDE_WINCRYPT_DEFINES_WARNING
+#endif
 #include <openssl/safestack.h>  // STACK_OF
 #include <openssl/tls1.h>
 #include <openssl/err.h>
