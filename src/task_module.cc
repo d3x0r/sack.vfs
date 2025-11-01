@@ -1223,8 +1223,7 @@ static BOOL addMonitor( HMONITOR hMonitor,
 	
 	for( int numStart = 0; monitorInfo.szDevice[numStart]; numStart++ ) {
 		if( monitorInfo.szDevice[numStart] >= '0' && monitorInfo.szDevice[numStart] <= '9' ) {
-			devNum = atoi( monitorInfo.szDevice + numStart );
-			break;
+			devNum = devNum * 10 + atoi( monitorInfo.szDevice + numStart );
 		}
 	}
 
@@ -1282,6 +1281,7 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 				, &dev
 				, 0
 			); i++ ) {
+
 			int numStart;
 			if( EnumDisplaySettings( dev.DeviceName, ENUM_CURRENT_SETTINGS, &dm ) ) {
 				if( dm.dmPelsWidth && dm.dmPelsHeight ) {
@@ -1290,7 +1290,23 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 					}
 					//if( l.flags.bLogDisplayEnumTest )
 					display = Object::New( isolate );
+
+					/*
+					HDEVINFO hdi = SetupDiGetClassDevs(&classGuid, NULL, NULL, DIGCF_PRESENT);
+					Handle = SetupDiGetClassDevs(&GUID_DEVCLASS_NET, NULL, NULL, DIGCF_PRESENT);
+
+					HKEY hKey
+						= SetupDiOpenDevRegKey(hdi, &data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE);
+					//DWORD dwError = GetLastError();
+					char namebuf[256];
+					DWORD namebuflen = 256;
+					//int queryErr = 
+					RegQueryValueEx(hKey, "PortName", NULL, NULL, (LPBYTE)namebuf, &namebuflen);
+					namebuf[namebuflen] = 0;
+					*/
+
 					SETV( display, strings->displayString->Get( isolate ), Number::New( isolate, atoi( dev.DeviceName + numStart ) ) );
+					SETV( display, strings->deviceString->Get( isolate ), String::NewFromUtf8( isolate, dev.DeviceString).ToLocalChecked() );
 					SETV( display, strings->xString->Get( isolate ), Number::New( isolate, dm.dmPosition.x ) );
 					SETV( display, strings->yString->Get( isolate ), Number::New( isolate, dm.dmPosition.y ) );
 					SETV( display, strings->widthString->Get( isolate ), Number::New( isolate, dm.dmPelsWidth ) );
@@ -1309,6 +1325,7 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 					//if( l.flags.bLogDisplayEnumTest )
 					display = Object::New( isolate );
 					SETV( display, strings->displayString->Get( isolate ), Number::New( isolate, atoi( dev.DeviceName + numStart ) ) );
+					SETV( display, strings->deviceString->Get( isolate ), String::NewFromUtf8( isolate, dev.DeviceString).ToLocalChecked() );
 					SETV( display, strings->xString->Get( isolate ), Number::New( isolate, dm.dmPosition.x ) );
 					SETV( display, strings->yString->Get( isolate ), Number::New( isolate, dm.dmPosition.y ) );
 					SETV( display, strings->widthString->Get( isolate ), Number::New( isolate, dm.dmPelsWidth ) );
