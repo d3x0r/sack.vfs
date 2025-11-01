@@ -219,7 +219,7 @@ static void logString( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef _DEBUG
 	_xlprintf(LOG_NOISE, "JS", 1 )
 #else
-	_xlprintf(LOG_NOISE )
+	_xlprintf(LOG_NOISE DBG_SRC )
 #endif
 		( "%s", *s );
 }
@@ -459,6 +459,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 		}
 #endif
 
+		SetStaticInterfaceConfigFile( "nodeapp.interface.conf" );
 		InvokeDeadstart();
 		MarkRootDeadstartComplete();
 
@@ -527,6 +528,8 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	RenderObject::Init( exports );
 	ControlObject::Init( exports );
 	InterShellObject::Init( exports );
+	InitDekware( isolate, exports );
+
 #endif
 
 #ifdef WIN32
