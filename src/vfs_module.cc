@@ -1552,8 +1552,24 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			char *name = vol->fsInt->find_get_name( fi );
 			size_t length = vol->fsInt->find_get_size( fi );
 			bool isDir = vol->fsInt->find_is_directory( fi );
+
+			// times from native file system come in as UTC ticks.
+			int64_t t1 = vol->fsInt->find_get_wtime(fi);
+			int64_t t2 = vol->fsInt->find_get_ctime(fi);
+			Local<Object> tmpResult;
+			Local<Object> tmpResult2;
+
+			class constructorSet* c = getConstructors(isolate);
+			Local<Value> argv[1] = { Number::New(isolate, (t1)*1000) };
+			Local<Value> argv2[1] = { Number::New(isolate, (t2 ) * 1000) };
+
+			tmpResult = c->dateCons.Get(isolate)->NewInstance(context, 1, argv).ToLocalChecked();
+			tmpResult2 = c->dateCons.Get(isolate)->NewInstance(context, 1, argv2).ToLocalChecked();
+
 			Local<Object> entry = Object::New( isolate );
 			SET( entry, "name", String::NewFromUtf8( isolate, name, v8::NewStringType::kNormal ).ToLocalChecked() );
+			SET( entry, "written", tmpResult );
+			SET( entry, "created", tmpResult2);
 			if( isDir ) {
 				// some file systems, directories might have length of file content
 				SET( entry, "folder", True(isolate) );
