@@ -18,7 +18,7 @@ const os = require( "os" );
 sack.SaltyRNG.setSigningThreads( os.cpus().length );
 
 // save original object.
-const _objectStorage = sack.ObjectStorage;
+const _objectStorage = sack.ObjectStorage_native;
 const nativeVol = sack.Volume();
 
 const path = __dirname;//import.meta.url.replace(/file\:\/\/\//, '' ).split("/");

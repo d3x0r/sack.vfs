@@ -3,6 +3,10 @@ let currentStorage = null;
 
 //const sack = require( "sack.vfs" );
 //console.log( "sack?", sack );
+import {ObjectStore} from "./object-storage-data.mjs"
+import {StoredObject} from "./object-storage-object.mjs"
+import {DbStorage} from "./object-storage-data-sql.mjs";
+
 export default function( sack ) {
 
 const _debug = false;
@@ -15,13 +19,13 @@ const _debug_replace = false;
 
 if( "undefined" === typeof log )
 {
-	const os = require( "os" );
-	//const os = require( "os" );
-	sack.SaltyRNG.setSigningThreads( os.cpus().length );
-}
+	const os = import( "os" ).then( (module)=>{
+		sack.SaltyRNG.setSigningThreads( module.cpus().length );
+	} );
+} 
 
 // save original object.
-const _objectStorage = sack.ObjectStorage;
+const _objectStorage = sack.ObjectStorage_native;
 const nativeVol = sack.Volume();
 
 const path = import.meta?.url?.replace(/file\:\/\/\//, '' ).split("/") || ".";
@@ -72,7 +76,7 @@ const defaultMapOpts = {depth:0};
 
 
 
-class DbStorage {
+class xDbStorage {
 	// this is a super simple key value store in a (postgresql) database.
 	// some support to fall back to sqlite - but will require manually specifying options
 	// need to update personality detection in C library.
@@ -149,7 +153,8 @@ class DbStorage {
 
 // manufacture a JS interface to _objectStorage.
 class ObjectStorage {
-
+	storage = null; // old method
+	#stores = []; // all stores associated with this object-verse
 	cached = new Map();
 	cachedContainer = new Map();
 	stored = new WeakMap(); // objects which have alredy been through put()/get()
@@ -165,13 +170,13 @@ class ObjectStorage {
 
 
 	constructor  (...args) {
-
-		if( !( this instanceof ObjectStorage ) ) return new ObjectStorage( args );
 		const arg0 = args[0];
 		if( arg0 instanceof sack.Sqlite ) {
 			_debug && console.log( "Using a db storage interface..." );
 			preloadStorage = new DbStorage( arg0 );
-		}else 
+		} else if( arg0 instanceof ObjectStore ) {
+			preloadStorage = new arg0( );
+		} else
 			_debug && console.log( "Using a file interface?" );
 		const newStorage = preloadStorage || _objectStorage(...args);
 		if( newStorage === preloadStorage ) preloadStorage = null;
@@ -240,7 +245,7 @@ class ObjectStorage {
 	}
 
 	async getRoot() {
-	console.log( "Getting root...!!!!" );
+		//console.log( "Getting root...!!!!" );
 		const this_ = this;
 		if( this_.root ) return this_.root;
 		if( loading ) {
@@ -248,7 +253,7 @@ class ObjectStorage {
 				loading.push(  {res:res, rej:rej} );
 			} );
 		}
-	console.log( "Getting root..." );
+		//console.log( "Getting root..." );
 		this_.addEncoders( [ { tag: "d", p:FileDirectory, f:null}, { tag: "f", p:FileEntry, f:null} ] );
 		this_.addDecoders( [ {tag: "d", p:FileDirectory }, {tag: "f", p:FileEntry } ] )
 		const result = new FileDirectory( this, "?" );
@@ -1554,7 +1559,7 @@ function checkPendingStore() {
 
 
 
-class StoredObject {
+class xStoredObject {
 	#id = null;
 	#storage = null;
 	get id() { 
@@ -1610,7 +1615,6 @@ ObjectStorage.StoredObject = StoredObject
 //exports.ObjectStorage = ObjectStorage;
 //exports.StoredObject = StoredObject;
 sack.ObjectStorage = ObjectStorage;
-
 
 
 }
