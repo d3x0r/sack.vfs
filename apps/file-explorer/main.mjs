@@ -8,12 +8,12 @@ const connections = new WeakMap();
 const connectionData = new WeakMap();
 
 server.server.on( "/client-protocol.js", (req,res)=>{
-	console.log( "Magic?" );
+	//console.log( "Magic?" );
 } );
 
 server.on( "connect", (ws, _ws )=>{
 	connectionData.set( _ws, new ConnectionData() );
-	console.log( "smart sockets?", _ws );
+	//console.log( "smart sockets?", _ws );
 } );
 
 server.on( "dir", (ws, msg)=>{
