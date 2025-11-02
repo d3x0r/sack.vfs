@@ -11,6 +11,7 @@ export class DbStorage extends ObjectStore {
 	#mysql = false;
 	#sqlite = false;
 	constructor(db, opts ) {
+		super();
 		console.trace( "Options:", db, db.provider, opts );
 		this.#db = db;
 		if( db.provider === 3 )

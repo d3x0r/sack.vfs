@@ -20,10 +20,10 @@ export class SocketStore extend ObjectStore {
 	put(obj, rid,res,rej){
 
 
-		const msg = {op:"put", id:unique++, data:obj, rid:rid, res:res,rej:rej };
-
-		this.requests.set( msg.id, msg );
-		for( var remote of this_.remotes ) {
+		for( var remote of this.remotes ) {
+			// track a put for each remote.
+			const msg = {op:"put", id:unique++, data:obj, rid:rid, res:res,rej:rej };
+			this.requests.set( msg.id, msg );
 			remote.send( msg );
 		}
 
