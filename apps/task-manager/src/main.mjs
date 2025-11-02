@@ -660,6 +660,7 @@ function handleMessage( ws, msg_ ) {
 				for( let device of displays.device ) {
 					for( let monitor of displays.monitor ) {
 						if( monitor.display === device.display ) {
+							device.monitorName = device.monitor;
 							device.monitor = monitor;
 							monitor.device = device;
 							break;
