@@ -26,7 +26,7 @@
       "default": "./import.mjs"
     },
     "./object-storage": {
-      "default": "./object-storage.mjs"
+      "default": "./apps/object-storage/object-storage.mjs"
     },
     "./apps/http-ws": {
       "require": "./apps/http-ws/server.js",
