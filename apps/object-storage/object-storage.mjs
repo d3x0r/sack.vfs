@@ -204,7 +204,7 @@ class ObjectStorage {
 								//console.log( "1) Assigning ID to directory", id );
 								Object.defineProperty( result, "id", { value:id } );
 								finishLoad( result );
-								return dir;
+								return result;
 							} )
 					}
 	        

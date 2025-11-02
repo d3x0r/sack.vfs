@@ -30,8 +30,9 @@ export class DbStorage extends ObjectStore {
 			} if( this.#maria || this.#mysql ) {
 				const table1 = "create table if not exists os (id char(45) primary key,value LONGTEXT,updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)";
 				db.makeTable( table1 );
-			} else if( !this.#sqlite ) {
-				db.makeTable( "create table os (id char(45) primary key,value char,updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)" );
+			} else if( this.#sqlite ) {
+				db.do( "create table if not exists os (id char(45) primary key,value char,updated datetime default CURRENT_TIMESTAMP )" );
+				db.do( "create trigger if not exists update_os_timestamp after update on os for each row begin update os set updated=CURRENT_TIMESTAMP where id=OLD.id; end;" );
 			}
 		}
 	}
