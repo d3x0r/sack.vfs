@@ -1,0 +1,47 @@
+
+body {
+	margin:0;
+	background-color:#002;
+	color:#ed0;
+}
+
+.dir-container {
+	display:flex;
+	position:absolute;
+	height:100vh;
+	width:100vw;
+}
+
+.dir-files-container, .dir-list-container {
+	display:flex;
+}
+
+.dir-list-container {
+	height:50%;
+}
+
+.dir-list {
+	overflow:auto;
+}
+
+.file-list {
+	overflow:auto;
+}
+
+
+.directory-list-row {
+	width: 25vw;
+	font-size : 4vh;
+}
+
+.directory-list-row-name {
+}
+
+.directory-list-row-name:hover {
+	color:red;
+}
+
+
+.directory-list-row-date {
+	float:right;
+}
