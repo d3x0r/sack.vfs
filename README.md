@@ -79,15 +79,11 @@ import {SACK} from "sack.vfs";
 ```
 {
     ComPort(comport) - access to com ports.
-     - A jsox (JavaScript Object eXchange) parser. (JSON5/6 input compatible)
+    JSOX - A jsox parser. (JSON5/6 input compatible)
         parse(string) - result with a V8 object created from the json string.  
+        stringify(obj [,stringifer [,formatter])
         begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
         stringifier() - create a reusable stringifier which can be used for custom types
-        stringify(object,replacer,pretty) - stringify an object; same API as JSON.
-    JSOX - A jsox parser. (JSON5 input compatible)
-        parse(string) - result with a V8 object created from the json string.  
-        begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
-        stringify(obj [,stringifer [,formatter])
     JSON6 - A json6 parser. (JSON5 input compatible)
         parse(string [,reviver]) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSON6 stream; callback is called as each value is completed.
@@ -146,23 +142,13 @@ import {SACK} from "sack.vfs";
     Config - Process configuration files; also streaming text parsing
         (methods)[#Config_Methods]
     ComPort - (see below)
-    
-    log(string) - log a string.
-    memDump() - log memory stats (track module memory leaks)
-    mkdir() - make a directory in the current path; handles recursive directory creation.
-    u8xor(s,k) - utility function to apply a string mask.
-    b64xor(s,k) - utility function to just xor a value into a base64 string without expanding the values.
-    id() - generate a unique ID (256 bits, 32 bytes, 44chars, trailing '=').
-    Id() - generate a short unique ID (12 bytes, 16chars).
-    loadComplete() - Indicate to SACK system that this is completed loading (task summoner support;linux;deprecated)
-
     System - Namespace for SACK system interface routines (The above methods should be moved into this namespace)
-	createMemory(name,byte size) - creates a named memory region; memory regions by name are shared on the system.
-	openMemory(name) - opens an existing names region; returns an ArrayBuffer which can be mapped to a typed array by application.
-	enableThreadFileSystem() - enables mounting file systems specifically for this thread
+        createMemory(name,byte size) - creates a named memory region; memory regions by name are shared on the system.
+        openMemory(name) - opens an existing names region; returns an ArrayBuffer which can be mapped to a typed array by application.
+        enableThreadFileSystem() - enables mounting file systems specifically for this thread
         allowSpawn() - returns task allowed state
         disallowSpawn() - disble task spawns for this thread
-	dumpRegisteredNames() - dumps internal procedure/interface registry
+        dumpRegisteredNames() - dumps internal procedure/interface registry
         reboot() - on windows, trigger a reboot.
     Task(options) - an interface for createing and monitoring tasks.
         Task constructor takes an option object.
@@ -172,14 +158,25 @@ import {SACK} from "sack.vfs";
         terminate() - terminate created task.
     // windows only
     registry - an interface to windows registry options
-    	set( path, value ) - set a new value in the registry
+        set( path, value ) - set a new value in the registry
         get( path )  - get a value from the registry.
     hid - raw keyboard interface, allows identification of different physical keyboard devices.
 
-   setTimeout(fn,delay ) - same as JS function of same name (on sack object)  (returns a number ID)
-   setInterval(fn,delay) - same as JS function of same name  (returns a number ID)
-   clearTimeout( timeout_id )    
-   clearInterval( timeout_id )
+
+    log(string) - log a string.
+    memDump() - log memory stats (track module memory leaks)
+    mkdir() - make a directory in the current path; handles recursive directory creation.
+    u8xor(s,k) - utility function to apply a string mask.
+    b64xor(s,k) - utility function to just xor a value into a base64 string without expanding the values.
+    id() - generate a unique ID (256 bits, 32 bytes, 44chars, trailing '=').
+    Id() - generate a short unique ID (12 bytes, 16chars).
+    loadComplete() - Indicate to SACK system that this is completed loading (task summoner support;linux;deprecated)
+
+    /* if( isolated )... */
+    setTimeout(fn,delay ) - same as JS function of same name (on sack object)  (returns a number ID)
+    setInterval(fn,delay) - same as JS function of same name  (returns a number ID)
+    clearTimeout( timeout_id )    
+    clearInterval( timeout_id )
 }	
 ```
 
@@ -259,7 +256,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.125(in progress)
+- 1.3.126(in progress)
+- 1.3.125
+   - Add get root filesystems call.
 - 1.3.124
    - added slab-array and bloom-n-hash utilities
    - separated object-storage to a separate module to include (reduce required initial parsing)

@@ -580,6 +580,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "ObjectStorage", vfsObjectStorage );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "roots", getRootDirectories ); /* drives */
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "isDir", isDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
@@ -1527,6 +1528,33 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
 		args.GetReturnValue().Set( Boolean::New( isolate, sack_unlink( 0, *fName ) != 0 ) );
+	}
+
+	void VolumeObject::getRootDirectories(const v8::FunctionCallbackInfo<Value>& args) {
+		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
+		VolumeObject* vol = ObjectWrap::Unwrap<VolumeObject>(getHolder(args));
+		Local<Array> result = Array::New(isolate);
+		if (!vol->volNative && !vol->mountName ) {
+#ifdef _WIN32
+			DWORD driveMask = GetLogicalDrives();
+			std::vector<std::string> driveLetters;
+			int index = 0;
+			for (int i = 0; i < 26; ++i) { // Iterate through possible drive letters A-Z
+				if ((driveMask >> i) & 1) { // Check if the i-th bit is set
+					char driveLetter[4] = { 'A', ':', '\\', 0 };
+					driveLetter[0] += i;
+					SETN(result, index++, String::NewFromUtf8(isolate, driveLetter).ToLocalChecked());
+				}
+			}
+#else
+			SETN(result, 0, String::NewFromUtf8(isolate, "/").ToLocalChecked());
+			SETN(result, 1, String::NewFromUtf8(isolate, "~/").ToLocalChecked());
+#endif
+		} else {
+			SETN(result, 0, String::NewFromUtf8(isolate, "").ToLocalChecked());
+		}
+		args.GetReturnValue().Set(result);
 	}
 
 	void VolumeObject::getDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
