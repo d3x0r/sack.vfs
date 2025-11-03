@@ -589,7 +589,9 @@ void ComObject::onRemove(Local<Name> property, Local<Value> value, const Propert
 	Isolate* isolate = args.GetIsolate();
 	ComObject::removeCallback.Reset(isolate, value.As<Function>());
 	if (!ComObject::_c) {
+#ifdef _WIN32
 		ThreadTo( RegisterAndCreateMonitor, 0 );
+#endif
 		ComObject::_c = getConstructors( isolate );
 		if (ComObject::_c->ivm_post) {
 			ComObject::_ivm_hosted = true;
@@ -602,7 +604,9 @@ void ComObject::onAdd(Local<Name> property, Local<Value> value, const PropertyCa
 	Isolate* isolate = args.GetIsolate();
 	ComObject::addCallback.Reset(isolate, value.As<Function>());
 	if (!ComObject::_c) {
+#ifdef _WIN32
 		ThreadTo( RegisterAndCreateMonitor, 0 );
+#endif
 		ComObject::_c = getConstructors( isolate );
 		if (ComObject::_c->ivm_post) {
 			ComObject::_ivm_hosted = true;
