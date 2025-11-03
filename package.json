@@ -28,6 +28,9 @@
     "./object-storage": {
       "default": "./apps/object-storage/object-storage.mjs"
     },
+    "./object-storage-object": {
+      "default": "./apps/object-storage/object-storage-object.mjs"
+    },
     "./apps/http-ws": {
       "require": "./apps/http-ws/server.js",
       "import": "./apps/http-ws/server.mjs"
@@ -85,6 +88,12 @@
     },
     "./wait": {
       "import": "./apps/wait/wait.mjs"
+    }
+    "./slab-array": {
+      "import": "./apps/slab-array/SlabArray.mjs"
+    }
+    "./bloom-n-hash": {
+      "import": "./apps/bloom-n-hash/bloomNHash.mjs"
     }
   },
   "old_exports": {
