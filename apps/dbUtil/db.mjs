@@ -332,7 +332,7 @@ function tokenAfter( s, token ) {
 }
 
 
-class Db {
+export class Db {
 	db = null;
 	MySQL=MySQL;
 	Sqlite=Sqlite;
@@ -340,7 +340,7 @@ class Db {
 	constructor() {
 	}
 
-   getSqlDateTime(date) {
+   static getSqlDateTime(db,date) {
 	   if( date.getTime() === -62167219200000 ) return "0000-00-00 00:00:00";
 		const yr = date.getUTCFullYear();
 		const mo = date.getUTCMonth()+1;
@@ -353,13 +353,28 @@ class Db {
 			+" "+h.toString().padStart(2, '0')
 			+":"+m.toString().padStart(2, '0')
 			+":"+s.toString().padStart(2, '0')
-			+"Z";
+			+((!db || db.provider==2 || db.provider==5)?"":"Z");
 		return string;
 	}  	
 	
+	getSqlDateTime(date) { return Db.getSqlDateTime(this.db,date); }
+
+	static getSqlDate(db,date) {
+		 if( date.getTime() === -62167219200000 ) return "0000-00-00";
+		const yr = date.getFullYear();
+		const mo = date.getMonth()+1;
+		const dy = date.getDate();
+		
+		 const string = yr.toString() + '-'+mo.toString().padStart(2,"0")+'-'+dy.toString(	).padStart(2,"0")
+			;
+		return string;
+	}  	
+
 }
 
 
 const db = new Db();                         
 //console.log( "Why isn't db good?", db );
 export default db;
+
+
