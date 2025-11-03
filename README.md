@@ -256,7 +256,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.128(in progress)
+- 1.3.129(in progress)
+- 1.3.128
+   - Fix thread local initialization of file system interfaces.
 - 1.3.127
    - fix potential internal error checking for directory existance.
 - 1.3.126
