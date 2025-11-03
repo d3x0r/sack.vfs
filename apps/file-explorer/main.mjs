@@ -28,7 +28,10 @@ server.on( "dir", (ws, msg)=>{
 
 server.on( "setDir", (ws, msg ) =>{
 	const state = connectionData.get( ws );
-	state.currentPath = state.currentPath + "/" + msg.setDir.name;
+	if( state.currentPath ) 
+		state.currentPath = state.currentPath + "/" + msg.setDir.name;
+	else
+		state.currentPath = msg.setDir.name;
 	const dir = disk.dir( state.currentPath, "*" );
 	server.reply( ws, "dir", dir );
 } );
@@ -38,6 +41,12 @@ server.on( "upDir", (ws, msg ) =>{
 	const state = connectionData.get( ws );
 	const parts = state.currentPath .split('/');
 	state.currentPath = parts.slice(0,-1).join('/');
+	console.log( "current path is now:", state.currentPath, parts.length );
+	if( !state.currentPath || ( parts[0].length && parts.length < 3 )  || ( !parts[0].length && parts.length < 2 )) {
+		state.currentPath = "";
+		server.reply( ws, "dir", disk.roots().map( r=>({name:r.replace('\\','/'), folder:true, created:new Date(), written:new Date() }) ) );
+		return;
+	}
 	const dir = disk.dir( state.currentPath, "*" );
 	server.reply( ws, "dir", dir );
 } );
