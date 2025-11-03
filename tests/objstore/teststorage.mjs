@@ -2,7 +2,7 @@
 import {sack} from "sack.vfs";
 import {ObjectStorage} from "sack.vfs/object-storage"
 //const sack = require( "../.." );
-const db = sack.Sqlite( "psql" );
+const db = sack.Sqlite( "psql.db" );
 
 const config = { 
 	local:"settings",

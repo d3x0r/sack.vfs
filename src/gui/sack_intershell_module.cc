@@ -184,7 +184,8 @@ static void asyncmsg_( v8::Isolate* isolate, Local<Context> context,class constr
 					argv = _argv;
 					argc = 1;
 					cb = Local<Function>::New( isolate, myself->cbDestroy );
-					Local<Value> r = cb->Call( context, is->psvControl.Get( isolate ), argc, argv ).ToLocalChecked();
+					//Local<Value> r = 
+						cb->Call( context, is->psvControl.Get( isolate ), argc, argv ).ToLocalChecked();
 				}
 				break;
 			case Event_Intershell_Control_Draw:
@@ -195,7 +196,8 @@ static void asyncmsg_( v8::Isolate* isolate, Local<Context> context,class constr
 					argv = _argv;
 					argc = 1;
 					cb = Local<Function>::New( isolate, myself->cbDraw );
-					Local<Value> r = cb->Call( context, is->psvControl.Get( isolate ), argc, argv ).ToLocalChecked();
+					//Local<Value> r = 
+						cb->Call( context, is->psvControl.Get( isolate ), argc, argv ).ToLocalChecked();
 				}
 				break;
 			case Event_Intershell_Control_Mouse:
@@ -216,7 +218,8 @@ static void asyncmsg_( v8::Isolate* isolate, Local<Context> context,class constr
 						argc = 1;
 						cb = Local<Function>::New( isolate, myself->cbMouse );
 					}
-					Local<Value> r = cb->Call( context, is->psvControl.Get( isolate ), argc, argv ).ToLocalChecked();
+					//Local<Value> r = 
+						cb->Call( context, is->psvControl.Get( isolate ), argc, argv ).ToLocalChecked();
 				}
 				break;
 
@@ -355,7 +358,6 @@ static void configConvertArgs( arg_list args, Local<Value> **ppargv, int *argc )
 				argResult[n - nBias] = ArrayBuffer::New( isolate, buffer, value );
 #endif				
 				//result->Set( n-nBias, ArrayBuffer::New( isolate, buffer, value ) );
-
 			}
 			break;
 		case CONFIG_ARG_LOGICAL:
@@ -371,7 +373,9 @@ static void configConvertArgs( arg_list args, Local<Value> **ppargv, int *argc )
 			break;
 		case CONFIG_ARG_FRACTION:
 			{
-				PARAM( args, FRACTION, value );
+				//PARAM( args, FRACTION, value );
+				// Fraction class is in apps/fractions/fractions.mjs
+				//argResult[n-nBias] = 
 				//argResult[n - nBias] =
 			}
 			break;
@@ -599,9 +603,7 @@ void InterShellObject::addConfigMethod( const FunctionCallbackInfo<Value>& args 
 void InterShellObject::NewConfiguration( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
-		char *name;
 		String::Utf8Value arg( isolate, args[0] );
-		name = *arg;
 		InterShellObject* obj;
 
 		obj = new InterShellObject();
@@ -677,16 +679,15 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	if( args.IsConstructCall() ) {
-		char *name;
+		char *name = NULL;
 		Local<Object> opts;
 		Local<String> optName;
-		struct optionStrings *strings;
+		struct optionStrings *strings = getStrings(isolate);
 		if( args[0]->IsString() ) {
 			String::Utf8Value arg( isolate, args[0] );
 			name = StrDup( *arg );
 		} else if( args[0]->IsObject() ) {
 			opts = args[0]->ToObject(context).ToLocalChecked();
-			strings = getStrings( isolate );
 			if( opts->Has( context, optName = strings->nameString->Get( isolate ) ).ToChecked() ) {
 				String::Utf8Value arg( isolate, GETV( opts, optName ) );
 				name = StrDup( *arg );

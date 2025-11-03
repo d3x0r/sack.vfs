@@ -500,7 +500,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 		SET_READONLY( objectStoreFunc, "Thread", threadObject );
 	}
 
-	SET( exports, "ObjectStorage"
+	SET( exports, "ObjectStorage_native"
 		, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 }

@@ -33,11 +33,13 @@ export class Protocol extends Events {
 	}
 
 	onerror( evt ) {
+		//console.log( "Socket error:", evt );
 		this.on( "error", evt );
 	}
-	onclose( evt ){
+	onclose( evt,reason ){
+		//console.log( "Socket close:", evt );
 		Protocol.debug && console.log( "close?", this, evt );
-		this.on( "close", [evt.code, evt.reason] );
+		this.on( "close", [evt, reason] );
 		this.ws = null;
 		if( evt.code === 1000 ) this.connect();
 		else setTimeout( ()=>this.connect( this.protocol,this), 5000 );

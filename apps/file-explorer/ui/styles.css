@@ -1,0 +1,89 @@
+
+body {
+	margin:0;
+	background-color:#002;
+	color:#ed0;
+}
+
+.dir-container {
+	display:flex;
+	position:absolute;
+	height:100vh;
+	width:100vw;
+}
+
+
+
+.dir-files-container, .dir-list-container {
+	display:flex;
+}
+
+.dir-list-container {
+	height:50%;
+}
+
+.dir-list {
+	overflow:auto;
+}
+
+
+.dir-files-container {
+	height:50%;
+	width: 76%;
+}
+
+
+
+.file-list {
+	overflow:auto;
+}
+
+
+.directory-list-row {
+	width: 25vw;
+	font-size : 4vh;
+}
+
+.directory-list-row-name {
+}
+
+.directory-list-row-name:hover {
+	color:red;
+}
+
+
+.directory-list-row-date {
+	float:right;
+}
+
+
+.file-list-row {
+	width: 55vw;
+	font-size : 4vh;
+}
+
+.file-list-row-name {
+}
+
+.file-list-row-name:hover {
+	color:red;
+}
+
+
+.file-list-row-date {
+	float:right;
+}
+
+.dir-toolbox{
+	width: 5vw;
+	height:100vh;
+	background-color:#333;
+}
+
+.dir-tool-up {
+	border-radius:10px;
+	background-color:#ed0;
+	color:#000;
+	width:5vw;
+	height:5vw;
+}

@@ -1,6 +1,6 @@
 {
   "name": "sack.vfs",
-  "version": "1.3.123",
+  "version": "1.3.128",
   "description": "SACK abstraction library exposed to JS to provide low level system services.",
   "repository": {
     "type": "git",
@@ -26,7 +26,10 @@
       "default": "./import.mjs"
     },
     "./object-storage": {
-      "default": "./object-storage.mjs"
+      "default": "./apps/object-storage/object-storage.mjs"
+    },
+    "./object-storage-object": {
+      "default": "./apps/object-storage/object-storage-object.mjs"
     },
     "./apps/http-ws": {
       "require": "./apps/http-ws/server.js",
@@ -85,6 +88,15 @@
     },
     "./wait": {
       "import": "./apps/wait/wait.mjs"
+    },
+    "./slab-array": {
+      "import": "./apps/slab-array/SlabArray.mjs"
+    },
+    "./bloom-n-hash": {
+      "import": "./apps/bloom-n-hash/bloomNHash.mjs"
+    },
+    "./bloomnhash": {
+      "import": "./apps/bloom-n-hash/bloomNHash.mjs"
     }
   },
   "old_exports": {

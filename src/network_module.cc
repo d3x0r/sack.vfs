@@ -868,6 +868,7 @@ static void tcpAsyncMsg_( Isolate *isolate, Local<Context> context, tcpObject * 
 				Local<Function> cons = Local<Function>::New( isolate, c->tcpConstructor );
 				Local<Object> tcpNew = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 				tcpObject* tcpObj = tcpObject::getSelf( tcpNew );
+				tcpObj->c = c;
 				tcpObj->server = obj;
 				tcpObj->ssl = obj->ssl;
 				tcpObj->allowSSLfallback = obj->allowSSLfallback;
@@ -1145,6 +1146,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	async.data = this;
 
 	class constructorSet* c = getConstructors( opts->isolate );
+	this->c = c;
 	//lprintf( "Init async handle: %p",(uv_handle_t*)&async );
 	if( c->ivm_holder ) {
 		this->ivm_hosted = true;

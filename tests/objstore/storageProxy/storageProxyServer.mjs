@@ -6,7 +6,7 @@ const storage = sack.ObjectStorage( "storage-proxy.os" );
 
 import {ObjecStorage} from "../../../object-storage-remote.mjs";
 
-import {openServer} from "../../testWsHttp.mjs"
+import {openServer} from "../../../apps/ws-http/server.mjs"
 
 const config = sack.JSOX.parse( sack.Volume().read("config.jsox").toString()  );
 const runConfig = {
@@ -31,7 +31,7 @@ async function init() {
 			console.log( "Connection for:", url, protocol );
 			server.accept();
 		},
-		connect(ws) {
+		connect(ws, myWS) {
 			const protocol = ws.headers["Sec-WebSocket-Protocol"];
 			const url = ws.url;
 			console.log( "Connection for:", url, protocol );

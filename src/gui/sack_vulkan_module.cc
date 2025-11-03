@@ -107,8 +107,29 @@ void VulkanObject::Init( Isolate* isolate, Local<Object> exports ) {
 
 	SET_READONLY( exports, "Vulkan", vulkanTemplate->GetFunction(context).ToLocalChecked() );
 
-	//SET_READONLY( vulkanTemplate->GetFunction(), "getDisplay", Function::New( isolate, RenderObject::getDisplay ) );
+	SET_READONLY( vulkanTemplate->GetFunction(context).ToLocalChecked(), "addCamera", Function::New( context, VulkanObject::addCamera ).ToLocalChecked() );
 }
+
+void VulkanObject::addCamera( const FunctionCallbackInfo<Value> &args ) {
+	Isolate *isolate = args.GetIsolate();
+	Local<Context> context;
+	if( args.Length() < 1 || !args[ 0 ]->IsObject() ) {
+		isolate->ThrowException(
+		     Exception::TypeError( localStringExternal( isolate, "First argument must be an object" ) ) );
+		return;
+	}
+	Local<Object> camera = args[ 0 ].As<Object>();
+	if( !camera->Has( context, localStringExternal( isolate, "x" ) ).FromMaybe( false )
+	  || !camera->Has( context, localStringExternal( isolate, "y" ) ).FromMaybe( false )
+	  || !camera->Has( context, localStringExternal( isolate, "w" ) ).FromMaybe( false )
+	  || !camera->Has( context, localStringExternal( isolate, "h" ) ).FromMaybe( false ) ) {
+		isolate->ThrowException(
+		     Exception::TypeError( localStringExternal( isolate, "Camera object must have x, y, w, h properties" ) ) );
+		return;
+	}
+	// Add camera logic here...
+}
+
 
 VulkanObject::VulkanObject(  ) {
 }

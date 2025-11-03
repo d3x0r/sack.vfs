@@ -79,15 +79,11 @@ import {SACK} from "sack.vfs";
 ```
 {
     ComPort(comport) - access to com ports.
-     - A jsox (JavaScript Object eXchange) parser. (JSON5/6 input compatible)
+    JSOX - A jsox parser. (JSON5/6 input compatible)
         parse(string) - result with a V8 object created from the json string.  
+        stringify(obj [,stringifer [,formatter])
         begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
         stringifier() - create a reusable stringifier which can be used for custom types
-        stringify(object,replacer,pretty) - stringify an object; same API as JSON.
-    JSOX - A jsox parser. (JSON5 input compatible)
-        parse(string) - result with a V8 object created from the json string.  
-        begin( cb ) - begin parsing JSOX stream; callback is called as each value is completed.
-        stringify(obj [,stringifer [,formatter])
     JSON6 - A json6 parser. (JSON5 input compatible)
         parse(string [,reviver]) - result with a V8 object created from the json string.  
         begin( cb ) - begin parsing JSON6 stream; callback is called as each value is completed.
@@ -146,23 +142,13 @@ import {SACK} from "sack.vfs";
     Config - Process configuration files; also streaming text parsing
         (methods)[#Config_Methods]
     ComPort - (see below)
-    
-    log(string) - log a string.
-    memDump() - log memory stats (track module memory leaks)
-    mkdir() - make a directory in the current path; handles recursive directory creation.
-    u8xor(s,k) - utility function to apply a string mask.
-    b64xor(s,k) - utility function to just xor a value into a base64 string without expanding the values.
-    id() - generate a unique ID (256 bits, 32 bytes, 44chars, trailing '=').
-    Id() - generate a short unique ID (12 bytes, 16chars).
-    loadComplete() - Indicate to SACK system that this is completed loading (task summoner support;linux;deprecated)
-
     System - Namespace for SACK system interface routines (The above methods should be moved into this namespace)
-	createMemory(name,byte size) - creates a named memory region; memory regions by name are shared on the system.
-	openMemory(name) - opens an existing names region; returns an ArrayBuffer which can be mapped to a typed array by application.
-	enableThreadFileSystem() - enables mounting file systems specifically for this thread
+        createMemory(name,byte size) - creates a named memory region; memory regions by name are shared on the system.
+        openMemory(name) - opens an existing names region; returns an ArrayBuffer which can be mapped to a typed array by application.
+        enableThreadFileSystem() - enables mounting file systems specifically for this thread
         allowSpawn() - returns task allowed state
         disallowSpawn() - disble task spawns for this thread
-	dumpRegisteredNames() - dumps internal procedure/interface registry
+        dumpRegisteredNames() - dumps internal procedure/interface registry
         reboot() - on windows, trigger a reboot.
     Task(options) - an interface for createing and monitoring tasks.
         Task constructor takes an option object.
@@ -172,14 +158,25 @@ import {SACK} from "sack.vfs";
         terminate() - terminate created task.
     // windows only
     registry - an interface to windows registry options
-    	set( path, value ) - set a new value in the registry
+        set( path, value ) - set a new value in the registry
         get( path )  - get a value from the registry.
     hid - raw keyboard interface, allows identification of different physical keyboard devices.
 
-   setTimeout(fn,delay ) - same as JS function of same name (on sack object)  (returns a number ID)
-   setInterval(fn,delay) - same as JS function of same name  (returns a number ID)
-   clearTimeout( timeout_id )    
-   clearInterval( timeout_id )
+
+    log(string) - log a string.
+    memDump() - log memory stats (track module memory leaks)
+    mkdir() - make a directory in the current path; handles recursive directory creation.
+    u8xor(s,k) - utility function to apply a string mask.
+    b64xor(s,k) - utility function to just xor a value into a base64 string without expanding the values.
+    id() - generate a unique ID (256 bits, 32 bytes, 44chars, trailing '=').
+    Id() - generate a short unique ID (12 bytes, 16chars).
+    loadComplete() - Indicate to SACK system that this is completed loading (task summoner support;linux;deprecated)
+
+    /* if( isolated )... */
+    setTimeout(fn,delay ) - same as JS function of same name (on sack object)  (returns a number ID)
+    setInterval(fn,delay) - same as JS function of same name  (returns a number ID)
+    clearTimeout( timeout_id )    
+    clearInterval( timeout_id )
 }	
 ```
 
@@ -259,9 +256,25 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.124(in progress)
+- 1.3.129(in progress)
+- 1.3.128
+   - Fix thread local initialization of file system interfaces.
+- 1.3.127
+   - fix potential internal error checking for directory existance.
+- 1.3.126
+   - Add method to expand a path name with symbolic character to full name.
+- 1.3.125
+   - Add get root filesystems call.
+- 1.3.124
+   - added slab-array and bloom-n-hash utilities
+   - separated object-storage to a separate module to include (reduce required initial parsing)
+   - Added monitor name to windows task getDisplay call.
+   - Fixed network deadlock processing a request on socket that closes while in process.
+   - Fixed potential network out-of-order read.
+   - Added file creation and last written timestamps to result of vfs dir().
+   - Added COM port ability to reset the logical port.
 - 1.3.123
-   = Apply actual fix for libressl clang windows build.
+   - Apply actual fix for libressl clang windows build.
 - 1.3.122
    - Add to windows WIFI interface to allow scripts to monitor, connect, and disconnect the wifi device given existing configurations.
    - Protect against null tick callback.
@@ -277,102 +290,4 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
    - Adds some utility functions to support isolated-vm; setTimeout and setInterval for examples.
    - Fixes some small limits of set size in SACK threads; migrate small dynamic object THREAD_EVENT to a set managed object.
    - Fixes some client HTTP requesting.
-- 1.3.120
-   - Fix JSOX parsing error for unquoted partial keywords at the end of objects/arrays.
-   - Fix race condition handling onopen(onconnect) to server and handling the first client message.
-- 1.3.119
-   - Fixed length computed for CGI parameters with lots of escapes.
-   - Implement some basic node_module scanning in default server.
-   - Updated sqlite to 3.48-pre.
-   - updated object storage in database to have an updated timestamp; and use upsert syntaxes.
-- 1.3.118
-   - Add some control over imported modules to force module type on (.js) files.
-   - allow searching for tasks by PID
-   - Updates for v8 version 13.
-   - Add ability to watch for task end by PID.
-   - Build udpates for Node 22/23 to stdc++20.
-   - Add ability to emit keystrokes on windows.
-- 1.3.117
-    - Make TLS hostname checks less optional.  Add hooks to TCP for TLS host specification.
-    - Make default server module check for SSL_HOST environment when SSL_PATH is specified for certificate chain.
-    - Improve specification of hosts and certificates for TCP connections with TLS enabled.
-    - Fix/improve chunked transfer-encoding handling for HTTP.
-- 1.3.116
-    - Set blank headers object if the request had no headers, instead of not setting headers to a value.
-    - Fix getting server name extension for TLS connections to be ready in time for 'connect' event.
-    - Removed noisy debug logging.
-    - (Other minor tweaks and improvements)
-- 1.3.115
-    - Make HTTP response parser more pessimistic about line endings.
-    - Fixed memory double deallocation with multiple onmessage handlers registered.
-    - respect command line parameter option to open port in example HTTP server.
-    - revised image loader to just return promises (http-ws).
-    - removed some noisy logging.
-- 1.3.114
-    - minimize published package.
-- 1.3.113
-    - Fix sack source; tcp network async event selection on windows for connect() sockets.
-- 1.3.112
-    - implement network error callback (SSL fallback).
-    - add null check to client websocket protocol send.
-    - add `ports` accessor on ComPort interface.
-    - Update LibreSSL from 3.8.0 to 3.9.2.
-    - Update libssh2 sources to current (as of 2024/8/23).
-    - add `ports` accessor on TCP interface to get list of open ports and their processes.
-    - Improve network stability on windows and linux (SACK).
-    - try to auto handle ENETUNREACH, EHOSTUNREACH by trying to resolve IPV4 when IPv6 fails.  Added options to prefer V4 or v6 IP addresses.
-- 1.3.111
-    - fixed missing sources (added network addresses to TCP sockets)
-- 1.3.11
-    - implement SSL/TLS on TCP sockets.
-    - fixes error message releasing JSOX parsed messages.
-- 1.3.0(1.3.1)
-    - change version, mostly to have a cleaner version point, but there are some significant changes to this, that really obsoletes everything before
-    - Add simple TCP network interface. 
-- 1.1.822
-    - Enable option to load ssl certificates for HTTPS app service.
-    - JSOX decode fixes.  Handle `'':` as not an error.  which also means `{:` is not an error and it's a zero length string.
-    - Enable System Tray interface on windows (linux doesn't have a standard API; and tool doesnt' exist)
-    - Fix rare JSOX parsing ref follow where part of path is used and then forks to previous data.
-    - Add client SSH module; using libssh2 for support.
-    - Add ability to open remote listen channels.
-    - Added hook between a channel and the SACK Websocket/HTTP server to a remote connection.
-    - fixed some issues with async SQL queries done in a quick batch.
-    - improved name lookup from address.
-    - Added uv_unref() to async SQL event; allows application to close when code is done.
-    - Added ability to resolve names; the websocket is initialized with options on whether to get MAC and or resolve IP to name.
-    - Added local and remote MAC addresses to websocket connection for clients and accepted server sockets.
-    - Applied some minor fixes to build under termux on android.
-    - Added isRunning() method to tasks to return if a task is still running.
-    - Added `retries` and `timeout` parameters to HTTP request option object.
-    - Added `ready()` method to client-protocol utility class.
-    - Updated `import.mjs` import registration for `JSOX`, `JSON6` for Node 20+.
-    - Improved async `DB.run()` method for SQL databases; removed dead code from old `do()` only method.
-    - Apply auto inherit of stdio, stdout, stderr handles from node under linux.
-    - Added some tests for `Task()` objects; fixed some minor memory leaks.
-    - Modified Task `send()` method to send direct buffer, without format support; previously behaved like printf format.
-    - Handle task write/read during close better; may generate an EPIPE, which can be caught with `process.on( "EPIPE", ...)` in JS script.
-    - (JSOX)Quote strings that have a '#' in them.
-    - (JSOX)allow '#' to start a comment until end-of-line.
-    - (JSOX)fix cummulative error in column count on a comma after a number.
-
-- 1.1.821
-    - Linux build fix; don't use windows admin option.
-- 1.1.820
-    - Fix ability to launch task as admin on windows.
-    - Added some tests for windows tasks (testing admin).
-    - Added some windows shell utility interfaces; set windows shell, add logout, enable/disable task manager.
-    - Added some app utility scripts for syslog scanner.
-    - Fix environment variable for windows '~/' path to USERPROFILE instead of HOMEPATH
-- 1.1.819
-    - published final parser fixes.
-- 1.1.818.1-4
-    - minor fixes for common language parser multi-rule matching
-- 1.1.818
-    - Fix fatal error with non-async SQL command that generated an error.
-    - Fix race condition crash with new SQL open callback; the db object was deallocated before uv_close event happened.
-    - Improved import.mjs experimental loader support; added `module://./` support for it.
-    - Fixed SQL result error when no records returned for non-promised query (returned undefined instead of empty array).
-    - Fix failure to generate callback opening Sqlite databases.
-    - Fixed configuration parser; added syslog scanner to generate bans by IP.
 - More in [CHANGELOG.md](CHANGELOG.md)

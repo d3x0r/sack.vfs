@@ -1,0 +1,42 @@
+
+<html>
+<head>
+<title>File Explorer</title>
+<link href="styles.css" rel="stylesheet"></link>
+</head>
+<body>
+
+<div class="dir-container" id="display">
+
+<div class="dir-toolbox">
+	<div id="upDir" class="dir-tool-up"><center>UP</center></div>
+</div>
+
+<div class="dir-favorites"> </div>
+
+<div class="dir-history"> </div>
+
+<div id="dirListContainer" class="dir-list-container">
+	<ul id="dirListList" class="dir-list"></ul>
+</div>
+
+<div id="dirFileContainer" class="dir-files-container">
+	<ul id="dirFileList" class="file-list"></ul>
+</div>
+
+</div>
+
+</body>
+
+<script type="module">
+
+if( "undefined" != typeof rootId ) {
+	// loaded as a popup fragment
+	//console.log( "Root ID?", rootId );
+}
+
+import * as unused from "./main.js";
+
+</script>
+
+</html>

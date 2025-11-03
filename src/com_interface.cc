@@ -139,11 +139,13 @@ void ComObject::Init( Local<Object> exports ) {
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<Context> context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> comTemplate;
+#ifdef _WIN32
 	   updateNames(); // this is used for port[].properties
 	   if(0)
 	   {
 		   ThreadTo( RegisterAndCreateMonitor, 0 );
 	   }
+#endif
 		//reEnablePort("");
 	   comTemplate = FunctionTemplate::New( isolate, New );
 		comTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ComPort" ) );
@@ -817,7 +819,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 
 	   Local<Context> context = isolate->GetCurrentContext();
 	   SET( result, "unnamed", unnamed );
-	   DEVINST inst;
+	   //DEVINST inst;
 
 	   GUID classGuid = ComPortsClass;
 	   //= 4D36E978 - E325 - 11CE-BFC1 - 08002BE10318;
@@ -870,7 +872,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 					   // SetupDiCreateDeviceInfoList(&classGuid, NULL);
 					   DWORD devId  = 0;
 					   SP_DEVINFO_DATA data;
-					   SP_DEVICE_INTERFACE_DATA intData;
+					   //SP_DEVICE_INTERFACE_DATA intData;
 					   data.cbSize = sizeof( data );
 					   // enumerate devices...
 					   while( 1 ) {
@@ -892,10 +894,11 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 							   //lprintf( "Got a device... %d", data.DevInst );
 
 							   HKEY hKey = SetupDiOpenDevRegKey( hdi, &data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE );
-							   DWORD dwError = GetLastError();
+							   //DWORD dwError = GetLastError();
 							   char namebuf[ 256 ];
 							   DWORD namebuflen = 256;
-							   int queryErr = RegQueryValueEx( hKey, "PortName", NULL, NULL, (LPBYTE)namebuf, &namebuflen );
+							   //int queryErr = 
+								   RegQueryValueEx( hKey, "PortName", NULL, NULL, (LPBYTE)namebuf, &namebuflen );
 							   // lprintf( "Device: %.*s", namebuflen, namebuf );
 
 							   // not zero is mis-match.
@@ -907,8 +910,8 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 							   // this code gets all the known properties of a device, and should be moved to
 							   // something that gets the port info, separete from the eanble
 							   {
-								   DWORD instId = 0;
-								   DEVPROPKEY *keys;
+								   //DWORD instId = 0;
+								   DEVPROPKEY *keys = NULL;
 								   ULONG keyCount = 0;
 
 								   // get how many there are expected...
@@ -1124,11 +1127,11 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 
 
 void reEnablePort( char const *port, bool enable ) {
-	DEVINST inst;
+	//DEVINST inst;
 
     GUID classGuid = ComPortsClass;
 	//= 4D36E978 - E325 - 11CE-BFC1 - 08002BE10318;
-    ULONG classIndex = 0;
+    //ULONG classIndex = 0;
     CONFIGRET cr;
 	// 4D36E978-E325-11CE-BFC1-08002BE10318
 	
@@ -1180,7 +1183,7 @@ void reEnablePort( char const *port, bool enable ) {
 						  // SetupDiCreateDeviceInfoList(&classGuid, NULL);
 						  DWORD devId  = 0;
 						  SP_DEVINFO_DATA data;
-						  SP_DEVICE_INTERFACE_DATA intData;
+						  //SP_DEVICE_INTERFACE_DATA intData;
 						  data.cbSize = sizeof( data );
 						  while( 1 ) {
 							  if( !SetupDiEnumDeviceInfo( hdi, devId, &data ) )
@@ -1190,10 +1193,11 @@ void reEnablePort( char const *port, bool enable ) {
 
 								  HKEY hKey
 								       = SetupDiOpenDevRegKey( hdi, &data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_QUERY_VALUE );
-								  DWORD dwError = GetLastError();
+								  //DWORD dwError = GetLastError();
 								  char namebuf[ 256 ];
 								  DWORD namebuflen = 256;
-								  int queryErr = RegQueryValueEx( hKey, "PortName", NULL, NULL, (LPBYTE)namebuf, &namebuflen );
+								  //int queryErr = 
+									  RegQueryValueEx( hKey, "PortName", NULL, NULL, (LPBYTE)namebuf, &namebuflen );
 								  namebuf[ namebuflen ] = 0;
 								  //lprintf( "Device: %.*s", namebuflen, namebuf );
 
@@ -1263,7 +1267,7 @@ void reEnablePort( char const *port, bool enable ) {
          //   break;
         }
 			      */
-        classIndex++;
+        //classIndex++;
 	 };// while( TRUE );	
 
 

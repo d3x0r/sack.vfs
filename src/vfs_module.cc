@@ -16,6 +16,7 @@ struct volumeTransport {
 };
 
 static void handlePostedVolume_( Isolate *isolate, Local<Context> context, struct volumeUnloadStation * unload );
+static	void expandPath( const v8::FunctionCallbackInfo<Value>& args );
 
 struct volumeUnloadStationTask : SackTask {
 	struct volumeUnloadStation *vus;
@@ -580,6 +581,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "File", FileObject::openFile );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "ObjectStorage", vfsObjectStorage );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "dir", getDirectory );
+	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "roots", getRootDirectories ); /* drives */
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "exists", fileExists );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "isDir", isDirectory );
 	NODE_SET_PROTOTYPE_METHOD( volumeTemplate, "read", fileRead );
@@ -627,6 +629,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
 	SET_READONLY_METHOD( VolFunc, "readAsString", fileReadString );
 	SET_READONLY_METHOD( VolFunc, "mapFile", fileReadMemory );
+	SET_READONLY_METHOD( VolFunc, "expandPath", expandPath );
 
 	Local<Object> fileObject = Object::New( isolate );	
 	SET_READONLY( fileObject, "SeekSet", Integer::New( isolate, SEEK_SET ) );
@@ -1311,6 +1314,21 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		return m;
 	}
 
+	void expandPath( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
+
+		if( args.Length() < 1 ) {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			return;
+		}
+
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+		char *path = ExpandPath( *fName );
+		args.GetReturnValue().Set( String::NewFromUtf8( isolate, path ).ToLocalChecked() );
+		Deallocate( char*, path );
+	}
 
 	void VolumeObject::fileReadMemory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
@@ -1529,6 +1547,33 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		args.GetReturnValue().Set( Boolean::New( isolate, sack_unlink( 0, *fName ) != 0 ) );
 	}
 
+	void VolumeObject::getRootDirectories(const v8::FunctionCallbackInfo<Value>& args) {
+		Isolate* isolate = args.GetIsolate();
+		Local<Context> context = isolate->GetCurrentContext();
+		VolumeObject* vol = ObjectWrap::Unwrap<VolumeObject>(getHolder(args));
+		Local<Array> result = Array::New(isolate);
+		if (!vol->volNative && !vol->mountName ) {
+#ifdef _WIN32
+			DWORD driveMask = GetLogicalDrives();
+			std::vector<std::string> driveLetters;
+			int index = 0;
+			for (int i = 0; i < 26; ++i) { // Iterate through possible drive letters A-Z
+				if ((driveMask >> i) & 1) { // Check if the i-th bit is set
+					char driveLetter[4] = { 'A', ':', '\\', 0 };
+					driveLetter[0] += i;
+					SETN(result, index++, String::NewFromUtf8(isolate, driveLetter).ToLocalChecked());
+				}
+			}
+#else
+			SETN(result, 0, String::NewFromUtf8(isolate, "/").ToLocalChecked());
+			SETN(result, 1, String::NewFromUtf8(isolate, "~/").ToLocalChecked());
+#endif
+		} else {
+			SETN(result, 0, String::NewFromUtf8(isolate, "").ToLocalChecked());
+		}
+		args.GetReturnValue().Set(result);
+	}
+
 	void VolumeObject::getDirectory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		Local<Context> context = isolate->GetCurrentContext();
@@ -1552,8 +1597,24 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 			char *name = vol->fsInt->find_get_name( fi );
 			size_t length = vol->fsInt->find_get_size( fi );
 			bool isDir = vol->fsInt->find_is_directory( fi );
+
+			// times from native file system come in as UTC ticks.
+			int64_t t1 = vol->fsInt->find_get_wtime(fi);
+			int64_t t2 = vol->fsInt->find_get_ctime(fi);
+			Local<Object> tmpResult;
+			Local<Object> tmpResult2;
+
+			class constructorSet* c = getConstructors(isolate);
+			Local<Value> argv[1] = { Number::New(isolate, (t1)*1000) };
+			Local<Value> argv2[1] = { Number::New(isolate, (t2 ) * 1000) };
+
+			tmpResult = c->dateCons.Get(isolate)->NewInstance(context, 1, argv).ToLocalChecked();
+			tmpResult2 = c->dateCons.Get(isolate)->NewInstance(context, 1, argv2).ToLocalChecked();
+
 			Local<Object> entry = Object::New( isolate );
 			SET( entry, "name", String::NewFromUtf8( isolate, name, v8::NewStringType::kNormal ).ToLocalChecked() );
+			SET( entry, "written", tmpResult );
+			SET( entry, "created", tmpResult2);
 			if( isDir ) {
 				// some file systems, directories might have length of file content
 				SET( entry, "folder", True(isolate) );

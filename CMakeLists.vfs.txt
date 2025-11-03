@@ -111,6 +111,9 @@ endif()
 
 if( WIN32 )
 	set( SACK_BASE M:/sack )
+	if( NOT EXISTS ${SACK_BASE} )
+		set( SACK_BASE ${CMAKE_SOURCE_DIR}/../sack )
+	endif( NOT EXISTS ${SACK_BASE} )
 else( WIN32 )
 	set( SACK_BASE ${CMAKE_SOURCE_DIR}/../../sack )
 	if( NOT EXISTS ${SACK_BASE} )
@@ -201,6 +204,7 @@ SET( EXTRA_HEADERS
         ${SACK_BASE}/include/sha1.h	
         ${SACK_BASE}/include/sha2.h	
 	${SACK_BASE}/include/listports.h
+	${CMAKE_SOURCE_DIR}/offsetof.h
 )
 
 if( WIN32 )
