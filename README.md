@@ -256,7 +256,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.129(in progress)
+- 1.3.130(in progress)
+- 1.3.129
+   - Fix failure to build on *nix from updated COM port features.
 - 1.3.128
    - Fix thread local initialization of file system interfaces.
 - 1.3.127
