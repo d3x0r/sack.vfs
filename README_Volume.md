@@ -42,6 +42,7 @@ Volume  // function has these methods.
     cwd - getter that results with current working directory (may later be isolate-local).
     chdir - set the application's current working path
     mkdir(path) - recursively creates the desired path; parts are can be separated with `\` or `/`.
+    expandPath(path) - expand path names like `~/` or `./` into whatever the full path would be (with trailing slash).
     Thread : {
         post( uniqueId, Volume ) - post a volume to a thread by a unique identifier.
         accept( uniqueId, cb(volume) ) - registers a callback which is called with a volume thrown from some other thread.
