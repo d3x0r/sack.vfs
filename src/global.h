@@ -391,6 +391,7 @@ public:
 	VolumeObject( const char *mount, const char *filename, uintptr_t version, const char *key, const char *key2, int priority = 2000 );
 	static void vfsObjectStorage( const v8::FunctionCallbackInfo<Value>& args );
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void getRootDirectories(const v8::FunctionCallbackInfo<Value>& args);
 	static void getDirectory( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileReadString( const v8::FunctionCallbackInfo<Value>& args );
