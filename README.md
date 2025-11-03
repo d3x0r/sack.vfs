@@ -256,7 +256,9 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.126(in progress)
+- 1.3.127(in progress)
+- 1.3.126
+   - Add method to expand a path name with symbolic character to full name.
 - 1.3.125
    - Add get root filesystems call.
 - 1.3.124
