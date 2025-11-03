@@ -16,6 +16,7 @@ struct volumeTransport {
 };
 
 static void handlePostedVolume_( Isolate *isolate, Local<Context> context, struct volumeUnloadStation * unload );
+static	void expandPath( const v8::FunctionCallbackInfo<Value>& args );
 
 struct volumeUnloadStationTask : SackTask {
 	struct volumeUnloadStation *vus;
@@ -628,6 +629,7 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	SET_READONLY_METHOD( exports, "Id", idShortGenerator );
 	SET_READONLY_METHOD( VolFunc, "readAsString", fileReadString );
 	SET_READONLY_METHOD( VolFunc, "mapFile", fileReadMemory );
+	SET_READONLY_METHOD( VolFunc, "expandPath", expandPath );
 
 	Local<Object> fileObject = Object::New( isolate );	
 	SET_READONLY( fileObject, "SeekSet", Integer::New( isolate, SEEK_SET ) );
@@ -1312,6 +1314,21 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 		return m;
 	}
 
+	void expandPath( const v8::FunctionCallbackInfo<Value>& args ) {
+		Isolate* isolate = args.GetIsolate();
+		//VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getHolder(args) );
+
+		if( args.Length() < 1 ) {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8( isolate, TranslateText( "Requires filename to open" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			return;
+		}
+
+		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
+		char *path = ExpandPath( *fName );
+		args.GetReturnValue().Set( String::NewFromUtf8( isolate, path ).ToLocalChecked() );
+		Deallocate( char*, path );
+	}
 
 	void VolumeObject::fileReadMemory( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
