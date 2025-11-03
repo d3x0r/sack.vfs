@@ -115,8 +115,9 @@ ComObject::ComObject( char *name ) : jsObject() {
 		this->portName += 4;
 	handle = SackOpenComm( name, 0, 0 );
 	// when opening a port, start monitoring for change events.
-
+#ifdef _WIN32
 	ThreadTo( RegisterAndCreateMonitor, 0 );
+#endif
 }
 
 ComObject::~ComObject() {
