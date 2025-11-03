@@ -88,11 +88,14 @@
     },
     "./wait": {
       "import": "./apps/wait/wait.mjs"
-    }
+    },
     "./slab-array": {
       "import": "./apps/slab-array/SlabArray.mjs"
-    }
+    },
     "./bloom-n-hash": {
+      "import": "./apps/bloom-n-hash/bloomNHash.mjs"
+    },
+    "./bloomnhash": {
       "import": "./apps/bloom-n-hash/bloomNHash.mjs"
     }
   },
