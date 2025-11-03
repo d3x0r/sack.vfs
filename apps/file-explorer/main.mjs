@@ -45,10 +45,10 @@ server.on( "upDir", (ws, msg ) =>{
 	if( !state.currentPath || ( parts[0].length && parts.length < 3 )  || ( !parts[0].length && parts.length < 2 )) {
 		state.currentPath = "";
 		const roots = disk.roots().map( r=>({name:r.replace('\\','/'), folder:true, created:new Date(), written:new Date() }) );
-		roots.push( { name: sack.Volume.expandPath( "~/"  WQr8), folder: true, created:new Date(), written: new Date() } );
-		roots.push( { name: sack.Volume.expandPath( "./" ), folder: true, created:new Date(), written: new Date() } );
-		roots.push( { name: sack.Volume.expandPath( ";/" ), folder: true, created:new Date(), written: new Date() } );
-		roots.push( { name: sack.Volume.expandPath( "@/" ), folder: true, created:new Date(), written: new Date() } );
+		roots.push( { name: sack.Volume.expandPath( "~/" ).replace('\\','/'), folder: true, created:new Date(), written: new Date() } );
+		roots.push( { name: sack.Volume.expandPath( "./" ).replace('\\','/'), folder: true, created:new Date(), written: new Date() } );
+		roots.push( { name: sack.Volume.expandPath( ";/" ).replace('\\','/'), folder: true, created:new Date(), written: new Date() } );
+		roots.push( { name: sack.Volume.expandPath( "@/" ).replace('\\','/'), folder: true, created:new Date(), written: new Date() } );
 //		roots.push( { name: sack.Volume.expandPath( "%CD%/" ), folder: true, created:new Date(), written: new Date() } );
 //		roots.push( { name: sack.Volume.expandPath( "/" ), folder: true, created:new Date(), written: new Date() } );
 		server.reply( ws, "dir", roots  );
