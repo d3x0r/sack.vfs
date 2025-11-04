@@ -1359,7 +1359,7 @@ void OptionTreeObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& arg
 		return;
 	}
 
-	OptionTreeObject *parent = ObjectWrap::Unwrap<OptionTreeObject>( getHolder(args) );
+	OptionTreeObject *parent = ObjectWrap::Unwrap<OptionTreeObject>( getFCIHolder(args) );
 
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	char *optionPath = StrDup( *tmp );

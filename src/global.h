@@ -89,9 +89,11 @@
 
 
 #if V8_MAJOR_VERSION >= 14
-#  define getHolder( args ) ( args ).HolderV2()
+#  define getPCIHolder( args ) ( args ).HolderV2()
+#  define getFCIHolder( args ) ( args ).This()
 #else
-#  define getHolder(args) (args).This()
+#  define getPCIHolder(args) (args).This()
+#  define getFCIHolder(args) (args).This()
 #endif
 
 // probably didn't need the copyable persistent trait thing anyway?

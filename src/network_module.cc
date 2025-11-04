@@ -772,7 +772,7 @@ void udpObject::setBroadcast( const FunctionCallbackInfo<Value>& args ) {
 
 void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-	udpObject *obj = ObjectWrap::Unwrap<udpObject>( getHolder(args) );
+	udpObject *obj = ObjectWrap::Unwrap<udpObject>( getFCIHolder(args) );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -1494,7 +1494,7 @@ class tcpObject* tcpObject::getSelf( Local<Object> _this ) {
 
 void tcpObject::on( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( getHolder(args) );
+	tcpObject *obj = ObjectWrap::Unwrap<tcpObject>( getFCIHolder(args) );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
