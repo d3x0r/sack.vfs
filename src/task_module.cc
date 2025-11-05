@@ -51,6 +51,7 @@ struct optionStrings {
 	Eternal<String>* currentString;
 	Eternal<String>* primaryString;
 	Eternal<String>* deviceString;
+	Eternal<String>* connectorString;
 #endif
 #if defined( __LINUX__ )
 	Eternal<String>* usePtyString;
@@ -139,6 +140,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->currentString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "current" ) );
 		check->primaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "primary" ) );
 		check->deviceString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "device" ) );
+		check->connectorString = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "connector"));
 		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
 #endif
 #if defined( __LINUX__ )
@@ -1258,6 +1260,7 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 	struct monitorInfo {
 		CTEXTSTR sourceName; 
 		CTEXTSTR monitorName;
+		int connector;
 	};
 	PLIST infos                   = NULL;
 	struct optionStrings* strings = getStrings( isolate );
@@ -1344,6 +1347,7 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 				struct monitorInfo *monitor = NewArray( struct monitorInfo, 1 );
 				monitor->sourceName         = WcharConvert( sourceName.viewGdiDeviceName );
 				monitor->monitorName        = WcharConvert( targetName.monitorFriendlyDeviceName );
+				monitor->connector          = targetName.connectorInstance;
 				//lprintf( "Adding MOnitor: %s %s", monitor->sourceName, monitor->monitorName );
 				AddLink( &infos, monitor );
 				// qDebug() << "Monitor " << mon_name;
@@ -1383,6 +1387,8 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 					SETV( display, strings->deviceString->Get( isolate ), String::NewFromUtf8( isolate, dev.DeviceString).ToLocalChecked() );
 					SETV( display, strings->monitorString->Get( isolate )
 					    , String::NewFromUtf8( isolate, info->monitorName ).ToLocalChecked() );
+					SETV( display, strings->connectorString->Get( isolate )
+					    , Number::New( isolate, info->connector ) );
 					
 					SETV( display, strings->xString->Get( isolate ), Number::New( isolate, dm.dmPosition.x ) );
 					SETV( display, strings->yString->Get( isolate ), Number::New( isolate, dm.dmPosition.y ) );
