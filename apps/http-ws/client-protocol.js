@@ -14,6 +14,8 @@ export class Protocol extends Events {
 	set debug(val) {
 		Protocol.debug = val;
 	}
+	// server defaults to location this script ws loaded from
+	// normally only have to specify the protocol.
 	constructor( protocol, server ){
 		super();
 		if( server ) this.server = server.replace("http","ws");
