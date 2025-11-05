@@ -257,6 +257,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.3.130(in progress)
+   - Found connector number for display info, so can specify literal port now.
 - 1.3.129
    - Fix failure to build on *nix from updated COM port features.
 - 1.3.128
