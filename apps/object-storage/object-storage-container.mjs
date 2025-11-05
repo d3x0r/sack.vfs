@@ -1,5 +1,12 @@
 
-
+const _debug = false;
+const _debug_dangling = false;
+const _debug_output = _debug || false;
+const _debug_object_convert = _debug || false;
+const _debug_ll = false; // remote receive message logging.
+const _debug_map = false;
+const _debug_replace = false;
+import {loadPending} from "./object-storage.mjs"
 
 // associates object data with storage data for later put(obj) to re-use the same informations.
 export class ObjectStorageContainer {

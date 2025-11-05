@@ -23,7 +23,6 @@ export class FileEntry {
 
 	read( from, len ) {
 		const this_ = this;
-		//console.trace( "READ RESULTING A PROMISE... PLEASE CATCH");
 		return new Promise( (res,rej)=>{
 			//console.log( "reading:", this );
 			if( this_.isFolder ) {
@@ -47,6 +46,7 @@ export class FileEntry {
 	}
 
 	write( o ) {
+		//console.log( "Store file", o, this );
 		if( this.id )
 			try {
 				if( "string" === typeof o ) {
@@ -99,6 +99,7 @@ export class FileEntry {
 					return dir;
 				} );
 		}
+
 		return this.folder.open( file.name );
 	}
 }
@@ -146,6 +147,7 @@ export class FileDirectory {
 
 	store(force) {
 		// save changes to this.
+	console.log( "Store directory" );
 		if( !force ) {
 			if( !pendingStore.find( p=>p===this)) 
 				pendingStore.push( this );
@@ -203,13 +205,13 @@ export class FileDirectory {
 		var pathIndex = 0;
 		var dir = this;
 		async function getOnePath() {
-		console.log( "Checking for file:", fileName, dir );
+			//console.log( "Checking for file:", fileName, dir );
 			if( pathIndex >= parts.length ) return true;
 			if( !dir ) return false;
 	        
 			part = parts[pathIndex++];
 			var file = dir.files.find( (f)=>( f.name == part ) );
-		console.log( "Checking for file:", fileName, file, dir );
+			//console.log( "Checking for file:", fileName, file, dir );
 			if( !file ) return false;
 			if( file.root ) dir = file.root;
 			else {
