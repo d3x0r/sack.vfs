@@ -115,6 +115,8 @@ Move options are applied after styles are set.
 | width | number | specifies the width position of the window. Default is 1920.|
 | height | number | specifies the height position of the window. Default is 1080.|
 | display | number | specifies the display number to move the display to. 0 is the primary display, 1-N are displays by ID number.  If display option is specified, then `x`,`y`,`width`, and `height` options are ignored. Default is -1.|
+| monitor | number | monitor number(?) think this ends up being the same as display.|
+| connector | number | specifies the display connector to move the display to. This relates to physical connector (and may need more info)|
 | cb | function | callback function which receives `true`/`false` parameter indicating the result of the move operation.  `false` results if the display number is invalid, or if the timeout occurs before finding the window. |
 
 
