@@ -758,21 +758,31 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					{
 						Local<Script> script;
 						char buf[64];
-						snprintf( buf, 64, "new Date('%s')", jsval->string );
-						script = Script::Compile( isolate->GetCurrentContext()
-							, String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
+						if( StrCmp( jsval->string, "0000-01-01T00:00:00.000Z") == 0 )
+							val = Null( isolate );
+						else {
+							snprintf( buf, 64, "new Date('%s')", jsval->string );
+							script = Script::Compile(
+							              isolate->GetCurrentContext()
+							              , String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
 #if ( V8_MAJOR_VERSION >= 13 || ( V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 9 ) )
-							, new ScriptOrigin( String::NewFromUtf8(isolate, "DateFormatter"
-								, NewStringType::kInternalized).ToLocalChecked())
+							              , new ScriptOrigin(
+							                     String::NewFromUtf8( isolate, "DateFormatter", NewStringType::kInternalized )
+							                          .ToLocalChecked() )
 #elif ( NODE_MAJOR_VERSION >= 16 )
-							, new ScriptOrigin( isolate, String::NewFromUtf8( isolate, "DateFormatter"
-						                                  , NewStringType::kInternalized ).ToLocalChecked() )
+							              , new ScriptOrigin( isolate
+							                                , String::NewFromUtf8( isolate, "DateFormatter"
+							                                                       , NewStringType::kInternalized )
+							                                       .ToLocalChecked() )
 #else
-								, new ScriptOrigin( String::NewFromUtf8( isolate, "DateFormatter"
-						                                  , NewStringType::kInternalized ).ToLocalChecked() )
+							              , new ScriptOrigin(
+							                     String::NewFromUtf8( isolate, "DateFormatter", NewStringType::kInternalized )
+							                          .ToLocalChecked() )
 #endif
-						                        ).ToLocalChecked();
-						val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
+							                   )
+							     .ToLocalChecked();
+							val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
+						}
 					}
 					break;
 					case JSOX_VALUE_TRUE:
