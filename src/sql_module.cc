@@ -608,6 +608,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 	int items;
 	struct jsox_value_container* jsval;
 	PDATALIST pdlRecord = params->pdlRecord;
+	class constructorSet* c = NULL;
 	DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
 		if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
 	}
@@ -761,6 +762,11 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						if( StrCmp( jsval->string, "0000-01-01T00:00:00.000Z") == 0 )
 							val = Null( isolate );
 						else {
+							Local<Value> argv[1] = { String::NewFromUtf8(isolate, jsval->string, NewStringType::kNormal, (int)jsval->stringLen).ToLocalChecked() };
+							if( !c )  c = getConstructors(isolate);
+							val = c->dateCons.Get(isolate)->NewInstance(context, 1, argv).ToLocalChecked();
+
+#if OLD_CONVERSION_METHOD
 							snprintf( buf, 64, "new Date('%s')", jsval->string );
 							script = Script::Compile(
 							              isolate->GetCurrentContext()
@@ -782,6 +788,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 							                   )
 							     .ToLocalChecked();
 							val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
+#endif
 						}
 					}
 					break;
