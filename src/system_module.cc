@@ -521,7 +521,9 @@ static void exitAsyncMsg( uv_async_t *handle ) {
 static void enableExitEvent( const v8::FunctionCallbackInfo<Value> &args ) {
 	Isolate *isolate = args.GetIsolate();
 	if( !local.enabledExit ) {
+#ifdef _WIN32
 		EnableExitEvent();
+#endif
 		local.enabledExit = TRUE;
 	}
 	// lprintf( "Setting callback with isolate:%p", isolate );

@@ -843,7 +843,7 @@ class ObjectStorage {
 
 
 
-	function loadPending(store, load, opts) {
+export	function loadPending(store, load, opts) {
 		//console.log( "doing real get, which results with ANOTHER promise", load, store );
 		return store.get( {id:load.d.id}).then( (obj)=>{
 			//console.log( "Storage requested:", load.d.id );
@@ -1007,14 +1007,5 @@ function setupStringifier( newStorage, stringifier ) {
 }
 
 
-
-
-ObjectStorage.StoredObject = StoredObject
-//exports.ObjectStorage = ObjectStorage;
-//exports.StoredObject = StoredObject;
-//sack.ObjectStorage = ObjectStorage;
-
-
-//}
-
 export {ObjectStorage};
+export default ObjectStorage;
