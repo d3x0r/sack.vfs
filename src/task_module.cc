@@ -1257,11 +1257,16 @@ static BOOL addMonitor( HMONITOR hMonitor,
 		struct monitorInfo *info;
 		INDEX idx;
 		LIST_FORALL(l.displays, idx, struct monitorInfo*, info) {
+			if( StrCmp( info->sourceName, monitorInfo.szDevice ) == 0 ) {
+				info->disnum = devNum;
+			}
 			if( info->disnum == devNum )
 				break;
 		}
 		if( !info ) {
 			info = NewArray( struct monitorInfo, 1 );
+			info->sourceName = NULL;
+			info->monitorName = NULL;
 			info->disnum = devNum;
 			AddLink( &l.displays, info );
 		}
