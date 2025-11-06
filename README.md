@@ -256,8 +256,12 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.130(in progress)
+- 1.3.131(in progress)
+- 1.3.130
    - Found connector number for display info, so can specify literal port now.
+   - Fix error getting monitor info.
+   - Add bypass for linux exit signal support which has a potential deadlock.
+   - Fix SQL date conversion when ODBC fails to convert 0 date to null.
 - 1.3.129
    - Fix failure to build on *nix from updated COM port features.
 - 1.3.128
