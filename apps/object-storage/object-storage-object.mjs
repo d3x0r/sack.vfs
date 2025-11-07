@@ -1,4 +1,5 @@
 
+import {l} from "./object-storage-local.mjs"
 
 export class StoredObject {
 	#id = null;
@@ -38,11 +39,11 @@ export class StoredObject {
 		this.#id = id;
 	}
 	constructor( storage ) {
-        	if( !storage ) {
-	        	//console.trace( "should have storage on create..", storage, currentStorage );
-				storage = currentStorage;
-	        	if( !storage ) {
-		        	console.trace( "should have storage on create..", storage, currentStorage );
+		if( !storage ) {
+			//console.trace( "should have storage on create..", storage, l.currentStorage );
+				storage = l.currentStorage;
+			if( !storage ) {
+				console.trace( "should have storage on create..", storage, l.currentStorage );
 			}
 		}
 		if( storage ) this.#storage = storage;

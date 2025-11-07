@@ -1,5 +1,4 @@
 
-let currentStorage = null;
 
 import {sack} from "sack.vfs";
 //console.log( "sack?", sack );
@@ -8,6 +7,7 @@ import {StoredObject} from "./object-storage-object.mjs"
 import {DbStorage} from "./object-storage-data-sql.mjs";
 import {ObjectStorageContainer} from "./object-storage-container.mjs"
 import {FileEntry,FileDirectory} from "./object-storage-file-system.mjs"
+import {l} from "./object-storage-local.mjs"
 
 //export default function( sack ) {
 
@@ -584,7 +584,7 @@ class ObjectStorage {
 
 			const priorReadId = currentReadId;
 			try {
-				currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
+				l.currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
 								// all synchronously.
 				const parts = opts.id.split('.');
 				os.storage.read( currentReadId = parts[0], Number( parts[1] )
@@ -618,7 +618,7 @@ class ObjectStorage {
 			}
 			
 			let deleteId = -1;
-			currentStorage = null;
+			l.currentStorage = null;
 			//const extraResolutions = [];
 			for( let n = 0; n < os.decoding.length; n++ ) {
 				const decode = os.decoding[n];
