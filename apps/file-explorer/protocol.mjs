@@ -5,7 +5,7 @@ const JSOX = sack.JSOX;
 
 export class ExplorerProtocol extends Protocol {
 	constructor() {
-		super( {port:5543, protocol:"FileExplorer", resourcePath:"ui", commonPath:"..", npmPath:"../.."} );
+		super( {port:Number(process.env.PORT) || 5543, protocol:"FileExplorer", resourcePath:"ui", commonPath:"..", npmPath:"../.."} );
 		
 	}
 	reply( ws, op, data ) {
