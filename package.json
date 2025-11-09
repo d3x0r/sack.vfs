@@ -40,16 +40,17 @@
       "import": "./apps/http-ws/server.mjs"
     },
     "./protocol": {
-      "require": "./apps/http-ws/server-protocol.js",
       "import": "./apps/http-ws/server-protocol.mjs"
     },
     "./server-protocol": {
-      "require": "./apps/http-ws/server-protocol.js",
       "import": "./apps/http-ws/server-protocol.mjs"
     },
     "./client-protocol": {
       "require": "./apps/http-ws/client-node-protocol.js",
       "import": "./apps/http-ws/client-node-protocol.mjs"
+    },
+    "./web-protocol": {
+      "default": "./apps/http-ws/client-protocol.js"
     },
     "./apps/http-ws/uexpress": {
       "require": "./apps/http-ws/uexpress.js",
