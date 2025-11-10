@@ -158,7 +158,7 @@ void JSOXObject::getCurrentRef( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( !newRef.IsEmpty() )
 			args.GetReturnValue().Set( newRef.ToLocalChecked() );
 		else
-			lprintf("Constructor threw exception");
+			lprintf("Constructor threw exception: JSOXReference" );
 	}
 
 }
@@ -300,7 +300,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		if(!resObj.IsEmpty() )
 			args.GetReturnValue().Set( resObj.ToLocalChecked() );
 		else
-			lprintf("Constructor threw exception");
+			lprintf("Constructor threw exception: JSOX");
 		delete[] argv;
 	}
 
@@ -364,7 +364,7 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 						}
 						else {
 //#ifdef DEBUG_REVIVAL_CALLBACKS
-							lprintf( "Constructor threw exception" );
+							lprintf( "Constructor threw exception: % .*s", val->classNameLen, val->className );
 //#endif
 							revive->failed = TRUE;
 						}
@@ -469,7 +469,7 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 						if( !mo.IsEmpty() )
 							sub_o = mo.ToLocalChecked();
 						else
-							lprintf("Constructor threw exception");
+							lprintf("Constructor threw exception: %.*s", val->classNameLen, val->className);
 					}
 				}
 			}
@@ -498,7 +498,7 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 						if( !mo.IsEmpty() )
 							sub_o = mo.ToLocalChecked();
 						else
-							lprintf( "Constructor threw exception" );
+							lprintf( "Constructor threw exception: %.*s", val->classNameLen, val->className);
 					}
 				}
 			}
