@@ -8,25 +8,46 @@ const storedPromise = Promise.resolve(undefined);
 
 
 export class FileEntry {
+	// the public information here is stored
+	// in a FileDirectory array.  If 'folder' is true, then the object at id is a FileDirectory
+	name = null;
+	id = null; // object identifier of the content(can be passed as get/put option)
+	created = new Date();
+	updated = new Date();
+	𝑓 = false;
+
+	#root = null;
+	#folder = null;
+	set root(val) {
+		this.#root = val;
+	}
+	get root() {
+		return this.#root;
+	}
+	set folder(val) {
+		this.#folder = val;
+	}
+	get folder() {
+		return this.#folder;
+	}
 	constructor ( d ) {
-		this.name = null;
-		this.id = null; // object identifier of this.
-		this.contents = null;
-		this.created = new Date();
-		this.updated = new Date();
-		if( d ) Object.defineProperty( this, "folder", {value:d} );
+		if( d ) {
+			// usually this is a revived object and can't have args
+			console.trace( "File Entry created with folder?", d );
+			this.#folder = d;
+		}
 	}
 
 	getLength () {
 		return this.data.length;
 	}
 
-	read( from, len ) {
+	read( from, len, opts ) {
 		const this_ = this;
 		return new Promise( (res,rej)=>{
 			//console.log( "reading:", this );
 			if( this_.isFolder ) {
-				this_.folder.volume.get( { id:this_.id } )
+				this_.folder.volume.get( this_.id )
 					.catch( rej )
 					.then( (dir)=>{
 						//console.log( "Read directory, set folder property..." );
@@ -37,7 +58,7 @@ export class FileEntry {
 			} else {
 				//console.log( "Reading ...", this_.id );
 				if( this_.id )
-					return this_.folder.volume.get( {id:this_.id} ).then( res ).catch( rej );
+					return this_.folder.volume.get( {id:this_.id,noParse:opts?.noParse||false} ).then( res ).catch( rej );
 				//console.log( "Rejecting, no ID, (no data)", this_ );
 				//console.log( "no file data in it?" );
 				res( undefined ) // no data
@@ -50,12 +71,12 @@ export class FileEntry {
 		if( this.id )
 			try {
 				if( "string" === typeof o ) {
-					console.log( "direct write of string data:", this.id, o );
+					//console.log( "direct write of string data:", this.id, o );
 					this.folder.volume.storage.writeRaw( this.id, o );
 					return Promise.resolve( this.id );
 	        
 				} else if( o instanceof ArrayBuffer ) {
-					console.log( "Write raw buffer", this );
+					//console.log( "Write raw buffer", this );
 					this.folder.volume.storage.writeRaw( this.id, o );
 					return Promise.resolve( this.id );
 	        
@@ -78,7 +99,7 @@ export class FileEntry {
 		const this_ = this;
 		//console.log( "Returning a promised volume put:", o, this );
 		if( this.id )
-			return this.folder.volume.put( o, this );
+			return this.folder.store();
 		else
 			return this.folder.volume.put( o, this )
 				.then( id=>{
@@ -92,10 +113,10 @@ export class FileEntry {
 	}
 	async open( fileName ) {
 		if( this.root ) return file.root.open( fileName );
-		if( this.contents ) {
-			return this.folder.volume.get( {id:file.contents } )
+		if( this.id ) {
+			return this.folder.volume.get( {id:file.id } )
 				.then( async (dir)=>{
-					Object.defineProperty( file, "root", {value:dir} );
+					file.root = dir;
 					return dir;
 				} );
 		}
@@ -110,8 +131,15 @@ export class FileDirectory {
 	#id = null;
 	#volume = null;
 	constructor( v, id ) {
+		//if( !v ) throw new Error( "Needs a volume!" );
 		this.#volume = v;
 		this.#id = id;
+	}
+	set volume(vol) {
+		this.#volume = vol;
+	}
+	get volume() {
+		return this.#volume;
 	}
 	get id() {
 		return this.#id;
@@ -119,6 +147,17 @@ export class FileDirectory {
 	find( file ) {
 		// simple check; for a more advanced pathname matching use has(file) instead.
 		return !!this.files.find( (f)=>(f.name == file ) );		
+	}
+
+	static fromJSOX(field,val) {
+		if( !field ) {
+			//console.log( "folder read; fixup files:", this );
+			for( let file of this.files ) {
+				file.folder = this;
+			}
+			return this;
+		}
+		return undefined;
 	}
 
 	async create( fileName ) {
@@ -147,7 +186,7 @@ export class FileDirectory {
 
 	store(force) {
 		// save changes to this.
-	console.log( "Store directory" );
+		//console.log( "Store directory" );
 		if( !force ) {
 			if( !pendingStore.find( p=>p===this)) 
 				pendingStore.push( this );
@@ -183,8 +222,8 @@ export class FileDirectory {
 	        
 			if( file.root ) dir = file.root;
 			else {
-				if( file.contents ) {
-					return  dir.#volume.get( {id:file.contents } )
+				if( file.id ) {
+					return  dir.#volume.get( file )
 						.then( async (readdir)=>{
 							Object.defineProperty( file, "root", {value:readdir} );
 							dir = readdir;
@@ -205,7 +244,7 @@ export class FileDirectory {
 		var pathIndex = 0;
 		var dir = this;
 		async function getOnePath() {
-			//console.log( "Checking for file:", fileName, dir );
+			//console.log( "Checking for file:", fileName, dir, part );
 			if( pathIndex >= parts.length ) return true;
 			if( !dir ) return false;
 	        
@@ -215,15 +254,21 @@ export class FileDirectory {
 			if( !file ) return false;
 			if( file.root ) dir = file.root;
 			else {
-				if( file.contents ) {
-					return  dir.#volume.get( {id:file.contents } )
-						.then( async (readdir)=>{
-							Object.defineProperty( file, "root", {value:readdir} );
-							dir = readdir;
-							return getOnePath();
-						});
-				}
-				else
+				//console.log( "is file a folder?", file.𝑓 );
+				if( file.𝑓 ) {
+					if( file.id ) {
+						//console.log( 'dir vol?', dir.#volume );
+						return  dir.#volume.get( file )
+							.then( async (readdir)=>{
+								Object.defineProperty( file, "root", {value:readdir} );
+								dir = readdir;
+								return getOnePath();
+							});
+						
+					} else {
+						dir = null;
+					}
+				} else
 					dir = null;
 			}
 			return getOnePath();
@@ -241,8 +286,8 @@ export class FileDirectory {
 				const part = path[pathIndex++];
 				let file = here.files.find( (f)=>(f.name == part ) );
 				if( file ) {
-					if( file.contents ) {
-						_this.#volume.get( {id:file.contents } )
+					if( file.id ) {
+						_this.#volume.get( file )
 							.then( (dir)=>{
 								if( pathIndex < path.length ) {
 									here = dir;
@@ -256,11 +301,11 @@ export class FileDirectory {
 				}else {
 					file = new FileEntry( this );
 					file.name = part;
-					var newDir = new FileDirectory( _this.#volume, file.contents );
+					var newDir = new FileDirectory( _this.#volume, file.id );
 					Object.defineProperty( file, "root", {value:newDir} );
 					_this.files.push(file);
 					newDir.store().then( (id)=>{
-						file.contents = id;
+						file.id = id;
 						_this.store().then( ()=>{
 							if( pathIndex < path.length ) {
 								here = file.root;

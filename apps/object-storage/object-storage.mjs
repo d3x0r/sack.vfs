@@ -179,50 +179,52 @@ class ObjectStorage {
 	}
 
 	async getRoot() {
-		//console.log( "Getting root...!!!!" );
 		const this_ = this;
 		if( this_.root ) return this_.root;
+		//console.log( "Getting root...!!!!", this_.root );
 
 		if( loading ) {
 			return new Promise( (res,rej)=>{
+				console.log( "Still loading, wait to getroot..." );
 				loading.push(  {res:res, rej:rej} );
 			} );
 		}
 
 		//console.log( "Getting root..." );
 		this_.addEncoders( [ { tag: "d", p:FileDirectory, f:null}, { tag: "f", p:FileEntry, f:null} ] );
-		this_.addDecoders( [ {tag: "d", p:FileDirectory }, {tag: "f", p:FileEntry } ] )
+		this_.addDecoders( [ {tag: "d", p:FileDirectory, f:FileDirectory.fromJSOX }, {tag: "f", p:FileEntry } ] )
 		const result = new FileDirectory( this, "?" );
+
 		//console.trace( "Who gets this promise for getting root?");
+		// while in async dispatch, additional requests for this may happen... setup an array to catch them to dispatch later.
 		loading = [];
 
 		return this_.get( { id:result.id } )
 				.then( (dir)=>{
+					//console.log( "Get got:", result.id, dir );
 					if( !dir ) {
 						return result.store(true)
 							.then( function(id){
 								//console.log( "1) Assigning ID to directory", id );
 								Object.defineProperty( result, "id", { value:id } );
 								finishLoad( result );
+								for( let l of loading ) l.res( result );
+								loading = null;
 								return result;
 							} )
 					}
 	        
 					// foreach file, set file.folder
 					else{
-						for( var file of dir.files ) {
-							//console.log( "File:", dir, file );
-							Object.defineProperty( file, "folder", {value:dir} );
-						}
 						Object.defineProperty( dir, "id", { value:result.id } );
 						finishLoad(dir);
 					}
 					function finishLoad(dir) {
-						//console.log( "2) Assigning ID to directory(sub)", result.id );
-						Object.defineProperty( dir, "volume", {value:this_} );
+						dir.volume = this_;
 						this_.root = dir;
-	        
 					}
+					for( let l of loading ) l.res( result );
+					loading = null;
 					return dir;
 				} );
 	}
@@ -355,6 +357,9 @@ class ObjectStorage {
 
 	// this hides the original 'put'
 	put( obj, opts ) {
+		if( "string" === typeof obj ) {
+			console.trace( "BLAH?", obj );
+		}
 		const this_ = this;
 		if( currentContainer && currentContainer.data === this ) {
 			saveObject( null, null );
@@ -386,10 +391,6 @@ class ObjectStorage {
 				container = this_.cachedContainer.get( container );
 				if( obj !== container.data ) {
 					//console.log( "Overwrite old data with new?", container.data, obj );
-					if( val === this ){
-						console.trace( "This is so bad(3)...");
-						process.exit(0);
-					}
 					container.data = obj;
 				}
 				if( !container.nonce ) {
@@ -443,8 +444,6 @@ class ObjectStorage {
 				}
 
 				// raw object; no encoding to set.
-				console.log( "Set rootObjectSet(1)....");
-				//rootObjectSet = true;
 				storage = stringifier.stringify( obj );
 				if( !opts.id || opts.id === "null" ) {
 					throw new Error( "Container has no ID or is null" );					
@@ -491,7 +490,7 @@ class ObjectStorage {
 					}
 					opts.id = container.id
 					container.encoding = true;
-					console.log( "Setting root container mode(2)....");
+					//console.log( "Setting root container mode(2)....");
 					rootContainer = true;
 					storage = stringifier.stringify( container );
 					container.encoding = false;
@@ -561,8 +560,8 @@ class ObjectStorage {
 			for( let f of this.decoders )
 				this.parser.fromJSOX( f.tag, f.p, f.f );
 		}
+		const parser = (opts.noParse)?null:this.parser;
 
-		const parser = this.parser;
 		if( opts.extraDecoders ) {
 			parser = sack.JSOX.begin(  );
 			//console.log( "Adding ~os handler");
@@ -587,8 +586,9 @@ class ObjectStorage {
 				l.currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
 								// all synchronously.
 				const parts = opts.id.split('.');
+				//console.log( "id?", opts.id, parts );
 				os.storage.read( currentReadId = parts[0], Number( parts[1] )
-					, parser, (obj)=>resultDecode(opts, priorReadId, obj,res) );
+					, parser, opts.noParse?res:(obj)=>resultDecode(opts, priorReadId, obj,res) );
 			}catch(err) {
 				console.log( "ERROR:", err );
 				currentReadId = priorReadId;
@@ -611,11 +611,11 @@ class ObjectStorage {
 		function resultDecode( opts,priorReadId, obj,resolve) {
 			// with a new parser, only a partial decode before revive again...
 			try {
-			_debug && console.log( "Read resulted with an object:", opts.id, obj );
-			if( obj instanceof ObjectStorageContainer )  {
-				//console.log( "SHOULD HAVE FIXED IT ALREDY!");
-				obj.storage = os;
-			}
+				//console.log( "Read resulted with an object:", opts.id, obj );
+				if( obj instanceof ObjectStorageContainer )  {
+					//console.log( "SHOULD HAVE FIXED IT ALREDY!");
+					obj.storage = os;
+				}
 			
 			let deleteId = -1;
 			l.currentStorage = null;
