@@ -3815,7 +3815,10 @@ wscObject::wscObject( wscOptions *opts ) : task(this) {
 			readyState = CONNECTING;
 		}
 	} else {
-		lprintf( "Socket returned Null?" );
+		isolate->ThrowException(Exception::Error(
+			String::NewFromUtf8(isolate, TranslateText("Socket creation failed bad address?"), v8::NewStringType::kNormal).ToLocalChecked()));
+
+		//lprintf( "Socket returned Null?" );
 	}
 }
 
