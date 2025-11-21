@@ -92,6 +92,10 @@ static void SetDeviceVolume( String::Value *id, double val ) {
 	hr = pDevice->Activate(__uuidof(IAudioEndpointVolume),
 		CLSCTX_ALL, NULL, (void**)&pVolInfo);
 	//double val = args[0]->NumberValue(context).FromMaybe(0.0);
+	if( !val )
+		pVolInfo->SetMute( true, NULL );
+	else
+		pVolInfo->SetMute( false, NULL );
 	hr = pVolInfo->SetMasterVolumeLevelScalar( val, NULL);
 	pEnum->Release();
 	pDevice->Release();
