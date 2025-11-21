@@ -199,6 +199,7 @@ import {SACK} from "sack.vfs";
  - [SSH](https://github.com/d3x0r/sack.vfs/blob/master/README_SSH.md) - SSH connection interface
  - [ComPort](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - COM port IO
  - [File Changes](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Monitors files for changes
+ - [Sound](https://github.com/d3x0r/sack.vfs/blob/master/README_sound.md) - sound device and playback interface
  - [Misc...](https://github.com/d3x0r/sack.vfs/blob/master/README_Misc.md) - Other
 
 ### GUI Interfaces
@@ -257,8 +258,13 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.3.131(in progress)
+   - (WIN32) Added sound device support; get devices, set default, set/get volume
+   - Reoganized object storage facility; moved to extra module, does not auto load.
+   - make node/native client websocket protocol more similar to web client websocket module.
+   - enableExitSignal() deadlocks on linux; bypass feature.  Process control signals are better handled in other ways on not-Windows.
 - 1.3.130
    - Found connector number for display info, so can specify literal port now.
+   - Get display name information for displays.
    - Fix error getting monitor info.
    - Add bypass for linux exit signal support which has a potential deadlock.
    - Fix SQL date conversion when ODBC fails to convert 0 date to null.
