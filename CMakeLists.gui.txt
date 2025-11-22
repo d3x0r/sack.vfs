@@ -324,7 +324,7 @@ endif( WIN32 )
 if( WIN32 )
   set_property(TARGET ${PROJECT} PROPERTY
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-   target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll )
+   target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui wlanapi Cfgmgr32 Setupapi Propsys )
 endif( WIN32 )
 
 if( UNIX )
