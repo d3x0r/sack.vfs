@@ -11,3 +11,4 @@ else
 	dir = native.dir( path );
 console.log( "Directory:", dir );
 
+console.log( "File System Roots:", native.roots() );

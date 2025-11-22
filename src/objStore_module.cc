@@ -500,7 +500,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 		SET_READONLY( objectStoreFunc, "Thread", threadObject );
 	}
 
-	SET( exports, "ObjectStorage"
+	SET( exports, "ObjectStorage_native"
 		, clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
 
 }
@@ -626,7 +626,7 @@ void ObjectStorageObject::flush( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	//Local<Context> context = isolate->GetCurrentContext();
 	//Local<Function> cb;
-	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	// And unload?
 	sack_vfs_os_flush_volume( vol->vol, FALSE );
 
@@ -637,7 +637,7 @@ void ObjectStorageObject::removeObject( const v8::FunctionCallbackInfo<Value>& a
 	Isolate* isolate = args.GetIsolate();
 	//Local<Context> context = isolate->GetCurrentContext();
 	//Local<Function> cb;
-	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	if( args[0]->IsString() ) {
 		String::Utf8Value fName( isolate, args[0] );
 		//lprintf( "OPEN FILE:%s", *fName );
@@ -665,7 +665,7 @@ void ObjectStorageObject::putObject( const v8::FunctionCallbackInfo<Value>& args
 		Relinquish();
 
 	//memset( &osoOpts, 0, sizeof( osoOpts ) );
-	osoOpts->vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	osoOpts->vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 
 	osoOpts->data = StrDup( *data );
 	osoOpts->dataLen = data.length();
@@ -725,7 +725,7 @@ void ObjectStorageObject::getObject( const v8::FunctionCallbackInfo<Value>& args
 		Relinquish();
 
 	//memset( &osoOpts, 0, sizeof( osoOpts ) );
-	osoOpts->vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	osoOpts->vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 
 	osoOpts->data = StrDup( *data );
 	osoOpts->dataLen = data.length();
@@ -774,7 +774,7 @@ void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
 		from.Clear();
 	}else
 		from = GETV( options, optName ).As<Value>();
-	TimelineCursorObject* tlc = ObjectWrap::Unwrap<TimelineCursorObject>( getHolder(args) );
+	TimelineCursorObject* tlc = ObjectWrap::Unwrap<TimelineCursorObject>( getFCIHolder(args) );
 	Local<Array> arr = Array::New( isolate, 0 );
 	const char* buffer;
 	size_t length;
@@ -1045,7 +1045,7 @@ void ObjectStorageObject::createIndex( const v8::FunctionCallbackInfo<Value>& ar
 		return;
 	}
 
-	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	lprintf( "And here we get to actually " );
 
 
@@ -1087,7 +1087,7 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	uint64_t dateValToUse = 0;
 	int tzToUse = 0;
 	bool version = false;
-	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	Local<Value> nameArg = args[0];
 	if( args[0]->IsObject() ) {
 		opts = args[0].As<Object>();
@@ -1194,7 +1194,7 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 
 void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 
 	if( args.Length() < 2 ) {
 		isolate->ThrowException( Exception::TypeError(
@@ -1308,7 +1308,7 @@ void ObjectStorageObject::getTimelineCursor( const v8::FunctionCallbackInfo<Valu
 
 void ObjectStorageObject::haltVolume( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	sack_vfs_os_halt( vol->vol );
 }
 
@@ -1319,7 +1319,7 @@ void ObjectStorageObject::fileSetTime( const v8::FunctionCallbackInfo<Value>& ar
 			String::NewFromUtf8( isolate, TranslateText( "Requires filename to and new time to use" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
-	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	String::Utf8Value fName( isolate, args[0] );
 
 	Local<Date> useTime;
@@ -1382,7 +1382,7 @@ void ObjectStorageObject::fileGetTimes( const v8::FunctionCallbackInfo<Value>& a
 			String::NewFromUtf8( isolate, TranslateText( "Requires filename to get time info for" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
-	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	String::Utf8Value fName( isolate, args[0] );
 
 	size_t timeCount = 0;
@@ -1417,7 +1417,7 @@ void ObjectStorageObject::fileGetTimes( const v8::FunctionCallbackInfo<Value>& a
 
 void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( getHolder(args) );
+	ObjectStorageObject *vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	struct jsox_parse_state *parser = NULL;
 	LOGICAL tempParser = FALSE;
 	JSOXObject *parserObject = NULL;

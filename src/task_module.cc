@@ -51,6 +51,7 @@ struct optionStrings {
 	Eternal<String>* currentString;
 	Eternal<String>* primaryString;
 	Eternal<String>* deviceString;
+	Eternal<String>* connectorString;
 #endif
 #if defined( __LINUX__ )
 	Eternal<String>* usePtyString;
@@ -59,8 +60,16 @@ struct optionStrings {
 };
 
 
+struct monitorInfo {
+	CTEXTSTR sourceName;
+	CTEXTSTR monitorName;
+	int disnum;
+	int connector;
+};
+
 static struct local {
 	PLIST tasks;
+	PLIST displays;
 } l;
 
 
@@ -139,6 +148,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->currentString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "current" ) );
 		check->primaryString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "primary" ) );
 		check->deviceString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "device" ) );
+		check->connectorString = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "connector"));
 		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
 #endif
 #if defined( __LINUX__ )
@@ -1055,7 +1065,8 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HW
 	struct optionStrings *strings = getStrings( isolate );
 	Local<String> optName;
 
-	int timeout = 500, left = 0, top = 0, width = 1920, height = 1080, display = -1, monitor = -1;
+	int timeout = 500, left = 0, top = 0, width = 1920, height = 1080;
+	int display = -1, monitor = -1, connector = -1;
 
 	if( opts->Has( context, optName = strings->cbString->Get( isolate ) ).ToChecked() ) {
 		if( GETV( opts, optName )->IsFunction() ) {
@@ -1071,7 +1082,12 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HW
 		}
 	}
 
-	if( opts->Has( context, optName = strings->displayString->Get( isolate ) ).ToChecked() ) {
+	if( opts->Has( context, optName = strings->connectorString->Get( isolate ) ).ToChecked() ) {
+	   if( GETV( opts, optName )->IsNumber() ) {
+		   // should be reset to empty when not in use...
+		   connector = (int)GETV( opts, optName )->IntegerValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	   }
+	} else if( opts->Has( context, optName = strings->displayString->Get( isolate ) ).ToChecked() ) {
 		if( GETV( opts, optName )->IsNumber() ) {
 			// should be reset to empty when not in use...
 			display = (int)GETV( opts, optName )->IntegerValue(isolate->GetCurrentContext()).FromMaybe(0);
@@ -1108,10 +1124,19 @@ void doMoveWindow( Isolate*isolate, Local<Context> context, TaskObject *task, HW
 		} 
 	}
 	if( task ){
+		if( connector >= 0 ) {
+			// convert connector to a display, and move to the display.
+			struct monitorInfo *info;
+			INDEX idx;
+			LIST_FORALL(l.displays, idx, struct monitorInfo*, info) {
+				if( info->connector == connector )
+					display = info->disnum;
+			}
+		}
 		if( display >= 0 )
 			MoveTaskWindowToDisplay( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
 		else if( monitor >= 0 )
-			MoveTaskWindowToMonitor( task->task, timeout, display, moveTaskWindowResult, (uintptr_t)task );
+			MoveTaskWindowToMonitor( task->task, timeout, monitor, moveTaskWindowResult, (uintptr_t)task );
 		else {
 			MoveTaskWindow( task->task, timeout, left, top, width, height, moveTaskWindowResult, (uintptr_t)task );
 		}
@@ -1208,6 +1233,7 @@ struct monitor_data {
 
 };
 
+
 static BOOL addMonitor( HMONITOR hMonitor,
 	HDC hDC_null,
 	LPRECT pRect,
@@ -1227,7 +1253,24 @@ static BOOL addMonitor( HMONITOR hMonitor,
 			break;
 		}
 	}
-
+	{
+		struct monitorInfo *info;
+		INDEX idx;
+		LIST_FORALL(l.displays, idx, struct monitorInfo*, info) {
+			if( StrCmp( info->sourceName, monitorInfo.szDevice ) == 0 ) {
+				info->disnum = devNum;
+			}
+			if( info->disnum == devNum )
+				break;
+		}
+		if( !info ) {
+			info = NewArray( struct monitorInfo, 1 );
+			info->sourceName = NULL;
+			info->monitorName = NULL;
+			info->disnum = devNum;
+			AddLink( &l.displays, info );
+		}
+	}
 	//SETV( display, data->strings->displayString->Get( data->isolate ), Number::New( data->isolate, data->arrayIndex+1 ) );
 	SETV( display, data->strings->displayString->Get( data->isolate ), Number::New( data->isolate, devNum ) );
 	SETV( display, data->strings->xString->Get( data->isolate ), Number::New( data->isolate, pRect->left ) );
@@ -1255,11 +1298,6 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 	int i;
 	DISPLAY_DEVICE dev;
 	DEVMODE dm;
-	struct monitorInfo {
-		CTEXTSTR sourceName; 
-		CTEXTSTR monitorName;
-	};
-	PLIST infos                   = NULL;
 	struct optionStrings* strings = getStrings( isolate );
 
 	SETV( result, strings->monitorString->Get( isolate ), array_monitors );
@@ -1274,12 +1312,6 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 	dev.cb = sizeof( DISPLAY_DEVICE );
 	{
 		// go ahead and try to find V devices too... not sure what they are, but probably won't get to use them.
-		EnumDisplayMonitors( NULL
-			, NULL
-			, addMonitor
-			, (LPARAM)&data
-		);
-
 		{
 			std::vector<DISPLAYCONFIG_PATH_INFO> paths;
 			std::vector<DISPLAYCONFIG_MODE_INFO> modes;
@@ -1307,6 +1339,18 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 			if( isError ) {
 				return;
 			}
+
+			{
+				struct monitorInfo *info;
+				INDEX idx;
+				LIST_FORALL( l.displays, idx, struct monitorInfo *, info ) {
+					Release( info->monitorName );
+					Release( info->sourceName );
+					Release( info );
+					SetLink( &l.displays, idx, NULL );
+				}
+			}
+
 
 			// For each active path
 			int len = paths.size();
@@ -1344,11 +1388,13 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 				struct monitorInfo *monitor = NewArray( struct monitorInfo, 1 );
 				monitor->sourceName         = WcharConvert( sourceName.viewGdiDeviceName );
 				monitor->monitorName        = WcharConvert( targetName.monitorFriendlyDeviceName );
+				monitor->connector          = targetName.connectorInstance;
 				//lprintf( "Adding MOnitor: %s %s", monitor->sourceName, monitor->monitorName );
-				AddLink( &infos, monitor );
-				// qDebug() << "Monitor " << mon_name;
+				AddLink( &l.displays, monitor );
 			}
 		}
+
+		EnumDisplayMonitors( NULL, NULL, addMonitor, (LPARAM)&data );
 
 
 		for( i = 0;
@@ -1359,19 +1405,20 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 				, 0
 			); i++ ) {
 
-
-
 			int numStart;
 			if( EnumDisplaySettings( dev.DeviceName, ENUM_CURRENT_SETTINGS, &dm ) ) {
 				if( dm.dmPelsWidth && dm.dmPelsHeight ) {
 					for( numStart = 0; dev.DeviceName[numStart]; numStart++ ) {
 						if( dev.DeviceName[numStart] >= '0' && dev.DeviceName[numStart] <= '9' ) break;
 					}
+					int devNum = atoi( dev.DeviceName + numStart );
 					INDEX idx;
 					struct monitorInfo *info;
-					LIST_FORALL(infos, idx, struct monitorInfo*, info) {
-						if( StrCmp( info->sourceName, dev.DeviceName ) == 0 )
+					LIST_FORALL(l.displays, idx, struct monitorInfo*, info) {
+						if( StrCmp( info->sourceName, dev.DeviceName ) == 0 ) {
+							info->disnum = devNum;
 							break;
+						}
 					}
 					if( !info ) {
 						lprintf( "Failed to match device to monitor! %s", dev.DeviceName );
@@ -1379,10 +1426,12 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 					//if( l.flags.bLogDisplayEnumTest )
 					display = Object::New( isolate );
 
-					SETV( display, strings->displayString->Get( isolate ), Number::New( isolate, atoi( dev.DeviceName + numStart ) ) );
+					SETV( display, strings->displayString->Get( isolate ), Number::New( isolate, devNum ) );
 					SETV( display, strings->deviceString->Get( isolate ), String::NewFromUtf8( isolate, dev.DeviceString).ToLocalChecked() );
 					SETV( display, strings->monitorString->Get( isolate )
 					    , String::NewFromUtf8( isolate, info->monitorName ).ToLocalChecked() );
+					SETV( display, strings->connectorString->Get( isolate )
+					    , Number::New( isolate, info->connector ) );
 					
 					SETV( display, strings->xString->Get( isolate ), Number::New( isolate, dm.dmPosition.x ) );
 					SETV( display, strings->yString->Get( isolate ), Number::New( isolate, dm.dmPosition.y ) );
@@ -1419,15 +1468,6 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 
 		}
 	}
-
-	INDEX idx;
-	struct monitorInfo *info;
-	LIST_FORALL( infos, idx, struct monitorInfo *, info ) {
-		Release( info->monitorName );
-		Release( info->sourceName );
-		Release( info );
-	}
-	DeleteList( &infos );
 
 	args.GetReturnValue().Set( result );
 }

@@ -82,6 +82,8 @@ vfs = {
 ---
 
 ## Changelog
+- 0.9.125
+   - sync with sack.vfs 1.3.130 (pre 131)
 - 0.9.124
    - add systray support.
    (changelog lost?)

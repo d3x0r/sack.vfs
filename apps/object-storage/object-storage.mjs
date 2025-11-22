@@ -1,9 +1,15 @@
 
-let currentStorage = null;
 
-//const sack = require( "sack.vfs" );
+import {sack} from "sack.vfs";
 //console.log( "sack?", sack );
-module.exports = function( sack ) {
+import {ObjectStore} from "./object-storage-data.mjs"
+import {StoredObject} from "./object-storage-object.mjs"
+import {DbStorage} from "./object-storage-data-sql.mjs";
+import {ObjectStorageContainer} from "./object-storage-container.mjs"
+import {FileEntry,FileDirectory} from "./object-storage-file-system.mjs"
+import {l} from "./object-storage-local.mjs"
+
+//export default function( sack ) {
 
 const _debug = false;
 const _debug_dangling = false;
@@ -13,18 +19,21 @@ const _debug_ll = false; // remote receive message logging.
 const _debug_map = false;
 const _debug_replace = false;
 
-const os = require( "os" );
-//const os = require( "os" );
-sack.SaltyRNG.setSigningThreads( os.cpus().length );
+if( "undefined" === typeof log )
+{
+	const os = import( "os" ).then( (module)=>{
+		sack.SaltyRNG.setSigningThreads( module.cpus().length );
+	} );
+} 
 
 // save original object.
-const _objectStorage = sack.ObjectStorage;
+const _objectStorage = sack.ObjectStorage_native;
 const nativeVol = sack.Volume();
 
-const path = __dirname;//import.meta.url.replace(/file\:\/\/\//, '' ).split("/");
+const path = import.meta?.url?.replace(/file\:\/\/\//, '' ).split("/") || ".";
 //console.log( "path?", path );
 //const path = import.meta.url.replace(/file\:\/\/\//, '' ).split("/");
-const root = __dirname;//(path.splice(path.length-1,1),path.join('/')+"/");
+const root = path;// __dirname;//(path.splice(path.length-1,1),path.join('/')+"/");
 const remoteExtensionsSrc = nativeVol.read( root+"/object-storage-remote.js" );
 //const remoteExtensionsSrc = nativeVol.read( __dirname+"/object-storage-remote.js" );
 const remoteExtensions = remoteExtensionsSrc?remoteExtensionsSrc.toString():"// No COde Found";
@@ -57,96 +66,15 @@ let currentReadId ;
 
 let loading = null; // mulitple requests for getRoot stack here until the first is resolved....
 
-// these are used during store events because they are delay-flushed the same object may get re-written.
-const pendingStore = [];
-let lastStore = 0;
-const storedPromise = Promise.resolve(undefined);
-
-let  mapping = false;
 
 // default options used  when map is not passed options.
 const defaultMapOpts = {depth:0};
 
 
-
-class DbStorage {
-	// this is a super simple key value store in a (postgresql) database.
-	// some support to fall back to sqlite - but will require manually specifying options
-	// need to update personality detection in C library.
-	#db = null;
-	#psql = false;
-	#maria = false;
-	#mysql = false;
-	#sqlite = false;
-	constructor(db, opts ) {
-		console.trace( "Options:", db, db.provider, opts );
-		this.#db = db;
-		if( db.provider === 3 )
-			this.#psql = true;     
-		else if( db.provider === 2 )
-			this.#mysql = true;     
-		else if( db.provider === 5 )
-			this.#maria = true;  // really is mariadb   
-		if( db.provider === 1 )
-			this.#sqlite = true;     
-
-		{
-			if( this.#psql ) {
-				const table1 = "create table if not exists os (id char(45) primary key,value varchar(4096),updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)";
-				db.makeTable( table1 );
-			} if( this.#maria || this.#mysql ) {
-				const table1 = "create table if not exists os (id char(45) primary key,value LONGTEXT,updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)";
-				db.makeTable( table1 );
-			} else if( !this.#sqlite ) {
-				db.makeTable( "create table os (id char(45) primary key,value char,updated datetime default CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)" );
-			}
-		}
-	}
-	read( obj, ...args ) {
-		let version = 0;
-		let parser = null;
-		let cb = null;
-		//console.log( "Read in object storage interface? should it have been a file?", obj );
-		for( let arg of args ) {
-		if( "function" === typeof arg ) {
-			cb = arg;
-		} else if( "object" === typeof arg ) {
-			parser = arg;
-		} else if( "number" === typeof arg ) {
-			version = arg;
-		}
-		}
-		const records = this.#db.do( "select value from os where id=?", obj );
-		//console.log( "Thing?", obj, records );
-		if( records.length ) {
-			
-			const o = parser.parse( records[0].value );
-			cb( o );
-		} else	cb( undefined );
-	}
-	writeRaw( opts, obj ) {
-		//console.log( "Write Raw:", opts, obj );
-		if( this.#psql ) 
-			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj,obj );
-		else if( this.#mysql ) {
-			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj,obj );
-		}
-		else if( this.#maria ) {
-			try {
-				this.#db.do( "insert into os (id,value)values(?,?)  ON DUPLICATE KEY UPDATE value=?", opts.id, obj, obj );
-				//this.#db.do( "insert into os (id,value)values(?,?)  ON CONFLICT (id) DO UPDATE SET value=?", opts.id, obj, obj );
-			} catch( err ) {
-				console.log( "Insert error:", err );
-			}
-		} else
-			this.#db.do( "insert into os (id,value)values(?,?) ON CONFLICT (id) DO UPDATE SET value=excluded.value", opts.id, obj );
-	}
-}
-
-
 // manufacture a JS interface to _objectStorage.
 class ObjectStorage {
-
+	storage = null; // old method
+	#stores = []; // all stores associated with this object-verse
 	cached = new Map();
 	cachedContainer = new Map();
 	stored = new WeakMap(); // objects which have alredy been through put()/get()
@@ -162,13 +90,13 @@ class ObjectStorage {
 
 
 	constructor  (...args) {
-
-		if( !( this instanceof ObjectStorage ) ) return new ObjectStorage( args );
 		const arg0 = args[0];
 		if( arg0 instanceof sack.Sqlite ) {
 			_debug && console.log( "Using a db storage interface..." );
 			preloadStorage = new DbStorage( arg0 );
-		}else 
+		} else if( arg0 instanceof ObjectStore ) {
+			preloadStorage = new arg0( );
+		} else
 			_debug && console.log( "Using a file interface?" );
 		const newStorage = preloadStorage || _objectStorage(...args);
 		if( newStorage === preloadStorage ) preloadStorage = null;
@@ -212,18 +140,32 @@ class ObjectStorage {
 
 	setupStringifier(s) { return setupStringifier( this, s ); }
 
+	static Thread = {
+		post: _objectStorage.Thread.post,
+		accept(cb) {
+			 _objectStorage.Thread.accept((a,b)=>{
+				// posted from core thread ( worker can't access disk itself? )
+				preloadStorage = b;
+				cb(a, new ObjectStorage(b) );
+			 });
+		}
+	}
+
+	static getRemoteFragment() {
+		return remoteExtensions;
+	}
+
 	async map( o, opts ) {
 	//
 	// options = {
 	//      depth : maximum distance to load...
 	// }
 	//
-		//thisStorage.mapping = true;
 		//this.parser.
 		if( !opts ) opts = defaultMapOpts;
 		//if( opts && opts.depth === 0 ) return;
 		//console.log( "External API invoked map...");
-		const rootId = opts.id || this.stored.get( o );
+		const rootId = this.stored.get( o );
 		if( !rootId ) { console.trace( "Object was not stored, cannot map", o ); return Promise.resolve( o ); }
 		if( rootId[0] === '~' ) {
 			//console.log( "this is mapping a directly referenced field; which means we have to resolve this at least.", rootId );
@@ -239,43 +181,51 @@ class ObjectStorage {
 	async getRoot() {
 		const this_ = this;
 		if( this_.root ) return this_.root;
+		//console.log( "Getting root...!!!!", this_.root );
+
 		if( loading ) {
 			return new Promise( (res,rej)=>{
+				console.log( "Still loading, wait to getroot..." );
 				loading.push(  {res:res, rej:rej} );
 			} );
 		}
+
+		//console.log( "Getting root..." );
 		this_.addEncoders( [ { tag: "d", p:FileDirectory, f:null}, { tag: "f", p:FileEntry, f:null} ] );
-		this_.addDecoders( [ {tag: "d", p:FileDirectory }, {tag: "f", p:FileEntry } ] )
+		this_.addDecoders( [ {tag: "d", p:FileDirectory, f:FileDirectory.fromJSOX }, {tag: "f", p:FileEntry } ] )
 		const result = new FileDirectory( this, "?" );
-		//console.log( "result:", result );
+
+		//console.trace( "Who gets this promise for getting root?");
+		// while in async dispatch, additional requests for this may happen... setup an array to catch them to dispatch later.
+		loading = [];
+
 		return this_.get( { id:result.id } )
 				.then( (dir)=>{
+					//console.log( "Get got:", result.id, dir );
 					if( !dir ) {
 						return result.store(true)
 							.then( function(id){
-								console.log( "1) Assigning ID to directory", id );
+								//console.log( "1) Assigning ID to directory", id );
 								Object.defineProperty( result, "id", { value:id } );
 								finishLoad( result );
-								return result; 
+								for( let l of loading ) l.res( result );
+								loading = null;
+								return result;
 							} )
 					}
 	        
 					// foreach file, set file.folder
 					else{
-						for( var file of dir.files ) {
-							//console.log( "File:", dir, file );
-							Object.defineProperty( file, "folder", {value:dir} );
-						}
 						Object.defineProperty( dir, "id", { value:result.id } );
 						finishLoad(dir);
 					}
-					return dir;
 					function finishLoad(dir) {
-						//console.log( "2) Assigning ID to directory(sub)", result.id );
-						Object.defineProperty( dir, "volume", {value:this_} );
+						dir.volume = this_;
 						this_.root = dir;
-	        
 					}
+					for( let l of loading ) l.res( result );
+					loading = null;
+					return dir;
 				} );
 	}
 
@@ -407,6 +357,9 @@ class ObjectStorage {
 
 	// this hides the original 'put'
 	put( obj, opts ) {
+		if( "string" === typeof obj ) {
+			console.trace( "BLAH?", obj );
+		}
 		const this_ = this;
 		if( currentContainer && currentContainer.data === this ) {
 			saveObject( null, null );
@@ -438,10 +391,6 @@ class ObjectStorage {
 				container = this_.cachedContainer.get( container );
 				if( obj !== container.data ) {
 					//console.log( "Overwrite old data with new?", container.data, obj );
-					if( val === this ){
-						console.trace( "This is so bad(3)...");
-						process.exit(0);
-					}
 					container.data = obj;
 				}
 				if( !container.nonce ) {
@@ -497,8 +446,6 @@ class ObjectStorage {
 				}
 
 				// raw object; no encoding to set.
-				console.log( "Set rootObjectSet(1)....");
-				//rootObjectSet = true;
 				storage = stringifier.stringify( obj );
 				if( !opts.id || opts.id === "null" ) {
 					throw new Error( "Container has no ID or is null" );					
@@ -545,7 +492,7 @@ class ObjectStorage {
 					}
 					opts.id = container.id
 					container.encoding = true;
-					console.log( "Setting root container mode(2)....");
+					//console.log( "Setting root container mode(2)....");
 					rootContainer = true;
 					storage = stringifier.stringify( container );
 					container.encoding = false;
@@ -615,8 +562,8 @@ class ObjectStorage {
 			for( let f of this.decoders )
 				this.parser.fromJSOX( f.tag, f.p, f.f );
 		}
+		const parser = (opts.noParse)?null:this.parser;
 
-		const parser = this.parser;
 		if( opts.extraDecoders ) {
 			parser = sack.JSOX.begin(  );
 			//console.log( "Adding ~os handler");
@@ -638,11 +585,12 @@ class ObjectStorage {
 
 			const priorReadId = currentReadId;
 			try {
-				currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
+				l.currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
 								// all synchronously.
 				const parts = opts.id.split('.');
+				//console.log( "id?", opts.id, parts );
 				os.storage.read( currentReadId = parts[0], Number( parts[1] )
-					, parser, (obj)=>resultDecode(opts, priorReadId, obj,res) );
+					, parser, opts.noParse?res:(obj)=>resultDecode(opts, priorReadId, obj,res) );
 			}catch(err) {
 				console.log( "ERROR:", err );
 				currentReadId = priorReadId;
@@ -665,14 +613,14 @@ class ObjectStorage {
 		function resultDecode( opts,priorReadId, obj,resolve) {
 			// with a new parser, only a partial decode before revive again...
 			try {
-			_debug && console.log( "Read resulted with an object:", opts.id, obj );
-			if( obj instanceof ObjectStorageContainer )  {
-				//console.log( "SHOULD HAVE FIXED IT ALREDY!");
-				obj.storage = os;
-			}
+				//console.log( "Read resulted with an object:", opts.id, obj );
+				if( obj instanceof ObjectStorageContainer )  {
+					//console.log( "SHOULD HAVE FIXED IT ALREDY!");
+					obj.storage = os;
+				}
 			
 			let deleteId = -1;
-			currentStorage = null;
+			l.currentStorage = null;
 			//const extraResolutions = [];
 			for( let n = 0; n < os.decoding.length; n++ ) {
 				const decode = os.decoding[n];
@@ -882,6 +830,14 @@ class ObjectStorage {
 		// this doesn't really cache anything to flush?
 
 	}
+        
+	sign(a,b,c,d ) {
+		return sack.SaltyRNG.sign( a, b, c );
+
+	}
+	verify(a,b,c,d ) {
+		return sack.SaltyRNG.verify( a, b, c, d );
+	}
 } // end of ObjectStorage class
 
 
@@ -889,7 +845,7 @@ class ObjectStorage {
 
 
 
-	function loadPending(store, load, opts) {
+export	function loadPending(store, load, opts) {
 		//console.log( "doing real get, which results with ANOTHER promise", load, store );
 		return store.get( {id:load.d.id}).then( (obj)=>{
 			//console.log( "Storage requested:", load.d.id );
@@ -1004,6 +960,7 @@ class ObjectStorage {
 		}
 		return obj;
 	}
+
 	function storageObjectToJSOX( stringifier, storage, obj ){
 		//  see if we alread stored this... (or are currently storing this.) (back references container)
 		_debug_object_convert && console.trace( "THIS GOT CALLED?", obj, Object.getPrototypeOf( obj ) );
@@ -1038,191 +995,6 @@ class ObjectStorage {
 	}
 
 
-// associates object data with storage data for later put(obj) to re-use the same informations.
-class ObjectStorageContainer {
-	#storage = null;
-	#stored_data = null;
-	data = "pending reference"; // reviving we get null opts.
-
-	constructor(storage,o,opts) {
-		//if( !this instanceof ObjectStorageContainer ) return new ObjectStorageContainer(thisStorage,o,opts);
-		// created from JSOX; there aare no parameters passed on many usages...
-		//console.trace( "This should always get storage...", storage )
-		if( storage ) {
-			this.#storage = storage;
-			//_debug_object_convert && console.log( "Something creating a new container..", o, opts );
-			if( "string" === typeof o ){
-				if( !o ) throw new Error( "Blank string lookup" );
-				// still, if the proir didn't resolve, need to resolve this..
-				let existing = storage.cachedContainer.get( o );
-				if( existing ) {
-					o = existing.data;
-					if( existing.resolve )
-						return;
-				}
-			}
-			if( o ) {
-				if( o === this ){
-					console.trace( "This is so bad(2)...");
-					process.exit(0);
-				}
-				this.data = o; // reviving we get null opts.
-			} 
-			if( opts && opts.sign ) {
-				if( !this.nonce ) {
-					//console.log( "SIGNING FAILS?" );
-					let s;
-					const signature = sack.SaltyRNG.sign( s = this.#storage.stringifier.stringify(o), opts.sign.pad1, opts.sign.pad2 );
-					this.nonce = signature.key;
-					//console.log( "Signing returned:", signature );
-					this.sign = Object.assign( {e:signature.extent,c:signature.classifier},opts.sign );
-					//console.log( "MAKING A NONCE:", s );
-					//var v = sack.SaltyRNG.verify( this.#storage.stringifier.stringify(o), this.nonce, opts.sign.pad1, opts.sign.pad2 );
-					Object.defineProperty( this, "id", { value:signature.id } );
-					//console.trace( "This makes it go boom?", opts, this.nonce, o, v.key );
-				} else {
-				//	var v = sack.SaltyRNG.verify( thisStorage.stringifier.stringify(o), this.nonce, opts.sign.pad1, opts.sign.pad2 );
-				//	Object.defineProperty( this, "id", { value:v.key } );
-				}
-			} else {
-				if( opts && opts.id ) {
-					Object.defineProperty( this, "id", { value:opts.id } );
-				}		
-			}
-		}
-		// pass this through a global for jsox fixup at end.        
-		// currentContainer = this;
-		Object.defineProperty( this, "encoding", { writable:true, value:false } );
-	}
-
-	get stored() {
-		return this.#storage.stored;
-	}
-	set storage( val ) {
-		this.#storage = val;
-	}
-	get storage( ) {
-		return this.#storage;
-	}
-
-	getStore () {
-		return this.#storage;
-	}
-	
-	async map( opts ) {
-
-		const dangling = this.dangling; /* this is a property set dynamically */
-		if( dangling && dangling.length )  {
-			opts = opts || { depth:0, paths:[] };
-			const rootMap = this;
-			_debug_replace && console.log( "doing a map on a thing... amybe this trace?", this.id );
-			return new Promise( (res,rej)=>{
-				const waiting = [];
-				_debug_map && console.log( "Map Object called... dangling:", dangling.length)
-				
-				if( ( "paths" in opts ) &&  opts.paths.length ){
-					let nPath = 0;
-					const handled = [];
-					while(nPath < opts.paths.length ){
-						var path = opts.paths[nPath++];
-						let part = 0;
-						var obj = this.data;
-						for( var step of path ){
-							if( obj ) {
-								obj = obj[step];
-								part++;
-							} else 
-								break;
-						}
-						if( obj ) {
-							for( let load of dangling ){
-								if( load.d.p === obj ){
-									//console.log( "This should get marked resolved maybe?")
-									handled.push( load );
-									load.d.rootMap = rootMap;
-									waiting.push( loadPending( this.storage, load, {depth:opts.depth,paths:part<path.length?[path.slice(part)]:undefined} ) );
-									obj = null;
-									break;
-								}
-							}
-							
-							//	obj will probably also be resolved here, because it's not in pending...
-							if( obj ) {
-									const ref = this.#storage.storedIn.get( obj );
-									console.log( "Failed to find promise?", obj, ref );
-				
-							}
-							
-						}
-						else console.log( "Failed to find path in object:", this.data, path );
-						for( let h of handled ) {
-							_debug_replace && console.log( "in map - removing dangling reference?" );
-							var idx = dangling.findIndex( p=>p===h );
-							if( idx >= 0 ) {
-								dangling.splice( idx, 1 );
-								_debug_replace && console.log( "in map - removed dangling reference?" );
-							}
-							else _debug_replace && console.log( "resolved load was not found???" );
-						}
-					}
-				}
-				else{  // load everything that's pending on this object.
-					_debug_replace && console.log( "Load all dangling things anyway:", dangling );
-					for( let load of dangling ){
-						if( !load.d.rootMap ) {
-							load.d.rootMap = rootMap;
-							waiting.push( loadPending( this.#storage,load,opts, res) );
-						} else {
-							//console.log( "Dangling has already been triggered to load", load );
-						}
-					}
-					// wait until the promise resolves to delete this
-					//dangling.length = 0;
-				}
-				if( !waiting.length ){
-					//console.log( "Nothing scheduled to really wait, go ahead and resolve");
-					res( rootMap.data );
-				}
-				else {
-					_debug_replace && console.log( "(AWAIT!)Waiting on some events to resolve...", waiting );
-					Promise.all( waiting ).then( ( last)=>{
-						_debug_replace && console.log( "And now we properly resolve.", last );
-						res( rootMap.data )
-					} );
-				}
-				
-	        
-			})
-		}
-		if(0) // untested.
-		if( opts.paths ) {
-			// if the first level is a promised value - it would definitely be in dangling and have been checked above.
-			// so here, we check path step + 1...
-			const nextMaps = opts.paths.reduce( (acc,path)=>path.length>1?(acc.push(path.slice(1)),acc):acc, [] );
-			if( nextMaps.length ) { // if any paths more than one level...
-				const checks = opts.paths.reduce( (acc,path)=>path.length>1?(acc.push(this.data),acc):acc, [] );
-				const nextPaths = opts.paths.reduce( (acc,path)=>path.length>1?(acc.push(path[0]),acc):acc, [] );
-				for( let n = 0; n < nextPaths.length; n++ ) {
-					if( !checks[n] ) continue; // already traced to the end.
-					const step = checks[n][nextPaths[n]]; // this is a field dereference... N is an object.
-					if( step instanceof Promise ) {
-						const isObject = this.#storage.storedIn.get( step );
-						if( isObject ) {
-							console.log( "This thing should be loaded too?? (ignoring this promise, it is also probalby already handled above..." );
-							checks[n] = null;
-						}
-					}
-				}
-			}
-		}
-		_debug_dangling && console.log( "Nothing dangling found on object");
-		return this.data; // this function is async, just return.
-	}
-
-
-}
-
-
 
 function setupStringifier( newStorage, stringifier ) {
 	stringifier.setDefaultObjectToJSOX( function tojsox(stringifier){
@@ -1234,378 +1006,8 @@ function setupStringifier( newStorage, stringifier ) {
 	stringifier.store = newStorage;
 	for( let f of newStorage.encoders )
 		stringifier.registerToJSOX( f.tag, f.p, f.f ) ;
-
 }
 
 
-
-ObjectStorage.getRemoteFragment = function() {
-	return remoteExtensions;
-}
-
-ObjectStorage.Thread = {
-	post: _objectStorage.Thread.post,
-	accept(cb) {
-		 _objectStorage.Thread.accept((a,b)=>{
-			// posted from core thread ( worker can't access disk itself? )
-			preloadStorage = b;
-			cb(a, new ObjectStorage(b) );
-		 });
-	}
-}
-
-
-class FileEntry {
-	constructor ( d ) {
-		this.name = null;
-		this.id = null; // object identifier of this.
-		this.contents = null;
-		this.created = new Date();
-		this.updated = new Date();
-		if( d ) Object.defineProperty( this, "folder", {value:d} );
-	}
-
-	getLength () {
-		return this.data.length;
-	}
-
-	read( from, len ) {
-		const this_ = this;
-		//console.trace( "READ RESULTING A PROMISE... PLEASE CATCH");
-		return new Promise( (res,rej)=>{
-			//console.log( "reading:", this );
-			if( this_.isFolder ) {
-				this_.folder.volume.get( { id:this_.id } )
-					.catch( rej )
-					.then( (dir)=>{
-						//console.log( "Read directory, set folder property..." );
-						for( var file of dir.files )  Object.defineProperty( file, "folder", {value:dir} );
-						res(dir)
-					} );
-        
-			} else {
-				//console.log( "Reading ...", this_.id );
-				if( this_.id )
-					return this_.folder.volume.get( {id:this_.id} ).then( res ).catch( rej );
-				//console.log( "Rejecting, no ID, (no data)", this_ );
-				//console.log( "no file data in it?" );
-				res( undefined ) // no data
-			}
-		} );
-	}
-
-	write( o ) {
-		if( this.id )
-			try {
-				if( "string" === typeof o ) {
-					console.log( "direct write of string data:", this.id, o );
-					this.folder.volume.storage.writeRaw( this.id, o );
-					return Promise.resolve( this.id );
-	        
-				} else if( o instanceof ArrayBuffer ) {
-					console.log( "Write raw buffer", this );
-					this.folder.volume.storage.writeRaw( this.id, o );
-					return Promise.resolve( this.id );
-	        
-				} else if( "object" === typeof o )
-					;//console.log( "expected encode of object:", o );
-			} catch(err) {
-				console.log( "Did the above do something?" )
-			}
-/*
-	if( !("number"===typeof(len))) {
-		if( "number"===typeof(at) ) {
-			len = at;
-			at = 0;
-		} else  {
-			len = undefined;
-			at = undefined;
-		}
-	}
-*/
-		const this_ = this;
-		//console.log( "Returning a promised volume put:", o, this );
-		if( this.id )
-			return this.folder.volume.put( o, this );
-		else
-			return this.folder.volume.put( o, this )
-				.then( id=>{
-					//console.log( "Re-setting id?", this_, id );
-					this_.id=id;
-					this_.folder.store();
-					return id; } )
-				.catch( (err)=>{
-					console.log( "Error doing put?", err );
-				})
-	}
-	async open( fileName ) {
-		if( this.root ) return file.root.open( fileName );
-		if( this.contents ) {
-			return this.folder.volume.get( {id:file.contents } )
-				.then( async (dir)=>{
-					Object.defineProperty( file, "root", {value:dir} );
-					return dir;
-				} );
-		}
-		return this.folder.open( file.name );
-	}
-}
-
-
-class FileDirectory {
-	files = [];
-	#id = null;
-	#volume = null;
-	constructor( v, id ) {
-		this.#volume = v;
-		this.#id = id;
-	}
-	get id() {
-		return this.#id;
-	}
-	find( file ) {
-		// simple check; for a more advanced pathname matching use has(file) instead.
-		return !!this.files.find( (f)=>(f.name == file ) );		
-	}
-
-	async create( fileName ) {
-		var file = this.files.find( (f)=>(f.name == fileName ) );
-		if( file ) {
-			//console.log( "File already exists, not creating." );
-			return null; // can't creeate already exists.
-		} else {
-			file = new FileEntry( this );
-			file.name = fileName;
-			this.files.push(file);
-			this.store();
-			return file;
-		}
-	}
-
-	async open( fileName ) {
-		const file = this.files.find( (f)=>(f.name == fileName ) );
-		const _this = this;
-		//console.log( "OPEN?", file );
-		if( !file ) {
-			return Promise.reject( new Error( "File not found:" + fileName ) );
-		}
-		return Promise.resolve( file );
-	}
-
-	store(force) {
-		// save changes to this.
-		if( !force ) {
-			if( !pendingStore.find( p=>p===this)) 
-				pendingStore.push( this );
-			if( !lastStore ) {
-				checkPendingStore();
-			}
-			lastStore = Date.now();
-			return storedPromise;
-		}
-		return this.#volume.put( this, { id:this.#id } );
-	}
-
-	remove ( fileName ) {
-		var parts = splitPath( fileName );
-		var part;
-		var pathIndex = 0;
-		var dir = this;
-		async function getOnePath() {
-			if( pathIndex >= parts.length ) return false;
-			if( !dir ) return false;
-	        
-			part = parts[pathIndex++];
-			const fileId = dir.files.findIndex( (f)=>( f.name == part ) );
-			if( fileId >= 0 && pathIndex >= parts.length ) {
-				const file = dir.files[fileId];
-				dir.#volume.remove( file.id );
-				dir.files.splice( fileId, 1 );
-				//if( !dir.files.length ) {
-				//	dir.volume.remove( dir.id );
-				//}
-				return true;
-			}
-	        
-			if( file.root ) dir = file.root;
-			else {
-				if( file.contents ) {
-					return  dir.#volume.get( {id:file.contents } )
-						.then( async (readdir)=>{
-							Object.defineProperty( file, "root", {value:readdir} );
-							dir = readdir;
-							return getOnePath();
-						});
-				}
-				else
-					dir = null;
-			}
-			return getOnePath();
-		}
-		return getOnePath();
-	}
-
-	async has ( fileName ) {
-		var parts = splitPath( fileName );
-		var part;
-		var pathIndex = 0;
-		var dir = this;
-		async function getOnePath() {
-			if( pathIndex >= parts.length ) return true;
-			if( !dir ) return false;
-	        
-			part = parts[pathIndex++];
-			var file = dir.files.find( (f)=>( f.name == part ) );
-			if( !file ) return false;
-			if( file.root ) dir = file.root;
-			else {
-				if( file.contents ) {
-					return  dir.#volume.get( {id:file.contents } )
-						.then( async (readdir)=>{
-							Object.defineProperty( file, "root", {value:readdir} );
-							dir = readdir;
-							return getOnePath();
-						});
-				}
-				else
-					dir = null;
-			}
-			return getOnePath();
-		}
-		return getOnePath();
-	}
-
-	folder( fileName ) {
-		const _this = this;
-		return new Promise( (res,rej)=>{
-			const path = splitPath( fileName );
-			const pathIndex = 0;
-			const here = _this;
-			function getOnePath() {
-				const part = path[pathIndex++];
-				let file = here.files.find( (f)=>(f.name == part ) );
-				if( file ) {
-					if( file.contents ) {
-						_this.#volume.get( {id:file.contents } )
-							.then( (dir)=>{
-								if( pathIndex < path.length ) {
-									here = dir;
-									return getOnePath();
-								}
-								else
-									res( dir );
-							} );
-					} else
-						return Promise.reject( "Folder not found" );
-				}else {
-					file = new FileEntry( this );
-					file.name = part;
-					var newDir = new FileDirectory( _this.#volume, file.contents );
-					Object.defineProperty( file, "root", {value:newDir} );
-					_this.files.push(file);
-					newDir.store().then( (id)=>{
-						file.contents = id;
-						_this.store().then( ()=>{
-							if( pathIndex < path.length ) {
-								here = file.root;
-								return getOnePath();
-							}
-							res( file.root );
-						} );
-					} );
-				}
-			}
-			getOnePath();
-		} );
-	}
-
-
-
-
-
-}
-
-function splitPath( path ) {
-	return path.split( /[\\\/]/ );
-}
-
-
-function checkPendingStore() {
-	if( lastStore ) {
-		const now = Date.now();
-		if( (now-lastStore) > 100 ){
-			for( let p of pendingStore ) {
-				p.volume.put( p, { id:p.id } );
-			}
-			pendingStore.length = 0;
-			lastStore = 0;
-		}
-	}
-	if( pendingStore.length ) {
-		setTimeout( checkPendingStore, 50 );
-	}
-}
-
-
-
-
-class StoredObject {
-	#id = null;
-	#storage = null;
-	get id() { 
-		return this.#id;
-	} 
-	async store(opts) {
-		if( !this.#id ) {
-			// might have been reloaded...
-			const container = this.#storage.getContainer( this );
-			if( container ) this.#id = container.id;
-			opts = opts || {id:this.#id};
-			opts.id = opts.id || this.#id;
-			const id = await this.#storage.put( this, opts );
-			if( !this.#id ) this.#id = id;
-			else if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-			return id;
-		} else {
-			opts = opts || {id:this.#id};
-			opts.id = opts.id || this.#id;
-			const id = await this.#storage.put( this, opts );
-			if( this.#id !== id ) { console.log( "Object has been duplicated: old/new id:", this.#id, id ); }
-			return id;
-		}
-	}
-	hook( storage ) {
-		if( storage instanceof StoredObject ) {
-			this.#storage = storage.#storage;
-		}else
-			this.#storage = storage;
-	}
-
-	loaded( storage,id ) {
-		//console.trace( "stored object loaded callback:", id );
-		this.#storage = storage;
-		this.#id = id;
-	}
-	constructor( storage ) {
-        	if( !storage ) {
-	        	//console.trace( "should have storage on create..", storage, currentStorage );
-				storage = currentStorage;
-	        	if( !storage ) {
-		        	console.trace( "should have storage on create..", storage, currentStorage );
-			}
-		}
-		if( storage ) this.#storage = storage;
-	}
-	get storage() {
-		return this.#storage;
-	}
-}
-
-ObjectStorage.StoredObject = StoredObject
-//exports.ObjectStorage = ObjectStorage;
-//exports.StoredObject = StoredObject;
-sack.ObjectStorage = ObjectStorage;
-
-
-
-}
+export {ObjectStorage};
+export default ObjectStorage;

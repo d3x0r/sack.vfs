@@ -8,17 +8,19 @@ const appIdentifier = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 
 var sack = require( "../.." );
+var {ObjectStorage} = require( "sack.vfs/object-storage" );
+console.log( "Something??", ObjectStorage );
 //sack.Volume().unlink( "container.vfs" );
 
 var vfs = sack.Volume( "cmount", "container.vfs" );
 //console.log( "sack:", sack );
 
-var store = sack.ObjectStorage( "cmount@storage.os" );
+var store = new ObjectStorage( "cmount@storage.os" );
 console.log( "Store:", store );
 
 
 store.get(  { //`${orgRoot}.${serviceRoot}`, 
-		objectHash : `${orgRoot}.${serviceRoot}.${dbRoot}`,
+		id : `${orgRoot}.${serviceRoot}.${dbRoot}`,
 
 		sealant : null,
 		readKey : null, } ) .then((node)=>{
@@ -34,7 +36,7 @@ store.get(  { //`${orgRoot}.${serviceRoot}`,
 			console.log( "catch, put record so we can get its object identifier.");
 
 			store.put( userIndex, {
-				objectHash:`${orgRoot}.${serviceRoot}.${dbRoot}`,
+				id:`${orgRoot}.${serviceRoot}.${dbRoot}`,
 				sealant: myhashWrite,
 				//readKey: myhashRead,
 				stored(id){ 
@@ -98,7 +100,7 @@ function initRoot( cb ) {
 	
 
 	store.get( { //`${orgRoot}.${serviceRoot}`, 
-		objectHash : `${orgRoot}.${serviceRoot}`,
+		id : `${orgRoot}.${serviceRoot}`,
 		sealant : myhashWrite,
 		//readKey : null,
 		then(node){

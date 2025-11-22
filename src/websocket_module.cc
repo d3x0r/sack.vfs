@@ -3243,7 +3243,7 @@ void wssObject::addHost( const FunctionCallbackInfo<Value>& args ) {
 
 void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getHolder(args) );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getFCIHolder(args) );
 	if( args.Length() == 2 ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value event( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -3275,7 +3275,7 @@ void wssObject::on( const FunctionCallbackInfo<Value>& args ) {
 
 void wssObject::onConnect( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getHolder(args) );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getFCIHolder(args) );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
 			obj->openCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
@@ -3286,7 +3286,7 @@ void wssObject::onConnect( const FunctionCallbackInfo<Value>& args ) {
 
 void wssObject::onAccept( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getHolder(args) );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getFCIHolder(args) );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
 			obj->acceptCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
@@ -3297,7 +3297,7 @@ void wssObject::onAccept( const FunctionCallbackInfo<Value>& args ) {
 
 void wssObject::onRequest( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getHolder(args) );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getFCIHolder(args) );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
 			obj->requestCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
@@ -3308,7 +3308,7 @@ void wssObject::onRequest( const FunctionCallbackInfo<Value>& args ) {
 
 void wssObject::onError( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getHolder(args) );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getFCIHolder(args) );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
 			obj->errorCloseCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
@@ -3319,7 +3319,7 @@ void wssObject::onError( const FunctionCallbackInfo<Value>& args ) {
 
 void wssObject::onErrorLow( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getHolder(args) );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getFCIHolder(args) );
 	if( args.Length() > 0 ) {
 		if( args[0]->IsFunction() )
 			obj->errorLowCallback.Reset( isolate, Local<Function>::Cast( args[0] ) );
@@ -3345,7 +3345,7 @@ void wssObject::onClose( const FunctionCallbackInfo<Value>& args ) {
 
 void wssObject::accept( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getHolder(args) );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getFCIHolder(args) );
 	if( !obj->eventMessage ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Reject cannot be used outside of connection callback." ) ) );
 		return;
@@ -3360,7 +3360,7 @@ void wssObject::accept( const FunctionCallbackInfo<Value>& args ) {
 
 void wssObject::reject( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getHolder(args) );
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( getFCIHolder(args) );
 	if( !obj->eventMessage ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Reject cannot be used outside of connection callback." ) ) );
 		return;
@@ -3374,7 +3374,7 @@ void wssObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
 	args.GetReturnValue().Set( Integer::New( isolate, (int)obj->readyState ) );
 #if 0
-	Local<Object> h = getHolder(args);
+	Local<Object> h = getFCIHolder(args);
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
 	class constructorSet *c = getConstructors( isolate );
@@ -3651,7 +3651,7 @@ void wssiObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 	args.GetReturnValue().Set( Integer::New( isolate, (int)obj->readyState ) );
 #if 0
-	Local<Object> h = getHolder(args);
+	Local<Object> h = getFCIHolder(args);
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
 		class constructorSet *c = getConstructors( isolate );
@@ -3816,7 +3816,10 @@ wscObject::wscObject( wscOptions *opts ) : task(this) {
 			readyState = CONNECTING;
 		}
 	} else {
-		lprintf( "Socket returned Null?" );
+		isolate->ThrowException(Exception::Error(
+			String::NewFromUtf8(isolate, TranslateText("Socket creation failed bad address?"), v8::NewStringType::kNormal).ToLocalChecked()));
+
+		//lprintf( "Socket returned Null?" );
 	}
 }
 
@@ -4263,7 +4266,7 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	else
 	args.GetReturnValue().Set( Integer::New( isolate, (int)obj->readyState ) );
 #if 0
-	Local<Object> h = getHolder(args);
+	Local<Object> h = getFCIHolder(args);
 	Local<Object> t = args.This();
 	//if( wssObject::tpl. )
 		class constructorSet *c = getConstructors( isolate );
@@ -4515,7 +4518,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		httpRequest->path = StrDup( *value );
 	}
 	if( options->Has( context, optName = strings->onReplyString->Get( isolate ) ).ToChecked() ) {
-		httpRequest->_this.Reset( isolate, getHolder(args) );
+		httpRequest->_this.Reset( isolate, getFCIHolder(args) );
 		httpRequest->resultCallback.Reset( isolate, GETV( options, optName ).As<Function>());
 	}
 	if( options->Has( context, optName = strings->agentString->Get( isolate ) ).ToChecked() ) {

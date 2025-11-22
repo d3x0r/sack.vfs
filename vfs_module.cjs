@@ -134,11 +134,12 @@ if( !sack ) {
 module.exports=exports=sack;
 
 require( "./sack-jsox.cjs" )(sack);
-require( "./object-storage.cjs" )(sack);
-require( "./object-storage-cb.cjs" )(sack);
+
+//const r = ( require( "./object-storage.mjs" ).default )( sack );
+//require( "./object-storage-cb.cjs" )(sack);
+
 //if( process.platform === "win32" )
 //	require( "./service-object.cjs" )(sack);
-
 
 /*
 process.on('exit', ()=>{

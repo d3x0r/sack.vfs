@@ -27,7 +27,10 @@
       "default": "./import.mjs"
     },
     "./object-storage": {
-      "default": "./object-storage.mjs"
+      "default": "./apps/object-storage/object-storage.mjs"
+    },
+    "./object-storage-object": {
+      "default": "./apps/object-storage/object-storage-object.mjs"
     },
     "./apps/http-ws": {
       "require": "./apps/http-ws/server.js",
@@ -38,16 +41,17 @@
       "import": "./apps/http-ws/server.mjs"
     },
     "./protocol": {
-      "require": "./apps/http-ws/server-protocol.js",
       "import": "./apps/http-ws/server-protocol.mjs"
     },
     "./server-protocol": {
-      "require": "./apps/http-ws/server-protocol.js",
       "import": "./apps/http-ws/server-protocol.mjs"
     },
     "./client-protocol": {
       "require": "./apps/http-ws/client-node-protocol.js",
       "import": "./apps/http-ws/client-node-protocol.mjs"
+    },
+    "./web-protocol": {
+      "default": "./apps/http-ws/client-protocol.js"
     },
     "./apps/http-ws/uexpress": {
       "require": "./apps/http-ws/uexpress.js",
@@ -86,6 +90,15 @@
     },
     "./wait": {
       "import": "./apps/wait/wait.mjs"
+    },
+    "./slab-array": {
+      "import": "./apps/slab-array/SlabArray.mjs"
+    },
+    "./bloom-n-hash": {
+      "import": "./apps/bloom-n-hash/bloomNHash.mjs"
+    },
+    "./bloomnhash": {
+      "import": "./apps/bloom-n-hash/bloomNHash.mjs"
     }
   },
   "private": false,

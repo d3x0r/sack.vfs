@@ -140,12 +140,12 @@ const char* ToCString( const v8::String::Utf8Value& value ) {
 }
 
 void JSOXObject::reset( const v8::FunctionCallbackInfo<Value>& args ) {
-	JSOXObject* parser = ObjectWrap::Unwrap<JSOXObject>( getHolder(args) );
+	JSOXObject* parser = ObjectWrap::Unwrap<JSOXObject>( getFCIHolder(args) );
 	jsox_parse_clear_state( parser->state );
 }
 
 void JSOXObject::getCurrentRef( const v8::FunctionCallbackInfo<Value>& args ) {
-	JSOXObject* parser = ObjectWrap::Unwrap<JSOXObject>( getHolder(args) );
+	JSOXObject* parser = ObjectWrap::Unwrap<JSOXObject>( getFCIHolder(args) );
 	Isolate* const isolate = args.GetIsolate();
 	// currentReviver;
 	//parser->reviver
@@ -158,14 +158,14 @@ void JSOXObject::getCurrentRef( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( !newRef.IsEmpty() )
 			args.GetReturnValue().Set( newRef.ToLocalChecked() );
 		else
-			lprintf("Constructor threw exception");
+			lprintf("Constructor threw exception: JSOXReference" );
 	}
 
 }
 
 void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( getHolder(args) );
+	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( getFCIHolder(args) );
 	int argc = args.Length();
 
 	String::Utf8Value *data_ = NULL;
@@ -216,7 +216,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( !parser->reviver.IsEmpty() ) {
 				r.revive = TRUE;
 				r.reviver = parser->reviver.Get( isolate );
-				r._this = getHolder(args);
+				r._this = getFCIHolder(args);
 			}
 			else {
 				r.revive = FALSE;
@@ -300,7 +300,7 @@ void JSOXObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 		if(!resObj.IsEmpty() )
 			args.GetReturnValue().Set( resObj.ToLocalChecked() );
 		else
-			lprintf("Constructor threw exception");
+			lprintf("Constructor threw exception: JSOX");
 		delete[] argv;
 	}
 
@@ -364,7 +364,7 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 						}
 						else {
 //#ifdef DEBUG_REVIVAL_CALLBACKS
-							lprintf( "Constructor threw exception" );
+							lprintf( "Constructor threw exception: % .*s", val->classNameLen, val->className );
 //#endif
 							revive->failed = TRUE;
 						}
@@ -469,7 +469,7 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 						if( !mo.IsEmpty() )
 							sub_o = mo.ToLocalChecked();
 						else
-							lprintf("Constructor threw exception");
+							lprintf("Constructor threw exception: %.*s", val->classNameLen, val->className);
 					}
 				}
 			}
@@ -498,7 +498,7 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 						if( !mo.IsEmpty() )
 							sub_o = mo.ToLocalChecked();
 						else
-							lprintf( "Constructor threw exception" );
+							lprintf( "Constructor threw exception: %.*s", val->classNameLen, val->className);
 					}
 				}
 			}
@@ -1592,7 +1592,7 @@ void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
 	r.parser = NULL;
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
-			r._this = getHolder(args);
+			r._this = getFCIHolder(args);
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );
 		}
@@ -1611,7 +1611,7 @@ void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
 
         //logTick(1);
 	r.context = r.isolate->GetCurrentContext();
-	r.parser = ObjectWrap::Unwrap<JSOXObject>( getHolder(args) );
+	r.parser = ObjectWrap::Unwrap<JSOXObject>( getFCIHolder(args) );
 	struct jsox_parse_state *state = r.parser->state;
 	args.GetReturnValue().Set( ParseJSOX( msg, len, &r, state ) );
 
@@ -1656,7 +1656,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	r.parser = new JSOXObject();
 	if( args.Length() > 1 ) {
 		if( args[1]->IsFunction() ) {
-			r._this = getHolder(args);
+			r._this = getFCIHolder(args);
 			r.revive = TRUE;
 			r.reviver = Local<Function>::Cast( args[1] );
 		}
@@ -1700,11 +1700,11 @@ void setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void JSOXObject::setFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( getHolder(args) );
+	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( getFCIHolder(args) );
 	parser->fromPrototypeMap.Reset( isolate, args[0].As<Map>() );
 }
 void JSOXObject::setPromiseFromPrototypeMap( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( getHolder(args) );
+	JSOXObject *parser = ObjectWrap::Unwrap<JSOXObject>( getFCIHolder(args) );
 	parser->promiseFromPrototypeMap.Reset( isolate, args[0].As<Map>() );
 }

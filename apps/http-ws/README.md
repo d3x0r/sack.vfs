@@ -211,6 +211,16 @@ class MyProtocol extends Protocol {
 	}
 }
 
+class MyOtherProtocol extends Protocol {
+	constructor(  ) {
+		// alternatively a location to connect to may be specified...
+		// the Protocol module defaults to the location that served the client-protocol script
+		// (from import.meta.url)
+		super( "MyProtocol", "http://otherhost:5541/url" );
+	}
+}
+
+
 ```
 
 Server...

@@ -115,8 +115,9 @@ ComObject::ComObject( char *name ) : jsObject() {
 		this->portName += 4;
 	handle = SackOpenComm( name, 0, 0 );
 	// when opening a port, start monitoring for change events.
-
+#ifdef _WIN32
 	ThreadTo( RegisterAndCreateMonitor, 0 );
+#endif
 }
 
 ComObject::~ComObject() {
@@ -179,8 +180,8 @@ void ComObject::Init( Local<Object> exports ) {
 #else
 		
 		comTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "rts" )
-			, FunctionTemplate::New( isolate, ComObject::getRTS )
-			, FunctionTemplate::New( isolate, ComObject::setRTS )
+			, FunctionTemplate::New( isolate, ComObject::getRTS2 )
+			, FunctionTemplate::New( isolate, ComObject::setRTS2 )
 		);
 #endif
 		Local<Function> ComFunc = comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
@@ -588,7 +589,9 @@ void ComObject::onRemove(Local<Name> property, Local<Value> value, const Propert
 	Isolate* isolate = args.GetIsolate();
 	ComObject::removeCallback.Reset(isolate, value.As<Function>());
 	if (!ComObject::_c) {
+#ifdef _WIN32
 		ThreadTo( RegisterAndCreateMonitor, 0 );
+#endif
 		ComObject::_c = getConstructors( isolate );
 		if (ComObject::_c->ivm_post) {
 			ComObject::_ivm_hosted = true;
@@ -601,7 +604,9 @@ void ComObject::onAdd(Local<Name> property, Local<Value> value, const PropertyCa
 	Isolate* isolate = args.GetIsolate();
 	ComObject::addCallback.Reset(isolate, value.As<Function>());
 	if (!ComObject::_c) {
+#ifdef _WIN32
 		ThreadTo( RegisterAndCreateMonitor, 0 );
+#endif
 		ComObject::_c = getConstructors( isolate );
 		if (ComObject::_c->ivm_post) {
 			ComObject::_ivm_hosted = true;
