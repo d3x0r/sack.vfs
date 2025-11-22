@@ -1116,7 +1116,6 @@ static void wssiAsyncMsg__( Isolate *isolate, Local<Context> context, wssiObject
 						argv[0] = buf.ToLocalChecked();
 						//lprintf( "Message:', %s", eventMessage->buf );
 						callback->callback.Get( isolate )->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
-						Deallocate( CPOINTER, eventMessage->buf );
 					}
 				}
 				Deallocate( CPOINTER, eventMessage->buf );
