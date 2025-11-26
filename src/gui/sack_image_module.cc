@@ -214,6 +214,9 @@ void ImageObject::Init( Local<Object> exports ) {
 	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "height" )
 		, FunctionTemplate::New( isolate, ImageObject::getHeight )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty(localStringExternal(isolate, "inverted")
+		, FunctionTemplate::New(isolate, ImageObject::getInverted)
+		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete));
 
 	c->ImageObject_tpl.Reset( isolate, imageTemplate );
 	c->ImageObject_constructor.Reset( isolate, imageTemplate->GetFunction(context).ToLocalChecked() );
@@ -323,6 +326,7 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 	if( tpl->HasInstance( args.This() ) ) {
 
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+		if (!obj->image) return;
 		uint8_t *buf;
 		size_t size;
 		if( JpgImageFile( obj->image, &buf, &size, obj->jpegQuality ) )
@@ -336,7 +340,7 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 #endif
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
-			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, freeBuffer, WeakCallbackType::kParameter );
 			//lprintf( "(2)jpg backing store for:%p", buf );
 			holder->buffer = buf;
 			args.GetReturnValue().Set( arrayBuffer );
@@ -368,6 +372,17 @@ void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		if( obj->image )
 			args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->width ) );
+	}
+}
+
+void ImageObject::getInverted(const FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors(isolate);
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get(isolate);
+	if (tpl->HasInstance(args.This())) {
+		ImageObject* obj = ObjectWrap::Unwrap<ImageObject>(args.This());
+		if (obj->image)
+			args.GetReturnValue().Set(obj->image->flags&IF_FLAG_INVERTED?True(isolate):False(isolate) );
 	}
 }
 void ImageObject::getHeight( const FunctionCallbackInfo<Value>&  args ) {
@@ -454,7 +469,10 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 #endif				
 			} else if( args[0]->IsNumber() )
 				w = (int)args[0]->NumberValue(context).ToChecked();
-			else {
+			else if (args[0]->IsUndefined()) {
+				isolate->ThrowException(Exception::Error(localStringExternal(isolate, "Bad argument to image width:undefined.")));
+				return;
+			} else {
 				String::Utf8Value fName( isolate, args[0]->ToString(context).ToLocalChecked() );
 				filename = StrDup( *fName );
 			}
@@ -1040,7 +1058,7 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	size_t length;
 #if ( NODE_MAJOR_VERSION >= 14 )
 	//lprintf( "IMAGE backing store for:%p", (POINTER)GetImageSurface( io->image ) );
-	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth, dontReleaseBufferBackingStore, NULL );
+	std::shared_ptr<BackingStore> bs = SharedArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth * sizeof(CDATA), dontReleaseBufferBackingStore, NULL);
 	Local<SharedArrayBuffer> ab =
 		SharedArrayBuffer::New( isolate, bs );
 #else	

@@ -1162,7 +1162,28 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 	DropHolder( holder );
 }
 
-	void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
+void freeBuffer(const WeakCallbackInfo<ARRAY_BUFFER_HOLDER>& info) {
+	PARRAY_BUFFER_HOLDER holder = info.GetParameter();
+
+	if (!holder->o.IsEmpty()) {
+		holder->o.ClearWeak();
+		holder->o.Reset();
+	}
+	if (!holder->s.IsEmpty()) {
+		holder->s.ClearWeak();
+		holder->s.Reset();
+	}
+	if (!holder->ab.IsEmpty()) {
+		holder->ab.ClearWeak();
+		holder->ab.Reset();
+	}
+	free((void*)holder->buffer);
+	DropHolder(holder);
+}
+
+
+
+void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getFCIHolder(args) );
 
@@ -1430,10 +1451,12 @@ void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info ) {
 				args.GetReturnValue().Set( True(isolate) );
 			} else {
 				FILE *file = sack_fopenEx( 0, *fName, "wb", vol->fsMount );
-				sack_fwrite( buf + offset, length, 1, file );
-				sack_fclose( file );
-
-				args.GetReturnValue().Set( True(isolate) );
+				if (file) {
+					sack_fwrite(buf + offset, length, 1, file);
+					sack_fclose(file);
+					args.GetReturnValue().Set(True(isolate));
+				}
+				args.GetReturnValue().Set(False(isolate));
 			}
 		}
 		else if(args[1]->IsString()) {
