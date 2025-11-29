@@ -39,6 +39,7 @@ public:
 	static void putImageMultiShaded( const FunctionCallbackInfo<Value> &args );
 	static void imageData( const FunctionCallbackInfo<Value> &args );
 	static void getInverted(const FunctionCallbackInfo<Value>& args);
+	static void setInverted(const FunctionCallbackInfo<Value>& args);
 
 	static void getPng( const FunctionCallbackInfo<Value>&  args );
 	static void getJpeg( const FunctionCallbackInfo<Value>& args );
