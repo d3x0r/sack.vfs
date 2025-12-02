@@ -2850,6 +2850,12 @@ TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE  _ForAllInSet( GENERICSET *pSet, int un
    ForEachSetMember'                                       */
 typedef uintptr_t (CPROC *FESMCallback)(INDEX,uintptr_t);
 TYPELIB_PROC  uintptr_t TYPELIB_CALLTYPE  ForEachSetMember ( GENERICSET *pSet, int unitsize, int max, FESMCallback f, uintptr_t psv );
+/*
+ StoreSetIntoEx() - stores a set into a packed linear array passed in.
+ to get the size to create the array, can use CountUsedInSet()...
+ doing it this way is less calls then a for-each-set-member self-copy.
+    */
+TYPELIB_PROC  void * TYPELIB_CALLTYPE  StoreSetIntoEx( GENERICSET *pSet, void*unit, int unitsize, int max );
  //def __cplusplus
 #if 0
 #define DeclareSet(name)	                                struct name##set_tag {	               uint32_t set_size;	                             uint32_t element_size;	                         uint32_t element_cnt;	                          PGENERICSET pool;	                        name##set_tag() {	                        element_size = sizeof( name );	             element_cnt = MAX##name##SPERSET;	          set_size = (element_size * element_cnt )+ ((((element_cnt + 31 )/ 32 )- 1 ) * 4) + sizeof( GENERICSET );	 pool = NULL;	                               }	    ~name##set_tag() { DeleteSet( &pool ); }	 name* grab() { return (name*)GetFromSetEx( &pool, set_size, element_size, element_cnt DBG_SRC ); }	 name* grab(INDEX member) { return (name*)GetSetMemberEx( &pool, member, set_size, element_size, element_cnt DBG_SRC ); }	 name* get(INDEX member) { return (this)?(name*)GetUsedSetMemberEx( &pool, member, set_size, element_size, element_cnt DBG_SRC ):(NULL); }	 void drop( name* member ) { DeleteFromSetEx( pool, (POINTER)member, element_size, element_cnt ); }	 int valid( name* member ) { return MemberValidInSetEx( pool, (POINTER)member, element_size, element_cnt ); }	 uintptr_t forall( FAISCallback f, uintptr_t psv ) { if( this ) return _ForAllInSet( pool, element_size, element_cnt, f, psv ); else return 0; }	 };	       typedef struct name##set_tag *P##name##SET, name##SET;
@@ -9097,7 +9103,8 @@ struct rt_init
                           //   also used when walking table to flag
                           //   completed entries
  // - priority (0-highest 255-lowest)
-    __type_rtp  priority;
+	 __type_rtp  priority;
+#define RUNTIME_PRIORITY_FILTER(x)  (((x)>255)?255:(x))
       // - routine
     __type_rtn  rtn;
 };
@@ -9107,8 +9114,8 @@ struct rt_init
 // watcom
 //------------------------------------------------------------------------------------
 //void RegisterStartupProc( void (*proc)(void) );
-#define PRIORITY_PRELOAD(name,priority) static void pastejunk(schedule_,name)(void); static void CPROC name(void);	 static struct rt_init __based(__segname("XI")) pastejunk(name,_ctor_label)={0,(DEADSTART_PRELOAD_PRIORITY-1),pastejunk(schedule_,name)};	 static void pastejunk(schedule_,name)(void) {	                 RegisterPriorityStartupProc( name,TOSTR(name),priority,&pastejunk(name,_ctor_label) DBG_SRC );	}	                                       void name(void)
-#define ATEXIT_PRIORITY(name,priority) static void pastejunk(schedule_exit_,name)(void); static void CPROC name(void);	 static struct rt_init __based(__segname("XI")) pastejunk(name,_dtor_label)={0,69,pastejunk(schedule_exit_,name)};	 static void pastejunk(schedule_exit_,name)(void) {	                                              RegisterPriorityShutdownProc( name,TOSTR(name),priority,&name##_dtor_label DBG_SRC );	}	                                       void name(void)
+#define PRIORITY_PRELOAD(name,priority) static void pastejunk(schedule_,name)(void); static void CPROC name(void);	 static struct rt_init __based(__segname("XI")) pastejunk(name,_ctor_label)={0,(DEADSTART_PRELOAD_PRIORITY-1),pastejunk(schedule_,name)};	 static void pastejunk(schedule_,name)(void) {	                 RegisterPriorityStartupProc( name,TOSTR(name),RUNTIME_PRIORITY_FILTER(priority),&pastejunk(name,_ctor_label) DBG_SRC );	}	                                       void name(void)
+#define ATEXIT_PRIORITY(name,priority) static void pastejunk(schedule_exit_,name)(void); static void CPROC name(void);	 static struct rt_init __based(__segname("XI")) pastejunk(name,_dtor_label)={0,69,pastejunk(schedule_exit_,name)};	 static void pastejunk(schedule_exit_,name)(void) {	                                              RegisterPriorityShutdownProc( name,TOSTR(name),RUNTIME_PRIORITY_FILTER(priority),&name##_dtor_label DBG_SRC );	}	                                       void name(void)
 // syslog runs preload at priority 65
 // message service runs preload priority 66
 // deadstart itself tries to run at priority 70 (after all others have registered)
@@ -9134,26 +9141,21 @@ static void name(void); static void name##_x_(void);	static struct rt_init __bas
 #elif defined( __GNUC__ )
 /* code taken from openwatcom/bld/watcom/h/rtinit.h */
 typedef unsigned char   __type_rtp;
+typedef unsigned short   __type_rtp_priority;
 typedef void(*__type_rtn ) ( void );
  // structure placed in XI/YI segment
 struct rt_init
 {
 #define DEADSTART_RT_LIST_START 0xFF
  // - near=0/far=1 routine indication
-    __type_rtp  rtn_type;
+    __type_rtp       rtn_type;
                           //   also used when walking table to flag
                           //   completed entries
  // has this been scheduled? (0 if no)
-    __type_rtp  scheduled;
+    __type_rtp       scheduled;
  // - priority (0-highest 255-lowest)
-    __type_rtp  priority;
-#if defined( __64__ ) ||defined( __arm__ )||defined( __GNUC__ )
-#define INIT_PADDING ,{0}
- // need this otherwise it's 23 bytes and that'll be bad.
-	 char padding[1];
-#else
-#define INIT_PADDING
-#endif
+    __type_rtp_priority  priority;
+#define RT_LIST_INIT_PADDING
  // 32 bits in 64 bits....
 	 int line;
 // this ends up being nicely aligned for 64 bit platforms
@@ -9195,14 +9197,14 @@ struct rt_init
 #  define DEADSTART_SECTION "deadstart_list"
 #endif
 #ifdef __MANUAL_PRELOAD__
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)		__attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 =	 {0,0,pr INIT_PADDING, __LINE__, name PASS_FILENAME	, TOSTR(name) JUNKINIT(name)} ;	 void name(void);	 void pastejunk(registerStartup,name)(void) __attribute__((constructor));	 void pastejunk(registerStartup,name)(void) {	 RegisterPriorityStartupProc(name,TOSTR(name),pr,NULL DBG_SRC); }	 void name(void)
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)		__attribute__((section(DEADSTART_SECTION))) __attribute__((used))	 =	 {0,0,pr RT_LIST_INIT_PADDING, __LINE__, name PASS_FILENAME	, TOSTR(name) JUNKINIT(name)} ;	 void name(void);	 void pastejunk(registerStartup,name)(void) __attribute__((constructor));	 void pastejunk(registerStartup,name)(void) {	 RegisterPriorityStartupProc(name,TOSTR(name),pr,NULL DBG_SRC); }	 void name(void)
 #else
 #if defined( _WIN32 ) || defined( __GNUC__ )
 #  define HIDDEN_VISIBILITY
 #else
 #  define HIDDEN_VISIBILITY  __attribute__((visibility("hidden")))
 #endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	         RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	         __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	  ={0,0,pr INIT_PADDING	                                           ,__LINE__,name	                                                 PASS_FILENAME	                                                 ,TOSTR(name)	                                                   JUNKINIT(name)};	                                               static void name(void) __attribute__((used));	 void name(void)
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	         RTINIT_STATIC struct rt_init pastejunk(name,_ctor_label)	         __attribute__((section(DEADSTART_SECTION))) __attribute__((used))	  ={0,0,pr RT_LIST_INIT_PADDING	                                   ,__LINE__,name	                                                 PASS_FILENAME	                                                 ,TOSTR(name)	                                                   JUNKINIT(name)};	                                               static void name(void) __attribute__((used));	 void name(void)
 #endif
 typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
 #define PRIORITY_ATEXIT(name,priority) static void name(void);           static void pastejunk(atexit,name)(void) __attribute__((constructor));   void pastejunk(atexit,name)(void)                                        {	                                                                        RegisterPriorityShutdownProc(name,TOSTR(name),priority,NULL DBG_SRC); }                                                                        void name(void)
@@ -9215,6 +9217,7 @@ typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
 #elif defined( __CYGWIN__ )
 /* code taken from openwatcom/bld/watcom/h/rtinit.h */
 typedef unsigned char   __type_rtp;
+typedef unsigned short  __type_rtp_priority;
 typedef void(*__type_rtn ) ( void );
  // structure placed in XI/YI segment
 struct rt_init
@@ -9240,14 +9243,8 @@ struct rt_init
  // has this been scheduled? (0 if no)
     __type_rtp  scheduled;
  // - priority (0-highest 255-lowest)
-    __type_rtp  priority;
-#if defined( __GNUC__ ) || defined( __64__ ) || defined( __arm__ ) || defined( __CYGWIN__ )
-#define INIT_PADDING ,{0}
- // need this otherwise it's 23 bytes and that'll be bad.
-	 char padding[1];
-#else
-#define INIT_PADDING
-#endif
+    __type_rtp_priority  priority;
+#define RT_LIST_INIT_PADDING
  // 32 bits in 64 bits....
 	 int line;
 // this ends up being nicely aligned for 64 bit platforms
@@ -9276,7 +9273,7 @@ typedef void(*atexit_priority_proc)(void (*)(void),CTEXTSTR,int DBG_PASS);
 #else
 #  define PASS_FILENAME
 #endif
-#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct pastejunk(rt_init name,_ctor_label)	   __attribute__((section("deadstart_list")))	 ={0,0,pr INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 static void name(void)
+#define PRIORITY_PRELOAD(name,pr) static void name(void);	 RTINIT_STATIC struct pastejunk(rt_init name,_ctor_label)	   __attribute__((section("deadstart_list")))	 ={0,0,pr RT_LIST_INIT_PADDING	     ,__LINE__,name	          PASS_FILENAME	        ,TOSTR(name)	        JUNKINIT(name)};	 static void name(void)
 #define ATEXIT(name)      ATEXIT_PRIORITY(name,ATEXIT_PRIORITY_DEFAULT)
 #define PRIORITY_ATEXIT ATEXIT_PRIORITY
 #define ROOT_ATEXIT(name) static void name(void) __attribute__((destructor));    static void name(void)
