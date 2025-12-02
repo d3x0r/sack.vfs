@@ -257,11 +257,14 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.131(in progress)
+- 1.3.132(in progress)
+- 1.3.131
    - (WIN32) Added sound device support; get devices, set default, set/get volume
    - Reoganized object storage facility; moved to extra module, does not auto load.
    - make node/native client websocket protocol more similar to web client websocket module.
    - enableExitSignal() deadlocks on linux; bypass feature.  Process control signals are better handled in other ways on not-Windows.
+   - throw exception when socket open fails (instead of just logging state)
+   - improve JSOX error reporting.
 - 1.3.130
    - Found connector number for display info, so can specify literal port now.
    - Get display name information for displays.
