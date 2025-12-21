@@ -1084,7 +1084,7 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	Local<SharedArrayBuffer> ab =
 		SharedArrayBuffer::New( isolate,
 			GetImageSurface( io->image ),
-			length = io->image->height * io->image->pwidth );
+			length = io->image->height * io->image->pwidth * sizeof( CDATA ) );
 #endif				
 
 	Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
