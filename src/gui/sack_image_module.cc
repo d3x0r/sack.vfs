@@ -78,7 +78,7 @@ static void imageAsyncmsg_( v8::Isolate* isolate, Local<Context> context, class 
 		Local<Function> cons = Local<Function>::New( isolate, c->FontObject_constructor );
 		Local<Object> result = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
 		FontObject *fo = FontObject::Unwrap<FontObject>( result );
-		FRACTION one = { 1,1 };
+		//FRACTION one = { 1,1 };
 		fo->font = imageLocal.fontResult;
 
 		Local<Value> argv[1] = { result };
@@ -214,6 +214,9 @@ void ImageObject::Init( Local<Object> exports ) {
 	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "height" )
 		, FunctionTemplate::New( isolate, ImageObject::getHeight )
 		, Local<FunctionTemplate>(), (PropertyAttribute)(ReadOnly | DontDelete) );
+	imageTemplate->PrototypeTemplate()->SetAccessorProperty(localStringExternal(isolate, "inverted")
+		, FunctionTemplate::New(isolate, ImageObject::getInverted)
+		, FunctionTemplate::New(isolate, ImageObject::setInverted), (PropertyAttribute)(DontDelete));
 
 	c->ImageObject_tpl.Reset( isolate, imageTemplate );
 	c->ImageObject_constructor.Reset( isolate, imageTemplate->GetFunction(context).ToLocalChecked() );
@@ -323,6 +326,7 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 	if( tpl->HasInstance( args.This() ) ) {
 
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
+		if (!obj->image) return;
 		uint8_t *buf;
 		size_t size;
 		if( JpgImageFile( obj->image, &buf, &size, obj->jpegQuality ) )
@@ -336,7 +340,7 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 #endif
 			PARRAY_BUFFER_HOLDER holder = GetHolder();
 			holder->o.Reset( isolate, arrayBuffer );
-			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
+			holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, freeBuffer, WeakCallbackType::kParameter );
 			//lprintf( "(2)jpg backing store for:%p", buf );
 			holder->buffer = buf;
 			args.GetReturnValue().Set( arrayBuffer );
@@ -370,6 +374,38 @@ void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
 			args.GetReturnValue().Set( Integer::New( args.GetIsolate(), (int)obj->image->width ) );
 	}
 }
+
+void ImageObject::getInverted(const FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors(isolate);
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get(isolate);
+	if (tpl->HasInstance(args.This())) {
+		ImageObject* obj = ObjectWrap::Unwrap<ImageObject>(args.This());
+		if (obj->image)
+			args.GetReturnValue().Set(obj->image->flags & IF_FLAG_INVERTED ? True(isolate) : False(isolate));
+	}
+}
+
+void ImageObject::setInverted(const FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = args.GetIsolate();
+	class constructorSet* c = getConstructors(isolate);
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get(isolate);
+	bool yesno = args[ 0 ]->BooleanValue( isolate );
+	if (tpl->HasInstance(args.This())) {
+		ImageObject* obj = ObjectWrap::Unwrap<ImageObject>(args.This());
+		if (obj->image)
+			if( yesno ) {
+				if( !( obj->image->flags & IF_FLAG_INVERTED ) ) {
+					FlipImage( obj->image );
+				}
+			} else {
+				if( obj->image->flags & IF_FLAG_INVERTED ) {
+					FlipImage( obj->image );
+				}
+			}
+	}
+}
+
 void ImageObject::getHeight( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
   class constructorSet* c = getConstructors( isolate );
@@ -426,7 +462,6 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 		ImageObject *parent = NULL;
 		char *filename = NULL;
 		ImageObject* obj = NULL;
-		Local<ArrayBuffer> buffer;
 		int argc = args.Length();
 		if( argc > 0 ) {
 			if( args[0]->IsUint8Array() ) {
@@ -454,7 +489,10 @@ void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 #endif				
 			} else if( args[0]->IsNumber() )
 				w = (int)args[0]->NumberValue(context).ToChecked();
-			else {
+			else if (args[0]->IsUndefined()) {
+				isolate->ThrowException(Exception::Error(localStringExternal(isolate, "Bad argument to image width:undefined.")));
+				return;
+			} else {
 				String::Utf8Value fName( isolate, args[0]->ToString(context).ToLocalChecked() );
 				filename = StrDup( *fName );
 			}
@@ -505,13 +543,12 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 	if( args.IsConstructCall() ) {
 
 		int x = 0, y = 0, w = 1024, h = 768;
-		Local<Object> parentImage;
 		ImageObject *parent = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		int argc = args.Length();
 		int arg_ofs = 0;
 		if( argc > 0 ) {
 			if( args[0]->IsObject() ) {
-				ImageObject *parent = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
+				parent = ObjectWrap::Unwrap<ImageObject>( args[0]->ToObject( context).ToLocalChecked() );
 				arg_ofs = 1;
 			}
 		if( (argc+arg_ofs) > 0 )
@@ -1040,18 +1077,18 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	size_t length;
 #if ( NODE_MAJOR_VERSION >= 14 )
 	//lprintf( "IMAGE backing store for:%p", (POINTER)GetImageSurface( io->image ) );
-	std::shared_ptr<BackingStore> bs = SharedArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth, dontReleaseBufferBackingStore, NULL );
+	std::shared_ptr<BackingStore> bs = SharedArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth * sizeof(CDATA), dontReleaseBufferBackingStore, NULL);
 	Local<SharedArrayBuffer> ab =
 		SharedArrayBuffer::New( isolate, bs );
 #else	
 	Local<SharedArrayBuffer> ab =
 		SharedArrayBuffer::New( isolate,
 			GetImageSurface( io->image ),
-			length = io->image->height * io->image->pwidth );
+			length = io->image->height * io->image->pwidth * sizeof( CDATA ) );
 #endif				
 
 	Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
-
+W
 	args.GetReturnValue().Set( ui );
 }
 
@@ -1075,8 +1112,6 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 
 		int w = 24, h = 24;
 		int flags;
-		Local<Object> parentFont;
-		FontObject *parent = NULL;
 		char *filename = NULL;
 
 		int argc = args.Length();
@@ -1129,10 +1164,11 @@ void FontObject::New( const FunctionCallbackInfo<Value>& args ) {
 }
 
 
-void FontObject::measure( const FunctionCallbackInfo<Value>& args ) {
-		Isolate* isolate = args.GetIsolate();
-		FontObject *fo = ObjectWrap::Unwrap<FontObject>( args.This() );
-		int argc = args.Length();
+void FontObject::measure( const FunctionCallbackInfo<Value> &args ) {
+	//Isolate *isolate = args.GetIsolate();
+	//FontObject *fo   = ObjectWrap::Unwrap<FontObject>( args.This() );
+	//int argc         = args.Length();
+	lprintf( "Font measure is incomplete.." );
 }
 
 void FontObject::save( const FunctionCallbackInfo<Value>& args ) {
@@ -1154,10 +1190,10 @@ void FontObject::load( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	String::Utf8Value fName( isolate, args[0]->ToString(context).ToLocalChecked() );
-	int argc = args.Length();
+	//int argc = args.Length();
 
 	size_t dataLen;
-	PFONTDATA data;
+	PFONTDATA data = NULL;
 	FILE *out = sack_fopen( 0, *fName, "rb" );
 	if( out ) {
 		dataLen = sack_fsize( out );
@@ -1252,7 +1288,12 @@ void ColorObject::New( const FunctionCallbackInfo<Value>& args ) {
 				isolate->ThrowException(Exception::Error(localStringExternal(isolate, "String parameter to color constructor isn't handled yet...")));
 				return;
 
+			} else {
+				isolate->ThrowException( Exception::Error(
+				     localStringExternal( isolate, "Parameter to color constructor isn't handled yet..." ) ) );
+				return;
 			}
+
 
 		}
 		else if( argc == 4 ) {
@@ -1302,7 +1343,7 @@ void ColorObject::getGreen( const FunctionCallbackInfo<Value>&  args ) {
 }
 void ColorObject::getBlue( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 	class constructorSet* c = getConstructors( isolate );
 	if( c->ColorObject_tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
@@ -1312,7 +1353,7 @@ void ColorObject::getBlue( const FunctionCallbackInfo<Value>&  args ) {
 void ColorObject::getAlpha( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	class constructorSet* c = getConstructors( isolate );
-	Local<Context> context = isolate->GetCurrentContext();
+	//Local<Context> context = isolate->GetCurrentContext();
 	if( c->ColorObject_tpl.Get( isolate )->HasInstance( args.This() ) ) {
 		ColorObject *co = ObjectWrap::Unwrap<ColorObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, AlphaVal( co->color ) ) );

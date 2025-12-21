@@ -1250,8 +1250,6 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 					httpInternal->wss = myself;
 					if( eventMessage->pc )
 						httpInternal->ssl = ssl_IsClientSecure( eventMessage->pc );
-					if( httpInternal->ssl )
-						lprintf( "Still SSL??" );
 					int sslRedirect = (httpInternal->ssl != myself->ssl);
 					httpInternal->pc = eventMessage->pc;
 #if USE_NETWORK_AGGREGATE 

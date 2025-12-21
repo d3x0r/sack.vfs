@@ -29,7 +29,7 @@ SpaceBeforeParens: Never
 SpaceInEmptyParentheses: false
 SpaceInEmptyBlock: false
 LineEnding: LF
-AlignAfterOpenBracket: AlignTop
+#AlignAfterOpenBracket: AlignTop
 #AlignAfterOpenBracket: true
 AlignConsecutiveAssignments: AcrossEmptyLinesAndComments
 BreakBinaryOperations: RespectPrecedence
@@ -37,7 +37,7 @@ BreakBeforeBinaryOperators: All
 #BreakBeforeUnaryOperators: All
 PointerAlignment: Right
 BreakConstructorInitializers: BeforeComma
-BreakBeforeComma: true
+#BreakBeforeComma: true
 ---
 Language: JavaScript
 RemoveParentheses: MultipleParentheses
