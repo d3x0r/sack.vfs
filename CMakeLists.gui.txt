@@ -249,6 +249,7 @@ set( GUI_SOURCES src/gui/sack_psi_module.cc
 	src/gui/sack_image_module.cc
 	src/gui/sack_render_module.cc
 	src/gui/sack_intershell_module.cc 
+	src/gui/sack_dekware_module.cc 
 	src/gui/sack_vulkan_module.cc 
 )
 
@@ -302,6 +303,13 @@ else( UNIX )
 	set( VFSLIB sack_vfs.pp )
 endif( UNIX )
 
+if( WIN32 )
+  #target_link_libraries( ${PROJECT} crypto-49 tls-25 ssl-52 )
+  target_link_libraries( ${PROJECT} Bcrypt wlanapi )
+else( WIN32 )
+
+endif( WIN32 )
+  target_link_libraries( ${PROJECT} crypto tls ssl )
 
 target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
@@ -334,4 +342,3 @@ endif( UNIX )
 endif( EXISTS ${CMAKE_BINARY_DIR}/sack-src/src/sack/src/InterShell.stable )
 
 
-message( "${CMAKE_C_FLAGS_DEBUG}  ${CMAKE_C_FLAGS_RELEASE}  ${CMAKE_C_FLAGS_RELWITHDEBINFO}" )
