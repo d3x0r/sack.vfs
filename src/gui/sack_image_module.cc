@@ -1088,7 +1088,7 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 #endif				
 
 	Local<Uint8Array> ui = Uint8Array::New( ab, 0, length );
-W
+
 	args.GetReturnValue().Set( ui );
 }
 
