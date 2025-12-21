@@ -1834,6 +1834,11 @@ TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        FindLink       ( PLIST *pList, POINT
 TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetLinkCount   ( PLIST pList );
 #define GetLinkCount(l) GetLinksUsed(&(l))
 TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetLinksUsed( PLIST *pList );
+/* pack items in the list, moving items from the end into any empty spots
+ that are found.
+   return the count of items in the list.
+*/
+TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        PackLinks( PLIST pList );
 /* Uses FindLink on the list for the value to delete, and then
    sets the index of the found link to NULL.
    Parameters
@@ -3468,6 +3473,14 @@ TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegCreateFromFloatEx( double value DBG_PAS
    source :  source list to add to
    other :   additional segments to add to source.                  */
 TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegAppend   ( PTEXT source, PTEXT other );
+/* Appends a list of segments to an existing list of segments. This
+   assumes that the additional segment is referncing the head of
+   the segment list.
+   Parameters
+   source :  first segment to append to
+	... :   additional segments to add to source.
+	        MUST PASS NULL AS LAST APPEND         */
+TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  SegAppends(PTEXT source, ...);
 /* Inserts a segment before another segment.
    Parameters
    what :    what to insert into the list
@@ -3929,7 +3942,15 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextEmptyEx( PVARTEXT pvt DBG_PASS);
    c :         character to add
    DBG_PASS :  optional debug information         */
 TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddCharacterEx( PVARTEXT pvt, TEXTCHAR c DBG_PASS );
+/* Add a unicode RUNE to a buffer (rune should only be up to 21 bits, but encoding probably supports
+ runes up to the full 32 bits
+ */
 TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddRuneEx( PVARTEXT pvt, TEXTRUNE c, LOGICAL overlong DBG_PASS );
+/* Aadd a string of text tokens to a vartext output.  This uses
+ the same logic as BuildLine to resolve end of lines and tabs/spaces
+ encoded into text segments.
+ */
+TYPELIB_PROC void TYPELIB_CALLTYPE VarTextAddText( PVARTEXT pvt, PTEXT line, int bSingle );
 /* Adds a single character to a PVARTEXT collector.
    Example
    <code lang="c++">
@@ -3962,9 +3983,9 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE  VarTextAddDataEx( PVARTEXT pvt, CTEXTSTR bl
 #define VarTextAddData(pvt,block,length) VarTextAddDataEx( (pvt),(block),(length) DBG_SRC )
 /* Commits the currently collected text to segment, and adds the
    segment to the internal line accumulator.
-		 returns true if any data was added...
+		 returns new segment added (can be treated as bool) if any data was added...
        move any collected text to commit... */
-TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE  VarTextEndEx( PVARTEXT pvt DBG_PASS );
+TYPELIB_PROC  PTEXT TYPELIB_CALLTYPE  VarTextEndEx( PVARTEXT pvt DBG_PASS );
 /* <combine sack::containers::text::VarTextEndEx@PVARTEXT pvt>
    \ \                                                         */
 #define VarTextEnd(pvt) VarTextEndEx( (pvt) DBG_SRC )
@@ -14415,6 +14436,7 @@ namespace sack {
 #if ( !defined( IMAGE_LIBRARY_SOURCE_MAIN ) && ( !defined( FORCE_NO_INTERFACE ) || defined( ALLOW_IMAGE_INTERFACE ) ) )      && !defined( FORCE_COLOR_MACROS )
 #define Color( r,g,b ) MakeColor(r,g,b)
 #define AColor( r,g,b,a ) MakeAlphaColor(r,g,b,a)
+#define GLColor( c )      (c)
 #define SetAlpha( rgb, a ) SetAlphaValue( rgb, a )
 #define SetGreen( rgb, g ) SetGreeValue(rgb,g )
 #define AlphaVal(color) GetAlphaValue( color )
@@ -15431,7 +15453,6 @@ namespace sack {
 // library's interface structure name (the tag of the structure)
 #define MSG_ID(method)  BASE_MESSAGE_ID,( ( offsetof( struct MyInterface, _##method ) / sizeof( void(*)(void) ) ) +  MSG_EventUser )
 #define MSG_OFFSET(method)  ( ( offsetof( struct MyInterface, _##method ) / sizeof( void(*)(void) ) ) + MSG_EventUser )
-#define INTERFACE_METHOD(type,name) type (CPROC*_##name)
 // this is the techincal type of SYSV IPC MSGQueues
 #define MSGIDTYPE long
 #ifdef __64__
