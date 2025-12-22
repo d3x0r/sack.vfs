@@ -1,5 +1,5 @@
 
-import {sack} from "sack.vfs"
+import {sack} from "sack-gui"
 //const disk = sack.Volume();
 //let frame = 0;
 

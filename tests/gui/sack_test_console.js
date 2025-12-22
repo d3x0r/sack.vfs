@@ -31,7 +31,7 @@ consoleSize = con.size;
 
 
 con.oninput( function( string ) {
-	var lstring = string.slice( 0, string.length-1 );
+	var lstring = string.slice( 0, string.length );
 	console.log( "Event string:", lstring );
 	con.write( "\n" + string );
 } );
