@@ -74,7 +74,7 @@ packet_queue_listener(LIBSSH2_SESSION * session, unsigned char *data,
     size_t packet_len = 17 + strlen(FwdNotReq);
     unsigned char *p;
     LIBSSH2_LISTENER *listn = _libssh2_list_first(&session->listeners);
-    char failure_code = SSH_OPEN_ADMINISTRATIVELY_PROHIBITED;
+    uint32_t failure_code = SSH_OPEN_ADMINISTRATIVELY_PROHIBITED;
     int rc;
 
     if(listen_state->state == libssh2_NB_state_idle) {
@@ -287,7 +287,7 @@ packet_x11_open(LIBSSH2_SESSION * session, unsigned char *data,
                 size_t datalen,
                 packet_x11_open_state_t *x11open_state)
 {
-    int failure_code = SSH_OPEN_CONNECT_FAILED;
+    uint32_t failure_code = SSH_OPEN_CONNECT_FAILED;
     /* 17 = packet_type(1) + channel(4) + reason(4) + descr(4) + lang(4) */
     size_t packet_len = 17 + strlen(X11FwdUnAvil);
     unsigned char *p;
@@ -469,9 +469,9 @@ packet_authagent_open(LIBSSH2_SESSION * session,
                       unsigned char *data, size_t datalen,
                       packet_authagent_state_t *authagent_state)
 {
-    int failure_code = SSH_OPEN_CONNECT_FAILED;
+    uint32_t failure_code = SSH_OPEN_CONNECT_FAILED;
     /* 17 = packet_type(1) + channel(4) + reason(4) + descr(4) + lang(4) */
-    size_t packet_len = 17 + strlen(X11FwdUnAvil);
+    size_t packet_len = 17 + strlen(AuthAgentUnavail);
     unsigned char *p;
     LIBSSH2_CHANNEL *channel = authagent_state->channel;
     int rc;
@@ -1366,14 +1366,14 @@ libssh2_packet_add_jump_authagent:
         if( channelp && channelp->data_cb )
             if( channelp->close_state == libssh2_NB_state_idle ) { // not closed...
                 if( ( data[0] == SSH_MSG_CHANNEL_DATA ) || ( data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA ) ) {
-                    if( data[0] == SSH_MSG_CHANNEL_DATA ) {
+                    if( ( data[0] == SSH_MSG_CHANNEL_DATA ) ) {
                         LIBSSH2_CHANNEL_DATA( session, channelp, 0, data + data_head, datalen - data_head );
-                    } else if( data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA ) {
+                    } else if( ( data[0] == SSH_MSG_CHANNEL_EXTENDED_DATA ) ) {
                         uint32_t sid = _libssh2_ntohu32( data + 5 );
-                        if( sid == SSH_EXTENDED_DATA_STDERR ) {
+                        if( ( sid == SSH_EXTENDED_DATA_STDERR ) ) {
                             LIBSSH2_CHANNEL_DATA( session, channelp, 1, data + data_head, datalen - data_head );
-                        }  if( channelp->remote.extended_data_ignore_mode ==
-                            LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE ) {
+                        }  if( ( channelp->remote.extended_data_ignore_mode ==
+                            LIBSSH2_CHANNEL_EXTENDED_DATA_MERGE ) ) {
                             LIBSSH2_CHANNEL_DATA( session, channelp, sid, data + data_head, datalen - data_head );
                         }
                     }
