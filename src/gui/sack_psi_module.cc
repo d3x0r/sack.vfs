@@ -229,6 +229,16 @@ static void dispatchEvent( 	v8::Isolate* isolate
 		r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
 		break;
 	}
+	case Event_Control_ConsoleResize: {
+		if( !evt->control->customEvents[ 1 ].IsEmpty() ) {
+			cb                     = Local<Function>::New( isolate, evt->control->customEvents[ 1 ] );
+			Local<Value> argv[ 4 ] = {
+			     Number::New( isolate, evt->data.consoleSize.width ), Number::New( isolate, evt->data.consoleSize.height ),
+			     Number::New( isolate, evt->data.consoleSize.cols ), Number::New( isolate, evt->data.consoleSize.rows ) };
+			r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+		}
+		break;
+	}
 	case Event_Control_Resize: {
 		cb = Local<Function>::New( isolate, evt->control->cbSizeEvent );
 		Local<Value> argv[3] = { Number::New(isolate, evt->data.size.w )
@@ -1218,6 +1228,12 @@ void onItemOpened( uintptr_t psv, PSI_CONTROL pc, PLISTITEM pli, LOGICAL bOpened
 	//	SetListItemOpenHandler( obj->control, onItemOpened, (uintptr_t)obj );
 }
 
+static void onConsoleSizeChange( uintptr_t psv, int width, int height, int cols, int rows ) {
+	ControlObject *obj = (ControlObject *)psv;
+	MakePSIEvent( obj, true, Event_Control_ConsoleResize, width, height, cols, rows );
+}
+
+
 
 static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObject *obj ) {
 	Local<Context>context = isolate->GetCurrentContext();
@@ -1232,6 +1248,7 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 			, Function::New( context, ControlObject::getConsoleEcho ).ToLocalChecked()
 			, Function::New( context, ControlObject::setConsoleEcho ).ToLocalChecked()
 			, DontDelete );
+		PSI_Console_SetSizeCallback( obj->control, onConsoleSizeChange, (uintptr_t)obj );
 		SET( c, "oninput", Function::New( context, ControlObject::setConsoleRead ).ToLocalChecked() );
 	} else if( StrCmp( type, NORMAL_BUTTON_NAME ) == 0 ) {
 		int ID = GetControlID( obj->control );

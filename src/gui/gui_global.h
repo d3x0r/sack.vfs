@@ -99,6 +99,7 @@ enum GUI_eventType {
 	/* console events*/
 	Event_Control_ConsoleInput,
 	Event_Control_Close_Loop,
+	Event_Control_ConsoleResize,
 	/* listbox Events */
 	Event_Listbox_Selected,
 	Event_Listbox_DoubleClick,
@@ -144,6 +145,9 @@ struct event {
 		struct {
 			PTEXT text;
 		}console;
+		struct {
+			int width, height, rows, cols;
+		} consoleSize;
 		struct {
 			uintptr_t pli;
 			LOGICAL opened;
