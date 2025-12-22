@@ -299,7 +299,7 @@ if( UNIX )
 	)
 else( UNIX )
   #target_link_libraries( ${PROJECT} tls ssl crypto )
-  target_link_libraries( ${PROJECT} tls ssl crypto bcrypt )
+  #target_link_libraries( ${PROJECT} tls ssl crypto bcrypt )
 	set( VFSLIB sack_vfs.pp )
 endif( UNIX )
 
@@ -309,7 +309,7 @@ if( WIN32 )
 else( WIN32 )
 
 endif( WIN32 )
-  target_link_libraries( ${PROJECT} crypto tls ssl )
+  #target_link_libraries( ${PROJECT} crypto tls ssl )
 
 target_link_libraries(${PROJECT} bag++ bag.externals bag.psi++ ${VFSLIB} ${CMAKE_JS_LIB} )
 
