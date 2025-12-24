@@ -7,7 +7,8 @@ const servePort = Number(process.env.PORT) || (process.argv.length > 2?Number(pr
 	const ports = sack.Network.TCP.ports;
 	for( let p of ports ) {
 		if( p.port === servePort) {
-			console.log( "process ", p.pid, "is already serving on port", servePort );
+			const task = sack.Task.getProcessList( p.pid );
+			console.log( "process ", p.pid, "is already serving on port", servePort, task );
 		}
 	}
 }
