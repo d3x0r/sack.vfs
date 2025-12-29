@@ -445,6 +445,10 @@ ENDFOREACH()
 endif( EXISTS ${SACK_BASE} )
 
 
+include( ExternalProject )
+	include( CMakeLists.libressl.txt )
+	include( CMakeLists.libssh2.txt )
+
 
 
 include_directories( ./include ${CMAKE_JS_INC} src/sack )
@@ -510,10 +514,6 @@ SET( C_SOURCES
 #    include( ${ZBASEDIR}/CMakeLists.part )
 #    source_group("Source Files\\zlib-1.3 Library" FILES ${ZLIB_SOURCE})
 
-
-include( ExternalProject )
-	include( CMakeLists.libressl.txt )
-	include( CMakeLists.libssh2.txt )
 
 
 set( PROJECT sack_vfs )
