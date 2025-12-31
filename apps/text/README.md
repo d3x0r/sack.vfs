@@ -22,6 +22,13 @@ Static Methods
 |---|---|---|
 | constructor | ( def ) | def is an object like `{tabs:0, spaces: 1, text: "one" }` |
 |Parse | (input, punctuation, filter_space, bTabs, bSpaces ) | input is a string that is parsed.  Punctuation is an optional parameter which will use `'"\({[<>]}):@%/,;!?=*&$^~#``` if not specified. filter_space specifies characters to filter out and just ignore; if not specified defaults to carriage return `\r`.  bTabs and bSpaces are booleans that control whether spaces and tabs are counted or are just appened to the text segment. |
+|next | (Text) | return the next segment (if there is one, and if the argument is not `null`, otherwise return `null`). |
+|prior | (Text) | return the previous segment (if there is one, and if the argument is not `null`, otherwise return `null`). |
+|first | (Text) | return the first segment of the list that contains this segment.  (Does not follow up indirects) |
+|last | (Text) | return the last segment of the list that contains this segment.  (Does not follow up indirects) |
+|append| (a,b) | Append segment A and B, links the last(A) to first(B) |
+|subst| (_this, that) | replace _this segment with _that.  returns `that` |
+|substRange | (from,to,that) |splice out segments 'from' to 'to' and link first(that) and last(that) in their places, replacing a span of segments potentially |
 
 
 Methods
@@ -64,3 +71,18 @@ Flags Object (TBD)
 | tag | bool | this segment is bounded by tag indicators `<>` befoere the  tabs and spaces and after the text segment, and after the indirect. |
 | color | { foreground:, background,  blink, ...} | specify color attributes for this segment.
 
+
+## VarText
+
+Variable text utility, used to append strings into a buffer, which then is sliced into Text segments retrieving the data.
+
+## TextFlags
+
+A class object that describes extra formatting information for a segment; may include color, or other text styling, positioning,
+and even extended format commands like 'clear screen'.
+
+
+## Changelog
+
+- 1.2.125
+   - Added a bunch of static methods; added more getters on the text segment, and hide internal data members.
