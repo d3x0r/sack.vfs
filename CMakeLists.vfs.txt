@@ -607,12 +607,15 @@ set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_E
 #	add_dependencies( ${PROJECT} dossl )
 #endif( USE_SYSTEM_SSL )
 
-target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${NODE_LIBS} libssh2 )
+target_link_libraries(${PROJECT} ${EXTRA_LD_OPTS} ${SSL_LIBS} ${NODE_LIBS} )
+
 if( WIN32 )
+   target_link_libraries(${PROJECT} libssh2 )
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 bcrypt cryptui wlanapi Cfgmgr32 Setupapi Propsys )
 endif( WIN32 )
 if( UNIX )
-   target_link_libraries( ${PROJECT} odbc	 )
+   target_link_libraries(${PROJECT} ssh2 )
+   target_link_libraries( ${PROJECT} odbc )
    if( NOT APPLE )
        target_link_libraries( ${PROJECT} uuid )
        #target_link_libraries( ${PROJECT} asan )
@@ -623,10 +626,3 @@ if( __ANDROID__ )
 	target_link_libraries( ${PROJECT} log )
 endif( __ANDROID__ )
 
-#SET_TARGET_PROPERTIES(${SSL_LIBS} PROPERTIES FOLDER "LibreSSL" )
-#SET_TARGET_PROPERTIES(bs_obj crypto_obj ssl_obj tls_obj tls_compat_obj compat_obj PROPERTIES FOLDER "LibreSSL" )
-#SET_TARGET_PROPERTIES( libssh2 PROPERTIES FOLDER "LibSSH2" )
-
-
-#add_library( ntdll SHARED ntdll.c )
-#add_library( kernel32 SHARED kernel32.c )
