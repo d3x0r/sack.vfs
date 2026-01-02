@@ -8,9 +8,9 @@
 */
 
 /* usage
- *   var text = require( 'text.js' );
- *   var someText = Text( "some sort of text string" );
- *   var words = text.Parse( [Text object or String that gets converted to Text] [,punctuation [, filter_space [, bTabs,[  bSpaces]]]] ) );
+ *   let text = require( 'text.js' );
+ *   let someText = Text( "some sort of text string" );
+ *   let words = text.Parse( [Text object or String that gets converted to Text] [,punctuation [, filter_space [, bTabs,[  bSpaces]]]] ) );
  *      punctuation is a string of punctuation type characters (except . which is always treated as elipses ) *
  *      filter_Space is a string of space type characters
  *      bTabs is a boolean whether to keep tabs or count them.
@@ -36,18 +36,6 @@ const normal_punctuation=("\'\"\\({[<>]}):@%/,;!?=*&$^~#`");
 
 const tab = "\t";
 const space = " ";
-
-function textString(self) {
-	if (self) {
-		//console.log(tab.repeat(self.tabs) + space.repeat(self.spaces) + self.text
-		//                 + (self.next?textString( self.next ):"") );
-		return tab.repeat(self.tabs) + space.repeat(self.spaces) + self.text
-			+ (self.indirect ? textString(self.indirect) : "")
-			+ (self.next ? textString(self.next) : "");
-	}
-	return "";
-}
-
 
 export class TextFlags {
 
@@ -91,9 +79,11 @@ export class TextFlags {
 
 	is_quote = false;
 	is_squote = false;
-	is_bracket = false;
-	is_brace = false;
-	is_tag = false;
+	is_bquote = false;
+	is_bracket = false;// [ ]
+	is_brace = false;  // { }
+	is_tag = false;    // < >
+	is_paren = false;  // ( )
 
 	format_rel = true;   // uses relative (tabs, spaces) positioning
 	format_abs = false;  // uses absolute (x,y) positioning
@@ -176,7 +166,7 @@ export class TextFlags {
 		Object.defineProperty( this.position, "offset", { value:offset, enumerable:true } );
 
 
-		["binary", "no_return", "is_quote","is_squote","is_bracket","is_brace","is_tag"].forEach( f=>this[f] = flags[f] );
+		["binary", "no_return", "is_quote","is_squote","is_bquote", "is_bracket","is_brace","is_tag","is_paren"].forEach( f=>this[f] = flags[f] );
 		if( flags.format_abs ) {
 			this.format_abs = true;
 			this.format_rel = false;
@@ -192,263 +182,444 @@ export class TextFlags {
 	}
 }
 
+export class VarText {
+	collect = new Text();
+	commit = null;
+	constructor() {
+
+	}
+
+	add( ch ) {
+		this.collect.text += ch;
+	}
+	end() {
+		if( this.collect.length ) // otherwise ofs will be 0...
+		{
+			const segs = this.collect;
+			this.collect = new Text(); // new buffer
+			this.commit = Text.append( this.commit, segs );
+			return segs;
+		}
+		//if( pvt && pvt->commit )
+		//	return null;
+		return null;
+	}
+
+	get() {
+		// end might not have something new, but a previous end might have
+		if( this.end() || this.commit )
+		{
+			const result = this.commit;
+			this.commit = null;
+			return result;
+		}
+		return null;
+	}
+	empty() {
+		this.collect.length = 0;
+		this.commit = null;
+	}
+}
+
 export class Text {
+	// subclass of Text really...
 	static TextFlags = TextFlags;
-	tabs= 0;
-	spaces = 0;
-	flags= null; // this is actually a whole object if we want to get technical.
-	text= "";
-	next= null;
-	pred= null;
-	indirect= null;
-
-		 append(seg) { if (seg) { var end = this; while (end.next) end = end.next; seg.pred = this; end.next = seg; } return seg; }
-		 break() { var result; if (result = this.next) { this.next = null; result.pred = null; return result } return null; }
-		 breakBefore() { var result; if (result = this.pred) { this.pred = null; result.next = null; return result } return null; }
-		 breakAndSpliceTo (start) { var result; if (result = this.pred) { this.pred = start; result.next = null; start.next = this; return result } return null; }
-		 forEach(callback) { var cur = this; while (cur) { callback(cur); cur = cur.next; } }
-		 toString() {
-			var t = this;
-			while (t && t.pred) t = t.pred;
-			return textString(t);
+	tabs     = 0;
+	spaces   = 0;
+	#flags    = null; // this is actually a whole object if we want to get technical.
+	#text    = "";
+	#next    = null;
+	pred     = null;
+	indirect = null;
+	#eol     = '\n';
+	static #textString(self) {
+		if (self) {
+			const text = [];
+			self.tabs   && text.push( tab.repeat( self.tabs ))
+			self.spaces && text.push( tab.repeat( self.spaces ))
+			//console.log(tab.repeat(self.tabs) + space.repeat(self.spaces) + self.text
+			//                 + (self.next?textString( self.next ):"") );
+			//console.log( "where do newlines come from??", self.#text );
+			if( self.#flags ) {
+				if( self.#flags.is_quote )
+					text.push( "\"" );
+				if( self.#flags.is_squote )
+					text.push( "\'" );
+				if( self.#flags.is_bquote )
+					text.push( "\`" );
+				if( self.#flags.is_bracket )
+					text.push( "[" );
+				if( self.#flags.is_brace )
+					text.push( "{" );
+				if( self.#flags.is_paren )
+					text.push( "(" );
+				if( self.#flags.is_tag )
+					text.push( "<" );
+			}
+			if( self.indirect ) 
+				text.push( Text.#textString(self.indirect) )
+			else
+				text.push( (!self.#text)?self.#eol:self.#text );
+			if( self.#next)	text.push( Text.#textString(self.#next) );
+			if( self.#flags ) {
+				if( self.#flags.is_quote )
+					text.push( "\"" );
+				if( self.#flags.is_squote )
+					text.push( "\'" );
+				if( self.#flags.is_bquote )
+					text.push( "\`" );
+				if( self.#flags.is_bracket )
+					text.push( "]" );
+				if( self.#flags.is_brace )
+					text.push( "}" );
+				if( self.#flags.is_paren )
+					text.push( ")" );
+				if( self.#flags.is_tag )
+					text.push( ">" );
+			}
+			return text.join('');
 		}
-		 clone() {
-			return new Text( { spaces:this.spaces, tabs:this.tabs, text:this.text, flags:this.flags } );
-		}
-		 Next() { if (!this) return null; return this.next }
-		 first() { var cur = this; while (cur.pred) cur = cur.pred; return cur; }
-		 get last() { var cur = this; while (cur.next) cur = cur.next; return cur; }
+		return "";
+	}
 
-	constructor(def) {
+	get eol() { return this.#eol; }
+	set eol(v) { this.#eol = v; }
+	static text(seg) { return seg ? seg.text : ""; }
+	get text() { return this.indirect?this.indirect.text:this.#text; }
+	get next() { return this.#next }
+	get start() { let x = this; while( x.pred ) x = x.pred; return x; }
+	first() { let cur = this; while (cur.pred) cur = cur.pred; return cur; }
+	
+	get end() { let x = this; while( x.#next ) x = x.#next; return x; }
+	get last() { let cur = this; while (cur.#next) cur = cur.#next; return cur; }
+
+	static next( t ) { if (!t) return null; return t.#next }
+	static prior( t ) { if (!t) return null; return t.pred }
+	static append( t1, t2 ) { if (!t1) return t2; if (!t2) return t1; let end = t1; while (end.#next) end = end.#next; end.#next = t2; t2.pred = end; return t1; }
+
+	append(seg) { if (seg) { let end = this; while (end.#next) end = end.#next; seg.pred = this; end.#next = seg; } return seg; }
+	suffix(seg) { if (seg) { seg.pred = this; if( seg.#next=this.#next ) this.#next.pred = seg; this.#next = seg; } return seg; }
+	break() { let result; if (result = this.#next) { this.#next = null; result.pred = null; return result } return null; }
+	split(at) { let result = new Text( this.#text.substring(at) );
+		this.#text = this.#text.substring(0,at);
+		this.suffix( result );
+		return result; }
+	breakBefore() { let result; if (result = this.pred) { this.pred = null; result.#next = null; return result } return null; }
+	breakAndSpliceTo (start) { let result; if (result = this.pred) { this.pred = start; result.#next = null; start.#next = this; return result } return null; }
+	forEach(callback) { let cur = this; while (cur) { callback(cur); cur = cur.#next; } }
+	subst(that ) {
+		const end = that.end;
+		const start = that.start;
+		if( this.next ) this.#next.pred = that;
+		if( this.pred ) this.pred.#next = that;
+		that.pred = this.pred;
+		this.pred = null;
+		that.#next = this.#next;
+		this.#next = null;
+		return that;
+	}
+	static subst( _this, that ) {
+		if( !_this ) return that;
+		return _this.subst( that );
+	}
+	static substRange( pp_this, end, that )
+	{
+		 let  _this = pp_this['*'];
+		 let  after_end = ( end.#next )?end.#next:null;
+		 if( !_this || !end )
+		 {
+			 throw new Error( ["returned early from segsubstrange:"
+					 , _this.toString(), end.toString(), that.toString()].join(' ') );
+		 }
+	
+		 if( !that )
+		 {
+			 if( _this.pred ) _this.pred.#next = end.#next;
+			 if( end.next )   end.next.pred = _this.pred;
+		 }
+		 else
+		 {
+			 let  that_start = that , 
+					 that_end= that;
+			 that_start = that_start.start;
+			 that_end = that_end.end;
+			 if( that_end ) if( that_end.#next = end.#next ) that_end.#next.pred = that_end;
+			 if( _this.pred ) if( that_start.pred = _this.pred ) that_start.pred.#next = that_start;
+		 }
+		 if( end ) end.#next = null;
+		 _this.pred = null;
+		 if( that )
+			 pp_this['*'] = that;
+		 else
+			 pp_this['*'] = after_end;
+		 return null;
+	}
+	get flags() { 
+		if( !this.#flags )
+			this.#flags = new TextFlags();
+		return this.#flags;
+	}	 
+		 
+	toString( toEnd ) {
+		return Text.#textString(this, toEnd );
+	}
+	static toString( text, toEnd ) {
+		let t = text;
+		if( !toEnd ) while (t && t.pred) t = t.pred;
+		return Text.#textString(t);
+	}
+	static text( text ) {
+		if( text !== null ) {
+			return text.text;
+		}
+		return null;
+	}
+	clone() {
+		return new Text( { spaces:this.spaces, tabs:this.tabs, text:this.text, flags:this.#flags } );
+	}
+
+	constructor(def,from,to) {
+		//console.trace( "new Text", JSON.stringify(def), from, to )
 		this.tabs= def && def.tabs || 0
 		this.spaces= def && def.spaces || 0;
-		this.text= (def && def.text === null) ? null : def && def.text || def || ""
-		if( "flags" in def )
-			this.flags = new TextFlags( def.flags );
+		if( "string" === typeof def ){
+			this.#text= def.substring( from || 0, to || def.length );
+		} else if( "object" === typeof def ) {
+			this.#text= (def && def.text === null) ? null : def && def.text || def || ""
+			if( "flags" in def )
+				this.#flags = new TextFlags( def.flags );
+		}
 	}
         
         
-        static Parse(input, punctuation, filter_space, bTabs, bSpaces)
-// returns a TEXT list of parsed data
-{
-	if (!filter_space) filter_space = "\r";// " \t\r"
-	if (!punctuation) punctuation = normal_punctuation;
-	if (!input)	// if nothing new to process- return nothing processed.
-		return null;
-	if (typeof (input) === 'string') { input = Text(input); }
-	if (Object.getPrototypeOf(input).constructor.name === 'Buffer') { input = Text(input.toString()); }
-
-	var out = {
-		collect: Text()
-		, getText: () => {
-			if (!out.collect || (out.collect.tabs === 0 && out.collect.spaces === 0 && out.collect.text === ""))
-				return null;
-			var tmp = out.collect; out.collect = Text(); return tmp;
-		}
-	};
-	var outdata = null,
-		word;
-	var has_minus = -1;
-	var has_plus = -1;
-
-	var index;
-	var codePoint;
-
-	var elipses = false;
-	var spaces = 0;
-	var tabs = 0;
-
-	//console.log( out );
-	//console.log( input );
-
-	function SET_SPACES(word) {
-		word.tabs = tabs;
-		word.spaces = spaces;
-		//console.log( `set spaces ${word.tabs} ${word.spaces}  '${word.text}'`)
-		tabs = 0;
-		spaces = 0;
-		return word;
-	}
-        
-	function SegAppend(_this, that) { if (_this === null) return that; return _this.append(that); }
-
-	function collapse() {
-		//console.log( "Collapsing:", out.collect.text.length );
-		if (out.collect.text.length > 0) {
-			//console.log( "New word - set spaces..." );
-			outdata = SegAppend(outdata, SET_SPACES(out.getText()));
-		}
-	}
-	function defaultChar() {
-		if (elipses) {
-			if ((word = out.getText()))
-				outdata = SegAppend(outdata, SET_SPACES(word));
-			elipses = FALSE;
-		}
-		out.collect.text += character;
-		// characters are added at this point.
-		//console.log( `out collect is '${out.collect.text}'`);
-	}
-
-
-	function NextChar() {
-		//console.log( `NextChar and... ${index} ${input.text} ${input.text.length} ` );
-		if (index < (input.text.length - 1)) {
-			var codePoint = input.text.codePointAt(index + 1);
-			var character = String.fromCodePoint(codePoint);
-			return character;
-		} else {
-			return "";
-		}
-	}
-
-	function normalPunctuation() {
-		if ((word = out.getText())) {
-			outdata = SegAppend(outdata, SET_SPACES(word));
-			out.collect.text += character;
-			outdata = SegAppend(outdata, out.getText());
-		}
-		else {
-			out.collect.text += character;
-			outdata = SegAppend(outdata, SET_SPACES(out.getText()));
-		}
-	}
-	while (input) {
-		//Log1( ("Assuming %d spaces... "), spaces );
-		//console.log( "input is : ",input, typeof input, Object.getPrototypeOf(input).constructor.name );
-		for( var character of  input.text )
-		{
-			if (elipses && character != '.') {
-				outdata = SegAppend(outdata, SET_SPACES(out.getText()));
-				elipses = false;
-			}
-			else if (elipses) // elipses and character is . - continue
-			{
-				out.collect.text += character;
-				continue;
-			}
-			if (filter_space.includes(character)) {
-				if ((word = out.getText())) {
-					outdata = SegAppend(outdata, SET_SPACES(word));
-				}
-				spaces++;
-			}
-			else if (punctuation.includes(character)) {
-				normalPunctuation();
-			}
-			else switch (character) {
-				case '\n':
-					if ((word = out.getText())) {
-						outdata = SegAppend(outdata, SET_SPACES(word));
-					}
-					outdata = SegAppend(outdata, Text()); // add a line-break packet
-					break;
-				case ' ':
-				case '\u00a0': // nbsp
-					//console.log( "Why wasn't this switch a ' ' ?", ' '.codePointAt(0) );
-					collapse();
-					spaces++;
-					break;
-				case '\t':
-					if (bTabs) {
-						collapse();
-						tabs++;
-					}
-					else {
-						defaultChar();
-					}
-					break;
-				case '\r': // a space space character...
-					if ((word = out.getText())) {
-						outdata = SegAppend(outdata, SET_SPACES(word));
-					}
-					break;
-				case '.': // handle multiple periods grouped (elipses)
-					//goto NormalPunctuation;
-					{
-						let c;
-						if ((!elipses &&
-							(c = NextChar()) &&
-							(c === '.'))) {
-					     	if ((word = out.getText())) {
-								outdata = SegAppend(outdata, SET_SPACES(word));
-							}
-							out.collect.text += '.';
-							elipses = true;
-							break;
-						}
-						if ((c = NextChar()) &&
-							(c >= '0' && c <= '9')) {
-							// gather together as a floating point number...
-							out.collect.text += character;
-							break;
-						}
-					}
-					normalPunctuation();
-					break;
-				case '-':  // work seperations flaming-long-sword
-					if (has_minus == -1)
-						if (!punctuation || punctuation.includes('-'))
-							has_minus = 1;
-						else
-							has_minus = 0;
-					if (!has_minus) {
-						out.collect.text += '-';
-						break;
-					}
-				// fall through...
-				case '+':
-					{
-						let c;
-						if (has_plus == -1)
-							if (!punctuation || punctuation.includes('+'))
-								has_plus = 1;
-							else
-								has_plus = 0;
-						if (!has_plus) {
-							out.collect.text += '+';
-							break;
-						}
-						if ((c = NextChar()) &&
-							(c >= '0' && c <= '9')) {
-							if ((word = out.getText())) {
-								outdata = SegAppend(outdata, SET_SPACES(word));
-								// gather together as a sign indication on a number.
-							}
-							out.collect.text += character;
-							break;
-						}
-					}
-					if ((word = out.getText())) {
-						outdata = SegAppend(outdata, SET_SPACES(word));
-						out.collect.text += character;
-						word = out.getText();
-						outdata = SegAppend(outdata, word);
-					}
-					else {
-						out.collect.text += character;
-						word = out.getText();
-						outdata = SegAppend(outdata, SET_SPACES(word));
-					}
-					break;
-				default:
-					//console.log( "add characater normal...", JSON.stringify( character ), character.codePointAt(0) );
-					defaultChar();
-					break;
-			}
-		}
-		input = input.next;
-	}
-
-	if ((word = out.getText())) // any generic outstanding data?
+   static Parse(input, punctuation, filter_space, bTabs, bSpaces)
+	// returns a TEXT list of parsed data
 	{
-		outdata = SegAppend(outdata, SET_SPACES(word));
-	}
+		if (!filter_space) filter_space = "\r";// " \t\r"
+		if (!punctuation) punctuation = normal_punctuation;
+		if (!input)	// if nothing new to process- return nothing processed.
+			return null;
+		if (typeof (input) === 'string') { input = Text(input); }
+		if (Object.getPrototypeOf(input).constructor.name === 'Buffer') { input = Text(input.toString()); }
 
-	while (outdata && outdata.pred) outdata = outdata.pred;
-	return (outdata);
+		let out = {
+			collect: Text()
+			, getText: () => {
+				if (!out.collect || (out.collect.tabs === 0 && out.collect.spaces === 0 && out.collect.text === ""))
+					return null;
+				let tmp = out.collect; out.collect = Text(); return tmp;
+			}
+		};
+		let outdata = null,
+			word;
+		let has_minus = -1;
+		let has_plus = -1;
+
+		let index;
+		let codePoint;
+
+		let elipses = false;
+		let spaces = 0;
+		let tabs = 0;
+
+		//console.log( out );
+		//console.log( input );
+
+		function SET_SPACES(word) {
+			word.tabs = tabs;
+			word.spaces = spaces;
+			//console.log( `set spaces ${word.tabs} ${word.spaces}  '${word.text}'`)
+			tabs = 0;
+			spaces = 0;
+			return word;
+		}
+			
+		function SegAppend(_this, that) { if (_this === null) return that; return _this.append(that); }
+
+		function collapse() {
+			//console.log( "Collapsing:", out.collect.text.length );
+			if (out.collect.text.length > 0) {
+				//console.log( "New word - set spaces..." );
+				outdata = SegAppend(outdata, SET_SPACES(out.getText()));
+			}
+		}
+		function defaultChar() {
+			if (elipses) {
+				if ((word = out.getText()))
+					outdata = SegAppend(outdata, SET_SPACES(word));
+				elipses = FALSE;
+			}
+			out.collect.text += character;
+			// characters are added at this point.
+			//console.log( `out collect is '${out.collect.text}'`);
+		}
+
+
+		function NextChar() {
+			//console.log( `NextChar and... ${index} ${input.text} ${input.text.length} ` );
+			if (index < (input.text.length - 1)) {
+				let codePoint = input.text.codePointAt(index + 1);
+				let character = String.fromCodePoint(codePoint);
+				return character;
+			} else {
+				return "";
+			}
+		}
+
+		function normalPunctuation() {
+			if ((word = out.getText())) {
+				outdata = SegAppend(outdata, SET_SPACES(word));
+				out.collect.text += character;
+				outdata = SegAppend(outdata, out.getText());
+			}
+			else {
+				out.collect.text += character;
+				outdata = SegAppend(outdata, SET_SPACES(out.getText()));
+			}
+		}
+		while (input) {
+			//Log1( ("Assuming %d spaces... "), spaces );
+			//console.log( "input is : ",input, typeof input, Object.getPrototypeOf(input).constructor.name );
+			for( let character of  input.text )
+			{
+				if (elipses && character != '.') {
+					outdata = SegAppend(outdata, SET_SPACES(out.getText()));
+					elipses = false;
+				}
+				else if (elipses) // elipses and character is . - continue
+				{
+					out.collect.text += character;
+					continue;
+				}
+				if (filter_space.includes(character)) {
+					if ((word = out.getText())) {
+						outdata = SegAppend(outdata, SET_SPACES(word));
+					}
+					spaces++;
+				}
+				else if (punctuation.includes(character)) {
+					normalPunctuation();
+				}
+				else switch (character) {
+					case '\n':
+						if ((word = out.getText())) {
+							outdata = SegAppend(outdata, SET_SPACES(word));
+						}
+						outdata = SegAppend(outdata, Text()); // add a line-break packet
+						break;
+					case ' ':
+					case '\u00a0': // nbsp
+						//console.log( "Why wasn't this switch a ' ' ?", ' '.codePointAt(0) );
+						collapse();
+						spaces++;
+						break;
+					case '\t':
+						if (bTabs) {
+							collapse();
+							tabs++;
+						}
+						else {
+							defaultChar();
+						}
+						break;
+					case '\r': // a space space character...
+						if ((word = out.getText())) {
+							outdata = SegAppend(outdata, SET_SPACES(word));
+						}
+						break;
+					case '.': // handle multiple periods grouped (elipses)
+						//goto NormalPunctuation;
+						{
+							let c;
+							if ((!elipses &&
+								(c = NextChar()) &&
+								(c === '.'))) {
+								if ((word = out.getText())) {
+									outdata = SegAppend(outdata, SET_SPACES(word));
+								}
+								out.collect.text += '.';
+								elipses = true;
+								break;
+							}
+							if ((c = NextChar()) &&
+								(c >= '0' && c <= '9')) {
+								// gather together as a floating point number...
+								out.collect.text += character;
+								break;
+							}
+						}
+						normalPunctuation();
+						break;
+					case '-':  // work seperations flaming-long-sword
+						if (has_minus == -1)
+							if (!punctuation || punctuation.includes('-'))
+								has_minus = 1;
+							else
+								has_minus = 0;
+						if (!has_minus) {
+							out.collect.text += '-';
+							break;
+						}
+					// fall through...
+					case '+':
+						{
+							let c;
+							if (has_plus == -1)
+								if (!punctuation || punctuation.includes('+'))
+									has_plus = 1;
+								else
+									has_plus = 0;
+							if (!has_plus) {
+								out.collect.text += '+';
+								break;
+							}
+							if ((c = NextChar()) &&
+								(c >= '0' && c <= '9')) {
+								if ((word = out.getText())) {
+									outdata = SegAppend(outdata, SET_SPACES(word));
+									// gather together as a sign indication on a number.
+								}
+								out.collect.text += character;
+								break;
+							}
+						}
+						if ((word = out.getText())) {
+							outdata = SegAppend(outdata, SET_SPACES(word));
+							out.collect.text += character;
+							word = out.getText();
+							outdata = SegAppend(outdata, word);
+						}
+						else {
+							out.collect.text += character;
+							word = out.getText();
+							outdata = SegAppend(outdata, SET_SPACES(word));
+						}
+						break;
+					default:
+						//console.log( "add characater normal...", JSON.stringify( character ), character.codePointAt(0) );
+						defaultChar();
+						break;
+				}
+			}
+			input = input.#next;
+		}
+
+		if ((word = out.getText())) // any generic outstanding data?
+		{
+			outdata = SegAppend(outdata, SET_SPACES(word));
+		}
+
+		while (outdata && outdata.pred) outdata = outdata.pred;
+		return (outdata);
+	}
 }
-}
+
+
+let x; (x =Object.getOwnPropertyDescriptor(Text.prototype, 'text')).enumerable = true;
+Object.defineProperty(Text.prototype, 'text', x );
+
+(x =Object.getOwnPropertyDescriptor(Text.prototype, 'next')).enumerable = true;
+Object.defineProperty(Text.prototype, 'next', x );
 
 Object.seal( TextFlags.OPS );
 Object.freeze( TextFlags.OPS );
