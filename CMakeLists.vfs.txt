@@ -358,7 +358,7 @@ set( UUID_SOURCES
 SET( BUILD_AMALGAM on )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.45.0-TableAlias/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.52.0-TableAlias/sqlite3.c
 )
 
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
@@ -431,7 +431,7 @@ if( EXISTS ${PPCTOOL} )
 		DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
 		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
-  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
+  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c )
   SET_TARGET_PROPERTIES(doit PROPERTIES FOLDER "SACK Amalgamator" )
 
 endif( EXISTS ${PPCTOOL} )
