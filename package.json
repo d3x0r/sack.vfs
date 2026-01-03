@@ -98,6 +98,12 @@
     },
     "./bloomnhash": {
       "import": "./apps/bloom-n-hash/bloomNHash.mjs"
+    },
+    "./net.broadcast": {
+      "import": "./apps/net-util/getBroadcast.mjs"
+    },
+    "./ref": {
+      "import": "./apps/ref/ref.mjs"
     }
   },
   "old_exports": {
