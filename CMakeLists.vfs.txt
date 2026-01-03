@@ -376,6 +376,10 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
 	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.h
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SACK_BASE}/src/contrib/sqlite/3.52.0-TableAlias/sqlite3.h ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
+	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
 
 if( CMAKE_VERSION VERSION_GREATER 3.21 )
 
@@ -431,7 +435,11 @@ if( EXISTS ${PPCTOOL} )
 		DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
 		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
-  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c )
+  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc 
+		${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c 
+		${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.h
+		)
+
   SET_TARGET_PROPERTIES(doit PROPERTIES FOLDER "SACK Amalgamator" )
 
 endif( EXISTS ${PPCTOOL} )
