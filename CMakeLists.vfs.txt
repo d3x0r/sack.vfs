@@ -163,7 +163,7 @@ set( INCLUDES
 	-I${SACK_BASE}/include
 	-I${SACK_BASE}/src/contrib/sha1lib
 	-I${SACK_BASE}/src/contrib/K12/lib
-	-I${SACK_BASE}/src/contrib/sqlite/3.27.1-TableAlias
+	-I${SACK_BASE}/src/contrib/sqlite/3.52.0-TableAlias
  )
 
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
@@ -376,10 +376,6 @@ add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c
 	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${C_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
 	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
-add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.h
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SACK_BASE}/src/contrib/sqlite/3.52.0-TableAlias/sqlite3.h ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/
-	WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-)
 
 if( CMAKE_VERSION VERSION_GREATER 3.21 )
 
@@ -437,7 +433,6 @@ if( EXISTS ${PPCTOOL} )
   )
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc 
 		${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c 
-		${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.h
 		)
 
   SET_TARGET_PROPERTIES(doit PROPERTIES FOLDER "SACK Amalgamator" )
