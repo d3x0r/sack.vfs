@@ -181,7 +181,9 @@ export function getRequestHandler( serverOpts ) {
 			const fc = disk.read(filePath );
 
 			if( fc ) {
-				const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
+				const headers = { 'Content-Type': contentType
+						, 'Access-Control-Allow-Origin' : req.connection.headers.Origin
+						, "Permissions-Policy": "identity-credentials-get" };
 				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 				res.writeHead(200, headers );
 				if( req.CGI['🔧'] ) {
@@ -205,7 +207,9 @@ export function getRequestHandler( serverOpts ) {
 			const foundModule = findModule( unescape(req.url), req, res );
 			if( foundModule ) {
 				if( "object" === typeof  foundModule ) {
-				const headers = { 'Content-Type': foundModule.contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
+				const headers = { 'Content-Type': foundModule.contentType
+						, 'Access-Control-Allow-Origin' : req.connection.headers.Origin
+						, "Permissions-Policy": "identity-credentials-get" };
 				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 				res.writeHead(200, headers );
 				res.end( foundModule.content );
