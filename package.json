@@ -220,7 +220,7 @@
     "build": "npm run build-vfs",
     "link": "npm link @d3x0r/bloomnhash @d3x0r/popups @d3x0r/slab-array @d3x0r/srg jsox sack.vfs"
   },
-  "dependencies": {
-    "nw-gyp": "^3.6.8"
+  "nwependencies": {
+    "nw-gyp": "latest"
   }
 }
