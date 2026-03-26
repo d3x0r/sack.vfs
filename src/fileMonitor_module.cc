@@ -158,9 +158,9 @@ static void addMonitorFilter( const v8::FunctionCallbackInfo<Value>& args ) {
 
 
 }
-static monitorWrapper* newMonitor( char *path, int delay ) {
+static monitorWrapper* newMonitor( char *path, int delay, int scanSubdirectories ) {
 	monitorWrapper* monitor = new monitorWrapper();
-	monitor->monitor = MonitorFiles( path, delay );
+	monitor->monitor = MonitorFilesEx( path, delay, scanSubdirectories?SFF_SUBCURSE:0 );
 
 
 	return monitor;
@@ -172,11 +172,15 @@ static void makeNewMonitor( const FunctionCallbackInfo<Value>& args ) {
 	Isolate *isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
 		int defaultDelay = 250;
+		int scanSubdirectories = 0;
 		String::Utf8Value path( USE_ISOLATE(isolate) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		if( args.Length() > 1 && args[1]->IsNumber() ) {
 			defaultDelay = (int)args[1]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
 		}
-		monitorWrapper* obj = newMonitor( *path, defaultDelay );
+		if( args.Length() > 2 && args[2]->IsBoolean() ) {
+			scanSubdirectories = (int)args[2]->NumberValue(isolate->GetCurrentContext()).FromMaybe(0);
+		}
+		monitorWrapper* obj = newMonitor( *path, defaultDelay, scanSubdirectories );
 		obj->monitorWrapSelf( isolate, obj, args.This() );
 		//args.GetReturnValue().Set( args.This() );
 
