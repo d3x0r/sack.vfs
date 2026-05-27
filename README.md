@@ -257,7 +257,11 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.132(in progress)
+- 1.3.133(in progress)
+- 1.3.132
+   - Improve handling when there's no COM ports.
+   - Fix CMake build to support PSEUDOCON option on windows.
+   - Change build to build libressl and libssh as separate libraries.
 - 1.3.131
    - (WIN32) Added sound device support; get devices, set default, set/get volume
    - Reoganized object storage facility; moved to extra module, does not auto load.
