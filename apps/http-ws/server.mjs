@@ -170,7 +170,7 @@ export function getRequestHandler( serverOpts ) {
 				else paths.push( npm_path );
 		} else if( resourcePath instanceof Array ) paths.push(...resourcePath);
 			else paths.push( resourcePath );
-
+		lastFilePath = '';
 		for( let rpath of paths ) {
 
 			let filePath = rpath + unescape(req.url);
@@ -192,7 +192,7 @@ export function getRequestHandler( serverOpts ) {
 					const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
 					if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
 					res.writeHead(200, headers );
-					if( req.CGI['🔧'] ) {
+					if( req.CGI && req.CGI['🔧'] ) {
 						const str = fc.toString();
 						const content = str.replaceAll( /import([^\(]?\s+[^\(]?.*from\s+|)["']((?!\/|.\/|..\/)[^'"]*)["']/g, 'import$1"/$2?🔧=1+🔨=' + req.CGI['🔨'] +'"' )
 						res.end( content );
@@ -203,14 +203,14 @@ export function getRequestHandler( serverOpts ) {
 					if( requests.length !== 0 )
 						clearTimeout( reqTimeout );
 					reqTimeout = setTimeout( logRequests, 500 );
-					requests.push( req.url );
+					requests.push( req.url + "("+filePath+")" );
 				} else {
 					console.log( 'file exists, but reading it returned nothing?', filePath, fc );
 					return false;
 				}
 				return true;
 			} 
-			lastFilePath = filePath;
+			lastFilePath = (lastFilePath?lastFilePath+" or ":"") + filePath;
 		}
 		{
 			const foundModule = findModule( unescape(req.url), req, res );
