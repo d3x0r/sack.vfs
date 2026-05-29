@@ -29,11 +29,11 @@ local.addTask = addTask;
 const JSOX = sack.JSOX;
 
 async function reloadConfig() {
-	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.run.jsox" ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
-	const config_tasks = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.tasks.jsox" ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
+	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
+	const config_tasks = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_TASK_CONFIG||"config.tasks.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
 	const config = config_run
 			|| config_tasks
-	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.jsox" ).catch( err=>({default:null}) )).default 
+	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_CONFIG||"config.jsox") ).catch( err=>({default:null}) )).default 
 	      || { extraModules:[]
 	         , hostname:""
 	         , useUpstream: false
@@ -48,18 +48,29 @@ async function reloadConfig() {
 	return config;
 }
 
-const serverOpts = {resourcePath:appRoot+"/ui"
-	, npmPath:parentRoot+"/.."
+const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
+	, npmPath:process.env.NPM_PATH || (parentRoot+"/..")
 	, port:Number(process.env.PORT) || config.port || 8080};
 // start server...
 console.log( "Serve on port:", serverOpts.port );
-const server = openServer( serverOpts, accept, connect );
+export const server = openServer( serverOpts, accept, connect );
 server.addHandler( (req,res)=>{
 	if( req.url.startsWith( "/events")){
 		req.url = "/../.." + req.url;
 	}
 	return false;
 })
+
+let authCb = null;
+export function onLogin( loginCb ) {
+	authCb = loginCb;
+	
+}
+
+// optional expect handler, otherwise use getUser on the key....
+// default expect handler (null for last callback)
+// does this same operation.
+
 
 class Connection {
 	ws = null;
@@ -344,7 +355,7 @@ function connect( ws ) {
 		ws.close( 1020, "Bad Protocol" );
 		return;
 	}
-
+	ws.authed = false;
 	ws.onclose = handleClose;
 
 	// this is from a peer connecting to upstream
@@ -352,6 +363,14 @@ function connect( ws ) {
 		const msg = JSOX.parse( msg_ );
 		//console.log( "Received (from proxy):", msg );
 		switch( msg.op ) {
+		case "login":
+			/* this just dispatches an event? */
+			if( authCb ) {
+				if( authCb( msg.uid ) ) {
+					ws.authed = true;
+				}
+			}
+			break;
 		case "taskInfo":
 			const replyTo = local.replyMap[msg.id];
 			//console.log( "Info reply should rely to:", replyTo, local.replyMap );
