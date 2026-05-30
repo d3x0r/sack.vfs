@@ -78,6 +78,7 @@ class Connection {
 	remote = null;
 	address = null;
 	system = null;
+	authed = false;
 	constructor( ws ) {
 		this.ws = ws;
 		this.address = ws.connection.remoteAddress;
@@ -355,7 +356,7 @@ function connect( ws ) {
 		ws.close( 1020, "Bad Protocol" );
 		return;
 	}
-	ws.authed = false;
+	connection.authed = false;
 	ws.onclose = handleClose;
 
 	// this is from a peer connecting to upstream
@@ -402,6 +403,7 @@ function connect( ws ) {
 			}
 		}break;
 		case "addTask": {
+			if( !connection.authed ) return true;
 			// received from creating a remote task
 			connection.system.addTask( msg.id, msg.task );
 			if( local.upstreamWS ) local.upstreamWS.send( JSOX.stringify( {op:msg.op, system:connection.system.id, task:msg.task } ) );
@@ -409,6 +411,7 @@ function connect( ws ) {
 		}
 		break;
 		case "updateTask": {
+			if( !connection.authed ) return true;
 			// received from updating a remote task
 			connection.system.updateTask( msg.task );
 			if( local.upstreamWS ) local.upstreamWS.send( JSOX.stringify( {op:msg.op, system:connection.system.id, task:msg.task } ) );
@@ -416,6 +419,7 @@ function connect( ws ) {
 		}
 		break;
 		case "deleteTask": {
+			if( !connection.authed ) return true;
 			// received from deleting a remote task
 			connection.system.deleteTask( msg.task );
 			if( local.upstreamWS ) local.upstreamWS.send( msg_ );
