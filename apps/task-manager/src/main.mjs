@@ -551,7 +551,7 @@ function connect( ws ) {
 function handleMessage( ws, msg_ ) {
 	try {
 		const msg = JSOX.parse( msg_ );
-		const connection = local.connections.find( ws );
+		const connection = local.connections.find( (c)=>c.ws===ws );
 		switch( msg.op ) {
 		case "shutdown": {
 			console.log( "received shutdown request" );
