@@ -1882,7 +1882,7 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value s( USE_ISOLATE( isolate ) args[2]->ToString( context ).ToLocalChecked() );
 		name = StrDup( *s );
 	}
-	HWND hWndMain = find_main_window( id );
+	HWND hWndMain = (!(code & 2))?find_main_window( id ):NULL;
 	if( hWndMain ) {
 		TEXTCHAR title[256];
 		GetWindowText( hWndMain, title, 256 );
