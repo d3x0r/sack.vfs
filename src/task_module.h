@@ -25,7 +25,9 @@ public:
 	bool binary;
 	bool ending;
 	bool ended;
+	bool useSignal = false;
 	uint32_t exitCode;
+	char* programName = nullptr;
 	bool killAtExit;
 
 	PLINKQUEUE output;
