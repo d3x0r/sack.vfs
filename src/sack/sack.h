@@ -11233,6 +11233,13 @@ PSSQL_PROC( int, DoSQLCommandEx )( CTEXTSTR command DBG_PASS);
    Parameters
    odbc :  connection to database to commit                      */
 PSSQL_PROC( void, SQLCommit )( PODBC odbc );
+/* Generate a rollback for any outstanding transactions. Connections
+   also have the feature to auto generate begin transaction, and
+   flush after a period of idle.  This also interacts with the auto
+   transact; so a rollback without a transaction is harmless.
+   Parameters
+   odbc :  connection to database to rollback                     */
+PSSQL_PROC( void, SQLRollback )( PODBC odbc );
 /* generates the begin transaction for a commection.
    Parameters
    odbc :  connection to database to start a transaction        */
@@ -12246,6 +12253,14 @@ PSSQL_PROC( void, SetSQLAutoTransact )( PODBC odbc, LOGICAL bEnable );
    odbc :     connection to set auto transact on
    callback :  not NULL to enable, NULL to disable.                         */
 PSSQL_PROC( void, SetSQLAutoTransactCallback )( PODBC odbc, void (CPROC*callback)(uintptr_t,PODBC), uintptr_t psv );
+/* Enable using 'BEGIN TRANSACTION' and 'COMMIT' commands automatically
+   around commands. If there is a lull of 500ms (1/2 second),
+   then the commit automatically fires. SQLRollback can be called
+	to trigger this process early.
+   Parameters
+   odbc :     connection to set rollback callback on
+   callback :  not NULL to enable, NULL to disable.                         */
+PSSQL_PROC( void, SetSQLRollbackCallback )( PODBC odbc, void (CPROC*callback)(uintptr_t,PODBC), uintptr_t psv );
 /* Relevant for SQLite databases. After a certain period of
    inactivity the database is closed (allowing the file to be
    not-in-use during idle). PODBC odject remains valid, and
