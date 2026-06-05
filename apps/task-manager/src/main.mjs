@@ -9,6 +9,7 @@ const parentRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-2).join(
 
 import {System} from "../ui/system.mjs"
 import {local} from "./local.mjs"
+import {isTopLevel} from "sack.vfs/isTopLevel" 
 
 import os from "os";
 import {sack} from "sack.vfs"
@@ -29,11 +30,11 @@ local.addTask = addTask;
 const JSOX = sack.JSOX;
 
 async function reloadConfig() {
-	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.run.jsox" ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
-	const config_tasks = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.tasks.jsox" ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
+	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
+	const config_tasks = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_TASK_CONFIG||"config.tasks.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
 	const config = config_run
 			|| config_tasks
-	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/config.jsox" ).catch( err=>({default:null}) )).default 
+	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_CONFIG||"config.jsox") ).catch( err=>({default:null}) )).default 
 	      || { extraModules:[]
 	         , hostname:""
 	         , useUpstream: false
@@ -48,12 +49,12 @@ async function reloadConfig() {
 	return config;
 }
 
-const serverOpts = {resourcePath:appRoot+"/ui"
-	, npmPath:parentRoot+"/.."
+const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
+	, npmPath:process.env.NPM_PATH || (parentRoot+"/..")
 	, port:Number(process.env.PORT) || config.port || 8080};
 // start server...
 console.log( "Serve on port:", serverOpts.port );
-const server = openServer( serverOpts, accept, connect );
+export const server = openServer( serverOpts, accept, connect );
 server.addHandler( (req,res)=>{
 	if( req.url.startsWith( "/events")){
 		req.url = "/../.." + req.url;
@@ -61,12 +62,24 @@ server.addHandler( (req,res)=>{
 	return false;
 })
 
+let authCb = null;
+export function onLogin( loginCb ) {
+	authCb = loginCb;
+	
+}
+
+// optional expect handler, otherwise use getUser on the key....
+// default expect handler (null for last callback)
+// does this same operation.
+
+
 class Connection {
 	ws = null;
 	logStreams = [];
 	remote = null;
 	address = null;
 	system = null;
+	authed = false;
 	constructor( ws ) {
 		this.ws = ws;
 		this.address = ws.connection.remoteAddress;
@@ -107,7 +120,6 @@ function handleRestart( ws, msg, msg_ ) {
 		if( remote ) remote.connection.ws.send( msg_ );
 		else ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 	}
-
 }
 
 
@@ -240,8 +252,18 @@ if( config.useUpstream )
 	connectToCore();
 
 
+export function beginScheduler() {
+	//console.log( "Loading tasks?", config.tasks, local.tasks );
+	config.tasks.forEach( loadTask );
 
-config.tasks.forEach( loadTask );
+	if( config.extraModules ) {
+		loadModules( 0 );
+	}
+	else startTasks();
+
+}
+
+if( isTopLevel(import.meta.url) ) beginScheduler();
 
 function loadTask( task ) {
 	const oldTask = local.tasks.find( oldTask=>oldTask.name === task.name );
@@ -292,10 +314,6 @@ function onStopAll( n ) {
 }
 
 
-if( config.extraModules ) {
-	loadModules( 0 );
-}
-else startTasks();
 
 function startTasks() {
 	local.tasks.forEach( task=>{
@@ -339,12 +357,10 @@ function connect( ws ) {
 		console.log( "Adding connection...");
 		local.connections.push( connection );
 		sendTasks();
-	
 	} else {
 		ws.close( 1020, "Bad Protocol" );
 		return;
 	}
-
 	ws.onclose = handleClose;
 
 	// this is from a peer connecting to upstream
@@ -352,6 +368,14 @@ function connect( ws ) {
 		const msg = JSOX.parse( msg_ );
 		//console.log( "Received (from proxy):", msg );
 		switch( msg.op ) {
+		case "login":
+			/* this just dispatches an event? */
+			if( authCb ) {
+				if( authCb( msg.uid ) ) {
+					ws.authed = true;
+				}
+			}
+			break;
 		case "taskInfo":
 			const replyTo = local.replyMap[msg.id];
 			//console.log( "Info reply should rely to:", replyTo, local.replyMap );
@@ -527,6 +551,7 @@ function connect( ws ) {
 function handleMessage( ws, msg_ ) {
 	try {
 		const msg = JSOX.parse( msg_ );
+		const connection = local.connections.find( (c)=>c.ws===ws );
 		switch( msg.op ) {
 		case "shutdown": {
 			console.log( "received shutdown request" );
@@ -715,9 +740,9 @@ function saveRunConfig() {
 
 if( "enableExitSignal" in sack.system ) {
 	sack.system.enableExitSignal( ()=>{
-		console.log( "Got exit signal... so generate exit?" );
+		//console.log( "Got exit signal... so generate exit?" );
 		closeAllTasks().then( ()=>{
-			console.log( "Took some time to shut down tasks?" );
+			//console.log( "Took some time to shut down tasks?" );
 			//process.emit( "SIGINT" );
 			process.exit(0);
 		});

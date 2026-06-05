@@ -109,6 +109,12 @@
     },
     "./bloomnhash": {
       "import": "./apps/bloom-n-hash/bloomNHash.mjs"
+    },
+    "./net.broadcast": {
+      "import": "./apps/net-util/getBroadcast.mjs"
+    },
+    "./ref": {
+      "import": "./apps/ref/ref.mjs"
     }
   },
   "private": false,
@@ -204,5 +210,52 @@
       "lcov",
       "text"
     ]
+  },
+  "scripts": {
+    "mocha-lite": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node test/json6 test/jsox",
+    "mocha": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node --recursive",
+    "test": "node tests/vfsTest.js",
+    "install": "npm run build-vfs",
+    "install_old": "node-gyp configure build",
+    "login-server": "cd tests/objstore/userDb && node userDbServer.mjs",
+    "forum-server": "node tests/objstore/forum/forumServer.mjs",
+    "storage-server": "node tests/objstore/storageServer/forumServer.mjs",
+    "storage-proxy": "node tests/objstore/storageProxy/forumServer.mjs",
+    "POS-server": "node tests/objstore/POS/POS-Server.mjs",
+    "build-gui": "node build.mjs release gui && npm run build-gui-run1 && node build.mjs release gui && npm run build-gui-run1",
+    "build-gui-debug": "npm run build-gui-debug-config && npm run build-gui-debug-run1 && npm run build-gui-debug-config && npm run build-gui-debug-run2",
+    "build-gui-reldeb": "node build.mjs reldeb gui && npm run build-gui-reldeb-run1 && node build.mjs reldeb gui && npm run build-gui-reldeb-run1",
+    "build-gui-reldeb-config": "npx cmake-js --CDMAKE_GUI=1 --config RelWithDebInfo $cmake_js_extra_flags configure",
+    "build-gui-reldeb-run1": "npx cmake-js build --config RelWithDebInfo",
+    "build-gui-linux": "npm run build-gui-config && npm run build-gui-run1 && npm run build-gui-config && npm run build-gui-run2",
+    "build-gui-config": "npx cmake-js --CDMAKE_GUI=1 --config Release $cmake_js_extra_flags configure",
+    "build-gui-config-windows": "npx cmake-js -t ClangCL --CDMAKE_GUI=1 --config Release $cmake_js_extra_flags configure",
+    "build-gui-debug-config-windows": "npx cmake-js -t ClangCL --CDMAKE_GUI=1 --config Debug $cmake_js_extra_flags configure",
+    "build-gui-reldeb-config-windows": "npx cmake-js -t ClangCL --CDMAKE_GUI=1 --config RelWithDebInfo configure",
+    "build-gui-run1": "npx cmake-js build",
+    "build-gui-run2": "npx cmake-js build",
+    "build-gui-debug-config": "npx cmake-js --CDMAKE_GUI=1 --config Debug -D configure",
+    "build-gui-debug-run1": "npx cmake-js build -D",
+    "build-gui-debug-run2": "npx cmake-js build -D",
+    "build-vfs": "node build.mjs && npm run build-vfs-run1",
+    "build-vfs-linux": "npm run build-vfs-config && npm run build-vfs-run1",
+    "build-vfs-debug-linux": "npm run build-vfs-debug-config && npm run build-vfs-debug-run1",
+    "build-vfs-reldeb-linux": "npm run build-vfs-reldeb-config && npm run build-vfs-reldeb-run1",
+    "build-vfs-config-windows": "npx cmake-js -t ClangCL --CDMAKE_GUI=0 --config Release configure",
+    "build-vfs-debug-config-windows": "npx cmake-js -t ClangCL --CDMAKE_GUI=0 --config Debug configure",
+    "build-vfs-reldeb-config-windows": "npx cmake-js -t ClangCL --CDMAKE_GUI=0 --config RelWithDebInfo configure",
+    "build-vfs-config": "npx cmake-js --CDMAKE_GUI=0 --config Release configure",
+    "build-vfs-run1": "npx cmake-js build",
+    "build-vfs-debug": "node build.mjs debug && npm run build-vfs-debug-run1",
+    "build-vfs-debug-config": "npx cmake-js --CDMAKE_GUI=0 --config Debug -D configure",
+    "build-vfs-debug-run1": "npx cmake-js build -D",
+    "build-vfs-reldeb": "node build.mjs reldeb && npm run build-vfs-reldeb-run1",
+    "build-vfs-reldeb-config": "npx cmake-js --CDMAKE_GUI=0 --config RelWithDebInfo configure",
+    "build-vfs-reldeb-run1": "npx cmake-js build --config RelWithDebInfo",
+    "build": "npm run build-vfs",
+    "link": "npm link @d3x0r/bloomnhash @d3x0r/popups @d3x0r/slab-array @d3x0r/srg jsox sack.vfs"
+  },
+  "nwependencies": {
+    "nw-gyp": "latest"
   }
 }

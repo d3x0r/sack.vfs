@@ -163,7 +163,7 @@ set( INCLUDES
 	-I${SACK_BASE}/include
 	-I${SACK_BASE}/src/contrib/sha1lib
 	-I${SACK_BASE}/src/contrib/K12/lib
-	-I${SACK_BASE}/src/contrib/sqlite/3.27.1-TableAlias
+	-I${SACK_BASE}/src/contrib/sqlite/3.52.0-TableAlias
  )
 
 FILE( WRITE ${CMAKE_BINARY_DIR}/config.ppc "/*CMake Option defined*/\n" )
@@ -358,7 +358,7 @@ set( UUID_SOURCES
 SET( BUILD_AMALGAM on )
 
 set( C_SOURCES
-        ${SACK_BASE}/src/contrib/sqlite/3.45.0-TableAlias/sqlite3.c
+        ${SACK_BASE}/src/contrib/sqlite/3.52.0-TableAlias/sqlite3.c
 )
 
 add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack
@@ -431,7 +431,10 @@ if( EXISTS ${PPCTOOL} )
 		DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
 		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
-  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc )
+  add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc 
+		${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sqlite3.c 
+		)
+
   SET_TARGET_PROPERTIES(doit PROPERTIES FOLDER "SACK Amalgamator" )
 
 endif( EXISTS ${PPCTOOL} )
@@ -536,7 +539,7 @@ endif( USE_SACK_ALLOCATOR )
 if( WIN32 )
 #  force using native CS (which are slightly slower than SACK's implementation) (test/debug option)
 #  set( MOREDEFS  "${MOREDEFS};USE_NATIVE_CRITICAL_SECTION" )
-   SET( MOREDEFS "${MOREDEFS};_WIN32_WINNT=0x601" )
+   SET( MOREDEFS "${MOREDEFS};_WIN32_WINNT=0xA00" )
 endif( WIN32 )
 
 if( UNIX )
