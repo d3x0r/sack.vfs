@@ -121,6 +121,8 @@ endif( __ANDROID__ )
 # so the gui can set this here?
 
 include( ExternalProject )
+	include( CMakeLists.dawn.txt )
+
 
 if( WIN32 )
        set( GIT_REPO file://m:/sack )

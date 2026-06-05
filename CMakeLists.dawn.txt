@@ -1,0 +1,55 @@
+
+
+
+
+
+
+#if( INCLUDE_DAWN )
+	
+	set( MY_INSTALL_DIR "${CMAKE_BINARY_DIR}/Dawn_tmp/${CMAKE_BUILD_TYPE}" ) 
+
+	include_directories( ${MY_INSTALL_DIR}/include )
+	LINK_DIRECTORIES( ${MY_INSTALL_DIR}/lib )
+
+
+if(WIN32)
+    set(DAWN_SHARED_BYPRODUCT "${MY_INSTALL_DIR}/lib/webgpu_dawn.lib") # Import lib for DLL
+else()
+    set(DAWN_SHARED_BYPRODUCT "${MY_INSTALL_DIR}/lib/libwebgpu_dawn.so") # Change to .dylib on Mac
+endif()
+
+if(WIN32)
+    set( USE_BINDIR "<BINARY_DIR>_tmp/$<CONFIG>" )
+    #set( USE_BINDIR "<BINARY_DIR>_tmp/\${CMAKE_INSTALL_CONFIG_NAME}" )
+else()
+    set( USE_BINDIR <BINARY_DIR>_tmp/$<CONFIG$<ANGLE-R> )
+endif()
+
+	ExternalProject_Add( Dawn_External
+    GIT_REPOSITORY  "https://github.com/google/dawn"
+    GIT_TAG         "v20260423.175430"
+    GIT_SHALLOW     TRUE
+		BINARY_DIR ${CMAKE_BINARY_DIR}/Dawn
+		INSTALL_DIR ${MY_INSTALL_DIR}
+		BUILD_BYPRODUCTS "${DAWN_SHARED_BYPRODUCT}"
+		CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${USE_BINDIR}
+  			-DCMAKE_BUILD_TYPE:STRING=$<CONFIG$<ANGLE-R>
+        -DDAWN_ENABLE_INSTALL=ON       # <--- REQUIRED for Dawn to install files
+        -DDAWN_FETCH_DEPENDENCIES=ON   # <--- REQUIRED to auto-download Tint/Abseil deps
+        -DDAWN_BUILD_MONOLITHIC_LIBRARY=SHARED
+        -DDAWN_BUILD_TESTS=OFF      # Disables Dawn's core testing suites
+        -DTINT_BUILD_TESTS=OFF      # Disables tests inside the Tint shader translator subproject
+        -DDAWN_BUILD_SAMPLES=OFF    # Disables example binaries (GLFW apps, sample code)
+        -DTINT_ENABLE_INSTALL=OFF   # Disables installing the Tint shader translator (not needed for runtime)
+        -DDAWN_ENABLE_VULKAN=ON        # Force compiles the Vulkan backend layer
+        -DDAWN_ENABLE_D3D11=OFF        # Disables Direct3D 11 fallback
+        -DDAWN_ENABLE_D3D12=OFF        # Disables Direct3D 12 fallback
+        -DDAWN_ENABLE_METAL=OFF        # Disables Metal fallback (if compiling on Apple hardware)
+        -DDAWN_ENABLE_DESKTOP_GL=OFF   # Disables standard desktop OpenGL compatibility lines
+        -DDAWN_ENABLE_OPENGLES=OFF     # Disables mobile embedded OpenGLES targets
+
+			${MOREOPTS}
+	)
+#else( INCLUDE_DAWN )
+
+#endif( INCLUDE_DAWN)
