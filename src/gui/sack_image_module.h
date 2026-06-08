@@ -1,3 +1,5 @@
+#ifndef __SACK_GUI_IMAGE_MODULE_H
+#define __SACK_GUI_IMAGE_MODULE_H
 
 #undef plot
 
@@ -110,3 +112,4 @@ public:
 
 };
 
+#endif

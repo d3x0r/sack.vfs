@@ -1,4 +1,7 @@
+#ifndef __SACK_GUI_RENDER_MODULE_H
+#define __SACK_GUI_RENDER_MODULE_H
 
+#include <unordered_set>
 
 class RenderObject : public node::ObjectWrap{
 
@@ -15,7 +18,7 @@ public:
 
 	static void Init( Local<Object> exports );
 	static void sigint( void );
-	RenderObject( const char *caption, int w, int h, int x, int y, RenderObject *parent );
+	RenderObject( int attr, const char *caption, int w, int h, int x, int y, RenderObject *parent );
 	void setRenderer( PRENDERER r );
 
 	static void New( const FunctionCallbackInfo<Value>& args );
@@ -38,9 +41,13 @@ public:
 	static void close( const FunctionCallbackInfo<Value>& args );
 	void do_close( void );
 	static void on( const FunctionCallbackInfo<Value>& args );
+	static void off(const FunctionCallbackInfo<Value>& args);
+	static void getContext(const FunctionCallbackInfo<Value>& args);
 	static void getImage( const FunctionCallbackInfo<Value>& args );
 	static void getDisplay( const FunctionCallbackInfo<Value>& args );
 	static void is3D( const FunctionCallbackInfo<Value>& args );
+	static void lockMouse(const FunctionCallbackInfo<Value>& args);
+	static void unlockMouse(const FunctionCallbackInfo<Value>& args);
 
    ~RenderObject();
 
@@ -56,6 +63,24 @@ public:
 	PERSISTENT_FUNCTION cbKey;   // event callback        ()  // return true/false to allow creation
 	PERSISTENT_FUNCTION cbDraw; // event callback        ()  // return true/false to allow creation
 
+	// Browser-shaped events. Each is its own slot so JS code can mix
+	// existing "mouse"/"key" handlers with new "mouseDown" etc. without
+	// stepping on each other.
+	PLIST cbMouseDown_listeners = nullptr;
+	PLIST cbMouseUp_listeners = nullptr;
+	PLIST cbMouseMove_listeners = nullptr;
+	PLIST cbWheel_listeners = nullptr;
+	PLIST cbKeyDown_listeners = nullptr;
+	PLIST cbKeyUp_listeners = nullptr;
+
+	// Per-renderer state for synthesizing browser-shaped events from
+	// sack's "current bitmask" model.
+	uint32_t lastMouseButtons_ = 0;
+	int32_t  lastMouseX_       = 0;
+	int32_t  lastMouseY_       = 0;
+	bool     hasLastMousePos_  = false;
+	std::unordered_set<uint32_t> keysHeld_;
+
 
 	PLINKQUEUE receive_queue;
 	Isolate* isolate;
@@ -64,3 +89,4 @@ public:
 };
 
 
+#endif

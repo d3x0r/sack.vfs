@@ -1,5 +1,9 @@
 
 #include "../global.h"
+#ifdef INCLUDE_DAWN
+#include "webgpu/canvas_context.h"
+#endif
+#include "sack_dom_key_names.h"   // kDomKeyName / kDomCodeName / sack_vk_to_dom_keyCode
 
 struct render_private_data {
 	PLIST renderers;
@@ -76,6 +80,108 @@ static struct optionStrings* getStrings( Isolate* isolate ) {
 	return check;
 }
 
+
+// ---------- helpers for browser-shaped events ----------
+
+// Sack mouse-button bit index → browser MouseEvent.button (0=L 1=M 2=R 3=back 4=fwd).
+// Sack's b uses MK_LBUTTON=0x01, MK_RBUTTON=0x02, MK_MBUTTON=0x10, X1=0x20, X2=0x40.
+static int sackBitToBrowserButton( int sackBitIndex ) {
+	switch( sackBitIndex ) {
+		case 0: return 0;  // LBUTTON  → left
+		case 1: return 2;  // RBUTTON  → right
+		case 4: return 1;  // MBUTTON  → middle
+		case 5: return 3;  // XBUTTON1 → back
+		case 6: return 4;  // XBUTTON2 → forward
+		default: return -1;
+	}
+}
+
+// Sack `b` bitmask of held buttons → browser MouseEvent.buttons (1=L 2=R 4=M 8=back 16=fwd).
+static uint32_t sackButtonsToBrowserButtons( uint32_t b ) {
+	uint32_t out = 0;
+	if( b & MK_LBUTTON )  out |= 1;
+	if( b & MK_RBUTTON )  out |= 2;
+	if( b & MK_MBUTTON )  out |= 4;
+	if( b & MK_XBUTTON1 ) out |= 8;
+	if( b & MK_XBUTTON2 ) out |= 16;
+	return out;
+}
+
+// Private symbols flagging events as "consumed" (preventDefault was called)
+// or "stopped" (stopImmediatePropagation was called). Cached per-isolate by
+// V8 — Private::ForApi interns by name.
+static v8::Local<v8::Private> getConsumedPrivate( v8::Isolate *iso ) {
+	return v8::Private::ForApi( iso
+	                          , v8::String::NewFromUtf8Literal( iso, "__sack_consumed" ) );
+}
+static v8::Local<v8::Private> getStoppedPrivate( v8::Isolate *iso ) {
+	return v8::Private::ForApi( iso
+	                          , v8::String::NewFromUtf8Literal( iso, "__sack_stopped" ) );
+}
+
+// Native event.preventDefault() — signals sack the default action is
+// suppressed (window proc returns non-zero). Does NOT stop other
+// listeners on the same Renderer.
+static void evtPreventDefault( const FunctionCallbackInfo<Value>& args ) {
+	Isolate *iso = args.GetIsolate();
+	Local<Context> ctx = iso->GetCurrentContext();
+	(void)args.This()->SetPrivate( ctx, getConsumedPrivate( iso ), True( iso ) );
+}
+
+// Native event.stopImmediatePropagation() — dispatcher breaks the listener
+// loop. Does NOT signal sack.
+static void evtStopImmediatePropagation( const FunctionCallbackInfo<Value>& args ) {
+	Isolate *iso = args.GetIsolate();
+	Local<Context> ctx = iso->GetCurrentContext();
+	(void)args.This()->SetPrivate( ctx, getStoppedPrivate( iso ), True( iso ) );
+}
+
+// Native event.stopPropagation() — no-op stub. A sack Renderer has no
+// parent to bubble to; method exists only for browser API parity so
+// copy-pasted code doesn't throw.
+static void evtStopPropagation( const FunctionCallbackInfo<Value>& args ) {
+	(void)args;
+}
+
+// Lazy-create + cache a per-method function in constructorSet, then
+// attach to the event object.
+static void attachOne( Isolate *iso
+                     , Local<Context> ctx
+                     , Local<Object> evt
+                     , v8::Persistent<v8::Function> &slot
+                     , v8::FunctionCallback impl
+                     , const char *name ) {
+	Local<Function> fn;
+	if( slot.IsEmpty() ) {
+		fn = Function::New( ctx, impl ).ToLocalChecked();
+		slot.Reset( iso, fn );
+	} else {
+		fn = Local<Function>::New( iso, slot );
+	}
+	(void)evt->Set( ctx, localStringExternal( iso, name ), fn );
+}
+
+// Attach all three browser-event control methods to a fresh event object.
+static void attachEventMethods( Isolate *iso, Local<Context> ctx, Local<Object> evt ) {
+	constructorSet *c = getConstructors( iso );
+	attachOne( iso, ctx, evt, c->preventDefault_fn          , evtPreventDefault          , "preventDefault" );
+	attachOne( iso, ctx, evt, c->stopImmediatePropagation_fn, evtStopImmediatePropagation, "stopImmediatePropagation" );
+	attachOne( iso, ctx, evt, c->stopPropagation_fn         , evtStopPropagation         , "stopPropagation" );
+}
+
+// Read either private off an event object.
+static bool eventConsumed( Isolate *iso, Local<Context> ctx, Local<Object> evt ) {
+	Local<Value> v;
+	if( !evt->GetPrivate( ctx, getConsumedPrivate( iso ) ).ToLocal( &v ) ) return false;
+	return v->BooleanValue( iso );
+}
+static bool eventStopped( Isolate *iso, Local<Context> ctx, Local<Object> evt ) {
+	Local<Value> v;
+	if( !evt->GetPrivate( ctx, getStoppedPrivate( iso ) ).ToLocal( &v ) ) return false;
+	return v->BooleanValue( iso );
+}
+
+// (vkToDomKey moved to sack_dom_key_names.h as kDomKeyName + kDomCodeName.)
 
 static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObject *r ) {
 	//Local<Object> object = Object::New( isolate );
@@ -166,6 +272,121 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 		return Local<Object>::New( isolate, r->surface );
 	case Event_Render_Key:
 		return Number::New( isolate, evt->data.key.code );
+	case Event_Render_MouseExpanded: {
+		Local<Object> me = Object::New( isolate );
+		me->Set( context, localStringExternal( isolate, "type" ),
+			localStringExternal( isolate, evt->data.mouseExpanded.type ) );
+		me->Set( context, localStringExternal( isolate, "x" ),
+			Number::New( isolate, evt->data.mouseExpanded.x ) );
+		me->Set( context, localStringExternal( isolate, "y" ),
+			Number::New( isolate, evt->data.mouseExpanded.y ) );
+		me->Set( context, localStringExternal( isolate, "clientX" ),
+			Number::New( isolate, evt->data.mouseExpanded.x ) );
+		me->Set( context, localStringExternal( isolate, "clientY" ),
+			Number::New( isolate, evt->data.mouseExpanded.y ) );
+		me->Set( context, localStringExternal( isolate, "offsetX" ),
+			Number::New( isolate, evt->data.mouseExpanded.x ) );
+		me->Set( context, localStringExternal( isolate, "offsetY" ),
+			Number::New( isolate, evt->data.mouseExpanded.y ) );
+		me->Set( context, localStringExternal( isolate, "movementX" ),
+			Number::New( isolate, evt->data.mouseExpanded.movementX ) );
+		me->Set( context, localStringExternal( isolate, "movementY" ),
+			Number::New( isolate, evt->data.mouseExpanded.movementY ) );
+		me->Set( context, localStringExternal( isolate, "button" ),
+			Number::New( isolate, evt->data.mouseExpanded.button ) );
+		me->Set( context, localStringExternal( isolate, "buttons" ),
+			Number::New( isolate, evt->data.mouseExpanded.buttons ) );
+		me->Set( context, localStringExternal( isolate, "shiftKey" ),
+			Boolean::New( isolate, !!evt->data.mouseExpanded.shiftKey ) );
+		me->Set( context, localStringExternal( isolate, "ctrlKey" ),
+			Boolean::New( isolate, !!evt->data.mouseExpanded.ctrlKey ) );
+		me->Set( context, localStringExternal( isolate, "altKey" ),
+			Boolean::New( isolate, !!evt->data.mouseExpanded.altKey ) );
+		me->Set( context, localStringExternal( isolate, "metaKey" ),
+			False( isolate ) );
+		if( evt->data.mouseExpanded.deltaX != 0
+		 || evt->data.mouseExpanded.deltaY != 0
+		 || evt->data.mouseExpanded.type[0] == 'w' /* "wheel" */ ) {
+			me->Set( context, localStringExternal( isolate, "deltaX" ),
+				Number::New( isolate, evt->data.mouseExpanded.deltaX ) );
+			me->Set( context, localStringExternal( isolate, "deltaY" ),
+				Number::New( isolate, evt->data.mouseExpanded.deltaY ) );
+			me->Set( context, localStringExternal( isolate, "deltaZ" ),
+				Number::New( isolate, 0 ) );
+			me->Set( context, localStringExternal( isolate, "deltaMode" ),
+				Number::New( isolate, 0 ) );  // 0 = pixel
+		}
+		attachEventMethods( isolate, context, me );
+		return me;
+	}
+	case Event_Render_KeyExpanded: {
+		Local<Object> ke = Object::New( isolate );
+		uint32_t packed = evt->data.keyExpanded.packed;
+		bool down  = ( packed & KEY_PRESSED ) != 0;
+		uint32_t mods = KEY_MOD( packed );
+		uint32_t vk   = packed & 0xFFFF;
+
+		ke->Set( context, localStringExternal( isolate, "type" ),
+			localStringExternal( isolate, down ? "keydown" : "keyup" ) );
+		// keyCode/which: DOM contract is Win32 VK numbers cross-platform.
+		// On Windows this is passthrough; Linux build needs a scancode→VK
+		// translation table (TODO in sack_dom_key_names.h).
+		uint32_t domKeyCode = sack_vk_to_dom_keyCode( vk );
+		ke->Set( context, localStringExternal( isolate, "keyCode" ),
+			Number::New( isolate, domKeyCode ) );
+		ke->Set( context, localStringExternal( isolate, "which" ),
+			Number::New( isolate, domKeyCode ) );
+		ke->Set( context, localStringExternal( isolate, "shiftKey" ),
+			Boolean::New( isolate, ( mods & KEY_MOD_SHIFT ) != 0 ) );
+		ke->Set( context, localStringExternal( isolate, "ctrlKey" ),
+			Boolean::New( isolate, ( mods & KEY_MOD_CTRL ) != 0 ) );
+		ke->Set( context, localStringExternal( isolate, "altKey" ),
+			Boolean::New( isolate, ( mods & KEY_MOD_ALT ) != 0 ) );
+		ke->Set( context, localStringExternal( isolate, "metaKey" ),
+			False( isolate ) );  // Phase 2: track VK_LWIN/RWIN make/break
+
+		// event.key — named-key table first, else GetKeyText (printables).
+		const char *keyName  = ( vk < 256 ) ? kDomKeyName [ vk ] : NULL;
+		const char *codeName = ( vk < 256 ) ? kDomCodeName[ vk ] : NULL;
+		if( keyName ) {
+			ke->Set( context, localStringExternal( isolate, "key" ),
+				localStringExternal( isolate, keyName ) );
+		} else if( evt->data.keyExpanded.text ) {
+			Local<String> s = String::NewFromUtf8( isolate,
+				evt->data.keyExpanded.text,
+				NewStringType::kNormal,
+				(int)evt->data.keyExpanded.textLen ).ToLocalChecked();
+			ke->Set( context, localStringExternal( isolate, "key" ), s );
+		} else {
+			ke->Set( context, localStringExternal( isolate, "key" ),
+				String::Empty( isolate ) );
+		}
+		// event.code — physical key position from the same table.
+		if( codeName ) {
+			ke->Set( context, localStringExternal( isolate, "code" ),
+				localStringExternal( isolate, codeName ) );
+		} else {
+			ke->Set( context, localStringExternal( isolate, "code" ),
+				String::Empty( isolate ) );
+		}
+
+		// Phase 2 will move this `repeat` calc into the sack-thread callback
+		// (held-set racing across the queue is fine for one renderer, but
+		// not strictly correct for fast key streams). Good enough for now.
+		bool wasHeld = r->keysHeld_.count( vk ) > 0;
+		bool repeat  = down && wasHeld;
+		if( down ) r->keysHeld_.insert( vk );
+		else       r->keysHeld_.erase( vk );
+		ke->Set( context, localStringExternal( isolate, "repeat" ),
+			Boolean::New( isolate, repeat ) );
+
+		if( evt->data.keyExpanded.text ) {
+			Deallocate( char*, evt->data.keyExpanded.text );
+			evt->data.keyExpanded.text = NULL;
+		}
+		attachEventMethods( isolate, context, ke );
+		return ke;
+	}
 	default:
 		lprintf( "Unhandled event %d(%04x)", evt->type, evt->type );
 		return Undefined( isolate );
@@ -183,7 +404,11 @@ static void asyncmsg_( v8::Isolate* isolate, Local<Context>context, RenderObject
 
 			Local<Value> object = ProcessEvent( isolate, evt, myself );
 			Local<Value> argv[] = { object };
+
+			// Build up to two callbacks per event — a specific one and
+			// (for the expanded variants) an optional unified one.
 			Local<Function> cb;
+			PLIST cbList = nullptr;
 			switch( evt->type ){
 			case Event_Render_Pen:
 				cb = Local<Function>::New( isolate, myself->cbPen );
@@ -200,8 +425,71 @@ static void asyncmsg_( v8::Isolate* isolate, Local<Context>context, RenderObject
 			case Event_Render_Draw:
 				cb = Local<Function>::New( isolate, myself->cbDraw );
 				break;
+			case Event_Render_MouseExpanded: {
+				// type field on the payload picks the specific slot.
+				const char* t = evt->data.mouseExpanded.type;
+				if (!strcmp(t, "mousedown")) { cb.Clear(); cbList = myself->cbMouseDown_listeners; }
+				else if( !strcmp( t, "mouseup"   ) ) { cb.Clear(); cbList = myself->cbMouseUp_listeners; }
+				else if( !strcmp( t, "mousemove" ) ) { cb.Clear(); cbList = myself->cbMouseMove_listeners; }
+				else if( !strcmp( t, "wheel"     ) ) { cb.Clear(); cbList = myself->cbWheel_listeners; }
+				break;
 			}
-			Local<Value> r = cb->Call( context, isolate->GetCurrentContext()->Global(), 1, argv ).ToLocalChecked();
+			case Event_Render_KeyExpanded: {
+				uint32_t packed = evt->data.keyExpanded.packed;
+				bool down = ( packed & KEY_PRESSED ) != 0;
+				cbList = down ? myself->cbKeyDown_listeners : myself->cbKeyUp_listeners;
+				cb.Clear();
+				break;
+			}
+			}
+			Local<Value> r;
+			if( cbList ) {
+				// Fire each listener; aggregate return values into an array
+				// (so JS callers that read e.success see all answers). Two
+				// independent event flags affect the loop:
+				//   preventDefault           → sets `consumed` private; we
+				//                              force r truthy so sack's
+				//                              evt->success comes back
+				//                              non-zero (event handled).
+				//                              Does NOT break the loop.
+				//   stopImmediatePropagation → sets `stopped` private; we
+				//                              break the loop. Does NOT
+				//                              alter r unless preventDefault
+				//                              was also called.
+				Local<Object> evtObj
+					= argv[ 0 ]->IsObject()
+					? argv[ 0 ].As<Object>()
+					: Local<Object>();
+				INDEX idx;
+				PERSISTENT_FUNCTION *pcb;
+				LIST_FORALL( cbList, idx, PERSISTENT_FUNCTION*, pcb ) {
+					if( !pcb ) continue;  // listener was off()'d (SetLink to null)
+					Local<Function> lcb = pcb->Get( isolate );
+					Local<Value> thisResult
+						= lcb->Call( context, context->Global(), 1, argv ).ToLocalChecked();
+					if( r.IsEmpty() ) {
+						r = thisResult;
+					} else if( r->IsArray() ) {
+						Local<Array> rArr = Local<Array>::Cast( r );
+						(void)rArr->Set( context, rArr->Length(), thisResult );
+					} else {
+						Local<Array> rArr = Array::New( isolate, 2 );
+						(void)rArr->Set( context, 0, r );
+						(void)rArr->Set( context, 1, thisResult );
+						r = rArr;
+					}
+					if( evtObj.IsEmpty() ) continue;
+					if( eventConsumed( isolate, context, evtObj ) ) {
+						r = True( isolate );  // force success non-zero
+					}
+					if( eventStopped( isolate, context, evtObj ) ) {
+						break;
+					}
+				}
+			}
+			else if( !cb.IsEmpty() ) {
+				r = cb->Call( context, context->Global(), 1, argv ).ToLocalChecked();
+			}
 			if( evt->waiter ) {
 				if( r.IsEmpty() )
 					evt->success = true;
@@ -273,12 +561,24 @@ void RenderObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "redraw", RenderObject::redraw );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "update", RenderObject::update );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "close", RenderObject::close );
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "lockMouse", RenderObject::lockMouse);
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "unlockMouse", RenderObject::unlockMouse);
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "on", RenderObject::on );
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "off", RenderObject::off );
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "getContext", RenderObject::getContext);
 
 		renderTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "size" )
 			, FunctionTemplate::New( isolate, RenderObject::getCoordinate, Integer::New( isolate, 12 ) )
 			, FunctionTemplate::New( isolate, RenderObject::setCoordinate, Integer::New( isolate, 11 ) )
 			, DontDelete );
+		renderTemplate->PrototypeTemplate()->SetAccessorProperty(localStringExternal(isolate, "width")
+			, FunctionTemplate::New(isolate, RenderObject::getCoordinate, Integer::New(isolate, 2))
+			, FunctionTemplate::New(isolate, RenderObject::setCoordinate, Integer::New(isolate, 2))
+			, DontDelete);
+		renderTemplate->PrototypeTemplate()->SetAccessorProperty(localStringExternal(isolate, "height")
+			, FunctionTemplate::New(isolate, RenderObject::getCoordinate, Integer::New(isolate, 3))
+			, FunctionTemplate::New(isolate, RenderObject::setCoordinate, Integer::New(isolate, 3))
+			, DontDelete);
 		renderTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "position" )
 			, FunctionTemplate::New( isolate, RenderObject::getCoordinate, Integer::New( isolate, 12 ) )
 			, FunctionTemplate::New( isolate, RenderObject::setCoordinate, Integer::New( isolate, 10 ) )
@@ -299,11 +599,11 @@ void RenderObject::Init( Local<Object> exports ) {
 				, Function::New( context, RenderObject::getDisplay ).ToLocalChecked() );
 	}
 
-RenderObject::RenderObject( const char *title, int x, int y, int w, int h, RenderObject *over )  {
+RenderObject::RenderObject( int attr, const char *title, int x, int y, int w, int h, RenderObject *over )  {
 	AddLink( &render_global.renderers, this );
-	if( title )
-		r = OpenDisplayAboveSizedAt( DISPLAY_ATTRIBUTE_LAYERED, w, h, x, y, over ? over->r : NULL );
-	else
+	if (title) {
+		r = OpenDisplayAboveSizedAt(attr, w, h, x, y, over ? over->r : NULL);
+	} else
 		r = NULL;
 	receive_queue = NULL;
 	closed = 0;
@@ -324,6 +624,7 @@ RenderObject::~RenderObject() {
 
 			char *title = NULL;
 			int x = 0, y = 0, w = 1024, h = 768, border = 0;
+			int attributes = DISPLAY_ATTRIBUTE_LAYERED;
 			Local<Object> parent_object;
 			RenderObject *parent = NULL;
 
@@ -353,8 +654,11 @@ RenderObject::~RenderObject() {
 					parent = ObjectWrap::Unwrap<RenderObject>( parent_object );
 				}
 			}
+			if (argc > 6) {
+				attributes = (int)args[6]->IntegerValue(context).ToChecked();
+			}
 			// Invoked as constructor: `new MyObject(...)`
-			RenderObject* obj = new RenderObject( title?title:"Node Application", x, y, w, h, parent );
+			RenderObject* obj = new RenderObject( attributes, title?title:"Node Application", x, y, w, h, parent );
 			obj->this_.Reset( isolate, args.This() );
 			MemSet( &obj->async, 0, sizeof( obj->async ) );
 			obj->c = getConstructors( isolate );
@@ -406,6 +710,12 @@ void RenderObject::getCoordinate( const FunctionCallbackInfo<Value>& args ) {
 	uint32_t w, h;
 	GetDisplayPosition( me->r, &x, &y, &w, &h );
 	switch( coord ) {
+	case 2:
+		args.GetReturnValue().Set(Integer::New(isolate, w));
+		return;
+	case 3:
+		args.GetReturnValue().Set( Integer::New(isolate, h));
+		return;
 	case 10:
 		o->Set( context, strings->xString->Get( isolate ), Integer::New( isolate, x ) );
 		o->Set( context, strings->yString->Get( isolate ), Integer::New( isolate, y ) );
@@ -435,6 +745,22 @@ void RenderObject::setCoordinate( const FunctionCallbackInfo<Value>& args ) {
 		int32_t x, y;
 		uint32_t w, h;
 		switch( coord ) {
+		case 2:
+			w = (int32_t)o->IntegerValue(context).ToChecked();
+			{
+				uint32_t h;
+				GetDisplayPosition(me->r, nullptr, nullptr, nullptr, &h);
+				SizeDisplay(me->r, w, h);
+			}
+			break;
+		case 3:
+			h = (int32_t)o->IntegerValue(context).ToChecked();
+			{
+				uint32_t w;
+				GetDisplayPosition(me->r, nullptr, nullptr, &w, nullptr);
+				SizeDisplay(me->r, w, h);
+			}
+			break;
 		case 10:
 			x = (int32_t)o->Get( context, strings->xString->Get( isolate ) ).ToLocalChecked()->IntegerValue( context ).ToChecked();
 			y = (int32_t)o->Get( context, strings->yString->Get( isolate ) ).ToLocalChecked()->IntegerValue( context ).ToChecked();
@@ -471,6 +797,68 @@ void RenderObject::do_close( void ) {
 void RenderObject::close( const FunctionCallbackInfo<Value>& args ) {
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 	r->do_close();
+}
+
+void RenderObject::lockMouse(const FunctionCallbackInfo<Value>& args) {
+	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
+	OwnMouse(r->r, TRUE);
+}
+
+void RenderObject::unlockMouse(const FunctionCallbackInfo<Value>& args) {
+	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
+	OwnMouse(r->r, FALSE);
+}
+
+void RenderObject::getContext( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 1 || !args[ 0 ]->IsString() ) {
+		isolate->ThrowException( Exception::TypeError( localStringExternal(
+			isolate, TranslateText( "First argument must be a context type string." ) ) ) );
+		return;
+	}
+	RenderObject* r = ObjectWrap::Unwrap<RenderObject>( args.This() );
+	String::Utf8Value mName( isolate, args[ 0 ] );
+
+	if( StrCaseCmp( *mName, "webgpu" ) == 0 ) {
+#ifdef INCLUDE_DAWN
+		// WebGPU spec marks GPUCanvasContext as [SameObject] — repeated
+		// getContext('webgpu') calls must return the same instance. Cache it
+		// via a private symbol on the renderer's JS object. Without this,
+		// THREE re-calls getContext between configure and getCurrentTexture
+		// and ends up with an unconfigured second instance.
+		Local<Context> jsCtx = isolate->GetCurrentContext();
+		Local<Object> self = args.This();
+		Local<Private> key = Private::ForApi( isolate,
+			String::NewFromUtf8Literal( isolate, "__webgpuContextCache" ) );
+		Local<Value> cached;
+		if( self->GetPrivate( jsCtx, key ).ToLocal( &cached )
+		    && cached->IsObject() ) {
+			args.GetReturnValue().Set( cached );
+			return;
+		}
+		Local<Object> ctx = webgpu_canvas_context_for_renderer( isolate, r->r );
+		if( ctx.IsEmpty() ) {
+			isolate->ThrowException( Exception::Error( localStringExternal(
+				isolate, "WebGPU not initialized or surface creation failed." ) ) );
+			return;
+		}
+		(void)self->SetPrivate( jsCtx, key, ctx );
+		args.GetReturnValue().Set( ctx );
+#else
+		isolate->ThrowException( Exception::Error( localStringExternal(
+			isolate, "WebGPU not built into this binary." ) ) );
+#endif
+		return;
+	}
+	if( StrCaseCmp( *mName, "2d" )     == 0
+	 || StrCaseCmp( *mName, "webgl" )  == 0
+	 || StrCaseCmp( *mName, "webgl2" ) == 0 ) {
+		isolate->ThrowException( Exception::Error( localStringExternal(
+			isolate, "Context type not implemented." ) ) );
+		return;
+	}
+	// Unknown type — browsers return null per spec.
+	args.GetReturnValue().Set( Null( isolate ) );
 }
 
 void RenderObject::getImage( const FunctionCallbackInfo<Value>& args ) {
@@ -556,9 +944,84 @@ void RenderObject::reveal( const FunctionCallbackInfo<Value>& args ) {
 static uintptr_t CPROC doMouse( uintptr_t psv, int32_t x, int32_t y, uint32_t b ) {
 	RenderObject *r = (RenderObject *)psv;
 	//lprintf( "Mouse:%d,%d,%d", x, y, b );
-	if( !r->closed )
-		return MakeEvent( r, Event_Render_Mouse, x, y, b );
-	return 0;
+	if( r->closed ) return 0;
+
+	// Always fire the original "mouse" event (back-compat).
+	uintptr_t rv = MakeEvent( r, Event_Render_Mouse, x, y, b );
+
+	// Synthesize browser-shaped events from the bitmask diff. We only do
+	// the diff work if at least one expanded listener is registered, so
+	// JS code that hasn't opted in pays nothing.
+	bool wantExpanded =
+		   r->cbMouseDown_listeners  || r->cbMouseUp_listeners
+		|| r->cbMouseMove_listeners  || r->cbWheel_listeners;
+	if( !wantExpanded ) return rv;
+
+	uint32_t prev = r->lastMouseButtons_;
+	uint32_t buttonBits = b & MK_SOMEBUTTON;
+	uint32_t pressed   = buttonBits & ~prev;
+	uint32_t released  = prev & ~buttonBits;
+
+	uint8_t shift = (b & MK_SHIFT)   ? 1 : 0;
+	uint8_t ctrl  = (b & MK_CONTROL) ? 1 : 0;
+	uint8_t alt   = (b & MK_ALT)     ? 1 : 0;
+	uint32_t browserButtons = sackButtonsToBrowserButtons( buttonBits );
+
+	int32_t dx = r->hasLastMousePos_ ? (x - r->lastMouseX_) : 0;
+	int32_t dy = r->hasLastMousePos_ ? (y - r->lastMouseY_) : 0;
+
+	// One mousedown per newly-pressed bit.
+	while( pressed ) {
+		uint32_t lowBit = pressed & (uint32_t)-(int32_t)pressed;
+		int idx = 0; uint32_t tmp = lowBit; while( tmp >>= 1 ) idx++;
+		int browserBtn = sackBitToBrowserButton( idx );
+		MakeEvent( r, Event_Render_MouseExpanded,
+			"mousedown", x, y, (int32_t)0, (int32_t)0,
+			(int)browserBtn, browserButtons,
+			(double)0.0, (double)0.0,
+			(int)shift, (int)ctrl, (int)alt );
+		pressed &= pressed - 1;
+	}
+	// One mouseup per newly-released bit.
+	while( released ) {
+		uint32_t lowBit = released & (uint32_t)-(int32_t)released;
+		int idx = 0; uint32_t tmp = lowBit; while( tmp >>= 1 ) idx++;
+		int browserBtn = sackBitToBrowserButton( idx );
+		MakeEvent( r, Event_Render_MouseExpanded,
+			"mouseup", x, y, (int32_t)0, (int32_t)0,
+			(int)browserBtn, browserButtons,
+			(double)0.0, (double)0.0,
+			(int)shift, (int)ctrl, (int)alt );
+		released &= released - 1;
+	}
+	// Move if position actually changed.
+	if( r->hasLastMousePos_ && (dx != 0 || dy != 0) ) {
+		MakeEvent( r, Event_Render_MouseExpanded,
+			"mousemove", x, y, dx, dy,
+			(int)-1, browserButtons,
+			(double)0.0, (double)0.0,
+			(int)shift, (int)ctrl, (int)alt );
+	}
+	// Wheel — sack delivers scroll as transient bits in the same b.
+	if( b & MK_SCROLL_UP ) MakeEvent( r, Event_Render_MouseExpanded,
+		"wheel", x, y, (int32_t)0, (int32_t)0, (int)-1, browserButtons,
+		(double)0.0, (double)-120.0, (int)shift, (int)ctrl, (int)alt );
+	if( b & MK_SCROLL_DOWN ) MakeEvent( r, Event_Render_MouseExpanded,
+		"wheel", x, y, (int32_t)0, (int32_t)0, (int)-1, browserButtons,
+		(double)0.0, (double)120.0, (int)shift, (int)ctrl, (int)alt );
+	if( b & MK_SCROLL_LEFT ) MakeEvent( r, Event_Render_MouseExpanded,
+		"wheel", x, y, (int32_t)0, (int32_t)0, (int)-1, browserButtons,
+		(double)-120.0, (double)0.0, (int)shift, (int)ctrl, (int)alt );
+	if( b & MK_SCROLL_RIGHT ) MakeEvent( r, Event_Render_MouseExpanded,
+		"wheel", x, y, (int32_t)0, (int32_t)0, (int)-1, browserButtons,
+		(double)120.0, (double)0.0, (int)shift, (int)ctrl, (int)alt );
+
+	r->lastMouseButtons_ = buttonBits;
+	r->lastMouseX_       = x;
+	r->lastMouseY_       = y;
+	r->hasLastMousePos_  = true;
+
+	return rv;
 }
 
 void RenderObject::setMouse( const FunctionCallbackInfo<Value>& args ) {
@@ -644,9 +1107,20 @@ void RenderObject::setDraw( const FunctionCallbackInfo<Value>& args ) {
 
 static int CPROC doKey( uintptr_t psv, uint32_t key ) {
 	RenderObject *r = (RenderObject *)psv;
-	if( !r->closed )
-		return (int)MakeEvent( r, Event_Render_Key, key );
-	return 0;
+	if( r->closed ) return 0;
+
+	int rv = (int)MakeEvent( r, Event_Render_Key, key );
+
+	bool wantExpanded = r->cbKeyDown_listeners
+	                 || r->cbKeyUp_listeners;
+	if( wantExpanded ) {
+		// MUST run here — GetKeyText reads live OS state (dead keys,
+		// IME, current shift register). Deferring to the V8 thread
+		// would resolve against stale state.
+		const TEXTCHAR* txt = GetKeyText( (int)key );
+		MakeEvent( r, Event_Render_KeyExpanded, key, txt );
+	}
+	return rv;
 }
 
 
@@ -698,6 +1172,163 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
 		r->cbKey.Reset( isolate, arg1 );
 	}
+	// Browser-shaped mouse events. All four route through doMouse which
+	// diffs sack's bitmask to synthesize down/up/move/wheel transitions.
+	else if( StrCmp( *fName, "mouseDown" ) == 0 || StrCmp( *fName, "mousedown" ) == 0 ) {
+		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
+		ppf->Reset(isolate, arg1);
+		AddLink(&r->cbMouseDown_listeners, ppf);
+		//r->cbMouseDown.Reset( isolate, arg1 );
+	}
+	else if( StrCmp( *fName, "mouseUp" ) == 0 || StrCmp( *fName, "mouseup" ) == 0 ) {
+		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
+		ppf->Reset(isolate, arg1);
+		AddLink(&r->cbMouseUp_listeners, ppf);
+		//r->cbMouseUp.Reset( isolate, arg1 );
+	}
+	else if( StrCmp( *fName, "mouseMove" ) == 0 || StrCmp( *fName, "mousemove" ) == 0 ) {
+		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
+		ppf->Reset(isolate, arg1);
+		AddLink(&r->cbMouseMove_listeners, ppf);
+		//r->cbMouseMove.Reset( isolate, arg1 );
+	}
+	else if( StrCmp( *fName, "wheel" ) == 0 || StrCmp(*fName, "DOMMouseScroll") == 0 || StrCmp(*fName, "mousewheel") == 0) {
+		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
+		ppf->Reset(isolate, arg1);
+		AddLink(&r->cbWheel_listeners, ppf);
+		//r->cbWheel.Reset( isolate, arg1 );
+	}
+	// Browser-shaped keyboard events.
+	else if( StrCmp( *fName, "keyDown" ) == 0 || StrCmp( *fName, "keydown" ) == 0 ) {
+		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
+		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
+		ppf->Reset(isolate, arg1);
+		AddLink(&r->cbKeyDown_listeners, ppf);
+		//r->cbKeyDown.Reset( isolate, arg1 );
+	}
+	else if( StrCmp( *fName, "keyUp" ) == 0 || StrCmp( *fName, "keyup" ) == 0 ) {
+		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
+		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
+		ppf->Reset(isolate, arg1);
+		AddLink(&r->cbKeyUp_listeners, ppf);
+		//r->cbKeyUp.Reset( isolate, arg1 );
+	}
+}
+
+void RenderObject::off(const FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = args.GetIsolate();
+	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
+	if (!args[0]->IsString()) {
+		isolate->ThrowException(Exception::Error(
+			localStringExternal(isolate, TranslateText("First argument must be event name as a string."))));
+		return;
+	}
+	if (!args[1]->IsFunction()) {
+		isolate->ThrowException(Exception::Error(
+			localStringExternal(isolate, TranslateText("Second argument must be callback function."))));
+		return;
+	}
+	Local<Function> arg1 = Local<Function>::Cast(args[1]);
+
+	String::Utf8Value fName(isolate, args[0]);
+	if (StrCmp(*fName, "draw") == 0) {
+		r->cbDraw.Reset();
+	}
+	else if (StrCmp(*fName, "mouse") == 0) {
+		r->cbMouse.Reset();
+	}
+	else if (StrCmp(*fName, "touch") == 0) {
+#ifndef NO_TOUCH
+		r->cbTouch.Reset();
+#endif
+	}
+	else if (StrCmp(*fName, "pen") == 0) {
+#ifndef NO_PEN
+		r->cbPen.Reset();
+#endif
+	}
+	else if (StrCmp(*fName, "key") == 0) {
+		r->cbKey.Reset();
+	}
+	// Browser-shaped mouse events. All four route through doMouse which
+	// diffs sack's bitmask to synthesize down/up/move/wheel transitions.
+	else if (StrCmp(*fName, "mouseDown") == 0 || StrCmp(*fName, "mousedown") == 0) {
+		INDEX idx;
+		PERSISTENT_FUNCTION* ppf;
+		LIST_FORALL(r->cbMouseDown_listeners, idx, PERSISTENT_FUNCTION*, ppf) {
+			if (ppf->Get(isolate)->StrictEquals(arg1)) {
+				SetLink(&r->cbMouseDown_listeners, idx, nullptr );
+				ppf->Reset();
+				delete ppf;
+				break;
+			}
+		}
+	}
+	else if (StrCmp(*fName, "mouseUp") == 0 || StrCmp(*fName, "mouseup") == 0) {
+		INDEX idx;
+		PERSISTENT_FUNCTION* ppf;
+		LIST_FORALL(r->cbMouseUp_listeners, idx, PERSISTENT_FUNCTION*, ppf) {
+			if (ppf->Get(isolate)->StrictEquals(arg1)) {
+				SetLink(&r->cbMouseUp_listeners, idx, nullptr);
+				ppf->Reset();
+				delete ppf;
+				break;
+			}
+		}
+	}
+	else if (StrCmp(*fName, "mouseMove") == 0 || StrCmp(*fName, "mousemove") == 0) {
+		INDEX idx;
+		PERSISTENT_FUNCTION* ppf;
+		LIST_FORALL(r->cbMouseMove_listeners, idx, PERSISTENT_FUNCTION*, ppf) {
+			if (ppf->Get(isolate)->StrictEquals(arg1)) {
+				SetLink(&r->cbMouseMove_listeners, idx, nullptr);
+				ppf->Reset();
+				delete ppf;
+				break;
+			}
+		}
+	}
+	else if (StrCmp(*fName, "wheel") == 0 || StrCmp(*fName, "DOMMouseScroll") == 0 || StrCmp(*fName, "mousewheel") == 0) {
+		INDEX idx;
+		PERSISTENT_FUNCTION* ppf;
+		LIST_FORALL(r->cbWheel_listeners, idx, PERSISTENT_FUNCTION*, ppf) {
+			if (ppf->Get(isolate)->StrictEquals(arg1)) {
+				SetLink(&r->cbWheel_listeners, idx, nullptr);
+				ppf->Reset();
+				delete ppf;
+				break;
+			}
+		}
+	}
+	// Browser-shaped keyboard events.
+	else if (StrCmp(*fName, "keyDown") == 0 || StrCmp(*fName, "keydown") == 0) {
+		INDEX idx;
+		PERSISTENT_FUNCTION* ppf;
+		LIST_FORALL(r->cbKeyDown_listeners, idx, PERSISTENT_FUNCTION*, ppf) {
+			if (ppf->Get(isolate)->StrictEquals(arg1)) {
+				SetLink(&r->cbKeyDown_listeners, idx, nullptr);
+				ppf->Reset();
+				delete ppf;
+				break;
+			}
+		}
+	}
+	else if (StrCmp(*fName, "keyUp") == 0 || StrCmp(*fName, "keyup") == 0) {
+		INDEX idx;
+		PERSISTENT_FUNCTION* ppf;
+		LIST_FORALL(r->cbKeyUp_listeners, idx, PERSISTENT_FUNCTION*, ppf) {
+			if (ppf->Get(isolate)->StrictEquals(arg1)) {
+				SetLink(&r->cbKeyUp_listeners, idx, nullptr);
+				ppf->Reset();
+				delete ppf;
+				break;
+			}
+		}
+	}
 }
 
 uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
@@ -741,6 +1372,40 @@ uintptr_t MakeEvent( RenderObject *r, enum GUI_eventType type, ... ) {
 	case Event_Render_Key:
 		e.data.key.code = va_arg( args, uint32_t );
 		break;
+	case Event_Render_MouseExpanded:
+		// Arg order matches the emit calls in doMouse:
+		//   type, x, y, movementX, movementY, button, buttons,
+		//   deltaX, deltaY, shiftKey, ctrlKey, altKey
+		// Notes: small ints / chars promote to int through varargs;
+		// floats promote to double.
+		e.data.mouseExpanded.type      = va_arg( args, const char* );
+		e.data.mouseExpanded.x         = va_arg( args, int32_t );
+		e.data.mouseExpanded.y         = va_arg( args, int32_t );
+		e.data.mouseExpanded.movementX = va_arg( args, int32_t );
+		e.data.mouseExpanded.movementY = va_arg( args, int32_t );
+		e.data.mouseExpanded.button    = (int8_t)va_arg( args, int );
+		e.data.mouseExpanded.buttons   = va_arg( args, uint32_t );
+		e.data.mouseExpanded.deltaX    = (float)va_arg( args, double );
+		e.data.mouseExpanded.deltaY    = (float)va_arg( args, double );
+		e.data.mouseExpanded.shiftKey  = (uint8_t)va_arg( args, int );
+		e.data.mouseExpanded.ctrlKey   = (uint8_t)va_arg( args, int );
+		e.data.mouseExpanded.altKey    = (uint8_t)va_arg( args, int );
+		break;
+	case Event_Render_KeyExpanded: {
+		e.data.keyExpanded.packed = va_arg( args, uint32_t );
+		const TEXTCHAR* txt = va_arg( args, const TEXTCHAR* );
+		if( txt ) {
+			size_t len = StrLen( txt );
+			e.data.keyExpanded.text = NewArray( char, len + 1 );
+			MemCpy( e.data.keyExpanded.text, txt, len );
+			e.data.keyExpanded.text[ len ] = 0;
+			e.data.keyExpanded.textLen = len;
+		} else {
+			e.data.keyExpanded.text    = NULL;
+			e.data.keyExpanded.textLen = 0;
+		}
+		break;
+	}
 	default:
 		lprintf( "Unhandled event requested %d", type );
 		break;
