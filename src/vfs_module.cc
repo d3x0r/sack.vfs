@@ -530,6 +530,12 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	ControlObject::Init( exports );
 	InterShellObject::Init( exports );
 	InitDekware( isolate, exports );
+#  ifdef INCLUDE_DAWN
+	{
+		extern void InitWebGPU( v8::Isolate*, v8::Local<v8::Object> );
+		InitWebGPU( isolate, exports );
+	}
+#  endif
 
 #endif
 
