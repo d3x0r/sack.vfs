@@ -26,6 +26,15 @@ include( GNUInstallDirs )
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
 
+set( INCLUDE_DAWN ON )
+set( MOREDEFS  "${MOREDEFS};INCLUDE_DAWN" )
+	
+if( WIN32 )
+#  force using native CS (which are slightly slower than SACK's implementation) (test/debug option)
+#  set( MOREDEFS  "${MOREDEFS};USE_NATIVE_CRITICAL_SECTION" )
+   SET( MOREDEFS "${MOREDEFS};_WIN32_WINNT=0xA00" )
+endif( WIN32 )
+
 if( WIN32 AND (MSVC OR ( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" ) ) )
 #message( "----------------------------------------")
 
@@ -227,6 +236,8 @@ ENDFOREACH()
 include_directories(${CMAKE_BINARY_DIR}/$<CONFIG>/include/SACK )
 include_directories(${CMAKE_BINARY_DIR}/$<CONFIG>/include/SACK/InterShell )
 include_directories(${CMAKE_JS_INC} )
+include_directories(${CMAKE_BINARY_DIR}/Dawn_tmp/$<CONFIG>/include )
+link_directories(${CMAKE_BINARY_DIR}/Dawn_tmp/$<CONFIG>/lib )
 
 if( WIN32 )
 	set( MORE_MODULE_SOURCES 
@@ -250,10 +261,18 @@ set( GUI_SOURCES src/gui/sack_psi_module.cc
 	src/gui/sack_systray.cc
 	src/gui/sack_image_module.cc
 	src/gui/sack_render_module.cc
-	src/gui/sack_intershell_module.cc 
-	src/gui/sack_dekware_module.cc 
-	src/gui/sack_vulkan_module.cc 
+	src/gui/sack_intershell_module.cc
+	src/gui/sack_dekware_module.cc
+	src/gui/sack_vulkan_module.cc
 )
+
+if( INCLUDE_DAWN )
+	list( APPEND GUI_SOURCES
+		src/gui/webgpu/webgpu_module.cc
+		src/gui/webgpu/canvas_context.cc
+		src/gui/webgpu/generated/webgpu_generated.cc
+	)
+endif()
 
 source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  src/gui/.*)
 
@@ -293,6 +312,8 @@ endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 add_dependencies( ${PROJECT} sack intershell dekware )
 
+target_link_libraries( ${PROJECT} webgpu_dawn )
+
 if( UNIX )
   target_link_libraries( ${PROJECT} tls ssl crypto )
 	set( VFSLIB sack_vfs.pp )
@@ -319,7 +340,7 @@ if( WIN32 )
   add_custom_target( finalTarget ALL #TARGET ${PROJECT} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
-   			#COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-$<CONFIG>/share ${CMAKE_BINARY_DIR}/$<CONFIG>
+   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/Dawn_tmp/$<CONFIG>/bin ${CMAKE_BINARY_DIR}/$<CONFIG>/bin
    			#COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-$<CONFIG>/lib ${CMAKE_BINARY_DIR}/$<CONFIG>
    			#COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-$<CONFIG>/bin ${CMAKE_BINARY_DIR}/$<CONFIG>
 			#${EXTRACOPY}
