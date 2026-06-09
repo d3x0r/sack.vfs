@@ -147,7 +147,7 @@
     "mocha-lite": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node test/json6 test/jsox",
     "mocha": "mocha --experimental-loader=./import.mjs --require test/bootstrap/node --recursive",
     "test": "node tests/vfsTest.js",
-    "install": "npm run build-vfs",
+    "install": "npm run build-gui",
     "install_old": "node-gyp configure build",
     "login-server": "cd tests/objstore/userDb && node userDbServer.mjs",
     "forum-server": "node tests/objstore/forum/forumServer.mjs",
@@ -184,7 +184,7 @@
     "build-vfs-reldeb": "node build.mjs reldeb && npm run build-vfs-reldeb-run1",
     "build-vfs-reldeb-config": "npx cmake-js --CDMAKE_GUI=0 --config RelWithDebInfo configure",
     "build-vfs-reldeb-run1": "npx cmake-js build --config RelWithDebInfo",
-    "build": "npm run build-vfs",
+    "build": "npm run build-gui",
     "link": "npm link @d3x0r/bloomnhash @d3x0r/popups @d3x0r/slab-array @d3x0r/srg jsox sack.vfs cannon-es"
   },
   "devDependencies": {
