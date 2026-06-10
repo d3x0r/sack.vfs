@@ -15,6 +15,22 @@ extern "C" void wgpuLiveDump( void );
 extern "C" void wgpuSetActiveSurface( WGPUSurface, WGPUTexture );
 extern "C" void wgpuClearActiveSurface( void );
 
+// ----- imglib-webgpu surface hooks ---------------------------------------
+// The imglib driver registers webgpu.image and provides a per-subimage
+// render-bundle composition step that runs at the end of the surface pass.
+// It needs three things from the canvas binding:
+//   - the surface's pixel dimensions (to convert PSI pixel coords to NDC)
+//   - the swapchain color format (so render bundles use a compatible target)
+//   - the sack Image that's bound as the surface's root (PSI tree walks from
+//     here in webgpu_image_dispatch_surface_pass).
+// Declared inline rather than via local.h to avoid pulling sack imglib
+// headers into the binding. Image is opaque (void*).
+namespace sack { namespace image {
+	void webgpu_image_set_surface_size  ( uint32_t w, uint32_t h );
+	void webgpu_image_set_surface_format( WGPUTextureFormat fmt );
+	void webgpu_image_set_surface_root  ( void *root );
+}}
+
 GPUCanvasContext::GPUCanvasContext()
 	: surface_( NULL ), renderer_( NULL ), configured_( false ),
 	  configuredDevice_( NULL ) { wgpuLiveInc( "GPUCanvasContext" ); }
@@ -235,6 +251,21 @@ void GPUCanvasContext::configure( const FunctionCallbackInfo<Value>& args ) {
 
 	self->configured_ = true;
 	self->configuredDevice_ = cfg.device;
+
+	// Inform the imglib-webgpu driver of the surface's dimensions, format,
+	// and root Image. The driver's frame walker (invoked from
+	// GPURenderPassEncoder.end on the surface pass) walks the PSI image
+	// tree from this root, building NDC quads against these dimensions and
+	// recording render bundles compatible with this format.
+	sack::image::webgpu_image_set_surface_size  ( cfg.width, cfg.height );
+	sack::image::webgpu_image_set_surface_format( cfg.format );
+	if( self->renderer_ ) {
+		// GetDisplayImage returns the sack Image backing the PRENDERER.
+		// Cast through void* to dodge having to drag sack image headers
+		// into the binding TU.
+		void *root = (void*)GetDisplayImage( self->renderer_ );
+		sack::image::webgpu_image_set_surface_root( root );
+	}
 }
 
 

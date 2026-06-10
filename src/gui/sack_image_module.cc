@@ -1,6 +1,13 @@
 #define DEFINE_GLOBAL
 #include "../global.h"
 
+// Resolve which IMAGE_INTERFACE this ImageObject's JS draw methods route
+// through. Per-object override (ImageObject::pii) takes precedence; falls
+// back to the global g.pii (= the registered "image" interface). Lets the
+// surface ImageObject for a webgpu-backed renderer route drawing through
+// webgpu.image while other ImageObjects keep using the global default.
+#define IMG_INTF(io) ((io)->pii ? (PIMAGE_INTERFACE)(io)->pii : g.pii)
+
 
 void InitInterfaces( int opengl, int vulkan ) {
 #if 0
@@ -420,19 +427,26 @@ void ImageObject::getHeight( const FunctionCallbackInfo<Value>&  args ) {
 ImageObject::ImageObject( uint8_t *buf, size_t len ) {
 	image = DecodeMemoryToImage( buf, len );
 	jpegQuality = 78;
+	pii = NULL;
 }
 
 ImageObject::ImageObject( const char *filename )  {
    image = LoadImageFile( filename );
    jpegQuality = 78;
+   pii = NULL;
 }
 ImageObject::ImageObject( Image image ) {
 	this->image = image;
 	jpegQuality = 78;
+	pii = NULL;
 }
 
 ImageObject::ImageObject( int x, int y, int w, int h, ImageObject * within )  {
 	jpegQuality = 78;
+	// Inherit pii from the container — a sub-image on a webgpu-backed
+	// surface should itself be webgpu-backed. (Top-level images default
+	// to NULL = global interface.)
+	pii = within ? within->pii : NULL;
 	if( within )
 	{
 		container = within;
@@ -589,17 +603,23 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 
 
 Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL external ) {
-	// Invoked as constructor: `new MyObject(...)`
-	ImageObject* obj;
+	return NewImage( isolate, image, external, NULL );
+}
 
+Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL external,
+                                      struct image_interface_tag *pii )
+{
+	ImageObject* obj;
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
-  class constructorSet* c = getConstructors( isolate );
-  Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
-	obj->image = image;
+	obj->image    = image;
 	obj->external = external;
+	obj->pii      = pii;
+	delete[] argv;
 	return lo;
 }
 
@@ -672,7 +692,7 @@ void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 				c = 0;
 		}
 	}
-	BlatColor( io->image, x, y, w, h, c );
+	IMG_INTF(io)->_BlatColor( io->image, x, y, w, h, c );
 }
 
 void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
@@ -702,7 +722,7 @@ void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
 			c = (int)args[4]->Uint32Value(context).ToChecked();
 		c = (int)args[4]->NumberValue(context).ToChecked();
 	}
-	BlatColorAlpha( io->image, x, y, w, h, c );
+	IMG_INTF(io)->_BlatColorAlpha( io->image, x, y, w, h, c );
 }
 
 void ImageObject::plot( const FunctionCallbackInfo<Value>& args ) {
@@ -727,7 +747,7 @@ void ImageObject::plot( const FunctionCallbackInfo<Value>& args ) {
 		else
 			c = (int)args[2]->NumberValue(context).ToChecked();
 	}
-	g.pii->_plot( io->image, x, y, c );
+	IMG_INTF(io)->_plot( io->image, x, y, c );
 }
 
 void ImageObject::plotOver( const FunctionCallbackInfo<Value>& args ) {
@@ -752,7 +772,7 @@ void ImageObject::plotOver( const FunctionCallbackInfo<Value>& args ) {
 		else
 			c = (int)args[2]->NumberValue(context).ToChecked();
 	}
-	plotalpha( io->image, x, y, c );
+	IMG_INTF(io)->_plotalpha( io->image, x, y, c );
 }
 
 void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
@@ -784,11 +804,11 @@ void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
 			c = (int)args[4]->NumberValue(context).ToChecked();
 	}
 	if( x == xTo )
-		do_vline( io->image, x, y, yTo, c );
+		IMG_INTF(io)->_do_vline( io->image, x, y, yTo, c );
 	else if( y == yTo )
-		do_hline( io->image, y, x, xTo, c );
+		IMG_INTF(io)->_do_hline( io->image, y, x, xTo, c );
 	else
-		do_line( io->image, x, y, xTo, yTo, c );
+		IMG_INTF(io)->_do_line( io->image, x, y, xTo, yTo, c );
 }
 
 void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
@@ -820,11 +840,11 @@ void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
 			c = (int)args[4]->NumberValue(context).ToChecked();
 	}
 	if( x == xTo )
-		do_vlineAlpha( io->image, x, y, yTo, c );
+		IMG_INTF(io)->_do_vlineAlpha( io->image, x, y, yTo, c );
 	else if( y == yTo )
-		do_hlineAlpha( io->image, y, x, xTo, c );
+		IMG_INTF(io)->_do_hlineAlpha( io->image, y, x, xTo, c );
 	else
-		do_lineAlpha( io->image, x, y, xTo, yTo, c );
+		IMG_INTF(io)->_do_lineAlpha( io->image, x, y, xTo, yTo, c );
 }
 
 // {x, y output
@@ -896,19 +916,19 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 					if( h < 0 ) h = ii->image->height;
 				}
 				if( ow && oh && w && h )
-					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
+					IMG_INTF(io)->_BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
 			}
 			else
-				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, 0, BLOT_COPY );
+				IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, 0, BLOT_COPY );
 		}
 		else  {
 			w = xAt; 
 			h = yAt;
-			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, 0, BLOT_COPY );
+			IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, 0, BLOT_COPY );
 		}
 	}
 	else
-		BlotImageEx( io->image, ii->image, x, y, 0, BLOT_COPY );
+		IMG_INTF(io)->_BlotImageEx( io->image, ii->image, x, y, 0, BLOT_COPY );
 }
 
 void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
@@ -960,18 +980,18 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 						h = ii->image->height;
 				}
 				if( ow && oh && w && h )
-					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT
+					IMG_INTF(io)->_BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT
 					                      , BLOT_COPY );
 			} else
-				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
+				IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
 		} else {
 			w = xAt;
 			h = yAt;
-			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
+			IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
 		}
 	}
 	else
-		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_COPY );
+		IMG_INTF(io)->_BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_COPY );
 }
 
 // {x, y output
@@ -1051,20 +1071,20 @@ void ImageObject::putImageMultiShaded( const FunctionCallbackInfo<Value>& args )
 				} else
 					h = ii->image->height;
 				if( ow && oh && w && h )
-					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+					IMG_INTF(io)->_BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
 			}
 			else
-				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn
+				IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn
 				                , b );
 		}
 		else  {
 			w = xAt; 
 			h = yAt;
-			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+			IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
 		}
 	}
 	else
-		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+		IMG_INTF(io)->_BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
 }
 
 

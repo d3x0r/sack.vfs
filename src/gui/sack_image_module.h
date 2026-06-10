@@ -9,6 +9,12 @@ public:
 	ImageObject *container;
 	Image image; // this control
 	LOGICAL external;
+	// Per-object image interface override. NULL → use the global g.pii.
+	// Set to render_global.pri_gpu_image on the surface ImageObject built
+	// for a renderer that has a webgpu context attached, so that JS-side
+	// `surface.fill(...)` / `surface.line(...)` / etc. route through
+	// webgpu.image's GPU-aware overrides instead of the CPU pixmap.
+	struct image_interface_tag *pii;
 	//static v8::Persistent<v8::Function> constructor;
 	//static Persistent<FunctionTemplate> tpl;
 
@@ -26,6 +32,8 @@ public:
 	static void NewSubImage( const FunctionCallbackInfo<Value>& args );
 	//static Persistent<Object>  NewImage( Isolate *isolate, Image image );
 	static Local<Object> NewImage( Isolate *isolate, Image image, LOGICAL external );
+	static Local<Object> NewImage( Isolate *isolate, Image image, LOGICAL external,
+	                               struct image_interface_tag *pii );
 	static ImageObject * MakeNewImage( Isolate*isolate, Image image, LOGICAL external );
 	
 	static void reset( const FunctionCallbackInfo<Value>& args );

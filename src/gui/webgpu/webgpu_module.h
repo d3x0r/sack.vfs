@@ -295,3 +295,20 @@ public:
 // Returns the per-isolate WGPUInstance, or NULL if InitWebGPU hasn't run yet.
 // Used by canvas_context.cc when minting a surface for a RenderObject.
 extern WGPUInstance webgpu_get_instance( void );
+
+// ---------- Active-device tracking (for native sack-side consumers) ----------
+//
+// "Active" = the most recently created WGPUDevice via OnDeviceReady. Tracked
+// so native code that doesn't see the JS-side GPUDevice handle directly
+// (e.g. the imglib-webgpu driver) can pick up a device to render against.
+//
+// Both return NULL until JS calls sack.gpu.requestAdapter().requestDevice().
+// The device is held by-ref while it's the active one — i.e. an extra
+// wgpuDeviceAddRef is taken at OnDeviceReady time and released when the
+// GPUDevice wrapper is destroyed (or another device displaces it).
+//
+// extern "C" so the symbol name is stable for non-C++ TUs that may link
+// against the binding (and so the matching extern "C" decl in
+// imglib-webgpu/driver.cc resolves at link time).
+extern "C" WGPUDevice webgpu_get_active_device( void );
+extern "C" WGPUQueue  webgpu_get_active_queue( void );

@@ -130,6 +130,35 @@ WGPUInstance webgpu_get_instance( void ) {
 	return g_dawnPump ? g_dawnPump->instance : NULL;
 }
 
+// Active-device tracking — see webgpu_module.h for rationale. We hold an
+// extra ref on both handles while they're the active pair, so native
+// consumers can use them without racing the JS-side GPUDevice wrapper's
+// lifetime. The slot is overwritten (with proper release of the prior
+// handles) every time a new device is produced.
+static WGPUDevice g_active_device = NULL;
+static WGPUQueue  g_active_queue  = NULL;
+
+static void set_active_device( WGPUDevice device ) {
+	if( g_active_device == device )
+		return;
+	if( g_active_device )
+		wgpuDeviceRelease( g_active_device );
+	if( g_active_queue ) {
+		wgpuQueueRelease( g_active_queue );
+		g_active_queue = NULL;
+	}
+	g_active_device = device;
+	if( g_active_device ) {
+		wgpuDeviceAddRef( g_active_device );
+		g_active_queue = wgpuDeviceGetQueue( g_active_device );
+		// wgpuDeviceGetQueue returns a +1 ref per Dawn convention; no
+		// extra AddRef needed.
+	}
+}
+
+extern "C" WGPUDevice webgpu_get_active_device( void ) { return g_active_device; }
+extern "C" WGPUQueue  webgpu_get_active_queue( void )  { return g_active_queue;  }
+
 static void DawnPumpCb( uv_check_t* check ) {
 	DawnPump* p = (DawnPump*)check->data;
 	if( p && p->instance )
@@ -513,6 +542,10 @@ void GPUAdapter::OnDeviceReady( WGPURequestDeviceStatus status,
 			.ToLocalChecked();
 		GPUDevice* w = node::ObjectWrap::Unwrap<GPUDevice>( obj );
 		w->handle_ = device;
+		// Track as the active device for native sack-side consumers
+		// (imglib-webgpu, etc.). set_active_device takes its own ref;
+		// the wrapper's ref is independent.
+		set_active_device( device );
 		// Transfer ownership of the lost-state from the request to the
 		// device wrapper, so it's freed when the wrapper is GC'd.
 		w->lostState_ = req->lostState;
@@ -705,6 +738,11 @@ GPUDevice::GPUDevice() : handle_( NULL ), adapter_( NULL ), lostState_( NULL ) {
 
 GPUDevice::~GPUDevice() {
 	if( handle_ ) {
+		// If we were the active-device, clear that slot first (it holds
+		// its own ref, so this is purely a "stop pointing at us" cleanup;
+		// the slot's release of the device is independent of ours).
+		if( g_active_device == handle_ )
+			set_active_device( NULL );
 		wgpuDeviceRelease( handle_ );
 		handle_ = NULL;
 	}
@@ -1135,14 +1173,28 @@ static void GPURenderPassEncoder_drawIndexed( const FunctionCallbackInfo<Value>&
 }
 
 
+// Forward-declared in imglib-webgpu/local.h. Called below for the
+// surface-writing pass so the imglib driver can replay any retained
+// PSI subimage bundles into the same pass before it ends. No-op if the
+// driver isn't linked in or no sack Image has been bound to a canvas.
+#if defined( INCLUDE_DAWN )
+extern "C" void webgpu_image_dispatch_surface_pass( WGPURenderPassEncoder pass );
+#endif
+
 static void GPURenderPassEncoder_end( const FunctionCallbackInfo<Value>& args ) {
 	WGPU_THIS( GPURenderPassEncoder );
-	wgpuRenderPassEncoderEnd( self->handle_ );
-	// If this pass belongs to the surface-writing encoder, flag the
-	// auto-present condition. queue.submit will fire the present.
+	// If this pass targets the surface, give the imglib-webgpu driver a
+	// chance to execute its retained PSI bundles into the same pass
+	// before we end it. Three.js's content has already been encoded by
+	// the JS caller; PSI overlay goes after.
 	if( g_surfaceEncoder
-	    && self->commandEncoderTag_ == g_surfaceEncoder )
+	    && self->commandEncoderTag_ == g_surfaceEncoder ) {
+#if defined( INCLUDE_DAWN )
+		webgpu_image_dispatch_surface_pass( self->handle_ );
+#endif
 		g_surfacePassEnded = true;
+	}
+	wgpuRenderPassEncoderEnd( self->handle_ );
 	wgpuRenderPassEncoderRelease( self->handle_ );
 	self->handle_ = NULL;
 	wgpuLiveDec( "GPURenderPassEncoder" );

@@ -8,9 +8,14 @@ class RenderObject : public node::ObjectWrap{
 public:
 	PRENDERER r; // this control
 	PTHREAD  eventThread;
-	//int drawn; 
+	//int drawn;
 	int updated;
 	int closed;
+	// True once getContext("webgpu") has run. Drives whether the surface
+	// ImageObject built for the draw callback is bound to webgpu.image
+	// rather than the global default — i.e. whether JS-side surface.fill()
+	// etc. record into render bundles or mutate the CPU pixmap.
+	int has_webgpu_context;
 	Persistent<Object> surface; // used to pass to draw callback
 	Persistent<Object> this_;
 

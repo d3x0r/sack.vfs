@@ -7,6 +7,8 @@
 
 struct render_private_data {
 	PLIST renderers;
+	PIMAGE_INTERFACE pri_gpu_image;
+	PRENDER_INTERFACE pri_gpu_render;
 } render_global;
 
 struct optionStrings {
@@ -267,8 +269,14 @@ static Local<Value> ProcessEvent( Isolate* isolate, struct event *evt, RenderObj
 		}
 		break;
 	case Event_Render_Draw:
-		if( r->surface.IsEmpty() )
-			r->surface.Reset( isolate, ImageObject::NewImage( isolate, GetDisplayImage( r->r ), TRUE ) );
+		if (r->surface.IsEmpty()) {
+			Local<Object> img= ImageObject::NewImage(isolate, GetDisplayImage(r->r), TRUE);
+			r->surface.Reset(isolate, img);
+			if (r->has_webgpu_context) {
+				ImageObject* io = ImageObject::Unwrap<ImageObject>(img);
+				io->pii = render_global.pri_gpu_image;
+			}
+		}
 		return Local<Object>::New( isolate, r->surface );
 	case Event_Render_Key:
 		return Number::New( isolate, evt->data.key.code );
@@ -538,6 +546,11 @@ void RenderObject::Init( Local<Object> exports ) {
 	{
 		//extern void Syslog
 	}
+	render_global.pri_gpu_image = (PIMAGE_INTERFACE)GetInterface( "webgpu.image" );
+
+	// this should just be this?
+	//render_global.pri_gpu_render = GetInterface( "webgpu.render" );
+
 		Isolate* isolate = Isolate::GetCurrent();
 		Local<Context> context = isolate->GetCurrentContext();
 		Local<FunctionTemplate> renderTemplate;
@@ -588,9 +601,24 @@ void RenderObject::Init( Local<Object> exports ) {
 			, FunctionTemplate::New( isolate, RenderObject::setCoordinate, Integer::New( isolate, 12 ) )
 			, DontDelete );
 
-
 		Local<Function> renderFunc = renderTemplate->GetFunction(context).ToLocalChecked();
 		SET_READONLY_METHOD( renderFunc, "is3D", RenderObject::is3D );
+
+		Local<Object> attributes = Object::New(isolate);
+		SET_READONLY(renderFunc, "attributes", attributes);
+#define SetStyle( object, style ) SET_READONLY( object, #style, Integer::New( isolate, style ) );
+
+		SetStyle(attributes, DISPLAY_ATTRIBUTE_LAYERED );
+		SetStyle(attributes, DISPLAY_ATTRIBUTE_CHILD);
+		SetStyle(attributes, PANEL_ATTRIBUTE_ALPHA);
+		SetStyle(attributes, PANEL_ATTRIBUTE_HOLEY);
+		SetStyle(attributes, PANEL_ATTRIBUTE_EXCLUSIVE);
+		SetStyle(attributes, PANEL_ATTRIBUTE_INTERNAL);
+		SetStyle(attributes, DISPLAY_ATTRIBUTE_NO_MOUSE);
+		SetStyle(attributes, DISPLAY_ATTRIBUTE_NO_AUTO_FOCUS);
+		SetStyle(attributes, DISPLAY_ATTRIBUTE_TOPMOST);
+		SetStyle(attributes, DISPLAY_ATTRIBUTE_NO_REDIRECT);
+
 
     class constructorSet* c = getConstructors( isolate );
     c->RenderObject_constructor.Reset( isolate, renderTemplate->GetFunction(context).ToLocalChecked() );
@@ -607,6 +635,7 @@ RenderObject::RenderObject( int attr, const char *title, int x, int y, int w, in
 		r = NULL;
 	receive_queue = NULL;
 	closed = 0;
+	has_webgpu_context = 0;
 }
 
 void RenderObject::setRenderer(PRENDERER r) {
@@ -629,33 +658,78 @@ RenderObject::~RenderObject() {
 			RenderObject *parent = NULL;
 
 			int argc = args.Length();
-			if( argc > 0 ) {
-				String::Utf8Value fName( isolate, args[0] );
-				title = StrDup( *fName );
-			}
-			if( argc > 1 ) {
-				x = (int)args[1]->IntegerValue(context).ToChecked();
-			}
-			if( argc > 2 ) {
-				y = (int)args[2]->IntegerValue(context).ToChecked();
-			}
-			if( argc > 3 ) {
-				w = (int)args[3]->IntegerValue(context).ToChecked();
-			}
-			if( argc > 4 ) {
-				h = (int)args[4]->IntegerValue(context).ToChecked();
-			}
-			if( argc > 5 ) {
-				if( args[5]->IsNull() ) {
-					parent = NULL;
-				}
-				else {
-					parent_object = args[5]->ToObject(context).ToLocalChecked();
+
+			// Options-object form:
+			//   new Renderer({ title, x, y, width, height, flags, style, parent })
+			// All fields optional. `flags` and `style` both map to attributes
+			// (style is an alias — pick whichever reads better in user code).
+			// If first arg is a plain object (not a string), use this path
+			// and ignore any further positional args.
+			if( argc > 0 && args[0]->IsObject() && !args[0]->IsString() ) {
+				Local<Object> opts = args[0].As<Object>();
+
+				auto getInt = [&]( const char *name, int dflt ) -> int {
+					Local<Value> v;
+					if( opts->Get( context, localStringExternal( isolate, name ) ).ToLocal( &v )
+					    && v->IsNumber() )
+						return (int)v->IntegerValue( context ).ToChecked();
+					return dflt;
+				};
+				auto getStr = [&]( const char *name ) -> char * {
+					Local<Value> v;
+					if( opts->Get( context, localStringExternal( isolate, name ) ).ToLocal( &v )
+					    && v->IsString() ) {
+						String::Utf8Value s( isolate, v );
+						return StrDup( *s );
+					}
+					return NULL;
+				};
+
+				title      = getStr( "title" );
+				x          = getInt( "x",      x );
+				y          = getInt( "y",      y );
+				w          = getInt( "width",  w );
+				h          = getInt( "height", h );
+				attributes = getInt( "flags",  attributes );
+
+				Local<Value> pv;
+				if( opts->Get( context, localStringExternal( isolate, "parent" ) ).ToLocal( &pv )
+				    && pv->IsObject() && !pv->IsNull() ) {
+					parent_object = pv->ToObject( context ).ToLocalChecked();
 					parent = ObjectWrap::Unwrap<RenderObject>( parent_object );
 				}
 			}
-			if (argc > 6) {
-				attributes = (int)args[6]->IntegerValue(context).ToChecked();
+			else {
+				// Positional form:
+				//   new Renderer(title, x, y, width, height, parent, attributes)
+				if( argc > 0 ) {
+					String::Utf8Value fName( isolate, args[0] );
+					title = StrDup( *fName );
+				}
+				if( argc > 1 ) {
+					x = (int)args[1]->IntegerValue(context).ToChecked();
+				}
+				if( argc > 2 ) {
+					y = (int)args[2]->IntegerValue(context).ToChecked();
+				}
+				if( argc > 3 ) {
+					w = (int)args[3]->IntegerValue(context).ToChecked();
+				}
+				if( argc > 4 ) {
+					h = (int)args[4]->IntegerValue(context).ToChecked();
+				}
+				if( argc > 5 ) {
+					if( args[5]->IsNull() ) {
+						parent = NULL;
+					}
+					else {
+						parent_object = args[5]->ToObject(context).ToLocalChecked();
+						parent = ObjectWrap::Unwrap<RenderObject>( parent_object );
+					}
+				}
+				if (argc > 6) {
+					attributes = (int)args[6]->IntegerValue(context).ToChecked();
+				}
 			}
 			// Invoked as constructor: `new MyObject(...)`
 			RenderObject* obj = new RenderObject( attributes, title?title:"Node Application", x, y, w, h, parent );
@@ -843,6 +917,21 @@ void RenderObject::getContext( const FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 		(void)self->SetPrivate( jsCtx, key, ctx );
+
+		// From now on this renderer's surface ImageObject should route
+		// through the webgpu.image driver. Flag the display image as a
+		// GPU final-render target (no in-memory pixmap mutation) and
+		// drop any previously-built surface ImageObject so the next draw
+		// callback rebuilds it with the per-object pii override.
+		r->has_webgpu_context = 1;
+		Image display = GetDisplayImage( r->r );
+		if( display ) {
+			display->flags |=  IF_FLAG_FINAL_RENDER;
+			display->flags &= ~IF_FLAG_IN_MEMORY;
+		}
+		if( !r->surface.IsEmpty() )
+			r->surface.Reset();
+
 		args.GetReturnValue().Set( ctx );
 #else
 		isolate->ThrowException( Exception::Error( localStringExternal(
@@ -865,9 +954,15 @@ void RenderObject::getImage( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	RenderObject *r = ObjectWrap::Unwrap<RenderObject>( args.This() );
 
-	// results as a new Image in result...
-	r->surface.Reset( isolate, ImageObject::NewImage( isolate, GetDisplayImage( r->r ), TRUE ) );
-
+	// Build the surface ImageObject. If the renderer has a webgpu context
+	// attached, bind the per-object pii to the webgpu.image driver so JS
+	// draw calls record into render bundles. Otherwise (CPU rendering or
+	// webgpu not built) leave pii NULL → global default.
+	struct image_interface_tag *pii = r->has_webgpu_context
+		? (struct image_interface_tag *)render_global.pri_gpu_image
+		: NULL;
+	r->surface.Reset( isolate,
+		ImageObject::NewImage( isolate, GetDisplayImage( r->r ), TRUE, pii ) );
 }
 
 void RenderObject::redraw( const FunctionCallbackInfo<Value>& args ) {
@@ -1076,8 +1171,13 @@ static int CPROC doRedraw( uintptr_t psv, PRENDERER out ) {
 	// sometimes the redraw event can happen on the same thread.
 	if( !r->closed )
 		if( waiter == r->eventThread ){
-			if( r->surface.IsEmpty() )
-				r->surface.Reset( r->isolate, ImageObject::NewImage( r->isolate, GetDisplayImage( r->r ), TRUE ) );
+			if( r->surface.IsEmpty() ) {
+				struct image_interface_tag *pii = r->has_webgpu_context
+					? (struct image_interface_tag *)render_global.pri_gpu_image
+					: NULL;
+				r->surface.Reset( r->isolate,
+					ImageObject::NewImage( r->isolate, GetDisplayImage( r->r ), TRUE, pii ) );
+			}
 			Local<Value> argv[] = { Local<Object>::New( r->isolate, r->surface ) };
 			Local<Function> cb;
 			cb = Local<Function>::New( r->isolate, r->cbDraw );
