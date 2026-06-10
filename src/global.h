@@ -375,6 +375,7 @@ class constructorSet {
 	v8::Persistent<v8::Function> GPURenderPipeline_constructor;
 	v8::Persistent<v8::Function> GPUComputePipeline_constructor;
 	v8::Persistent<v8::Function> GPUQueue_constructor;
+
 	v8::Persistent<v8::Function> GPURenderBundle_constructor;
 	v8::Persistent<v8::Function> GPUBindGroup_constructor;
 	v8::Persistent<v8::Function> GPUPipelineLayout_constructor;

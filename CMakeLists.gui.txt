@@ -272,9 +272,35 @@ if( INCLUDE_DAWN )
 		src/gui/webgpu/canvas_context.cc
 		src/gui/webgpu/generated/webgpu_generated.cc
 	)
+
+	# imglib-webgpu — image library driver registering webgpu.image,
+	# webgpu.image.3d, and webgpu.render.3d interfaces against the
+	# same Dawn device the JS WebGPU binding uses. Each interface_*.cc
+	# is a one-interface registration TU; *_ops.cc files carry bodies.
+	set( IMGLIB_WEBGPU_SOURCES
+		src/gui/imglib-webgpu/local.h
+		src/gui/imglib-webgpu/driver.cc
+		src/gui/imglib-webgpu/driver_pipelines.cc
+		src/gui/imglib-webgpu/bundle.cc
+		src/gui/imglib-webgpu/interface_image.cc
+		src/gui/imglib-webgpu/image_ops.cc
+		src/gui/imglib-webgpu/line_ops.cc
+		src/gui/imglib-webgpu/interface_image_3d.cc
+		src/gui/imglib-webgpu/image_3d_ops.cc
+		src/gui/imglib-webgpu/interface_render_3d.cc
+		src/gui/imglib-webgpu/render3d_ops.cc
+		src/gui/imglib-webgpu/shaders.wgsl
+	)
+
+	source_group( "Source Files\\GUI\\imglib-webgpu" FILES ${IMGLIB_WEBGPU_SOURCES} )
 endif()
 
 source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  src/gui/.*)
+
+if( INCLUDE_DAWN )
+	list( APPEND GUI_SOURCES ${IMGLIB_WEBGPU_SOURCES} )
+endif()
+
 
 set( PROJECT sack_gui )
 add_library(${PROJECT} SHARED
