@@ -1,5 +1,5 @@
 {
-  "name": "sack-gui",
+  "name": "@d3x0r/sack-gui",
   "version": "0.9.123",
   "description": "SACK abstraction library exposed to JS to provide low level system services including GUI.",
   "files": [
@@ -210,8 +210,9 @@
     "mocha": "latest",
     "nyc": "latest",
     "rollup": "latest",
+    "stats.js": "^0.17.0",
+    "three": "latest",
     "webidl2": "latest"
-    "three": "^latest"
   },
   "nyc": {
     "statements": 100,
@@ -228,7 +229,5 @@
   },
   "nwependencies": {
     "nw-gyp": "latest"
-  },
-  "dependencies": {
   }
 }
