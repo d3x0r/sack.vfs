@@ -16,6 +16,8 @@ enum SSH2_EventCodes {
 	SSH2_EVENT_PTY,
 	SSH2_EVENT_SHELL,
 	SSH2_EVENT_EXEC,
+	SSH2_EVENT_CHANNEL_CLOSE,
+	SSH2_EVENT_CHANNEL_REQUEST,
 	SSH2_EVENT_FORWARD,
 	SSH2_EVENT_FORWARD_CONNECT,
 	SSH2_EVENT_WS_REVERSE_CHANNEL,
@@ -44,6 +46,7 @@ public:
 	Persistent<Object> jsObject;  // the object that represents this channel
 	Persistent<Function> dataCallback; // called when data is received
 	Persistent<Function> closeCallback; // called when the channel is closed
+	Persistent<Function> requestCallback; // called when a channel request is accepted
 	Persistent<Function> errorCallback; // called when the channel experiences an error outside of a promised result
 
 	Persistent<Promise::Resolver> ptyPromise;
@@ -73,6 +76,7 @@ public:
 	static void DataCallback( uintptr_t psv, int stream, const uint8_t* data, size_t length ); 
 	// interfaces with sack_ssh to call the close callback
 	static void CloseCallback( uintptr_t psv ); 
+	static void RequestCallback( uintptr_t psv, CTEXTSTR request, size_t request_len );
 	static void PtyCallback( uintptr_t psv, LOGICAL success );
 	static void ShellCallback( uintptr_t psv, LOGICAL success );
 	static void ExecCallback( uintptr_t psv, LOGICAL success );
@@ -90,9 +94,13 @@ public:
 	*/
 	static void Send( const v8::FunctionCallbackInfo<Value>& args );
 	/*
-	* Set Close Callback
+	 * Set Close Callback
 	*/
 	static void Close( const v8::FunctionCallbackInfo<Value>& args );
+	/*
+	* Set Request Callback
+	*/
+	static void Request( const v8::FunctionCallbackInfo<Value>& args );
 	/*
 	* Set Remote environment variable
 	*/
