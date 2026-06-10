@@ -5411,6 +5411,7 @@ SYSTEM_PROC( void, AddKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_t )
   Remove a callback which was added to event callback list.
 */
 SYSTEM_PROC( void, RemoveKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_t );
+SYSTEM_PROC( uint32_t, GetTaskProcessId )( PTASK_INFO task );
 #if _WIN32
 /*
   moves the window of the task; if there is a main window for the task within the timeout perioud.
@@ -10697,6 +10698,12 @@ NETWORK_PROC( ssh_channel_eof_cb, sack_ssh_set_channel_eof )( struct ssh_channel
 typedef void( *ssh_channel_close_cb )( uintptr_t psv );
 NETWORK_PROC( ssh_channel_close_cb, sack_ssh_set_channel_close )( struct ssh_channel* channel, ssh_channel_close_cb );
 /*
+* set a callback for when a channel request is accepted
+* returns the previous callback
+*/
+typedef void( *ssh_channel_request_cb )( uintptr_t psv, CTEXTSTR request, size_t request_len );
+NETWORK_PROC( ssh_channel_request_cb, sack_ssh_set_channel_request )( struct ssh_channel* channel, ssh_channel_request_cb );
+/*
 * set a callback for when a sftp session is opened
 */
 typedef uintptr_t( *ssh_sftp_open_cb )( uintptr_t psv, struct ssh_sftp* channel );
@@ -11232,6 +11239,13 @@ PSSQL_PROC( int, DoSQLCommandEx )( CTEXTSTR command DBG_PASS);
    Parameters
    odbc :  connection to database to commit                      */
 PSSQL_PROC( void, SQLCommit )( PODBC odbc );
+/* Generate a rollback for any outstanding transactions. Connections
+   also have the feature to auto generate begin transaction, and
+   flush after a period of idle.  This also interacts with the auto
+   transact; so a rollback without a transaction is harmless.
+   Parameters
+   odbc :  connection to database to rollback                     */
+PSSQL_PROC( void, SQLRollback )( PODBC odbc );
 /* generates the begin transaction for a commection.
    Parameters
    odbc :  connection to database to start a transaction        */
@@ -12245,6 +12259,13 @@ PSSQL_PROC( void, SetSQLAutoTransact )( PODBC odbc, LOGICAL bEnable );
    odbc :     connection to set auto transact on
    callback :  not NULL to enable, NULL to disable.                         */
 PSSQL_PROC( void, SetSQLAutoTransactCallback )( PODBC odbc, void (CPROC*callback)(uintptr_t,PODBC), uintptr_t psv );
+/* Set a callback for SQLRollback completion. This does not enable
+   AutoTransact; rollback observes whichever auto or explicit
+   transaction is already pending.
+   Parameters
+   odbc :     connection to set rollback callback on
+   callback :  not NULL to enable, NULL to disable.                         */
+PSSQL_PROC( void, SetSQLRollbackCallback )( PODBC odbc, void (CPROC*callback)(uintptr_t,PODBC), uintptr_t psv );
 /* Relevant for SQLite databases. After a certain period of
    inactivity the database is closed (allowing the file to be
    not-in-use during idle). PODBC odject remains valid, and
