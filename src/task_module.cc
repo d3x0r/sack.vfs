@@ -28,6 +28,7 @@ struct optionStrings {
 	Eternal<String>* noWaitString;
 	Eternal<String>* detachedString;
 	Eternal<String>* noInheritStdio;
+	Eternal<String>* programName;
 #if _WIN32
 	Eternal<String>* adminString;
 	Eternal<String>* moveToString;
@@ -129,7 +130,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->noWaitString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noWait" ) );
 		check->detachedString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "detached" ) );
 		check->noInheritStdio =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noInheritStdio" ) );
-		
+		check->programName = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "programName"));
+
 #if _WIN32
 		check->adminString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "admin" ) );
 		check->moveToString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "moveTo" ) );
@@ -180,7 +182,8 @@ TaskObject::TaskObject():_this(), endCallback(), inputCallback(), inputCallback2
 
 TaskObject::~TaskObject() {
 	struct taskObjectOutputItem* outmsg;
-
+	if( programName )
+		Deallocate( char*, programName );
 	while( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output ) ) {
 		Deallocate( struct taskObjectOutputItem*, outmsg );
 	}
@@ -628,6 +631,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::Utf8Value *argString = NULL;
 			String::Utf8Value *bin = NULL;
 			String::Utf8Value *work = NULL;
+			String::Utf8Value *programName = NULL;
 			bool end = false;
 			bool input = false;
 			bool input2 = false;
@@ -714,6 +718,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				//lprintf( "use Signal..." );
 				if( GETV( opts, optName )->IsBoolean() ) {
 					useSignal = GETV( opts, optName )->TOBOOL( isolate );
+					newTask->useSignal = useSignal;
 				}
 			}
 			
@@ -767,6 +772,12 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->workString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsString() )
 					work = new String::Utf8Value( USE_ISOLATE( isolate ) GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+			}
+			if (opts->Has(context, optName = strings->programName->Get(isolate)).ToChecked()) {
+				if (GETV(opts, optName)->IsString()) {
+					programName = new String::Utf8Value(USE_ISOLATE(isolate) GETV(opts, optName)->ToString(isolate->GetCurrentContext()).ToLocalChecked());
+					newTask->programName = StrDup(*programName[0]);
+				}
 			}
 			if( opts->Has( context, optName = strings->envString->Get( isolate ) ).ToChecked() ) {
 				Local<Object> env = GETV( opts, optName ).As<Object>();
@@ -909,6 +920,7 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( work ) delete work;
 			if( bin ) delete bin;
 			if( argString ) delete argString;
+			if( programName ) delete programName;
 
 		}
 		
@@ -1013,8 +1025,25 @@ void TaskObject::Print( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void TaskObject::End( const v8::FunctionCallbackInfo<Value>& args ) {
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
-	if( task && task->task )
-		StopProgram( task->task );
+	if (task && task->task) {
+#ifdef _WIN32
+		if (task->useSignal && task->programName) {
+			char eventName[256];
+			HANDLE hEvent;
+			snprintf(eventName, 256, "Global\\%s(%d):exit", task->programName, GetTaskProcessId( task->task ) );
+			hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, eventName);
+			//lprintf( "Signal process event: %s", eventName );
+			if (hEvent != NULL) {
+				//lprintf( "Opened event:%p %s %d", hEvent, eventName, GetLastError() );
+				if (!SetEvent(hEvent)) {
+					lprintf("Failed to set event? %d", GetLastError());
+				}
+				CloseHandle(hEvent);
+			}
+		} else
+#endif
+			StopProgram(task->task);
+	}
 }
 
 void TaskObject::Terminate( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1875,58 +1904,59 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
 	int32_t code = (int32_t)(args.Length() > 1 ? args[1]->IntegerValue( context ).FromMaybe( 0 ) : (int64_t)0);
 
-
+	//lprintf("Stop Process: %d code:%d", id, code);
 #ifdef _WIN32
 	char* name = NULL;
 	if( args.Length() > 2 ) {
 		String::Utf8Value s( USE_ISOLATE( isolate ) args[2]->ToString( context ).ToLocalChecked() );
 		name = StrDup( *s );
 	}
-	HWND hWndMain = (!(code & 2))?find_main_window( id ):NULL;
-	if( hWndMain ) {
-		TEXTCHAR title[256];
-		GetWindowText( hWndMain, title, 256 );
-		//lprintf( "Sending WM_CLOSE to %d %p %s", id, hWndMain, title );
-		SendMessage( hWndMain, WM_CLOSE, 0, 0 );
-	} else if( !( code & 2 ) ) {
-		//lprintf( "Killing child %d? %d", id, code );
-		//MessageBox( NULL, "pause", "pause", MB_OK );
-		FreeConsole();
-		BOOL a = AttachConsole( id );
-		if( !a ) {
-			DWORD dwError = GetLastError();
-			lprintf( "Failed to attachConsole %d %d %d", a, dwError, id );
-		}
-		if( code == 0 )
-			if( !GenerateConsoleCtrlEvent( CTRL_C_EVENT, id ) ) {
-				DWORD error = GetLastError();
-				lprintf( "Failed to send CTRL_C_EVENT %d %d", id, error );
-			}// else lprintf( "Success sending ctrl C?" );
-		else
-			if( !GenerateConsoleCtrlEvent( CTRL_BREAK_EVENT, id ) ) {
-				DWORD error = GetLastError();
-				lprintf( "Failed to send CTRL_BREAK_EVENT %d %d", id, error );
-			}// else lprintf( "Success sending ctrl break?" );
-	}
 	// this is pretty niche; was an attempt to handle when ctrl-break and ctrl-c events failed.
-	else if( code & 2 ) {
-		//lprintf ( "code?  %d %d %p", id, code, name );
-		if( !name ) {
-			lprintf( "To kill using signal, must include the process name as well as ID" );
+	if (code & 2) {
+		lprintf ( "code?  %d %d %p ", id, code, name );
+		if (!name) {
+			lprintf("To kill using signal, must include the process name as well as ID");
 			return;
 		}
 		char eventName[256];
 		HANDLE hEvent;
-		snprintf( eventName, 256, "Global\\%s(%d):exit", name, id );
-		ReleaseEx( name DBG_SRC );
-		hEvent = OpenEvent( EVENT_MODIFY_STATE, FALSE, eventName );
+		snprintf(eventName, 256, "Global\\%s(%d):exit", name, id);
+		ReleaseEx(name DBG_SRC);
+		hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, eventName);
 		//lprintf( "Signal process event: %s", eventName );
-		if( hEvent != NULL ) {
+		if (hEvent != NULL) {
 			//lprintf( "Opened event:%p %s %d", hEvent, eventName, GetLastError() );
-			if( !SetEvent( hEvent ) ) {
-				lprintf( "Failed to set event? %d", GetLastError() );
+			if (!SetEvent(hEvent)) {
+				lprintf("Failed to set event? %d", GetLastError());
 			}
-			CloseHandle( hEvent );
+			CloseHandle(hEvent);
+		}
+	} else {
+		HWND hWndMain = (!(code & 2))?find_main_window( id ):NULL;
+		if( hWndMain ) {
+			TEXTCHAR title[256];
+			GetWindowText( hWndMain, title, 256 );
+			//lprintf( "Sending WM_CLOSE to %d %p %s", id, hWndMain, title );
+			SendMessage( hWndMain, WM_CLOSE, 0, 0 );
+		} else if( !( code & 2 ) ) {
+			//lprintf( "Killing child %d? %d", id, code );
+			//MessageBox( NULL, "pause", "pause", MB_OK );
+			FreeConsole();
+			BOOL a = AttachConsole( id );
+			if( !a ) {
+				DWORD dwError = GetLastError();
+				lprintf( "Failed to attachConsole %d %d %d", a, dwError, id );
+			}
+			if( code == 0 )
+				if( !GenerateConsoleCtrlEvent( CTRL_C_EVENT, id ) ) {
+					DWORD error = GetLastError();
+					lprintf( "Failed to send CTRL_C_EVENT %d %d", id, error );
+				}// else lprintf( "Success sending ctrl C?" );
+			else
+				if( !GenerateConsoleCtrlEvent( CTRL_BREAK_EVENT, id ) ) {
+					DWORD error = GetLastError();
+					lprintf( "Failed to send CTRL_BREAK_EVENT %d %d", id, error );
+				}// else lprintf( "Success sending ctrl break?" );
 		}
 	}
 #else
@@ -1963,6 +1993,7 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 	}
 	int32_t id = (int32_t)args[0]->IntegerValue( context ).FromMaybe( 0 );
 	int64_t code = (int32_t)(args.Length() > 1 ? args[1]->IntegerValue( context ).FromMaybe( 0 ) : (int64_t)0);
+	//lprintf( "Kill Process: %d code:%d", id, code );
 #ifdef _WIN32
 	HANDLE hProcess = OpenProcess( PROCESS_ALL_ACCESS, FALSE, id );
 	if( hProcess ) {

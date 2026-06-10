@@ -283,6 +283,7 @@ export class Task {
 			moveTo : this.#task.moveTo,
 			style : this.#task.style,
 			noInheritStdio : this.#task.noInheritStdio,
+			programName : this.#task.programName,
 		} );
 		//console.log( "Task:", this.#task );
 		if( this.#run ) {
