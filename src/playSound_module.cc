@@ -130,24 +130,6 @@ static double GetDeviceVolume(String::Value* id) {
 }
 
 
-static bool GetDevInfoInstanceIdA(
-	HDEVINFO devs,
-	SP_DEVINFO_DATA* devInfo,
-	char* out,
-	DWORD outSize
-) {
-	if (!out || !outSize) return false;
-	out[0] = 0;
-
-	return SetupDiGetDeviceInstanceIdA(
-		devs,
-		devInfo,
-		out,
-		outSize,
-		NULL
-	) ? true : false;
-}
-
 static bool StartsWithIW(const wchar_t* s, const wchar_t* prefix) {
 	if (!s || !prefix)
 		return false;
@@ -293,25 +275,6 @@ static bool ResolveResetInstanceIdFromEndpointIdW(
 
 	return resetInstanceId[0] != 0;
 }
-static bool GetParentInstanceIdA(
-	DEVINST child,
-	char* out,
-	DWORD outSize
-) {
-	DEVINST parent;
-	CONFIGRET cr;
-
-	if (!out || !outSize) return false;
-	out[0] = 0;
-
-	cr = CM_Get_Parent(&parent, child, 0);
-	if (cr != CR_SUCCESS)
-		return false;
-
-	cr = CM_Get_Device_IDA(parent, out, outSize, 0);
-	return cr == CR_SUCCESS;
-}
-
 
 static BOOL ResetDeviceByInstanceIdW(const wchar_t* instanceId, BOOL* rebootRequired) {
 	if (rebootRequired)
