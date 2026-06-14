@@ -21,7 +21,8 @@
 	     const renderer = new THREE.WebGPURenderer({ domElement: canvas, context: ctx, device: device, antialias: true });
 	     await renderer.init( {device, context:ctx} ).then( ()=>{
 	         //renderer.setSize( window.innerWidth, window.innerHeight );
-	         renderer.setClearColor( 0, 0.1 );
+	         renderer.setClearColor( 0x00ff00, 0 );
+				ctx.setSurfaceDepthFormat( 'depth24plus' );
 	         //renderer.setClearAlpha( 0 );
 	     } );
 
@@ -44,24 +45,46 @@
 
 
         // 5. Animation Loop (Re-renders every frame to show movement)
-			let f
+			let f = 0
+			let rdy = false;
 			let tick;
 			canvas.on( "draw", (img)=>{
-			console.log( "Am I getting draws in animate?" );
+//				const img = canvas.getImage();
+				if( !rdy ) return;
+				console.log( "initial draw? ");
+			//img.fill( 0x013333333 );
+		//img.reset(  );
+			img.text( "Hello + FPS:" + "First Draw",  50, 50, 0xFFFFFFFF );
 			} );
-			
+
+
+			const clock = new THREE.Timer();
         function animate(t) {
 				tick = t;
+				f++;
+				clock.update( ) ;
+			tick = clock.getElapsed();
+rdy = true;
 				//canvas.redraw();
             requestAnimationFrame(animate);
 
+				const img = canvas.getImage();
+
+			img.text( "Hello + FPS:" +f/tick,  50, 50, 0xFFFFFFFF );
+				//img.fill( 0, 0, 1500, 1500, 0x3fffffff );
+//				img.fill( 0x01000000 );
+
+//img.reset(  );
+//img.text( "Hello + FPS:" render.,  50, 50, 0xFFFFFFFF );
+
+
             cube.rotation.x += 0.01;
             cube.rotation.y += 0.01;
-
             // Render the updated scene snapshot from the camera point of view
             renderer.render(scene, camera);
+		//console.log( "rendered, why didn't animate tick? ");
 
         }
-
+	console.log( "initial animate" )
 	animate();
 	canvas.show();

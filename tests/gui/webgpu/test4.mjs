@@ -18,7 +18,7 @@ r.on('draw', (surface) => {
   const tex  = ctx.getCurrentTexture();
   const view = tex.createView();
 
-console.log('surface tex size:', tex.width, tex.height);
+	//console.log('surface tex size:', tex.width, tex.height);
 
 	surface.fill( 0, 0, 150, 150, 0xffffffff );
 	for( let n = 0; n < 200; n+= 20 ) {

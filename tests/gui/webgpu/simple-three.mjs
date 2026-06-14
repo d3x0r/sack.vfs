@@ -30,11 +30,16 @@
 
         // 4. Create the Cube components (Geometry + Material = Mesh)
         const geometry = new THREE.BoxGeometry(1, 1, 1); // Width, Height, Depth
-        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: false }); 
+        const material = new THREE.MeshStandardMaterial({ color: 0x00ff00, wireframe: false }); 
         const cube = new THREE.Mesh(geometry, material);
-        
         // Add the finished cube into our 3D world
         scene.add(cube);
+
+        // 4. Add the Point Light
+        const pointLight = new THREE.PointLight(0xffffff, 4, 50);
+        pointLight.position.set(0, 0, 3); // Start in front of the cube
+        scene.add(pointLight);
+
 
         // 5. Animation Loop (Re-renders every frame to show movement)
         function animate() {
