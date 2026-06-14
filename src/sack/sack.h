@@ -17,6 +17,14 @@
 #  ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
 #  endif
+/* On macOS the BSD/Darwin extensions (e.g. the termios baud constants
+   B57600/B115200/B230400 used by the commlib serial code) are hidden when
+   _POSIX_C_SOURCE is defined - which we force below.  Enabling
+   _DARWIN_C_SOURCE keeps those extensions visible while still requesting
+   the POSIX feature set.  Must be set before any system header. */
+#  if defined( __APPLE__ ) && !defined( _DARWIN_C_SOURCE )
+#    define _DARWIN_C_SOURCE
+#  endif
 #ifndef STANDARD_HEADERS_INCLUDED
 /* multiple inclusion protection symbol */
 #define STANDARD_HEADERS_INCLUDED
@@ -9210,7 +9218,16 @@ struct rt_init
 	 struct rt_init *junk2[3];
 #endif
 #endif
-} __attribute__((packed));
+}
+#ifdef __MAC__
+// ld64 on arm64 warns that the packed (alignment 1) atoms placed in the
+// deadstart section may produce unaligned pointers.  The struct is already
+// sized to a multiple of 8 (see the padding notes above), so advertise 8-byte
+// alignment to silence the warning without changing the packed layout/size.
+__attribute__((packed, aligned(8)));
+#else
+__attribute__((packed));
+#endif
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
 #  if defined( __GNUC__ ) && defined( __64__)
 #    define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
@@ -9295,7 +9312,16 @@ struct rt_init
     // to 32 bytes...
 	 struct rt_init *junk2[3];
 #endif
-} __attribute__((packed));
+}
+#ifdef __MAC__
+// ld64 on arm64 warns that the packed (alignment 1) atoms placed in the
+// deadstart section may produce unaligned pointers.  The struct is already
+// sized to a multiple of 8 (see the padding notes above), so advertise 8-byte
+// alignment to silence the warning without changing the packed layout/size.
+__attribute__((packed, aligned(8)));
+#else
+__attribute__((packed));
+#endif
 #define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
 #ifdef __cplusplus
 #define RTINIT_STATIC
