@@ -175,11 +175,12 @@ endif()
 option(LIBSSH2_DISABLE_INSTALL "Disable installation targets" OFF)
 if(NOT LIBSSH2_DISABLE_INSTALL)
   include(GNUInstallDirs)
-  install(
-    FILES
-      COPYING NEWS README RELEASE-NOTES
-      docs/AUTHORS docs/BINDINGS.md docs/HACKING.md
-    DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+#  install(
+#    FILES
+#      COPYING NEWS README RELEASE-NOTES
+#      docs/AUTHORS docs/BINDINGS.md docs/HACKING.md
+#    DESTINATION ${CMAKE_INSTALL_DOCDIR})
 endif()
 
 include(PickyWarnings)
