@@ -15,6 +15,12 @@ extern "C" void wgpuLiveDump( void );
 extern "C" void wgpuSetActiveSurface( WGPUSurface, WGPUTexture );
 extern "C" void wgpuClearActiveSurface( void );
 
+// imglib-webgpu driver hooks (see imglib-webgpu/local.h for full list).
+namespace sack { namespace image {
+	void webgpu_image_set_surface_depth_format( WGPUTextureFormat fmt );
+	void webgpu_image_refresh_psi_palette( void );
+}}
+
 // ----- imglib-webgpu surface hooks ---------------------------------------
 // The imglib driver registers webgpu.image and provides a per-subimage
 // render-bundle composition step that runs at the end of the surface pass.
@@ -320,6 +326,39 @@ void GPUCanvasContext::getCurrentTexture( const FunctionCallbackInfo<Value>& arg
 }
 
 
+// ---------- setSurfaceDepthFormat ----------
+//
+// Forwards to the imglib-webgpu driver so future render bundles record
+// with a matching depthStencilFormat (+ depthReadOnly=true since our 2D
+// HUD never writes depth). Without this, bundles only validate inside
+// passes that have no depth attachment.
+
+void GPUCanvasContext::setSurfaceDepthFormat( const v8::FunctionCallbackInfo<v8::Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	WGPUTextureFormat fmt = WGPUTextureFormat_Undefined;
+	if( args.Length() >= 1 && args[ 0 ]->IsString() ) {
+		String::Utf8Value s( isolate, args[ 0 ] );
+		fmt = wgpu_str_to_GPUTextureFormat(
+			*s, (size_t)s.length(), WGPUTextureFormat_Undefined );
+	}
+	// null / undefined / unrecognised string → Undefined, resetting to
+	// "no depth attachment" mode (the original behaviour). That's the
+	// safe fallback rather than throwing.
+	sack::image::webgpu_image_set_surface_depth_format( fmt );
+}
+
+
+// ---------- refreshPSIPalette ----------
+//
+// Forwards to the imglib-webgpu driver to re-pull PSI's base colours
+// into palette slots 1..14. No args, no return value.
+
+void GPUCanvasContext::refreshPSIPalette( const v8::FunctionCallbackInfo<v8::Value>& args ) {
+	(void)args;
+	sack::image::webgpu_image_refresh_psi_palette();
+}
+
+
 // ---------- present ----------
 //
 // Browsers auto-present on the next requestAnimationFrame; for our native
@@ -350,10 +389,12 @@ void GPUCanvasContext::Init( Isolate* isolate, Local<Object> exports ) {
 	tpl->SetClassName( localStringExternal( isolate, "GPUCanvasContext" ) );
 	tpl->InstanceTemplate()->SetInternalFieldCount( 1 );
 
-	NODE_SET_PROTOTYPE_METHOD( tpl, "configure",         GPUCanvasContext::configure );
-	NODE_SET_PROTOTYPE_METHOD( tpl, "unconfigure",       GPUCanvasContext::unconfigure );
-	NODE_SET_PROTOTYPE_METHOD( tpl, "getCurrentTexture", GPUCanvasContext::getCurrentTexture );
-	NODE_SET_PROTOTYPE_METHOD( tpl, "present",           GPUCanvasContext::present );
+	NODE_SET_PROTOTYPE_METHOD( tpl, "configure",             GPUCanvasContext::configure );
+	NODE_SET_PROTOTYPE_METHOD( tpl, "unconfigure",           GPUCanvasContext::unconfigure );
+	NODE_SET_PROTOTYPE_METHOD( tpl, "getCurrentTexture",     GPUCanvasContext::getCurrentTexture );
+	NODE_SET_PROTOTYPE_METHOD( tpl, "setSurfaceDepthFormat", GPUCanvasContext::setSurfaceDepthFormat );
+	NODE_SET_PROTOTYPE_METHOD( tpl, "refreshPSIPalette",     GPUCanvasContext::refreshPSIPalette );
+	NODE_SET_PROTOTYPE_METHOD( tpl, "present",               GPUCanvasContext::present );
 
 	Local<Function> ctor = tpl->GetFunction( context ).ToLocalChecked();
 	getConstructors( isolate )->GPUCanvasContext_constructor.Reset( isolate, ctor );

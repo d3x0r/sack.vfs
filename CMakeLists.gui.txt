@@ -289,6 +289,8 @@ if( INCLUDE_DAWN )
 		src/gui/imglib-webgpu/image_3d_ops.cc
 		src/gui/imglib-webgpu/interface_render_3d.cc
 		src/gui/imglib-webgpu/render3d_ops.cc
+		src/gui/imglib-webgpu/interface_render.cc
+		src/gui/imglib-webgpu/render_ops.cc
 		src/gui/imglib-webgpu/shaders.wgsl
 	)
 

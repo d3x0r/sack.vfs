@@ -332,7 +332,15 @@ WGPURenderBundle webgpu_op_list_record( struct webgpu_op_list *ops,
 	WGPURenderBundleEncoderDescriptor bed = {};
 	bed.colorFormatCount   = 1;
 	bed.colorFormats       = &color_format;
-	bed.depthStencilFormat = WGPUTextureFormat_Undefined;
+	// Bundle must match the executing pass's attachment state. If the
+	// binding has told us there's a depth-stencil attachment on the
+	// surface pass (e.g. three.js 3D content sharing the pass with our
+	// HUD), we record the bundle with that format and promise to not
+	// write depth — pure 2D content has no depth-touching ops.
+	bed.depthStencilFormat = l.surface_depth_format_;
+	if( l.surface_depth_format_ != WGPUTextureFormat_Undefined ) {
+		bed.depthReadOnly   = true;
+	}
 	bed.sampleCount        = 1;
 	WGPURenderBundleEncoder enc = wgpuDeviceCreateRenderBundleEncoder( l.device_, &bed );
 

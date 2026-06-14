@@ -37,7 +37,7 @@ by using the Image method on an existing image also.
 | Image Methods | arguments | description |
 |-----|-----|----|
 | Image | (x, y, width, height ) | Creates a image within the current image.  Operations on this image are clipped within the region specified |
-| reset | () | Clear an image to transparent black (0,0,0,0) |
+| reset | () | Clear an image to transparent black (0,0,0,0). On a webgpu-bound surface this also releases the retained render bundle. |
 | fill | ( x, y, width, height, color ) | fill a region of an image with a simple color.  |
 | fillOver | ( x, y, width, height, color ) | fill a region of an image with a simple color; if color is semi-transparent applies color over existing image data.  |
 | line | ( x1, y1, x2, y2, color ) | Draw a straight line in specified color.|
@@ -47,6 +47,7 @@ by using the Image method on an existing image also.
 | drawImage | ( image [, x, y [, xAt, yAt [,width, height]]] ) or ( image [, x, y, width, height, xAt, yAt , source_width, source_height ) | Sets the specified image into the 'this' image.  Draw at x, y (0,0 if not specified), starting at position (xAt, yAt) in the source IMage (0,0 if not specified), for a width and height specified (otherwise full image width, height.  If all parameters are specified, scales the portion of the source image to the target image.  )
 | drawImageOver | (same as drawImage) | Same as drawImage, except applies alpha in source image to overlay the new image over the existin content in image. |
 | imageSurface | () | Gets a uint8arry which is the underlaying image buffer.  PIxel format is typically [r,g,b,a].  If a lot of custom pixels are to be updated, this is far more efficient to update than using plot or plotOver methods.| 
+| text / putString | ( str, x, y [, color [, font [, background [, height]]]] ) | Draw text onto the image at (x,y). Defaults: color = opaque white, font = `GetDefaultFont`, background = transparent, height = font's natural height. On a webgpu-bound surface this routes through sack's font cache → atlas → GPU texture sample. | 
 | png | read-only accessor | Gets the image data as an ArrayBuffer, converted using PNG compression.  The quality of compression can be controlled using the jpgQuality accessor. |
 | jpg | read-only accessor | Gets the image data as an ArrayBuffer, converted using JPEG compression.  The quality of compression can be controlled using the jpgQuality accessor. |
 | jpegQuality | integer between 0-100, default is 78 | This controls the quality factor of jpeg compression |
@@ -111,9 +112,12 @@ TItle is a text string set as the window's caption/title string.  X and Y contro
 W and H control the width and height of the window (-1, -1 uses a system default).  parent renderer is a renderer that this one is opened over.
 This should guarantee stacking order, and is semi-modal, that events will not be sent to the parent renderer while the child is open.
 
+Renderer can also be constructed with a single options-object argument: `new sack.Renderer({ title, x, y, width, height, flags, parent })` — equivalent to the positional form, just nicer to read.
+
 | Renderer Methods | Arguments | description |
 |----|----|----|
 | getImage | () | returns a sack.Image which is the surface of this renderer |
+| getContext | (typeString) | WebGPU context creation. `'webgpu'` returns a [GPUCanvasContext](#webgpu-surface-integration) for this renderer. Side-effect: flags the display image as a GPU final-render target and installs the [imglib-webgpu](src/gui/imglib-webgpu/README_PSI_webgpu.md) driver as the surface's reverse interface so subsequent draws (including text via the font cache) record into render bundles instead of mutating CPU pixmap memory. |
 | setDraw | ( callback ) | callback function is passed a sack.Image which can be drawn on.  Once this function returns, the content is updated to the display. |
 | setMouse | (callback) | callback function is passed an event object containing { x, y, b } which is the mouse event x, y position within the surface of this renderer, and the button events.  Button values are defined in  sack.button.[left/right/middle/scroll_down/scroll_up]. |
 | setKey | (callback) | callback function is passed an encoded integer value of the key.  (needs more work to improve interfacing) |
@@ -416,6 +420,67 @@ Mostly unimplemented, more of a place holder than functional.
 | InterShell Control Instance Methods | description |
 |-----|-----|
 | setTitle | Set text shown on button |
+
+
+# WebGPU surface integration
+
+When sack-gui is built with `INCLUDE_DAWN` (default in this branch), a Renderer can host a Dawn-backed WebGPU canvas surface. Imglib calls on its surface route through a render-bundle driver that composes correctly with three.js or any other native WebGPU content sharing the pass.
+
+```js
+const r = new sack.Renderer({ width: 1280, height: 720,
+                              flags: sack.Renderer.attributes.DISPLAY_ATTRIBUTE_NO_REDIRECT });
+
+const adapter = await sack.gpu.requestAdapter();
+const device  = await adapter.requestDevice();
+
+const ctx = r.getContext('webgpu');           // returns the GPUCanvasContext
+ctx.configure({
+  device,
+  format:    'bgra8unorm',                    // platform-fixed on Windows
+  alphaMode: 'premultiplied',                 // for layered transparent windows
+});
+ctx.setSurfaceDepthFormat('depth24plus');     // optional - required when sharing
+                                              // the pass with depth-attached
+                                              // content like three.js
+r.on('draw', (surface) => {
+  surface.fill(0xFF202020);
+  surface.text("Hello, webgpu", 50, 50);
+  // ... your normal beginRenderPass / pass.end / submit cycle.
+  // pass.end() on the surface-targeting pass fires the imglib-webgpu
+  // frame walker which replays this renderer's retained bundles into
+  // the same pass.
+});
+```
+
+## GPUCanvasContext (webgpu)
+
+Returned by `r.getContext('webgpu')`. Standard WebGPU canvas context shape, plus a sack-specific extension for sharing a depth-attached pass with foreign content.
+
+| Method | Args | Description |
+|---|---|---|
+| configure | ({ device, format, alphaMode?, usage?, viewFormats?, width?, height? }) | Spec configure. Also informs the imglib driver of surface size + format. |
+| unconfigure | () | Spec unconfigure. |
+| getCurrentTexture | () | Spec getCurrentTexture; flagged for auto-present on next submit. |
+| present | () | Native runner-only; browsers auto-present. Call after `queue.submit()` if you're not relying on auto-present. |
+| setSurfaceDepthFormat | (formatString \| null) | Tell the imglib-webgpu driver what depth-stencil format the surface render pass will use (e.g. `'depth24plus'`, `'depth24plus-stencil8'`, `'depth32float'`). Render bundles will be encoded with matching `depthStencilFormat` + `depthReadOnly = true`, and the four internal pipelines are rebuilt with a matching `WGPUDepthStencilState`. Pass `null` or no argument to reset to pure-2D (no depth attachment). Cached state is invalidated automatically; next frame re-records bundles. |
+
+## Image interface routing
+
+Each `Image` carries an optional per-instance interface pointer (`pii`). On a renderer that has called `getContext('webgpu')`, the surface ImageObject is built with `pii` pointing at the imglib-webgpu driver, so JS-level `surface.fill`, `surface.text`, `surface.drawImage`, etc. record into render bundles instead of writing CPU pixmap bytes. ImageObjects on plain CPU renderers continue to use the global default (`sack.image`).
+
+This means a single process can have one window doing pure CPU rendering and another doing GPU rendering at the same time, without either knowing about the other.
+
+## sack interfaces registered by the driver
+
+The imglib-webgpu driver lives at [`src/gui/imglib-webgpu/`](src/gui/imglib-webgpu/README_PSI_webgpu.md) and registers three sack interfaces:
+
+| Name | sack interface | Purpose |
+|---|---|---|
+| `webgpu.image` | IMAGE_INTERFACE | The bulk of the draw vocabulary - blit / color / text / line / image lifecycle. |
+| `webgpu.image.3d` | IMAGE_3D_INTERFACE | Shader buffer primitives; callers porting from puregl2 supply **WGSL** shader source (not GLSL). |
+| `webgpu.render.3d` | RENDER3D_INTERFACE | Utility queries for native 3D content (frustum clip, view volume, anchor space). Three.js / the JS WebGPU path owns its own camera and render loop; this interface is for *native* sack code that wants the same answers. |
+
+See [README_PSI_webgpu.md](src/gui/imglib-webgpu/README_PSI_webgpu.md) for the full driver architecture (per-renderer pii binding, retained bundle model, atlas sharing, premultiplied alpha, frame walker, surface root tracking, etc.).
 
 
 # Systray Interface

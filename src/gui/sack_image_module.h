@@ -48,6 +48,13 @@ public:
 	static void putImageOver( const FunctionCallbackInfo<Value>& args );
 	static void putImageMultiShaded( const FunctionCallbackInfo<Value> &args );
 	static void imageData( const FunctionCallbackInfo<Value> &args );
+
+	// surface.text(str, x, y[, color[, font[, background[, height]]]])
+	// — defaults: color=white, font=default font, background=transparent,
+	// height=font's natural height. Renders via PutStringFontEx which on
+	// a webgpu-bound surface routes through the per-image pii (= webgpu
+	// imglib driver) and lays down textured quads sampling the font atlas.
+	static void text( const FunctionCallbackInfo<Value>& args );
 	static void getInverted(const FunctionCallbackInfo<Value>& args);
 	static void setInverted(const FunctionCallbackInfo<Value>& args);
 

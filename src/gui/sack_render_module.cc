@@ -5,6 +5,8 @@
 #endif
 #include "sack_dom_key_names.h"   // kDomKeyName / kDomCodeName / sack_vk_to_dom_keyCode
 
+extern "C" void* sack_image_get_webgpu_reverse_for_render(void);
+
 struct render_private_data {
 	PLIST renderers;
 	PIMAGE_INTERFACE pri_gpu_image;
@@ -928,6 +930,22 @@ void RenderObject::getContext( const FunctionCallbackInfo<Value>& args ) {
 		if( display ) {
 			display->flags |=  IF_FLAG_FINAL_RENDER;
 			display->flags &= ~IF_FLAG_IN_MEMORY;
+			// Install our driver as the surface's reverse_interface so
+			// sack's font code (and any other reverse-aware code) routes
+			// its final BlotImage back through us when it sees a FINAL_RENDER
+			// dest. Without this, font glyph rendering would still try to
+			// poke pixels into the CPU pixmap that isn't there.
+			void *iface = sack_image_get_webgpu_reverse_for_render();
+			if( iface ) {
+				// reverse_interface is declared as `struct image_interface_tag *`
+				// inside the namespace selected by the imglib build flags;
+				// the void* punt sidesteps the namespace lookup so this
+				// compiles whether IMAGE_NAMESPACE expanded to ::Interface
+				// or directly into sack::image.
+				display->reverse_interface =
+					reinterpret_cast<decltype(display->reverse_interface)>( iface );
+				display->reverse_interface_instance = display;
+			}
 		}
 		if( !r->surface.IsEmpty() )
 			r->surface.Reset();
@@ -961,8 +979,9 @@ void RenderObject::getImage( const FunctionCallbackInfo<Value>& args ) {
 	struct image_interface_tag *pii = r->has_webgpu_context
 		? (struct image_interface_tag *)render_global.pri_gpu_image
 		: NULL;
-	r->surface.Reset( isolate,
-		ImageObject::NewImage( isolate, GetDisplayImage( r->r ), TRUE, pii ) );
+	Local<Object> img = ImageObject::NewImage(isolate, GetDisplayImage(r->r), TRUE, pii);
+	r->surface.Reset( isolate, img );
+	args.GetReturnValue().Set( img );
 }
 
 void RenderObject::redraw( const FunctionCallbackInfo<Value>& args ) {

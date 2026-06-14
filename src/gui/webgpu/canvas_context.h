@@ -31,6 +31,25 @@ public:
 	static void unconfigure      ( const v8::FunctionCallbackInfo<v8::Value>& );
 	static void getCurrentTexture( const v8::FunctionCallbackInfo<v8::Value>& );
 
+	// Tell the imglib-webgpu driver what depth-stencil format the render
+	// pass that executes our bundles will use. Required when our HUD
+	// bundles need to share a pass with depth-enabled content (e.g.
+	// three.js 3D scenes). Pass a WebGPU format string ('depth24plus',
+	// 'depth24plus-stencil8', 'depth32float', ...) or null/undefined to
+	// reset to no-depth-attachment mode.
+	//
+	// Not in the spec — sack-specific binding glue. Worth keeping on
+	// the canvas context object because callers reach it from the same
+	// place they configure the surface itself.
+	static void setSurfaceDepthFormat( const v8::FunctionCallbackInfo<v8::Value>& );
+
+	// Re-pull PSI ControlColorTypes (HIGHLIGHT..SCROLLBAR_BACK) into the
+	// imglib-webgpu driver's palette uniform (slots 1..14). Useful after
+	// PSI's preload has run (its base colours are zeros until then) or
+	// after any SetBaseColor / theme swap. One queue write, no bundle
+	// invalidation — CDATA palette references stay correct.
+	static void refreshPSIPalette( const v8::FunctionCallbackInfo<v8::Value>& );
+
 	// Not in the WebGPU spec (browsers auto-present), but required for
 	// native runners — call after each frame's queue submission.
 	static void present          ( const v8::FunctionCallbackInfo<v8::Value>& );

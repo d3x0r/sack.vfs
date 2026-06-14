@@ -112,9 +112,25 @@ struct webgpu_image_driver_state
 	// format is a platform constant in practice (not even GL had this vary).
 	WGPUTextureFormat surface_format_;
 
+	// Depth-stencil format of the render pass that will execute our bundles.
+	// Undefined = pure 2D pass (no depth attachment) — bundles record with
+	// depthStencilFormat=Undefined.  Non-Undefined = mixed-mode pass (e.g.
+	// three.js 3D content + our HUD bundles on top); bundles record with
+	// depthStencilFormat=this + depthReadOnly=true so they don't write depth
+	// but pass attachment compatibility checks. Caller (canvas binding /
+	// three.js integration) sets this via webgpu_image_set_surface_depth_format
+	// before any drawing.
+	WGPUTextureFormat surface_depth_format_;
+
 	// Bumped when any font's atlas resizes (so per-image bundles can compare
 	// against bundle_atlas_generation_ and re-record).
 	uint32_t   font_atlas_generation_;
+
+	// Bumped whenever surface_depth_format_ changes. Each per-image entry
+	// records the value it last encoded its bundle with; mismatch on a
+	// frame walk forces a re-record so the bundle's attachment state
+	// catches up.
+	uint32_t   depth_format_generation_;
 
 	RCOORD scale;
 
@@ -139,6 +155,11 @@ struct webgpu_image_driver_state webgpu_image_driver;
 // yet available (CPU fallback can still be used regardless).
 LOGICAL webgpu_image_ensure_init( void );
 
+// Returns our driver's IMAGE_INTERFACE pointer, populated and ready to
+// be installed as an image's reverse_interface. NULL if the CPU fallback
+// hasn't resolved yet (very early init).
+PIMAGE_INTERFACE webgpu_image_get_interface_for_reverse( void );
+
 // Returns the resolved CPU image interface, or NULL if it hasn't been
 // registered yet. The override functions use this for non-FINAL_RENDER
 // targets.
@@ -151,12 +172,14 @@ WGPURenderPipeline webgpu_image_get_pipe_multi( void );
 WGPURenderPipeline webgpu_image_get_pipe_normal( void );
 
 // Setters wired up by sack-side / JS-side code as appropriate.
-void webgpu_image_set_surface_format ( WGPUTextureFormat fmt );
-void webgpu_image_set_surface_size   ( uint32_t w, uint32_t h );
+void webgpu_image_set_surface_format       ( WGPUTextureFormat fmt );
+void webgpu_image_set_surface_depth_format ( WGPUTextureFormat fmt );
+void webgpu_image_set_surface_size         ( uint32_t w, uint32_t h );
 void webgpu_image_set_light_direction( float x, float y, float z );
 void webgpu_image_set_light_color    ( float r, float g, float b );
 void webgpu_image_set_ambient        ( float r, float g, float b, float intensity );
 void webgpu_image_set_palette_entry  ( int idx, float r, float g, float b, float a );
+void webgpu_image_refresh_psi_palette( void );  // re-pulls slots 1..14 from PSI
 
 // Bind a normal map to an image. When a BlotImage* targets this image as
 // source, the driver routes the draw through pipe_normal_ instead of
@@ -202,6 +225,7 @@ struct webgpu_per_image
 	uint32_t         dirty_;                  // atomic; set by any thread on op
 	uint32_t         bundle_atlas_generation_;
 	uint32_t         bundle_palette_generation_;
+	uint32_t         bundle_depth_generation_;
 
 	// Retained op-list snapshot — what the bundle was recorded from.
 	struct webgpu_op_list *ops_;

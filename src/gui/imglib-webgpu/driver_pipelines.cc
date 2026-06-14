@@ -10,6 +10,32 @@
 
 #include "local.h"
 
+// PSI's GetBaseColor — populates palette slots 1..14 from the running
+// PSI theme. Slot 0 stays reserved as transparent. Mapping mirrors
+// ControlColorTypes from sack/include/controls.h:
+//
+//   palette[1]  HIGHLIGHT                (PSI 0)
+//   palette[2]  NORMAL                   (PSI 1)
+//   palette[3]  SHADE                    (PSI 2)
+//   palette[4]  SHADOW                   (PSI 3)
+//   palette[5]  TEXTCOLOR                (PSI 4)
+//   palette[6]  CAPTION                  (PSI 5)
+//   palette[7]  CAPTIONTEXTCOLOR         (PSI 6)
+//   palette[8]  INACTIVECAPTION          (PSI 7)
+//   palette[9]  INACTIVECAPTIONTEXTCOLOR (PSI 8)
+//   palette[10] SELECT_BACK              (PSI 9)
+//   palette[11] SELECT_TEXT              (PSI 10)
+//   palette[12] EDIT_BACKGROUND          (PSI 11)
+//   palette[13] EDIT_TEXT                (PSI 12)
+//   palette[14] SCROLLBAR_BACK           (PSI 13)
+//   palette[15] unused (magenta sentinel)
+//
+// CDATA encoding for "use palette slot N":  alpha == 0, low 4 bits == N.
+// So `0x00000002` from JS = palette[2] = NORMAL background. Convenient
+// for theme swap — SetBaseColor + a single re-upload of the palette
+// buffer re-skins everything that uses these CDATAs, no bundle re-record.
+#include <controls.h>
+
 IMAGE_NAMESPACE
 
 // ----------------------------------------------------------------------
@@ -32,6 +58,11 @@ struct Lighting {
 @group(0) @binding(1) var<uniform> lighting : Lighting;
 
 fn resolve_color(packed : u32) -> vec4<f32> {
+    // alpha != 0 → literal RGBA.
+    // alpha == 0 → palette index in low 4 bits. Slot 0 is reserved as
+    // fully transparent so the convention CDATA(0) = transparent holds
+    // (with the premultiplied blend that's a no-op blit, which is what
+    // fill(0) / cleared bundle should produce).
     let a : u32 = (packed >> 24u) & 0xFFu;
     if (a == 0u) {
         let idx : u32 = packed & 0x0Fu;
@@ -135,6 +166,38 @@ static WGPUShaderModule g_shader_module = NULL;
 static WGPUPipelineLayout g_pipeline_layout_simple = NULL;  // bgl_globals_ + bgl_texture_
 static WGPUPipelineLayout g_pipeline_layout_normal = NULL;  // bgl_globals_ + bgl_texture_normal_
 static WGPUPipelineLayout g_pipeline_layout_solid  = NULL;  // bgl_globals_ only
+
+// Depth-stencil format the pipelines were last built for. If the caller
+// changes surface_depth_format_ later (e.g. wiring up three.js's HUD),
+// build_all() will detect the mismatch and rebuild the pipeline objects
+// so setPipeline inside the bundle encoder doesn't fail validation.
+static WGPUTextureFormat g_pipelines_depth_format = WGPUTextureFormat_Undefined;
+
+// Populated by make_depth_stencil_state when surface has depth. Read-only
+// + always-compare + no-stencil = "we don't touch depth/stencil but we
+// declare the attachment exists so we're pass-compatible."
+static WGPUDepthStencilState g_dss;
+
+// Returns &g_dss when depth attachment exists, NULL otherwise. The
+// pipeline descriptor's `depthStencil` field is nullable; leaving it
+// NULL means "no depth-stencil state" which is what pure-2D wants.
+static WGPUDepthStencilState *make_depth_stencil_state( void )
+{
+	if( l.surface_depth_format_ == WGPUTextureFormat_Undefined )
+		return NULL;
+	MemSet( &g_dss, 0, sizeof( g_dss ) );
+	g_dss.format              = l.surface_depth_format_;
+	g_dss.depthWriteEnabled   = WGPUOptionalBool_False;        // read-only
+	g_dss.depthCompare        = WGPUCompareFunction_Always;    // never reject
+	g_dss.stencilReadMask     = 0xFFFFFFFF;
+	g_dss.stencilWriteMask    = 0xFFFFFFFF;
+	g_dss.stencilFront.compare     = WGPUCompareFunction_Always;
+	g_dss.stencilFront.failOp      = WGPUStencilOperation_Keep;
+	g_dss.stencilFront.depthFailOp = WGPUStencilOperation_Keep;
+	g_dss.stencilFront.passOp      = WGPUStencilOperation_Keep;
+	g_dss.stencilBack              = g_dss.stencilFront;
+	return &g_dss;
+}
 
 static WGPUSampler make_sampler( WGPUFilterMode filter )
 {
@@ -245,6 +308,7 @@ static WGPURenderPipeline make_pipeline_solid( WGPUTextureFormat fmt )
 	pd.vertex.bufferCount  = 1;
 	pd.vertex.buffers      = &vbl;
 	pd.primitive.topology  = WGPUPrimitiveTopology_TriangleList;
+	pd.depthStencil        = make_depth_stencil_state();
 	pd.multisample.count   = 1;
 	pd.multisample.mask    = 0xFFFFFFFF;
 	pd.fragment            = &fs;
@@ -287,6 +351,7 @@ static WGPURenderPipeline make_pipeline_textured( WGPUTextureFormat fmt,
 	pd.vertex.bufferCount  = 1;
 	pd.vertex.buffers      = &vbl;
 	pd.primitive.topology  = WGPUPrimitiveTopology_TriangleList;
+	pd.depthStencil        = make_depth_stencil_state();
 	pd.multisample.count   = 1;
 	pd.multisample.mask    = 0xFFFFFFFF;
 	pd.fragment            = &fs;
@@ -323,14 +388,33 @@ static WGPURenderPipeline make_pipeline_multi( WGPUTextureFormat fmt )
 	pd.vertex.bufferCount  = 1;
 	pd.vertex.buffers      = &vbl;
 	pd.primitive.topology  = WGPUPrimitiveTopology_TriangleList;
+	pd.depthStencil        = make_depth_stencil_state();
 	pd.multisample.count   = 1;
 	pd.multisample.mask    = 0xFFFFFFFF;
 	pd.fragment            = &fs;
 	return wgpuDeviceCreateRenderPipeline( l.device_, &pd );
 }
 
+// Release everything build_all created. Used both at full shutdown and
+// when the surface depth format changes (which requires rebuilding the
+// pipeline objects against the new attachment state).
+static void release_pipelines( void )
+{
+	if( l.pipe_solid_    ) { wgpuRenderPipelineRelease( l.pipe_solid_    ); l.pipe_solid_    = NULL; }
+	if( l.pipe_textured_ ) { wgpuRenderPipelineRelease( l.pipe_textured_ ); l.pipe_textured_ = NULL; }
+	if( l.pipe_multi_    ) { wgpuRenderPipelineRelease( l.pipe_multi_    ); l.pipe_multi_    = NULL; }
+	if( l.pipe_normal_   ) { wgpuRenderPipelineRelease( l.pipe_normal_   ); l.pipe_normal_   = NULL; }
+	g_pipelines_built = 0;
+}
+
 static void build_all( void )
 {
+	// Rebuild pipelines if the depth format changed since last build.
+	if( g_pipelines_built && g_pipelines_depth_format != l.surface_depth_format_ ) {
+		lprintf( "imglib-webgpu: rebuilding pipelines for depth format %d -> %d",
+			(int)g_pipelines_depth_format, (int)l.surface_depth_format_ );
+		release_pipelines();
+	}
 	if( g_pipelines_built )
 		return;
 	if( !l.device_ )
@@ -377,26 +461,32 @@ static void build_all( void )
 		g_pipeline_layout_normal = wgpuDeviceCreatePipelineLayout( l.device_, &pld );
 	}
 
-	// Palette uniform — 16 × vec4<f32> = 256 B. Defaults: classic 16-colour
-	// CGA-ish palette. PSI BASECOLOR setters rewrite individual slots.
-	float palette[16][4] = {
-		{ 0.00f, 0.00f, 0.00f, 1.0f },  // 0 black
-		{ 0.50f, 0.50f, 0.50f, 1.0f },  // 1 dark grey
-		{ 0.75f, 0.75f, 0.75f, 1.0f },  // 2 light grey  (3.1 face)
-		{ 1.00f, 1.00f, 1.00f, 1.0f },  // 3 white
-		{ 0.50f, 0.00f, 0.00f, 1.0f },  // 4 dark red
-		{ 0.00f, 0.50f, 0.00f, 1.0f },  // 5 dark green
-		{ 0.00f, 0.00f, 0.50f, 1.0f },  // 6 dark blue
-		{ 0.50f, 0.50f, 0.00f, 1.0f },  // 7 dark yellow
-		{ 1.00f, 0.00f, 0.00f, 1.0f },  // 8 red
-		{ 0.00f, 1.00f, 0.00f, 1.0f },  // 9 green
-		{ 0.00f, 0.00f, 1.00f, 1.0f },  // 10 blue
-		{ 1.00f, 1.00f, 0.00f, 1.0f },  // 11 yellow
-		{ 1.00f, 0.00f, 1.00f, 1.0f },  // 12 magenta
-		{ 0.00f, 1.00f, 1.00f, 1.0f },  // 13 cyan
-		{ 0.50f, 0.25f, 0.00f, 1.0f },  // 14 brown (window border)
-		{ 0.10f, 0.10f, 0.20f, 1.0f },  // 15 title bar
-	};
+	// Palette uniform — 16 × vec4<f32> = 256 B.
+	// Slot 0: reserved transparent — what resolve_color returns for CDATA(0).
+	// Slots 1..14: pulled from PSI's GetBaseColor(0..13). PSI may not have
+	//   initialised its base colours yet (priority preload ordering with
+	//   our driver build); any slot returning alpha=0 falls back to white.
+	// Slot 15: magenta sentinel so an out-of-range palette index is obvious.
+	float palette[16][4] = { { 0.0f, 0.0f, 0.0f, 0.0f } };  // slot 0
+	for( int i = 0; i < 14; i++ ) {
+		CDATA c = sack::PSI::GetBaseColor( (INDEX)i );
+		float r = (float)( ( c       ) & 0xFF ) / 255.0f;
+		float g = (float)( ( c >>  8 ) & 0xFF ) / 255.0f;
+		float b = (float)( ( c >> 16 ) & 0xFF ) / 255.0f;
+		float a = (float)( ( c >> 24 ) & 0xFF ) / 255.0f;
+		if( a == 0.0f ) {
+			// PSI hasn't set this slot (or returned a transparent value).
+			// Use opaque white so the colour shows up obviously rather
+			// than vanishing under premultiplied blend.
+			r = g = b = a = 1.0f;
+		}
+		palette[i + 1][0] = r;
+		palette[i + 1][1] = g;
+		palette[i + 1][2] = b;
+		palette[i + 1][3] = a;
+	}
+	palette[15][0] = 1.0f; palette[15][1] = 0.0f;
+	palette[15][2] = 1.0f; palette[15][3] = 1.0f;   // 15 magenta sentinel
 	l.palette_buffer_ = make_uniform_buffer( sizeof( palette ), palette );
 
 	// Lighting uniform — 48 B, but pad to 64 for alignment friendliness.
@@ -429,6 +519,7 @@ static void build_all( void )
 	l.pipe_multi_    = make_pipeline_multi( fmt );
 	l.pipe_normal_   = make_pipeline_textured( fmt, "vs_normal",   "fs_normal",   g_pipeline_layout_normal );
 
+	g_pipelines_depth_format = l.surface_depth_format_;
 	g_pipelines_built = 1;
 }
 
@@ -451,6 +542,16 @@ void webgpu_image_set_surface_format( WGPUTextureFormat fmt )
 	// is a no-op — but in practice the format is platform-fixed so there's
 	// no real reason to change it post-build.
 	l.surface_format_ = fmt;
+}
+
+void webgpu_image_set_surface_depth_format( WGPUTextureFormat fmt )
+{
+	if( l.surface_depth_format_ == fmt )
+		return;
+	l.surface_depth_format_ = fmt;
+	l.depth_format_generation_++;   // forces walker to re-record bundles
+	lprintf( "imglib-webgpu: surface depth format -> %d (gen %u)",
+		(int)fmt, l.depth_format_generation_ );
 }
 
 void webgpu_image_set_light_direction( float x, float y, float z )
@@ -481,6 +582,29 @@ void webgpu_image_set_palette_entry( int idx, float r, float g, float b, float a
 	wgpuQueueWriteBuffer( l.queue_, l.palette_buffer_, idx * 16, c, sizeof( c ) );
 }
 
+// Re-pull PSI base colours into palette slots 1..14. Call this from JS
+// after PSI has been set up (its preload may run after ours) or after
+// any SetBaseColor / theme swap so the GPU palette mirrors the live PSI
+// theme. Cheap — one wgpuQueueWriteBuffer covers all 14 slots.
+void webgpu_image_refresh_psi_palette( void )
+{
+	if( !l.palette_buffer_ ) return;
+	float slots[14][4];
+	for( int i = 0; i < 14; i++ ) {
+		CDATA c = sack::PSI::GetBaseColor( (INDEX)i );
+		float r = (float)( ( c       ) & 0xFF ) / 255.0f;
+		float g = (float)( ( c >>  8 ) & 0xFF ) / 255.0f;
+		float b = (float)( ( c >> 16 ) & 0xFF ) / 255.0f;
+		float a = (float)( ( c >> 24 ) & 0xFF ) / 255.0f;
+		if( a == 0.0f ) { r = g = b = a = 1.0f; }   // unset → opaque white fallback
+		slots[i][0] = r; slots[i][1] = g; slots[i][2] = b; slots[i][3] = a;
+	}
+	wgpuQueueWriteBuffer( l.queue_, l.palette_buffer_, 1 * 16, slots, sizeof( slots ) );
+	// (palette[0] = transparent and palette[15] = magenta sentinel are
+	//  left untouched.)
+	l.palette_generation_++;
+}
+
 void webgpu_image_set_normal_map( Image diffuse, Image normal )
 {
 	if( !diffuse ) return;
@@ -500,19 +624,36 @@ void webgpu_image_set_normal_map( Image diffuse, Image normal )
 // Source-texture upload + per-source bind groups.
 // ----------------------------------------------------------------------
 
+// Walk to the topmost parent. Subimages share their parent's underlying
+// pixmap (src->image points into the parent's bytes at the subimage's
+// row 0); only the topmost parent has its own buffer. The GPU texture
+// always covers the whole atlas — subimages just sample a UV sub-rect
+// at draw time (see blot_record's atlas-relative coord conversion).
+static Image image_root( Image img )
+{
+	while( img && img->pParent )
+		img = img->pParent;
+	return img;
+}
+
 WGPUTexture webgpu_image_ensure_src_texture( Image src )
 {
-	if( !src || !src->image )
+	if( !src )
+		return NULL;
+	// Texture, view, and bind-group cache always live on the root image
+	// (the actual pixmap owner). Subimages reuse the same texture.
+	Image root = image_root( src );
+	if( !root || !root->image )
 		return NULL;
 	if( !webgpu_image_ensure_init() )
 		return NULL;
 
-	struct webgpu_per_image *pi = webgpu_per_image_get( src );
+	struct webgpu_per_image *pi = webgpu_per_image_get( root );
 	if( !pi )
 		return NULL;
 
-	uint32_t want_w = (uint32_t)src->real_width;
-	uint32_t want_h = (uint32_t)src->real_height;
+	uint32_t want_w = (uint32_t)root->real_width;
+	uint32_t want_h = (uint32_t)root->real_height;
 	if( !want_w || !want_h )
 		return NULL;
 
@@ -550,26 +691,21 @@ WGPUTexture webgpu_image_ensure_src_texture( Image src )
 		pi->src_view_ = wgpuTextureCreateView( pi->src_texture_, &vd );
 	}
 
-	// Upload CPU pixels. sack CDATA is packed little-endian ARGB → BGRA
-	// byte order on disk, which is the byte order BGRA8Unorm wants on
-	// Windows (the format we use there). Direct memcpy; no swizzle.
-	//
-	// First-time check: if we just allocated the texture, src_upload_generation_
-	// is still 0 — upload regardless of IF_FLAG_UPDATED, because a freshly-
-	// loaded image won't have that flag set (sack reserves it for subsequent
-	// CPU mutations). Without this fallback we'd bind an empty texture and
-	// nothing visible would render.
-	if( pi->src_upload_generation_ == 0 || ( src->flags & IF_FLAG_UPDATED ) ) {
+	// Upload from the root image's bytes (not the subimage's — src->image
+	// for a subimage already points into root's pixmap at an offset, but
+	// we always upload the whole parent atlas).
+	if( pi->src_upload_generation_ == 0 || ( root->flags & IF_FLAG_UPDATED ) ) {
 		WGPUTexelCopyTextureInfo dst = {};
 		dst.texture  = pi->src_texture_;
 		dst.aspect   = WGPUTextureAspect_All;
 		WGPUTexelCopyBufferLayout layout = {};
 		layout.offset       = 0;
-		layout.bytesPerRow  = src->pwidth * 4;
+		layout.bytesPerRow  = root->pwidth * 4;
 		layout.rowsPerImage = want_h;
 		WGPUExtent3D ext = { want_w, want_h, 1 };
-		wgpuQueueWriteTexture( l.queue_, &dst, src->image, src->pwidth * 4 * want_h, &layout, &ext );
-		src->flags &= ~IF_FLAG_UPDATED;
+		wgpuQueueWriteTexture( l.queue_, &dst, root->image,
+		                       (size_t)root->pwidth * 4 * want_h, &layout, &ext );
+		root->flags &= ~IF_FLAG_UPDATED;
 		pi->src_upload_generation_++;
 	}
 
@@ -580,7 +716,9 @@ WGPUBindGroup webgpu_image_get_diffuse_bg( Image src )
 {
 	WGPUTexture tex = webgpu_image_ensure_src_texture( src );
 	if( !tex ) return NULL;
-	struct webgpu_per_image *pi = webgpu_per_image_get( src );
+	// Cache lives on the root image (same place the texture is stored).
+	Image root = image_root( src );
+	struct webgpu_per_image *pi = webgpu_per_image_get( root );
 	if( !pi || !pi->src_view_ ) return NULL;
 	if( pi->diffuse_bg_ )
 		return pi->diffuse_bg_;
@@ -600,7 +738,8 @@ WGPUBindGroup webgpu_image_get_diffuse_bg( Image src )
 WGPUBindGroup webgpu_image_get_normal_bg( Image src )
 {
 	if( !src ) return NULL;
-	struct webgpu_per_image *pi = webgpu_per_image_get( src );
+	Image root = image_root( src );
+	struct webgpu_per_image *pi = webgpu_per_image_get( root );
 	if( !pi || !pi->normal_image_ ) return NULL;
 
 	// Re-create if the linked normal image changed.
@@ -613,7 +752,7 @@ WGPUBindGroup webgpu_image_get_normal_bg( Image src )
 
 	WGPUTexture diff = webgpu_image_ensure_src_texture( src );
 	WGPUTexture norm = webgpu_image_ensure_src_texture( pi->normal_image_ );
-	struct webgpu_per_image *npi = webgpu_per_image_get( pi->normal_image_ );
+	struct webgpu_per_image *npi = webgpu_per_image_get( image_root( pi->normal_image_ ) );
 	if( !diff || !norm || !pi->src_view_ || !npi || !npi->src_view_ )
 		return NULL;
 

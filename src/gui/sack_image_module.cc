@@ -205,6 +205,8 @@ void ImageObject::Init( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageMS", ImageObject::putImageMultiShaded );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
+	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "text", ImageObject::text );
+	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "putString", ImageObject::text );  // alias
 
 	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "png" )
 		, FunctionTemplate::New( isolate, ImageObject::getPng )
@@ -642,9 +644,18 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 void ImageObject::reset( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	args[3]->ToObject( context).ToLocalChecked();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	ClearImage( io->image );
+	PIMAGE_INTERFACE pii = IMG_INTF(io);
+	// Prefer the dedicated ResetImageBuffers entry — for the webgpu
+	// driver it invalidates the cached bundle and clears the op-list,
+	// which is what "reset" actually means. Fall back to BlatColor with
+	// 0 if the active driver doesn't implement reset (the puregl2 /
+	// CPU sack.image cases). With premultiplied output that's a no-op
+	// blit, but it matches the historical semantics there.
+	if( pii->_ResetImageBuffers )
+		pii->_ResetImageBuffers( io->image, FALSE );
+	else
+		pii->_BlatColor( io->image, 0, 0, io->image->width, io->image->height, 0 );
 }
 
 void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
@@ -693,6 +704,65 @@ void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 		}
 	}
 	IMG_INTF(io)->_BlatColor( io->image, x, y, w, h, c );
+}
+
+// surface.text( str, x, y[, color[, font[, background[, height]]]] )
+//
+// Routes through PutStringFontEx on the per-image pii. On a webgpu-bound
+// surface (renderer has a webgpu context), this fires sack's font cache
+// machinery: AllocateCharacterSpace allocates a cell on the per-font atlas,
+// the glyph is rasterized into the cell via the CPU code path, and the
+// terminal BlotImage routes back through the image's reverse_interface
+// (= our webgpu driver) to record a textured quad sampling the atlas.
+void ImageObject::text( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int argc = args.Length();
+	if( argc < 1 || !args[ 0 ]->IsString() ) {
+		isolate->ThrowException( Exception::TypeError( localStringExternal(
+			isolate, "text(str, x, y, color?, font?, background?, height?)" ) ) );
+		return;
+	}
+	String::Utf8Value str( isolate, args[ 0 ] );
+	int     x         = ( argc > 1 ) ? (int)args[ 1 ]->IntegerValue( context ).FromMaybe( 0 ) : 0;
+	int     y         = ( argc > 2 ) ? (int)args[ 2 ]->IntegerValue( context ).FromMaybe( 0 ) : 0;
+	CDATA   color     = 0xFFFFFFFFu;   // opaque white default
+	CDATA   background = 0;            // transparent default
+	SFTFont font      = NULL;          // resolved → GetDefaultFont() below
+	int     height    = 0;             // 0 = use font's natural height
+
+	if( argc > 3 ) {
+		if( args[ 3 ]->IsObject() ) {
+			Local<Object> co = args[ 3 ]->ToObject( context ).ToLocalChecked();
+			ColorObject *cobj = ObjectWrap::Unwrap<ColorObject>( co );
+			color = cobj->color;
+		} else {
+			color = (CDATA)args[ 3 ]->Uint32Value( context ).FromMaybe( color );
+		}
+	}
+	if( argc > 4 && args[ 4 ]->IsObject() ) {
+		Local<Object> fo = args[ 4 ]->ToObject( context ).ToLocalChecked();
+		FontObject *fobj = ObjectWrap::Unwrap<FontObject>( fo );
+		if( fobj ) font = fobj->font;
+	}
+	if( argc > 5 ) {
+		if( args[ 5 ]->IsObject() ) {
+			Local<Object> bo = args[ 5 ]->ToObject( context ).ToLocalChecked();
+			ColorObject *bobj = ObjectWrap::Unwrap<ColorObject>( bo );
+			background = bobj->color;
+		} else {
+			background = (CDATA)args[ 5 ]->Uint32Value( context ).FromMaybe( background );
+		}
+	}
+	if( argc > 6 )
+		height = (int)args[ 6 ]->IntegerValue( context ).FromMaybe( 0 );
+
+	PIMAGE_INTERFACE pii = IMG_INTF(io);
+	if( !font ) font = pii->_GetDefaultFont();
+	if( !height ) height = (int)pii->_GetFontHeight( font );
+	pii->_PutStringFontEx( io->image, x, y, height, color, background,
+		(CTEXTSTR)*str, (size_t)str.length(), font );
 }
 
 void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {

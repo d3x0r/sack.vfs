@@ -39,6 +39,10 @@ struct Lighting {
 @group(0) @binding(1) var<uniform> lighting : Lighting;
 
 fn resolve_color(packed : u32) -> vec4<f32> {
+    // alpha != 0 → literal RGBA.
+    // alpha == 0 → palette index in low 4 bits. Slot 0 is reserved as
+    // fully transparent so CDATA(0) = transparent under the premultiplied
+    // blend (a no-op blit, matching "fill(0)" semantics).
     let a : u32 = (packed >> 24u) & 0xFFu;
     if (a == 0u) {
         let idx : u32 = packed & 0x0Fu;

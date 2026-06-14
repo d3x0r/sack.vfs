@@ -136,24 +136,36 @@ static void blot_record( Image dest, Image src,
 	px_to_ndc( dest, (float)xd,                 (float)(yd + (int32_t)hd), &verts[2][0], &verts[2][1] );
 	px_to_ndc( dest, (float)(xd + (int32_t)wd), (float)(yd + (int32_t)hd), &verts[3][0], &verts[3][1] );
 
-	// Source UVs use the *source* dimensions (ws, hs) — scaling happens
-	// because dest verts span (wd, hd) while uvs span (ws, hs) on the
-	// sampled texture.
-	float SW = (float)src->real_width;  if( SW <= 0 ) SW = 1;
-	float SH = (float)src->real_height; if( SH <= 0 ) SH = 1;
+	// Source UVs. If src is a subimage (e.g. a font cell on an atlas),
+	// the GPU texture covers the entire parent atlas, so we have to
+	// translate the cell-local (xs, ys) into atlas-relative coords and
+	// normalize against the atlas's dimensions — not the subimage's.
+	Image src_root = src;
+	int32_t atlas_xs = xs;
+	int32_t atlas_ys = ys;
+	{
+		Image walk = src;
+		while( walk->pParent ) {
+			atlas_xs += walk->real_x;
+			atlas_ys += walk->real_y;
+			walk = walk->pParent;
+		}
+		src_root = walk;
+	}
+	float SW = (float)src_root->real_width;  if( SW <= 0 ) SW = 1;
+	float SH = (float)src_root->real_height; if( SH <= 0 ) SH = 1;
 	float uvs[4][2] = {
-		{  xs                  / SW,  ys                  / SH },
-		{ (xs + (int32_t)ws)   / SW,  ys                  / SH },
-		{  xs                  / SW, (ys + (int32_t)hs)   / SH },
-		{ (xs + (int32_t)ws)   / SW, (ys + (int32_t)hs)   / SH },
+		{  atlas_xs                  / SW,  atlas_ys                  / SH },
+		{ (atlas_xs + (int32_t)ws)   / SW,  atlas_ys                  / SH },
+		{  atlas_xs                  / SW, (atlas_ys + (int32_t)hs)   / SH },
+		{ (atlas_xs + (int32_t)ws)   / SW, (atlas_ys + (int32_t)hs)   / SH },
 	};
 
 	// IF_FLAG_INVERTED means the CPU storage is bottom-up — row 0 in
 	// memory = visual bottom. The GPU texture got those bytes as-is, so
-	// to display right-side-up we sample with V flipped. (Image loaders
-	// on Windows typically produce inverted images by sack's _INVERT_IMAGE
-	// build convention.)
-	if( src->flags & IF_FLAG_INVERTED ) {
+	// to display right-side-up we sample with V flipped. The flag is
+	// a property of the root pixmap, so check it there.
+	if( src_root->flags & IF_FLAG_INVERTED ) {
 		uvs[0][1] = 1.0f - uvs[0][1];
 		uvs[1][1] = 1.0f - uvs[1][1];
 		uvs[2][1] = 1.0f - uvs[2][1];
@@ -161,16 +173,22 @@ static void blot_record( Image dest, Image src,
 	}
 
 	uint32_t tint = 0xFFFFFFFFu;
-	struct webgpu_per_image *src_pi = webgpu_per_image_get( src );
+	// Normal map / per-image override is keyed at the root level too —
+	// a subimage inherits the parent atlas's normal-map binding.
+	struct webgpu_per_image *src_pi = webgpu_per_image_get( src_root );
 	int has_normal = ( src_pi && src_pi->normal_image_ ) ? 1 : 0;
+
+	// Batches are keyed by the *root* image — different cells of the
+	// same atlas share a bind group and should land in the same batch.
+	Image batch_src = src_root;
 
 	switch( method ) {
 	case BLOT_SHADED: {
 		CDATA shade = va_arg( *ap, CDATA );
 		if( has_normal )
-			webgpu_op_list_normal_quad  ( ops, verts, uvs, (uint32_t)shade, src );
+			webgpu_op_list_normal_quad  ( ops, verts, uvs, (uint32_t)shade, batch_src );
 		else
-			webgpu_op_list_textured_quad( ops, verts, uvs, (uint32_t)shade, src );
+			webgpu_op_list_textured_quad( ops, verts, uvs, (uint32_t)shade, batch_src );
 		break;
 	}
 	case BLOT_MULTISHADE: {
@@ -178,14 +196,14 @@ static void blot_record( Image dest, Image src,
 		CDATA g = va_arg( *ap, CDATA );
 		CDATA b = va_arg( *ap, CDATA );
 		webgpu_op_list_multi_quad( ops, verts, uvs,
-		                           (uint32_t)r, (uint32_t)g, (uint32_t)b, src );
+		                           (uint32_t)r, (uint32_t)g, (uint32_t)b, batch_src );
 		break;
 	}
 	default: // BLOT_COPY or anything else
 		if( has_normal )
-			webgpu_op_list_normal_quad  ( ops, verts, uvs, tint, src );
+			webgpu_op_list_normal_quad  ( ops, verts, uvs, tint, batch_src );
 		else
-			webgpu_op_list_textured_quad( ops, verts, uvs, tint, src );
+			webgpu_op_list_textured_quad( ops, verts, uvs, tint, batch_src );
 		break;
 	}
 	pi->dirty_ = 1;
@@ -250,6 +268,36 @@ void CPROC wgpu_UnmakeImageFileEx( Image pif DBG_PASS )
 	webgpu_per_image_release( pif );
 	PIMAGE_INTERFACE cpu = webgpu_image_get_cpu();
 	if( cpu && cpu->_UnmakeImageFileEx ) cpu->_UnmakeImageFileEx( pif DBG_RELAY );
+}
+
+// Reset clears retained GPU state so the next draw cycle starts from a
+// clean canvas. PSI's "smudged control redraws fresh" semantics already
+// handle the per-op-list reset on the next draw, but reset is the
+// explicit "invalidate everything *now*" signal — drop the cached bundle
+// and the recorded ops outright so the surface goes blank until something
+// new is drawn into it.
+void CPROC wgpu_ResetImageBuffers( Image img, LOGICAL image_only )
+{
+	(void)image_only;   // CPU pixmap reset semantics; irrelevant on GPU side
+	if( !img ) return;
+	struct webgpu_per_image *pi = webgpu_per_image_get( img );
+	if( !pi ) return;
+
+	// Take the bundle lock so the frame walker can't grab a half-released
+	// bundle out from under us.
+	while( LockedExchange( &pi->bundle_lock_, 1 ) )
+		Relinquish();
+	if( pi->bundle_ ) {
+		wgpuRenderBundleRelease( pi->bundle_ );
+		pi->bundle_ = NULL;
+	}
+	if( pi->ops_ )
+		webgpu_op_list_reset( pi->ops_ );
+	pi->needs_reset_ = 0;   // ops_ is now empty; no pending reset to do
+	pi->dirty_       = 1;   // signal walker to re-attempt — produces a
+	                        // NULL bundle until next draw, which is the
+	                        // visible "blank" state we want.
+	pi->bundle_lock_ = 0;
 }
 
 // ----------------------------------------------------------------------

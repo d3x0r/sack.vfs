@@ -172,9 +172,13 @@ static void draw_image_recursive( WGPURenderPassEncoder pass, Image img,
 		struct webgpu_per_image *pi = webgpu_per_image_get( img );
 		if( pi )
 		{
-			// Re-record bundle when dirty under the per-subimage lock —
-			// PSI may be appending ops from another thread.
-			if( pi->dirty_ && pi->ops_ ) {
+			// Re-record bundle when dirty, OR when global generation
+			// counters (depth format, atlas, palette) have moved since
+			// this bundle was recorded — bundles need to be encoded
+			// against the *current* attachment state and uniform layout.
+			LOGICAL gen_stale = pi->bundle_
+				&& ( pi->bundle_depth_generation_ != l.depth_format_generation_ );
+			if( ( pi->dirty_ || gen_stale ) && pi->ops_ ) {
 				while( LockedExchange( &pi->bundle_lock_, 1 ) )
 					Relinquish();
 				if( pi->bundle_ ) {
@@ -184,6 +188,7 @@ static void draw_image_recursive( WGPURenderPassEncoder pass, Image img,
 				pi->bundle_ = webgpu_op_list_record( pi->ops_, l.surface_format_ );
 				pi->bundle_atlas_generation_   = l.font_atlas_generation_;
 				pi->bundle_palette_generation_ = l.palette_generation_;
+				pi->bundle_depth_generation_   = l.depth_format_generation_;
 				pi->dirty_       = 0;
 				pi->needs_reset_ = 1;   // next draw op clears ops_ before append
 				pi->bundle_lock_ = 0;
@@ -231,6 +236,13 @@ static Image g_surface_root = NULL;
 void webgpu_image_set_surface_root( void *root )
 {
 	g_surface_root = (Image)root;
+}
+
+// Read-only accessor for code outside this TU (render_ops.cc) that needs
+// to know what the surface root is.
+Image webgpu_image_get_surface_root( void )
+{
+	return g_surface_root;
 }
 
 IMAGE_NAMESPACE_END
