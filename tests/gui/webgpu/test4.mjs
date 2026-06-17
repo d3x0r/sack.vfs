@@ -1,4 +1,4 @@
-import sack from 'sack-gui';
+import sack from '@d3x0r/sack-gui';
 
 import "./3d-shell/document.mjs";
 
