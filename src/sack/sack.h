@@ -17,6 +17,14 @@
 #  ifndef _GNU_SOURCE
 #    define _GNU_SOURCE
 #  endif
+/* On macOS the BSD/Darwin extensions (e.g. the termios baud constants
+   B57600/B115200/B230400 used by the commlib serial code) are hidden when
+   _POSIX_C_SOURCE is defined - which we force below.  Enabling
+   _DARWIN_C_SOURCE keeps those extensions visible while still requesting
+   the POSIX feature set.  Must be set before any system header. */
+#  if defined( __APPLE__ ) && !defined( _DARWIN_C_SOURCE )
+#    define _DARWIN_C_SOURCE
+#  endif
 #ifndef STANDARD_HEADERS_INCLUDED
 /* multiple inclusion protection symbol */
 #define STANDARD_HEADERS_INCLUDED
@@ -5411,6 +5419,7 @@ SYSTEM_PROC( void, AddKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_t )
   Remove a callback which was added to event callback list.
 */
 SYSTEM_PROC( void, RemoveKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_t );
+SYSTEM_PROC( uint32_t, GetTaskProcessId )( PTASK_INFO task );
 #if _WIN32
 /*
   moves the window of the task; if there is a main window for the task within the timeout perioud.
@@ -5493,7 +5502,6 @@ struct process_tree_pair {
     }
 */
 SYSTEM_PROC( PDATALIST, GetProcessTree )( PTASK_INFO task );
-SYSTEM_PROC( uint32_t, GetTaskProcessId )( PTASK_INFO task );
 #endif
 #ifdef __LINUX__
 /*
@@ -9210,7 +9218,16 @@ struct rt_init
 	 struct rt_init *junk2[3];
 #endif
 #endif
-} __attribute__((packed));
+}
+#ifdef __MAC__
+// ld64 on arm64 warns that the packed (alignment 1) atoms placed in the
+// deadstart section may produce unaligned pointers.  The struct is already
+// sized to a multiple of 8 (see the padding notes above), so advertise 8-byte
+// alignment to silence the warning without changing the packed layout/size.
+__attribute__((packed, aligned(8)));
+#else
+__attribute__((packed));
+#endif
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
 #  if defined( __GNUC__ ) && defined( __64__)
 #    define JUNKINIT(name) ,&pastejunk(name,_ctor_label), {0,0}
@@ -9295,7 +9312,16 @@ struct rt_init
     // to 32 bytes...
 	 struct rt_init *junk2[3];
 #endif
-} __attribute__((packed));
+}
+#ifdef __MAC__
+// ld64 on arm64 warns that the packed (alignment 1) atoms placed in the
+// deadstart section may produce unaligned pointers.  The struct is already
+// sized to a multiple of 8 (see the padding notes above), so advertise 8-byte
+// alignment to silence the warning without changing the packed layout/size.
+__attribute__((packed, aligned(8)));
+#else
+__attribute__((packed));
+#endif
 #define JUNKINIT(name) ,&pastejunk(name,_ctor_label)
 #ifdef __cplusplus
 #define RTINIT_STATIC
@@ -10697,6 +10723,12 @@ NETWORK_PROC( ssh_channel_eof_cb, sack_ssh_set_channel_eof )( struct ssh_channel
 */
 typedef void( *ssh_channel_close_cb )( uintptr_t psv );
 NETWORK_PROC( ssh_channel_close_cb, sack_ssh_set_channel_close )( struct ssh_channel* channel, ssh_channel_close_cb );
+/*
+* set a callback for when a channel request is accepted
+* returns the previous callback
+*/
+typedef void( *ssh_channel_request_cb )( uintptr_t psv, CTEXTSTR request, size_t request_len );
+NETWORK_PROC( ssh_channel_request_cb, sack_ssh_set_channel_request )( struct ssh_channel* channel, ssh_channel_request_cb );
 /*
 * set a callback for when a sftp session is opened
 */
@@ -12253,10 +12285,9 @@ PSSQL_PROC( void, SetSQLAutoTransact )( PODBC odbc, LOGICAL bEnable );
    odbc :     connection to set auto transact on
    callback :  not NULL to enable, NULL to disable.                         */
 PSSQL_PROC( void, SetSQLAutoTransactCallback )( PODBC odbc, void (CPROC*callback)(uintptr_t,PODBC), uintptr_t psv );
-/* Enable using 'BEGIN TRANSACTION' and 'COMMIT' commands automatically
-   around commands. If there is a lull of 500ms (1/2 second),
-   then the commit automatically fires. SQLRollback can be called
-	to trigger this process early.
+/* Set a callback for SQLRollback completion. This does not enable
+   AutoTransact; rollback observes whichever auto or explicit
+   transaction is already pending.
    Parameters
    odbc :     connection to set rollback callback on
    callback :  not NULL to enable, NULL to disable.                         */

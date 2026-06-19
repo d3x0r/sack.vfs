@@ -239,7 +239,7 @@ void SqlObjectInit( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "close", SqlObject::closeDb );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", SqlObject::transact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", SqlObject::commit );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", SqlObject::rollback );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "rollback", SqlObject::rollback );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", SqlObject::autoTransact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "procedure", SqlObject::userProcedure );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", SqlObject::userFunction );
