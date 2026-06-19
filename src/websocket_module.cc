@@ -119,6 +119,7 @@ struct optionStrings {
 	Eternal<String> *certString;
 	Eternal<String> *CGIString;
 	Eternal<String> *contentString;
+	Eternal<String> *bytesString;
 	Eternal<String> *keyString;
 	Eternal<String> *pemString;
 	Eternal<String> *passString;
@@ -373,6 +374,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->headerString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "headers" ) );
 		check->CGIString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "CGI" ) );
 		check->contentString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "content" ) );
+		check->bytesString = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "bytes"));
 		check->certString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cert" ) );
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
 		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pem" ) );
@@ -900,9 +902,15 @@ static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings
 		SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
 		SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
 		SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpRequestVersion( pHttpState ) ) );
-		if (content = GetHttpContent(pHttpState))
+		if (content = GetHttpContent(pHttpState)) {
 			SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
-		else
+			void* newBuf = NewArray(uint8_t, GetTextSize(content));
+			MemCpy(newBuf, GetText(content), GetTextSize(content));
+			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
+				GetTextSize(content), releaseBufferBackingStore, NULL);
+
+			SETV( req, strings->bytesString->Get(isolate), ArrayBuffer::New(isolate, bs));
+		} else
 			SETV( req, strings->contentString->Get(isolate), Null(isolate));
 		if (!GetText(GetHttpRequest(pHttpState))) {
 			//lprintf("lost request url");
@@ -1020,6 +1028,12 @@ static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, htt
 					if( content ) {
 						SET( result, "content"
 							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
+						void* newBuf = NewArray(uint8_t, GetTextSize(content));
+						MemCpy(newBuf, GetText(content), GetTextSize(content));
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
+							GetTextSize( content ), releaseBufferBackingStore, NULL);
+						
+						SET(result, "bytes", ArrayBuffer::New(isolate, bs)  );
 					}
 					SET( result, "statusCode"
 						, Integer::New( isolate, GetHttpResponseCode( state ) ) );
@@ -4600,6 +4614,11 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 					if( content ) {
 						SET( result, "content"
 							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
+						void* newBuf = NewArray(uint8_t, GetTextSize(content));
+						MemCpy(newBuf, GetText(content), GetTextSize(content));
+						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
+							GetTextSize( content ), releaseBufferBackingStore, NULL);
+						SET(result, "bytes", ArrayBuffer::New(isolate, bs));
 					}
 					SET( result, "statusCode"
 						, Integer::New( isolate, GetHttpResponseCode( state ) ) );
