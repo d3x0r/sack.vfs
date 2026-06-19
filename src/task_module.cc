@@ -1,6 +1,8 @@
 
-#define WINVER 0x0A00
-#define _WIN32_WINNT 0x0A00
+#if  _WIN32_WINNT < 0x0A00
+#  define WINVER 0x0A00
+#  define _WIN32_WINNT 0x0A00
+#endif
 #include "global.h"
 #ifdef _WIN32
 #include <Shlobj.h>
