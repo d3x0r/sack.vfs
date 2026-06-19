@@ -735,7 +735,7 @@ function saveRunConfig() {
 	const c = Object.assign( {}, config );
         c.tasks = c.tasks.reduce( (acc,task)=>{if( !task.temporary ) acc.push( task ); return acc;}, [] );
 	const output = JSOX.stringify( config, null, "\t" );
-	disk.write( "config.run.jsox", output );
+	disk.write( process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox", output );
 }
 
 if( "enableExitSignal" in sack.system ) {
