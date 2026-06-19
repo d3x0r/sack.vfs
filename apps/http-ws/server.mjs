@@ -278,7 +278,7 @@ function hookJSOX( serverOpts, server ) {
 		const paths = [];
 		if( serverOpts.resourcePath instanceof Array ) paths.push(...serverOpts.resourcePath);
 		else paths.push( serverOpts.resourcePath );
-		for( let rPath of paths ) {
+		for( let rpath of paths ) {
 			let filePath;
 			if( req.url.startsWith( "/common/" ) ) {
 				filePath = commonPath + decodeURI(req.url).replace( "/common", "" );
