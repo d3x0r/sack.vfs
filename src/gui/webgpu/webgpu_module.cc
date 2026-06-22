@@ -425,11 +425,17 @@ static void GPUDevice_OnLogging( WGPULoggingType type, WGPUStringView message,
 }
 
 // Per-device lost-Promise state. Allocated at request time; the lost
-// callback (which fires later — possibly never) consumes it. Lives on the
-// GPUDevice wrapper after OnDeviceReady transfers ownership.
+// callback (which fires later — guaranteed once the device is released,
+// since Dawn calls back with reason=Destroyed at that point) consumes it.
+//
+// Lifetime: Dawn holds a pointer to this struct as the callback userdata.
+// We MUST keep it alive until the callback fires. The GPUDevice dtor sets
+// `wrapperDestroyed = true` and clears the resolver to detach the JS-side
+// Promise, but does NOT free the struct — the callback always frees it.
 struct GPUDeviceLostState {
 	Isolate* isolate;
 	Persistent<Promise::Resolver> resolver;
+	bool wrapperDestroyed;  // dtor sets this so the callback skips V8 access
 };
 
 static void GPUDevice_OnDeviceLost( WGPUDevice const* device,
@@ -439,6 +445,17 @@ static void GPUDevice_OnDeviceLost( WGPUDevice const* device,
 	(void)device; (void)userdata2;
 	GPUDeviceLostState* st = (GPUDeviceLostState*)userdata1;
 	if( !st ) return;
+
+	// Typical case: the lost callback fires because the GPUDevice wrapper
+	// was GC'd, which released the handle, which queued the device-lost
+	// callback with reason=Destroyed. The dtor set `wrapperDestroyed` and
+	// cleared the resolver; don't touch V8 (isolate may be tearing down).
+	// Just free the struct that Dawn was keeping alive as userdata.
+	if( st->wrapperDestroyed ) {
+		delete st;
+		return;
+	}
+
 	Isolate* isolate = st->isolate;
 	HandleScope hs( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
@@ -458,9 +475,7 @@ static void GPUDevice_OnDeviceLost( WGPUDevice const* device,
 	Local<Promise::Resolver> resolver = st->resolver.Get( isolate );
 	(void)resolver->Resolve( context, info );
 	st->resolver.Reset();
-	// State is freed when the GPUDevice dtor runs. Don't delete here; the
-	// device might still be alive even after the lost event (spec allows
-	// calling some methods on a lost device, they just error).
+	delete st;  // callback owns cleanup
 }
 
 void GPUAdapter::requestDevice( const FunctionCallbackInfo<Value>& args ) {
@@ -491,6 +506,7 @@ void GPUAdapter::requestDevice( const FunctionCallbackInfo<Value>& args ) {
 	req->lostState = new GPUDeviceLostState();
 	req->lostState->isolate = isolate;
 	req->lostState->resolver.Reset( isolate, lostResolver );
+	req->lostState->wrapperDestroyed = false;
 
 	WGPURequestDeviceCallbackInfo info = {};
 	info.mode = WGPUCallbackMode_AllowProcessEvents;
@@ -559,9 +575,14 @@ void GPUAdapter::OnDeviceReady( WGPURequestDeviceStatus status,
 		}
 		(void)resolver->Resolve( context, obj );
 	} else if( req->lostState ) {
-		// Request failed — the lost callback will never fire. Clean up.
+		// Request failed. Dawn may still fire the lost callback with
+		// FailedCreation reason in some paths (we don't have a hard
+		// guarantee one way or the other), so use the same detach pattern
+		// as the GC path: mark so the callback skips the resolver, and let
+		// the callback free the struct if it ever fires. Worst case is a
+		// small leak per failed request rather than a use-after-free.
+		req->lostState->wrapperDestroyed = true;
 		req->lostState->resolver.Reset();
-		delete req->lostState;
 		req->lostState = NULL;
 	} else {
 		(void)resolver->Reject( context, Exception::Error( localStringExternal(
@@ -737,23 +758,29 @@ GPUDevice::GPUDevice() : handle_( NULL ), adapter_( NULL ), lostState_( NULL ) {
 }
 
 GPUDevice::~GPUDevice() {
+	// Detach the lost-state from the JS side FIRST, before releasing the
+	// device handle. Dawn keeps a pointer to lostState_ as the callback's
+	// userdata1 and will fire the callback (reason=Destroyed) sometime
+	// after the release below. We must NOT free lostState_ here — the
+	// callback frees it. Just mark it detached so the callback knows to
+	// skip Promise resolution.
+	if( lostState_ ) {
+		lostState_->wrapperDestroyed = true;
+		lostState_->resolver.Reset();
+		lostState_ = NULL;
+	}
 	if( handle_ ) {
 		// If we were the active-device, clear that slot first (it holds
 		// its own ref, so this is purely a "stop pointing at us" cleanup;
 		// the slot's release of the device is independent of ours).
 		if( g_active_device == handle_ )
 			set_active_device( NULL );
-		wgpuDeviceRelease( handle_ );
+		wgpuDeviceRelease( handle_ );  // queues the lost callback
 		handle_ = NULL;
 	}
 	if( adapter_ ) {
 		wgpuAdapterRelease( adapter_ );
 		adapter_ = NULL;
-	}
-	if( lostState_ ) {
-		lostState_->resolver.Reset();
-		delete lostState_;
-		lostState_ = NULL;
 	}
 	wgpuLiveDec( "GPUDevice" );
 }
@@ -1068,6 +1095,7 @@ static void GPUCommandEncoder_beginRenderPass( const FunctionCallbackInfo<Value>
 				a.clearValue.a = co->Get( context, String::NewFromUtf8Literal( isolate, "a" ) ).ToLocalChecked()->NumberValue( context ).FromMaybe( 1 );
 			}
 		}
+
 	}
 
 	WGPURenderPassDescriptor rpd = WGPU_RENDER_PASS_DESCRIPTOR_INIT;
@@ -1293,6 +1321,13 @@ static void GPUQueue_submit( const FunctionCallbackInfo<Value>& args ) {
 	wgpuQueueSubmit( self->handle_, n, bufs );
 	if( bufs ) delete[] bufs;
 
+	// Auto-present: if any submitted command buffer wrote to the canvas's
+	// current swap-chain texture (tracked from beginRenderPass + pass.end /
+	// encoder.finish), call wgpuSurfacePresent and reset. Mirrors mystral's
+	// pattern — JS code following browser semantics with no explicit present
+	// just works. Multi-submit-per-frame JS code (clear + render as separate
+	// submits) will produce multiple presents; rely on the caller to either
+	// merge submits or call ctx.present() explicitly.
 	if( g_surface && g_surfaceTexture && g_surfacePassEnded ) {
 		wgpuSurfacePresent( g_surface );
 		g_surface = NULL;

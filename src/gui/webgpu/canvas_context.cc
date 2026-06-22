@@ -37,9 +37,19 @@ namespace sack { namespace image {
 	void webgpu_image_set_surface_root  ( void *root );
 }}
 
+// The canvas context with a frame currently in progress. Set by
+// getCurrentTexture, consumed by the auto-present hook in queue.submit
+// (or cleared by an explicit JS-side present()). Allows the submit-time
+// auto-present in webgpu_module.cc to reach back into this file and do
+// the back-buffer → surface blit before presenting, without having to
+// know about back buffers itself. Declared up here so the dtor can clear
+// it defensively.
+static GPUCanvasContext* g_present_ctx = NULL;
+
 GPUCanvasContext::GPUCanvasContext()
 	: surface_( NULL ), renderer_( NULL ), configured_( false ),
-	  configuredDevice_( NULL ) { wgpuLiveInc( "GPUCanvasContext" ); }
+	  configuredDevice_( NULL )
+	{ wgpuLiveInc( "GPUCanvasContext" ); }
 
 // Build a fresh WGPUSurface for our renderer. Used at construction and
 // whenever configure() is called with a different device than last time
@@ -72,10 +82,19 @@ static WGPUSurface wgpu_create_surface_for_renderer( PRENDERER r ) {
 }
 
 GPUCanvasContext::~GPUCanvasContext() {
+	// Surface MUST be released before the configured device — its
+	// swapchain teardown reaches into device-owned bookkeeping (Vulkan
+	// FencedDeleter etc.). Our addref on configuredDevice_ from
+	// configure() keeps the device alive across the surface release below
+	// even if JS dropped its GPUDevice wrapper first.
 	if( surface_ ) {
 		if( configured_ ) wgpuSurfaceUnconfigure( surface_ );
 		wgpuSurfaceRelease( surface_ );
 		surface_ = NULL;
+	}
+	if( configuredDevice_ ) {
+		wgpuDeviceRelease( configuredDevice_ );
+		configuredDevice_ = NULL;
 	}
 	wgpuLiveDec( "GPUCanvasContext" );
 }
@@ -127,12 +146,24 @@ void GPUCanvasContext::configure( const FunctionCallbackInfo<Value>& args ) {
 
 	// If we're reconfiguring with a different device, Vulkan's swapchain
 	// can't switch — we have to release the old surface and build a new one.
+	//
+	// CRITICAL ORDERING: the swapchain's PerImage holds VkSemaphores it
+	// releases via the old device's FencedDeleter at surface-release time.
+	// If the old device's wrapper was already GC'd, that deleter is gone
+	// and wgpuSurfaceRelease walks freed memory. We hold our own addref on
+	// configuredDevice_ specifically to keep it alive across this teardown.
 	if( self->configuredDevice_ && self->configuredDevice_ != cfg.device ) {
+		// Any pending auto-present is on the old surface we're about to
+		// tear down — drop the pointer first.
+		if( g_present_ctx == self ) g_present_ctx = NULL;
 		if( self->configured_ ) {
 			wgpuSurfaceUnconfigure( self->surface_ );
 			self->configured_ = false;
 		}
-		wgpuSurfaceRelease( self->surface_ );
+		wgpuSurfaceRelease( self->surface_ );  // uses configuredDevice_
+		// NOW it's safe to drop the old device ref.
+		wgpuDeviceRelease( self->configuredDevice_ );
+		self->configuredDevice_ = NULL;
 		self->surface_ = wgpu_create_surface_for_renderer( self->renderer_ );
 		if( !self->surface_ ) {
 			isolate->ThrowException( Exception::Error( localStringExternal(
@@ -245,18 +276,26 @@ void GPUCanvasContext::configure( const FunctionCallbackInfo<Value>& args ) {
 		cfg.height = hVal->Uint32Value( context ).FromMaybe( cfg.height );
 	}
 
-	lprintf( "configure ctx=%p surface=%p dev=%p prev_dev=%p format=%d size=%ux%u"
-	         " alphaMode=%d usage=0x%X presentMode=%d",
-		(void*)self, (void*)self->surface_, (void*)cfg.device,
-		(void*)self->configuredDevice_, (int)cfg.format,
-		(unsigned)cfg.width, (unsigned)cfg.height,
-		(int)cfg.alphaMode, (unsigned)cfg.usage, (int)cfg.presentMode );
-
 	wgpuSurfaceConfigure( self->surface_, &cfg );
 	if( viewFormats ) delete[] viewFormats;
 
 	self->configured_ = true;
-	self->configuredDevice_ = cfg.device;
+	// Hold our own ref on the configured device — the surface depends on
+	// device-owned bookkeeping (FencedDeleter, etc.) at release time, and
+	// the JS-side device wrapper might GC out from under us before we do.
+	// Re-addref every successful configure even with the same device, since
+	// we paired this with a release in any prior switch/unconfigure path.
+	if( self->configuredDevice_ != cfg.device ) {
+		if( self->configuredDevice_ ) wgpuDeviceRelease( self->configuredDevice_ );
+		wgpuDeviceAddRef( cfg.device );
+		self->configuredDevice_ = cfg.device;
+	}
+
+	// (Back-buffer preservation removed — multipass renderers manage their
+	// own intermediate render targets, and intercepting the canvas's
+	// current swap-chain texture interferes with that. JS code that needs
+	// content preservation across frames should manage its own render
+	// target and composite to the canvas on the final pass.)
 
 	// Inform the imglib-webgpu driver of the surface's dimensions, format,
 	// and root Image. The driver's frame walker (invoked from
@@ -279,9 +318,16 @@ void GPUCanvasContext::configure( const FunctionCallbackInfo<Value>& args ) {
 
 void GPUCanvasContext::unconfigure( const FunctionCallbackInfo<Value>& args ) {
 	GPUCanvasContext* self = node::ObjectWrap::Unwrap<GPUCanvasContext>( getFCIHolder( args ) );
+	if( g_present_ctx == self ) g_present_ctx = NULL;
 	if( self->surface_ && self->configured_ ) {
 		wgpuSurfaceUnconfigure( self->surface_ );
 		self->configured_ = false;
+	}
+	// Drop our device ref — wgpuSurfaceUnconfigure has detached the swapchain
+	// so we no longer need device-owned bookkeeping kept alive on our behalf.
+	if( self->configuredDevice_ ) {
+		wgpuDeviceRelease( self->configuredDevice_ );
+		self->configuredDevice_ = NULL;
 	}
 }
 
@@ -321,6 +367,7 @@ void GPUCanvasContext::getCurrentTexture( const FunctionCallbackInfo<Value>& arg
 	// queue.submit that includes a CB written to this texture will fire
 	// wgpuSurfacePresent automatically (browser-style semantics).
 	wgpuSetActiveSurface( self->surface_, st.texture );
+	g_present_ctx = self;
 
 	args.GetReturnValue().Set( obj );
 }
@@ -375,8 +422,8 @@ void GPUCanvasContext::present( const FunctionCallbackInfo<Value>& args ) {
 	wgpuSurfacePresent( self->surface_ );
 	// Explicit present invalidates the auto-present state so submit() won't
 	// double-present this frame.
+	g_present_ctx = NULL;
 	wgpuClearActiveSurface();
-
 }
 
 

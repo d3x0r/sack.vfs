@@ -14,8 +14,14 @@ public:
 	WGPUSurface surface_;     // owned: released in dtor
 	PRENDERER   renderer_;    // borrowed back-pointer for size queries
 	bool        configured_;  // tracks wgpuSurfaceConfigure state
-	WGPUDevice  configuredDevice_;  // last device passed to configure;
-	                          // used to detect device switches, which
+	WGPUDevice  configuredDevice_;  // last device passed to configure.
+	                          // OWNED ref (addref'd on configure, released
+	                          // in dtor AFTER surface) so Dawn's
+	                          // FencedDeleter is alive at surface-release
+	                          // time. Without this, if JS drops its device
+	                          // wrapper before us, surface teardown walks
+	                          // freed device-owned bookkeeping → crash.
+	                          // Also used to detect device switches, which
 	                          // require recreating the underlying surface
 	                          // on Vulkan (the swapchain can't switch).
 
