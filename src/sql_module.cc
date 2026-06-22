@@ -82,6 +82,7 @@ public:
 	static void makeTable( const v8::FunctionCallbackInfo<Value>& args );
 	static void closeDb( const v8::FunctionCallbackInfo<Value>& args );
 	static void commit( const v8::FunctionCallbackInfo<Value>& args );
+	static void rollback( const v8::FunctionCallbackInfo<Value>& args );
 	static void transact( const v8::FunctionCallbackInfo<Value>& args );
 	static void autoTransact( const v8::FunctionCallbackInfo<Value>& args );
 	static void userFunction( const v8::FunctionCallbackInfo<Value>& args );
@@ -186,7 +187,6 @@ struct sqlUserAsyncTask : SackTask {
 	}
 };
 
-static void sqlUserAsyncMsgEx( uv_async_t* handle, LOGICAL internal );
 static void sqlUserAsyncMsg( uv_async_t* handle );
 
 /* This is used from external code... */
@@ -239,6 +239,7 @@ void SqlObjectInit( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "close", SqlObject::closeDb );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", SqlObject::transact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", SqlObject::commit );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "rollback", SqlObject::rollback );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", SqlObject::autoTransact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "procedure", SqlObject::userProcedure );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", SqlObject::userFunction );
@@ -454,6 +455,14 @@ void SqlObject::commit( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	SQLCommit( sql->state->odbc );
+}
+//-----------------------------------------------------------
+void SqlObject::rollback(const v8::FunctionCallbackInfo<Value>& args) {
+	//Isolate* isolate = args.GetIsolate();
+
+	SqlObject* sql = ObjectWrap::Unwrap<SqlObject>(args.This());
+	SQLCommand(sql->state->odbc, "ROLLBACK");
+	//SQLRollback(sql->state->odbc);
 }
 //-----------------------------------------------------------
 
@@ -757,8 +766,10 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						break;
 					case JSOX_VALUE_DATE:
 					{
+#if OLD_CONVERSION_METHOD
 						Local<Script> script;
 						char buf[64];
+#endif
 						if( StrCmp( jsval->string, "0000-01-01T00:00:00.000Z") == 0 )
 							val = Null( isolate );
 						else {

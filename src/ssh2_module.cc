@@ -316,6 +316,27 @@ static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Objec
 					cb->Call( context, channel->jsObject.Get( isolate ), 2, argv );
 				}
 				break;
+			case SSH2_EVENT_CHANNEL_CLOSE:
+				{
+					SSH2_Channel* channel = (SSH2_Channel*)event->data;
+					if( !channel->closeCallback.IsEmpty() ) {
+						Local<Function> cb = Local<Function>::New( isolate, channel->closeCallback );
+						cb->Call( context, channel->jsObject.Get( isolate ), 0, NULL );
+					}
+				}
+				break;
+			case SSH2_EVENT_CHANNEL_REQUEST:
+				{
+					SSH2_Channel* channel = (SSH2_Channel*)event->data2;
+					if( !channel->requestCallback.IsEmpty() ) {
+						Local<Value> argv[1];
+						argv[0] = String::NewFromUtf8( isolate, (const char*)event->data, NewStringType::kNormal, (int)event->length ).ToLocalChecked();
+						Local<Function> cb = Local<Function>::New( isolate, channel->requestCallback );
+						cb->Call( context, channel->jsObject.Get( isolate ), 1, argv );
+					}
+					ReleaseEx( event->data DBG_SRC );
+				}
+				break;
 			case SSH2_EVENT_SETENV:
 			case SSH2_EVENT_PTY:
 			case SSH2_EVENT_SHELL:
@@ -388,10 +409,32 @@ void SSH2_Channel::DataCallback( uintptr_t psv, int stream, const uint8_t* data,
 }
 
 void SSH2_Channel::CloseCallback( uintptr_t psv ) {
-	struct ssh_channel* channel = (struct ssh_channel*)psv;
-	//if( this.internal_closeCallback )
-	//	this.internal_closeCallback( psv );
-	lprintf( "Channel %p closed", channel );
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	if( channel->internal_closeCallback )
+		channel->internal_closeCallback( channel, channel->wsPipe );
+	makeEvent( event );
+	event->code = SSH2_EVENT_CHANNEL_CLOSE;
+	event->data = channel;
+	event->waiter = NULL;
+	event->done = 0;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+	uv_async_send( &channel->ssh2->async );
+}
+
+void SSH2_Channel::RequestCallback( uintptr_t psv, CTEXTSTR request, size_t request_len ) {
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	char* request_name = NewArray( char, request_len + 1 );
+	MemCpy( request_name, request, request_len );
+	request_name[request_len] = 0;
+	makeEvent( event );
+	event->code = SSH2_EVENT_CHANNEL_REQUEST;
+	event->data = request_name;
+	event->length = request_len;
+	event->data2 = channel;
+	event->waiter = NULL;
+	event->done = 0;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+	uv_async_send( &channel->ssh2->async );
 }
 
 SSH2_Object::SSH2_Object( Isolate *isolate ) {
@@ -519,6 +562,7 @@ uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel )
 	event->data = (void*)channel;
 	sack_ssh_set_channel_eof( channel, eofCallback );
 	sack_ssh_set_channel_close( channel, SSH2_Channel::CloseCallback );
+	sack_ssh_set_channel_request( channel, SSH2_Channel::RequestCallback );
 	event->waiter = MakeThread();
 	event->done = 0;
 	EnqueLink( &ssh->eventQueue, event );
@@ -577,6 +621,7 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 	);
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "send", SSH2_Channel::Send );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "close", SSH2_Channel::Close );
+	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "request", SSH2_Channel::Request );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "pty", SSH2_Channel::OpenPTY );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "setenv", SSH2_Channel::SetEnv );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "shell", SSH2_Channel::Shell );
@@ -755,8 +800,23 @@ void SSH2_Channel::Read( const v8::FunctionCallbackInfo<Value>& args ) {
 
 void SSH2_Channel::Close( const v8::FunctionCallbackInfo<Value>& args ) {
 	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
-	sack_ssh_set_channel_close( channel->channel, SSH2_Channel::CloseCallback );
-	channel->closeCallback.Reset( args.GetIsolate(), Local<Function>::Cast( args[0] ) );
+	if( args.Length() > 0 && args[0]->IsFunction() ) {
+		sack_ssh_set_channel_close( channel->channel, SSH2_Channel::CloseCallback );
+		channel->closeCallback.Reset( args.GetIsolate(), Local<Function>::Cast( args[0] ) );
+	} else {
+		sack_ssh_channel_close( channel->channel );
+	}
+}
+
+void SSH2_Channel::Request( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	if( args.Length() < 1 || !args[0]->IsFunction() ) {
+		args.GetIsolate()->ThrowException( Exception::TypeError(
+			String::NewFromUtf8Literal( args.GetIsolate(), "request requires callback" ) ) );
+		return;
+	}
+	sack_ssh_set_channel_request( channel->channel, SSH2_Channel::RequestCallback );
+	channel->requestCallback.Reset( args.GetIsolate(), Local<Function>::Cast( args[0] ) );
 }
 
 void SSH2_Channel::New( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -837,28 +897,33 @@ void SSH2_Object::handshook( uintptr_t psv, const uint8_t* string ) {
 	
 }
 
-static uintptr_t ForwardCallback( uintptr_t session_psv, LOGICAL success ) {
-	// this is received after the local connection is setup to forward connections
-	return 0;
-}
-
 void SSH2_Object::Forward( const v8::FunctionCallbackInfo<Value>& args ) {
 	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
 	int localport = 0;
 	int remoteport = 0;
 	Isolate* isolate = args.GetIsolate();
+	if( args.Length() < 4 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8Literal( isolate, "forward requires local address, local port, remote address, and remote port" ) ) );
+		return;
+	}
 	
 	String::Utf8Value localHost( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	if( args.Length() > 1 )
 		localport = args[1]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
-	String::Utf8Value remoteHost( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
-	if( args.Length() > 1 )
-		remoteport = args[1]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+	String::Utf8Value remoteHost( isolate, args[2]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+	if( args.Length() > 3 )
+		remoteport = args[3]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 
-	lprintf( " Forward is not implemented yet" );
-	//sack_ssh_direc
-	//PCLIENT pcListener = 
-	sack_ssh_forward_connect( ssh->session, *localHost, localport, *remoteHost, remoteport, ForwardCallback );
+	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
+	ssh->forwardPromise.Reset( isolate, pr );
+	ssh->activePromise = &ssh->forwardPromise;
+	if( sack_ssh_forward_connect( ssh->session, *localHost, localport, *remoteHost, remoteport, NULL ) ) {
+		pr->Resolve( isolate->GetCurrentContext(), True( isolate ) );
+		ssh->forwardPromise.Reset();
+		ssh->activePromise = NULL;
+	}
+	args.GetReturnValue().Set( pr->GetPromise() );
 
 }
 

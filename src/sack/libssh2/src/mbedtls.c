@@ -43,12 +43,8 @@
 
 #include <stdlib.h>
 
-#if MBEDTLS_VERSION_NUMBER < 0x03000000
-#define mbedtls_cipher_info_get_key_bitlen(c) (c->key_bitlen)
-#define mbedtls_cipher_info_get_iv_size(c)    (c->iv_size)
-#define mbedtls_rsa_get_len(rsa)              (rsa->len)
-
-#define MBEDTLS_PRIVATE(m) m
+#if MBEDTLS_VERSION_NUMBER < 0x03010000
+#error "mbedTLS 3.1.0 or upper required"
 #endif
 
 /*******************************************************************/
@@ -56,113 +52,118 @@
  * mbedTLS backend: Global context handles
  */
 
-static mbedtls_entropy_context  _libssh2_mbedtls_entropy;
-static mbedtls_ctr_drbg_context _libssh2_mbedtls_ctr_drbg;
+static mbedtls_entropy_context mbed_entropy;
+static mbedtls_ctr_drbg_context mbed_ctr_drbg;
 
 /*******************************************************************/
 /*
  * mbedTLS backend: Generic functions
  */
 
-void
-_libssh2_mbedtls_init(void)
+void ssh2_crypto_init(void)
 {
     int ret;
 
-    mbedtls_entropy_init(&_libssh2_mbedtls_entropy);
-    mbedtls_ctr_drbg_init(&_libssh2_mbedtls_ctr_drbg);
+    mbedtls_entropy_init(&mbed_entropy);
+    mbedtls_ctr_drbg_init(&mbed_ctr_drbg);
 
-    ret = mbedtls_ctr_drbg_seed(&_libssh2_mbedtls_ctr_drbg,
+    ret = mbedtls_ctr_drbg_seed(&mbed_ctr_drbg,
                                 mbedtls_entropy_func,
-                                &_libssh2_mbedtls_entropy, NULL, 0);
+                                &mbed_entropy, NULL, 0);
     if(ret)
-        mbedtls_ctr_drbg_free(&_libssh2_mbedtls_ctr_drbg);
+        mbedtls_ctr_drbg_free(&mbed_ctr_drbg);
 }
 
-void
-_libssh2_mbedtls_free(void)
+void ssh2_crypto_exit(void)
 {
-    mbedtls_ctr_drbg_free(&_libssh2_mbedtls_ctr_drbg);
-    mbedtls_entropy_free(&_libssh2_mbedtls_entropy);
+    mbedtls_ctr_drbg_free(&mbed_ctr_drbg);
+    mbedtls_entropy_free(&mbed_entropy);
 }
 
-int
-_libssh2_mbedtls_random(unsigned char *buf, size_t len)
+int ssh2_random(unsigned char *buf, size_t len)
 {
     int ret;
-    ret = mbedtls_ctr_drbg_random(&_libssh2_mbedtls_ctr_drbg, buf, len);
+    ret = mbedtls_ctr_drbg_random(&mbed_ctr_drbg, buf, len);
     return ret == 0 ? 0 : -1;
 }
 
-static void
-_libssh2_mbedtls_safe_free(void *buf, size_t len)
+static void mbed_safe_free(void *buf, size_t len)
 {
     if(!buf)
         return;
 
     if(len > 0)
-        _libssh2_explicit_zero(buf, len);
+        ssh2_explicit_zero(buf, len);
 
     mbedtls_free(buf);
 }
 
-int
-_libssh2_mbedtls_cipher_init(_libssh2_cipher_ctx *ctx,
-                             _libssh2_cipher_type(algo),
-                             unsigned char *iv,
-                             unsigned char *secret,
-                             int encrypt)
+int ssh2_cipher_init(ssh2_cipher_ctx *h, SSH2_CIPHER_T(algo),
+                     unsigned char *iv, unsigned char *secret, int encrypt)
 {
     const mbedtls_cipher_info_t *cipher_info;
     int ret, op;
 
-    if(!ctx)
+    if(!h)
         return -1;
 
-    op = encrypt == 0 ? MBEDTLS_ENCRYPT : MBEDTLS_DECRYPT;
+    op = encrypt ? MBEDTLS_ENCRYPT : MBEDTLS_DECRYPT;
 
     cipher_info = mbedtls_cipher_info_from_type(algo);
     if(!cipher_info)
         return -1;
 
-    mbedtls_cipher_init(ctx);
-    ret = mbedtls_cipher_setup(ctx, cipher_info);
+    mbedtls_cipher_init(h);
+    ret = mbedtls_cipher_setup(h, cipher_info);
+
+    /* libssh2 computes and adds SSH packet padding itself, so for CBC
+     * tell mbedTLS to expect no padding on the cipher layer. Only call
+     * set_padding_mode for CBC ciphers since other modes (CTR, stream)
+     * are not applicable and causes an error. */
+    if(!ret) {
+        if(algo == MBEDTLS_CIPHER_AES_128_CBC ||
+           algo == MBEDTLS_CIPHER_AES_192_CBC ||
+           algo == MBEDTLS_CIPHER_AES_256_CBC ||
+           algo == MBEDTLS_CIPHER_DES_EDE3_CBC) {
+            ret = mbedtls_cipher_set_padding_mode(h, MBEDTLS_PADDING_NONE);
+        }
+    }
+
     if(!ret)
-        ret = mbedtls_cipher_setkey(ctx,
+        ret = mbedtls_cipher_setkey(h,
                   secret,
                   (int)mbedtls_cipher_info_get_key_bitlen(cipher_info),
                   op);
 
     if(!ret)
-        ret = mbedtls_cipher_set_iv(ctx, iv,
+        ret = mbedtls_cipher_set_iv(h, iv,
                   mbedtls_cipher_info_get_iv_size(cipher_info));
 
     return ret == 0 ? 0 : -1;
 }
 
-int
-_libssh2_mbedtls_cipher_crypt(_libssh2_cipher_ctx *ctx,
-                              _libssh2_cipher_type(algo),
-                              int encrypt,
-                              unsigned char *block,
-                              size_t blocklen, int firstlast)
+int ssh2_cipher_crypt(ssh2_cipher_ctx *ctx, SSH2_CIPHER_T(algo),
+                      int encrypt, unsigned char *block, size_t blocksize,
+                      int firstlast)
 {
     int ret;
     unsigned char *output;
-    size_t osize, olen, finish_olen;
+    size_t osize;
 
     (void)encrypt;
     (void)algo;
     (void)firstlast;
 
-    osize = blocklen + mbedtls_cipher_get_block_size(ctx);
+    osize = blocksize + mbedtls_cipher_get_block_size(ctx);
 
     output = (unsigned char *)mbedtls_calloc(osize, sizeof(char));
     if(output) {
+        size_t olen = 0, finish_olen = 0;
+
         ret = mbedtls_cipher_reset(ctx);
 
         if(!ret)
-            ret = mbedtls_cipher_update(ctx, block, blocklen, output, &olen);
+            ret = mbedtls_cipher_update(ctx, block, blocksize, output, &olen);
 
         if(!ret)
             ret = mbedtls_cipher_finish(ctx, output + olen, &finish_olen);
@@ -172,7 +173,7 @@ _libssh2_mbedtls_cipher_crypt(_libssh2_cipher_ctx *ctx,
             memcpy(block, output, olen);
         }
 
-        _libssh2_mbedtls_safe_free(output, osize);
+        mbed_safe_free(output, osize);
     }
     else
         ret = -1;
@@ -180,17 +181,9 @@ _libssh2_mbedtls_cipher_crypt(_libssh2_cipher_ctx *ctx,
     return ret == 0 ? 0 : -1;
 }
 
-void
-_libssh2_mbedtls_cipher_dtor(_libssh2_cipher_ctx *ctx)
-{
-    mbedtls_cipher_free(ctx);
-}
-
-
-int
-_libssh2_mbedtls_hash_init(mbedtls_md_context_t *ctx,
-                           mbedtls_md_type_t mdtype,
-                           const unsigned char *key, size_t keylen)
+int ssh2_mbed_hash_init(mbedtls_md_context_t *ctx,
+                        mbedtls_md_type_t mdtype,
+                        const unsigned char *key, size_t keylen)
 {
     const mbedtls_md_info_t *md_info;
     int ret, hmac;
@@ -213,8 +206,7 @@ _libssh2_mbedtls_hash_init(mbedtls_md_context_t *ctx,
     return ret == 0 ? 1 : 0;
 }
 
-int
-_libssh2_mbedtls_hash_final(mbedtls_md_context_t *ctx, unsigned char *hash)
+int ssh2_mbed_hash_final(mbedtls_md_context_t *ctx, unsigned char *hash)
 {
     int ret;
 
@@ -224,9 +216,8 @@ _libssh2_mbedtls_hash_final(mbedtls_md_context_t *ctx, unsigned char *hash)
     return ret == 0 ? 1 : 0;
 }
 
-int
-_libssh2_mbedtls_hash(const unsigned char *data, size_t datalen,
-                      mbedtls_md_type_t mdtype, unsigned char *hash)
+int ssh2_mbed_hash(const unsigned char *data, size_t datalen,
+                   mbedtls_md_type_t mdtype, unsigned char *hash)
 {
     const mbedtls_md_info_t *md_info;
     int ret;
@@ -240,62 +231,56 @@ _libssh2_mbedtls_hash(const unsigned char *data, size_t datalen,
     return ret == 0 ? 0 : -1;
 }
 
-int _libssh2_hmac_ctx_init(libssh2_hmac_ctx *ctx)
+int ssh2_hmac_ctx_init(ssh2_hmac_ctx *ctx)
 {
     memset(ctx, 0, sizeof(*ctx));
     return 1;
 }
 
 #if LIBSSH2_MD5
-int _libssh2_hmac_md5_init(libssh2_hmac_ctx *ctx,
-                           void *key, size_t keylen)
+int ssh2_hmac_md5_init(ssh2_hmac_ctx *ctx, void *key, size_t keylen)
 {
-    return _libssh2_mbedtls_hash_init(ctx, MBEDTLS_MD_MD5, key, keylen);
+    return ssh2_mbed_hash_init(ctx, MBEDTLS_MD_MD5, key, keylen);
 }
 #endif
 
 #if LIBSSH2_HMAC_RIPEMD
-int _libssh2_hmac_ripemd160_init(libssh2_hmac_ctx *ctx,
-                                 void *key, size_t keylen)
+int ssh2_hmac_ripemd160_init(ssh2_hmac_ctx *ctx, void *key, size_t keylen)
 {
-    return _libssh2_mbedtls_hash_init(ctx, MBEDTLS_MD_RIPEMD160, key, keylen);
+    return ssh2_mbed_hash_init(ctx, MBEDTLS_MD_RIPEMD160, key, keylen);
 }
 #endif
 
-int _libssh2_hmac_sha1_init(libssh2_hmac_ctx *ctx,
-                            void *key, size_t keylen)
+int ssh2_hmac_sha1_init(ssh2_hmac_ctx *ctx, void *key, size_t keylen)
 {
-    return _libssh2_mbedtls_hash_init(ctx, MBEDTLS_MD_SHA1, key, keylen);
+    return ssh2_mbed_hash_init(ctx, MBEDTLS_MD_SHA1, key, keylen);
 }
 
-int _libssh2_hmac_sha256_init(libssh2_hmac_ctx *ctx,
-                              void *key, size_t keylen)
+int ssh2_hmac_sha256_init(ssh2_hmac_ctx *ctx, void *key, size_t keylen)
 {
-    return _libssh2_mbedtls_hash_init(ctx, MBEDTLS_MD_SHA256, key, keylen);
+    return ssh2_mbed_hash_init(ctx, MBEDTLS_MD_SHA256, key, keylen);
 }
 
-int _libssh2_hmac_sha512_init(libssh2_hmac_ctx *ctx,
-                              void *key, size_t keylen)
+int ssh2_hmac_sha512_init(ssh2_hmac_ctx *ctx, void *key, size_t keylen)
 {
-    return _libssh2_mbedtls_hash_init(ctx, MBEDTLS_MD_SHA512, key, keylen);
+    return ssh2_mbed_hash_init(ctx, MBEDTLS_MD_SHA512, key, keylen);
 }
 
-int _libssh2_hmac_update(libssh2_hmac_ctx *ctx,
-                         const void *data, size_t datalen)
+int ssh2_hmac_update(ssh2_hmac_ctx *ctx, const void *data, size_t datalen)
 {
     int ret = mbedtls_md_hmac_update(ctx, data, datalen);
 
     return ret == 0 ? 1 : 0;
 }
 
-int _libssh2_hmac_final(libssh2_hmac_ctx *ctx, void *data)
+int ssh2_hmac_final(ssh2_hmac_ctx *ctx, void *data)
 {
     int ret = mbedtls_md_hmac_finish(ctx, data);
 
     return ret == 0 ? 1 : 0;
 }
 
-void _libssh2_hmac_cleanup(libssh2_hmac_ctx *ctx)
+void ssh2_hmac_cleanup(ssh2_hmac_ctx *ctx)
 {
     mbedtls_md_free(ctx);
 }
@@ -305,12 +290,11 @@ void _libssh2_hmac_cleanup(libssh2_hmac_ctx *ctx)
  * mbedTLS backend: BigNumber functions
  */
 
-_libssh2_bn *
-_libssh2_mbedtls_bignum_init(void)
+ssh2_bn *ssh2_mbed_bn_init(void)
 {
-    _libssh2_bn *bignum;
+    ssh2_bn *bignum;
 
-    bignum = (_libssh2_bn *)mbedtls_calloc(1, sizeof(_libssh2_bn));
+    bignum = (ssh2_bn *)mbedtls_calloc(1, sizeof(ssh2_bn));
     if(bignum) {
         mbedtls_mpi_init(bignum);
     }
@@ -318,8 +302,7 @@ _libssh2_mbedtls_bignum_init(void)
     return bignum;
 }
 
-void
-_libssh2_mbedtls_bignum_free(_libssh2_bn *bn)
+void ssh2_mbed_bn_free(ssh2_bn *bn)
 {
     if(bn) {
         mbedtls_mpi_free(bn);
@@ -327,8 +310,7 @@ _libssh2_mbedtls_bignum_free(_libssh2_bn *bn)
     }
 }
 
-static int
-_libssh2_mbedtls_bignum_random(_libssh2_bn *bn, int bits, int top, int bottom)
+static int mbed_bn_random(ssh2_bn *bn, int bits, int top, int bottom)
 {
     size_t len;
     int err;
@@ -339,12 +321,12 @@ _libssh2_mbedtls_bignum_random(_libssh2_bn *bn, int bits, int top, int bottom)
 
     len = (bits + 7) >> 3;
     err = mbedtls_mpi_fill_random(bn, len, mbedtls_ctr_drbg_random,
-                                  &_libssh2_mbedtls_ctr_drbg);
+                                  &mbed_ctr_drbg);
     if(err)
         return -1;
 
     /* Zero unused bits above the most significant bit */
-    for(i = len*8 - 1; (size_t)bits <= i; --i) {
+    for(i = len * 8 - 1; (size_t)bits <= i; --i) {
         err = mbedtls_mpi_set_bit(bn, i, 0);
         if(err)
             return -1;
@@ -353,12 +335,12 @@ _libssh2_mbedtls_bignum_random(_libssh2_bn *bn, int bits, int top, int bottom)
     /* If `top` is -1, the most significant bit of the random number can be
        zero.  If top is 0, the most significant bit of the random number is
        set to 1, and if top is 1, the two most significant bits of the number
-       will be set to 1, so that the product of two such random numbers will
-       always have 2*bits length.
+       is set to 1, so that the product of two such random numbers always
+       have 2 * bits length.
     */
     if(top >= 0) {
         for(i = 0; i <= (size_t)top; ++i) {
-            err = mbedtls_mpi_set_bit(bn, bits-i-1, 1);
+            err = mbedtls_mpi_set_bit(bn, bits - i - 1, 1);
             if(err)
                 return -1;
         }
@@ -374,50 +356,34 @@ _libssh2_mbedtls_bignum_random(_libssh2_bn *bn, int bits, int top, int bottom)
     return 0;
 }
 
-
 /*******************************************************************/
 /*
  * mbedTLS backend: RSA functions
  */
 
-int
-_libssh2_mbedtls_rsa_new(libssh2_rsa_ctx **rsa,
-                         const unsigned char *edata,
-                         unsigned long elen,
-                         const unsigned char *ndata,
-                         unsigned long nlen,
-                         const unsigned char *ddata,
-                         unsigned long dlen,
-                         const unsigned char *pdata,
-                         unsigned long plen,
-                         const unsigned char *qdata,
-                         unsigned long qlen,
-                         const unsigned char *e1data,
-                         unsigned long e1len,
-                         const unsigned char *e2data,
-                         unsigned long e2len,
-                         const unsigned char *coeffdata,
-                         unsigned long coefflen)
+int ssh2_rsa_new(ssh2_rsa_ctx **rsa,
+                 const unsigned char *edata, unsigned long elen,
+                 const unsigned char *ndata, unsigned long nlen,
+                 const unsigned char *ddata, unsigned long dlen,
+                 const unsigned char *pdata, unsigned long plen,
+                 const unsigned char *qdata, unsigned long qlen,
+                 const unsigned char *e1data, unsigned long e1len,
+                 const unsigned char *e2data, unsigned long e2len,
+                 const unsigned char *coeffdata,
+                 unsigned long coefflen)
 {
     int ret;
-    libssh2_rsa_ctx *ctx;
+    ssh2_rsa_ctx *ctx;
 
-    ctx = (libssh2_rsa_ctx *) mbedtls_calloc(1, sizeof(libssh2_rsa_ctx));
-    if(ctx) {
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
+    ctx = (ssh2_rsa_ctx *)mbedtls_calloc(1, sizeof(ssh2_rsa_ctx));
+    if(ctx)
         mbedtls_rsa_init(ctx);
-#else
-        mbedtls_rsa_init(ctx, MBEDTLS_RSA_PKCS_V15, 0);
-#endif
-    }
     else
         return -1;
 
     ret = 0;
-    if(mbedtls_mpi_read_binary(&(ctx->MBEDTLS_PRIVATE(E)),
-                               edata, elen) ||
-       mbedtls_mpi_read_binary(&(ctx->MBEDTLS_PRIVATE(N)),
-                               ndata, nlen)) {
+    if(mbedtls_mpi_read_binary(&(ctx->MBEDTLS_PRIVATE(E)), edata, elen) ||
+       mbedtls_mpi_read_binary(&(ctx->MBEDTLS_PRIVATE(N)), ndata, nlen)) {
         ret = -1;
     }
 
@@ -450,45 +416,35 @@ _libssh2_mbedtls_rsa_new(libssh2_rsa_ctx **rsa,
     }
 
     if(ret && ctx) {
-        _libssh2_mbedtls_rsa_free(ctx);
+        ssh2_rsa_free(ctx);
         ctx = NULL;
     }
     *rsa = ctx;
     return ret;
 }
 
-int
-_libssh2_mbedtls_rsa_new_private(libssh2_rsa_ctx **rsa,
-                                 LIBSSH2_SESSION *session,
-                                 const char *filename,
-                                 const unsigned char *passphrase)
+int ssh2_rsa_new_private(ssh2_rsa_ctx **rsa,
+                         LIBSSH2_SESSION *session,
+                         const char *filename,
+                         const unsigned char *passphrase)
 {
     int ret;
     mbedtls_pk_context pkey;
     mbedtls_rsa_context *pk_rsa;
 
-    *rsa = (libssh2_rsa_ctx *) LIBSSH2_ALLOC(session, sizeof(libssh2_rsa_ctx));
+    *rsa = SSH2_ALLOC(session, sizeof(ssh2_rsa_ctx));
     if(!*rsa)
         return -1;
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
     mbedtls_rsa_init(*rsa);
-#else
-    mbedtls_rsa_init(*rsa, MBEDTLS_RSA_PKCS_V15, 0);
-#endif
     mbedtls_pk_init(&pkey);
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
     ret = mbedtls_pk_parse_keyfile(&pkey, filename, (const char *)passphrase,
-                                   mbedtls_ctr_drbg_random,
-                                   &_libssh2_mbedtls_ctr_drbg);
-#else
-    ret = mbedtls_pk_parse_keyfile(&pkey, filename, (const char *)passphrase);
-#endif
+                                   mbedtls_ctr_drbg_random, &mbed_ctr_drbg);
     if(ret || mbedtls_pk_get_type(&pkey) != MBEDTLS_PK_RSA) {
         mbedtls_pk_free(&pkey);
         mbedtls_rsa_free(*rsa);
-        LIBSSH2_FREE(session, *rsa);
+        SSH2_FREE(session, *rsa);
         *rsa = NULL;
         return -1;
     }
@@ -500,12 +456,10 @@ _libssh2_mbedtls_rsa_new_private(libssh2_rsa_ctx **rsa,
     return 0;
 }
 
-int
-_libssh2_mbedtls_rsa_new_private_frommemory(libssh2_rsa_ctx **rsa,
-                                            LIBSSH2_SESSION *session,
-                                            const char *filedata,
-                                            size_t filedata_len,
-                                            const unsigned char *passphrase)
+int ssh2_rsa_new_private_frommemory(ssh2_rsa_ctx **rsa,
+                                    LIBSSH2_SESSION *session,
+                                    const char *filedata, size_t filedata_len,
+                                    const unsigned char *passphrase)
 {
     int ret;
     mbedtls_pk_context pkey;
@@ -513,13 +467,19 @@ _libssh2_mbedtls_rsa_new_private_frommemory(libssh2_rsa_ctx **rsa,
     void *filedata_nullterm;
     size_t pwd_len;
 
-    *rsa = (libssh2_rsa_ctx *) mbedtls_calloc(1, sizeof(libssh2_rsa_ctx));
+    *rsa = (ssh2_rsa_ctx *)mbedtls_calloc(1, sizeof(ssh2_rsa_ctx));
     if(!*rsa)
         return -1;
 
+#if MBEDTLS_VERSION_NUMBER >= 0x03000000
+    mbedtls_rsa_init(*rsa);
+#else
+    mbedtls_rsa_init(*rsa, MBEDTLS_RSA_PKCS_V15, 0);
+#endif
+
     /*
     mbedtls checks in "mbedtls/pkparse.c:1184" if "key[keylen - 1] != '\0'"
-    private-key from memory will fail if the last byte is not a null byte
+    private-key from memory fails if the last byte is not a null byte
     */
     filedata_nullterm = mbedtls_calloc(filedata_len + 1, 1);
     if(!filedata_nullterm) {
@@ -530,23 +490,17 @@ _libssh2_mbedtls_rsa_new_private_frommemory(libssh2_rsa_ctx **rsa,
     mbedtls_pk_init(&pkey);
 
     pwd_len = passphrase ? strlen((const char *)passphrase) : 0;
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
     ret = mbedtls_pk_parse_key(&pkey, (unsigned char *)filedata_nullterm,
                                filedata_len + 1,
                                passphrase, pwd_len,
                                mbedtls_ctr_drbg_random,
-                               &_libssh2_mbedtls_ctr_drbg);
-#else
-    ret = mbedtls_pk_parse_key(&pkey, (unsigned char *)filedata_nullterm,
-                               filedata_len + 1,
-                               passphrase, pwd_len);
-#endif
-    _libssh2_mbedtls_safe_free(filedata_nullterm, filedata_len);
+                               &mbed_ctr_drbg);
+    mbed_safe_free(filedata_nullterm, filedata_len);
 
     if(ret || mbedtls_pk_get_type(&pkey) != MBEDTLS_PK_RSA) {
         mbedtls_pk_free(&pkey);
         mbedtls_rsa_free(*rsa);
-        LIBSSH2_FREE(session, *rsa);
+        SSH2_FREE(session, *rsa);
         *rsa = NULL;
         return -1;
     }
@@ -558,13 +512,10 @@ _libssh2_mbedtls_rsa_new_private_frommemory(libssh2_rsa_ctx **rsa,
     return 0;
 }
 
-int
-_libssh2_mbedtls_rsa_sha2_verify(libssh2_rsa_ctx * rsactx,
-                                 size_t hash_len,
-                                 const unsigned char *sig,
-                                 size_t sig_len,
-                                 const unsigned char *m,
-                                 size_t m_len)
+int ssh2_rsa_sha2_verify(ssh2_rsa_ctx *rsactx,
+                         size_t hash_len,
+                         const unsigned char *sig, size_t sig_len,
+                         const unsigned char *m, size_t m_len)
 {
     int ret;
     int md_type;
@@ -586,57 +537,45 @@ _libssh2_mbedtls_rsa_sha2_verify(libssh2_rsa_ctx * rsactx,
     else if(hash_len == SHA512_DIGEST_LENGTH) {
         md_type = MBEDTLS_MD_SHA512;
     }
-    else{
+    else {
         free(hash);
         return -1; /* unsupported digest */
     }
-    ret = _libssh2_mbedtls_hash(m, m_len, md_type, hash);
+    ret = ssh2_mbed_hash(m, m_len, md_type, hash);
 
     if(ret) {
         free(hash);
         return -1; /* failure */
     }
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
     ret = mbedtls_rsa_pkcs1_verify(rsactx,
                                    md_type, (unsigned int)hash_len,
                                    hash, sig);
-#else
-    ret = mbedtls_rsa_pkcs1_verify(rsactx, NULL, NULL, MBEDTLS_RSA_PUBLIC,
-                                   md_type, (unsigned int)hash_len,
-                                   hash, sig);
-#endif
     free(hash);
 
     return (ret == 0) ? 0 : -1;
 }
 
-int
-_libssh2_mbedtls_rsa_sha1_verify(libssh2_rsa_ctx * rsactx,
-                                 const unsigned char *sig,
-                                 size_t sig_len,
-                                 const unsigned char *m,
-                                 size_t m_len)
+int ssh2_rsa_sha1_verify(ssh2_rsa_ctx *rsactx,
+                         const unsigned char *sig, size_t sig_len,
+                         const unsigned char *m, size_t m_len)
 {
-    return _libssh2_mbedtls_rsa_sha2_verify(rsactx, SHA_DIGEST_LENGTH,
-                                            sig, sig_len, m, m_len);
+    return ssh2_rsa_sha2_verify(rsactx, SHA_DIGEST_LENGTH,
+                                sig, sig_len, m, m_len);
 }
 
-int
-_libssh2_mbedtls_rsa_sha2_sign(LIBSSH2_SESSION *session,
-                               libssh2_rsa_ctx *rsa,
-                               const unsigned char *hash,
-                               size_t hash_len,
-                               unsigned char **signature,
-                               size_t *signature_len)
+int ssh2_rsa_sha2_sign(LIBSSH2_SESSION *session,
+                       ssh2_rsa_ctx *rsactx,
+                       const unsigned char *hash, size_t hash_len,
+                       unsigned char **signature, size_t *signature_len)
 {
     int ret;
     unsigned char *sig;
     size_t sig_len;
     int md_type;
 
-    sig_len = mbedtls_rsa_get_len(rsa);
-    sig = LIBSSH2_ALLOC(session, sig_len);
+    sig_len = mbedtls_rsa_get_len(rsactx);
+    sig = SSH2_ALLOC(session, sig_len);
     if(!sig) {
         return -1;
     }
@@ -651,25 +590,19 @@ _libssh2_mbedtls_rsa_sha2_sign(LIBSSH2_SESSION *session,
         md_type = MBEDTLS_MD_SHA512;
     }
     else {
-        _libssh2_error(session, LIBSSH2_ERROR_PROTO,
-                       "Unsupported hash digest length");
+        ssh2_err(session, LIBSSH2_ERROR_PROTO,
+                 "Unsupported hash digest length");
+        md_type = 0;
         ret = -1;
     }
-    if(ret == 0) {
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
-        ret = mbedtls_rsa_pkcs1_sign(rsa,
+    if(ret == 0)
+        ret = mbedtls_rsa_pkcs1_sign(rsactx,
                                      mbedtls_ctr_drbg_random,
-                                     &_libssh2_mbedtls_ctr_drbg,
+                                     &mbed_ctr_drbg,
                                      md_type, (unsigned int)hash_len,
                                      hash, sig);
-#else
-        ret = mbedtls_rsa_pkcs1_sign(rsa, NULL, NULL, MBEDTLS_RSA_PRIVATE,
-                                     md_type, (unsigned int)hash_len,
-                                     hash, sig);
-#endif
-    }
     if(ret) {
-        LIBSSH2_FREE(session, sig);
+        SSH2_FREE(session, sig);
         return -1;
     }
 
@@ -679,29 +612,24 @@ _libssh2_mbedtls_rsa_sha2_sign(LIBSSH2_SESSION *session,
     return (ret == 0) ? 0 : -1;
 }
 
-int
-_libssh2_mbedtls_rsa_sha1_sign(LIBSSH2_SESSION * session,
-                               libssh2_rsa_ctx * rsactx,
-                               const unsigned char *hash,
-                               size_t hash_len,
-                               unsigned char **signature,
-                               size_t *signature_len)
+int ssh2_rsa_sha1_sign(LIBSSH2_SESSION *session,
+                       ssh2_rsa_ctx *rsactx,
+                       const unsigned char *hash, size_t hash_len,
+                       unsigned char **signature, size_t *signature_len)
 {
-    return _libssh2_mbedtls_rsa_sha2_sign(session, rsactx, hash, hash_len,
-                                          signature, signature_len);
+    return ssh2_rsa_sha2_sign(session, rsactx, hash, hash_len,
+                              signature, signature_len);
 }
 
-void
-_libssh2_mbedtls_rsa_free(libssh2_rsa_ctx *ctx)
+void ssh2_rsa_free(ssh2_rsa_ctx *ctx)
 {
     mbedtls_rsa_free(ctx);
     mbedtls_free(ctx);
 }
 
-static unsigned char *
-gen_publickey_from_rsa(LIBSSH2_SESSION *session,
-                       mbedtls_rsa_context *rsa,
-                       size_t *keylen)
+static unsigned char *mbed_gen_publickey_from_rsa(LIBSSH2_SESSION *session,
+                                                  mbedtls_rsa_context *rsa,
+                                                  size_t *keylen)
 {
     uint32_t e_bytes, n_bytes;
     uint32_t len;
@@ -714,7 +642,7 @@ gen_publickey_from_rsa(LIBSSH2_SESSION *session,
     /* Key form is "ssh-rsa" + e + n. */
     len = 4 + 7 + 4 + e_bytes + 4 + n_bytes;
 
-    key = LIBSSH2_ALLOC(session, len);
+    key = SSH2_ALLOC(session, len);
     if(!key) {
         return NULL;
     }
@@ -722,32 +650,32 @@ gen_publickey_from_rsa(LIBSSH2_SESSION *session,
     /* Process key encoding. */
     p = key;
 
-    _libssh2_htonu32(p, 7);  /* Key type. */
+    ssh2_htonu32(p, 7); /* Key type. */
     p += 4;
+    /* NOLINTNEXTLINE(bugprone-not-null-terminated-result) */
     memcpy(p, "ssh-rsa", 7);
     p += 7;
 
-    _libssh2_htonu32(p, e_bytes);
+    ssh2_htonu32(p, e_bytes);
     p += 4;
     mbedtls_mpi_write_binary(&rsa->MBEDTLS_PRIVATE(E), p, e_bytes);
-    p += e_bytes;   /* Increment write index after writing to buffer */
+    p += e_bytes; /* Increment write index after writing to buffer */
 
-    _libssh2_htonu32(p, n_bytes);
+    ssh2_htonu32(p, n_bytes);
     p += 4;
     mbedtls_mpi_write_binary(&rsa->MBEDTLS_PRIVATE(N), p, n_bytes);
-    p += n_bytes;   /* Increment write index after writing to buffer */
+    p += n_bytes; /* Increment write index after writing to buffer */
 
     *keylen = (size_t)(p - key);
     return key;
 }
 
-static int
-_libssh2_mbedtls_pub_priv_key(LIBSSH2_SESSION *session,
-                              unsigned char **method,
-                              size_t *method_len,
-                              unsigned char **pubkeydata,
-                              size_t *pubkeydata_len,
-                              mbedtls_pk_context *pkey)
+static int mbed_pub_priv_key(LIBSSH2_SESSION *session,
+                             unsigned char **method,
+                             size_t *method_len,
+                             unsigned char **pubkeydata,
+                             size_t *pubkeydata_len,
+                             mbedtls_pk_context *pkey)
 {
     unsigned char *key = NULL, *mth = NULL;
     size_t keylen = 0, mthlen = 0;
@@ -756,15 +684,14 @@ _libssh2_mbedtls_pub_priv_key(LIBSSH2_SESSION *session,
 
     if(mbedtls_pk_get_type(pkey) != MBEDTLS_PK_RSA) {
         mbedtls_pk_free(pkey);
-        return _libssh2_error(session, LIBSSH2_ERROR_FILE,
-                              "Key type not supported");
+        return ssh2_err(session, LIBSSH2_ERROR_FILE, "Key type not supported");
     }
 
     ret = 0;
 
     /* write method */
     mthlen = 7;
-    mth = LIBSSH2_ALLOC(session, mthlen);
+    mth = SSH2_ALLOC(session, mthlen);
     if(mth) {
         memcpy(mth, "ssh-rsa", mthlen);
     }
@@ -773,7 +700,7 @@ _libssh2_mbedtls_pub_priv_key(LIBSSH2_SESSION *session,
     }
 
     rsa = mbedtls_pk_rsa(*pkey);
-    key = gen_publickey_from_rsa(session, rsa, &keylen);
+    key = mbed_gen_publickey_from_rsa(session, rsa, &keylen);
     if(!key) {
         ret = -1;
     }
@@ -781,9 +708,9 @@ _libssh2_mbedtls_pub_priv_key(LIBSSH2_SESSION *session,
     /* write output */
     if(ret) {
         if(mth)
-            LIBSSH2_FREE(session, mth);
+            SSH2_FREE(session, mth);
         if(key)
-            LIBSSH2_FREE(session, key);
+            SSH2_FREE(session, key);
     }
     else {
         *method = mth;
@@ -795,50 +722,45 @@ _libssh2_mbedtls_pub_priv_key(LIBSSH2_SESSION *session,
     return ret;
 }
 
-int
-_libssh2_mbedtls_pub_priv_keyfile(LIBSSH2_SESSION *session,
-                                  unsigned char **method,
-                                  size_t *method_len,
-                                  unsigned char **pubkeydata,
-                                  size_t *pubkeydata_len,
-                                  const char *privatekey,
-                                  const char *passphrase)
+int ssh2_pub_priv_keyfile(LIBSSH2_SESSION *session,
+                          unsigned char **method,
+                          size_t *method_len,
+                          unsigned char **pubkeydata,
+                          size_t *pubkeydata_len,
+                          const char *privatekey,
+                          const char *passphrase)
 {
     mbedtls_pk_context pkey;
     char buf[1024];
     int ret;
 
     mbedtls_pk_init(&pkey);
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
     ret = mbedtls_pk_parse_keyfile(&pkey, privatekey, passphrase,
                                    mbedtls_ctr_drbg_random,
-                                   &_libssh2_mbedtls_ctr_drbg);
-#else
-    ret = mbedtls_pk_parse_keyfile(&pkey, privatekey, passphrase);
-#endif
+                                   &mbed_ctr_drbg);
     if(ret) {
         mbedtls_strerror(ret, (char *)buf, sizeof(buf));
         mbedtls_pk_free(&pkey);
-        return _libssh2_error(session, LIBSSH2_ERROR_FILE, buf);
+        return ssh2_err_flags(session, LIBSSH2_ERROR_FILE, buf,
+                              SSH2_ERR_FLAG_DUP);
     }
 
-    ret = _libssh2_mbedtls_pub_priv_key(session, method, method_len,
-                                        pubkeydata, pubkeydata_len, &pkey);
+    ret = mbed_pub_priv_key(session, method, method_len,
+                            pubkeydata, pubkeydata_len, &pkey);
 
     mbedtls_pk_free(&pkey);
 
     return ret;
 }
 
-int
-_libssh2_mbedtls_pub_priv_keyfilememory(LIBSSH2_SESSION *session,
-                                        unsigned char **method,
-                                        size_t *method_len,
-                                        unsigned char **pubkeydata,
-                                        size_t *pubkeydata_len,
-                                        const char *privatekeydata,
-                                        size_t privatekeydata_len,
-                                        const char *passphrase)
+int ssh2_pub_priv_keyfilememory(LIBSSH2_SESSION *session,
+                                unsigned char **method,
+                                size_t *method_len,
+                                unsigned char **pubkeydata,
+                                size_t *pubkeydata_len,
+                                const char *privatekeydata,
+                                size_t privatekeydata_len,
+                                const char *passphrase)
 {
     mbedtls_pk_context pkey;
     char buf[1024];
@@ -848,7 +770,7 @@ _libssh2_mbedtls_pub_priv_keyfilememory(LIBSSH2_SESSION *session,
 
     /*
     mbedtls checks in "mbedtls/pkparse.c:1184" if "key[keylen - 1] != '\0'"
-    private-key from memory will fail if the last byte is not a null byte
+    private-key from memory fails if the last byte is not a null byte
     */
     privatekeydata_nullterm = mbedtls_calloc(privatekeydata_len + 1, 1);
     if(!privatekeydata_nullterm) {
@@ -859,49 +781,42 @@ _libssh2_mbedtls_pub_priv_keyfilememory(LIBSSH2_SESSION *session,
     mbedtls_pk_init(&pkey);
 
     pwd_len = passphrase ? strlen((const char *)passphrase) : 0;
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
     ret = mbedtls_pk_parse_key(&pkey,
                                (unsigned char *)privatekeydata_nullterm,
                                privatekeydata_len + 1,
                                (const unsigned char *)passphrase, pwd_len,
                                mbedtls_ctr_drbg_random,
-                               &_libssh2_mbedtls_ctr_drbg);
-#else
-    ret = mbedtls_pk_parse_key(&pkey,
-                               (unsigned char *)privatekeydata_nullterm,
-                               privatekeydata_len + 1,
-                               (const unsigned char *)passphrase, pwd_len);
-#endif
-    _libssh2_mbedtls_safe_free(privatekeydata_nullterm, privatekeydata_len);
+                               &mbed_ctr_drbg);
+    mbed_safe_free(privatekeydata_nullterm, privatekeydata_len);
 
     if(ret) {
         mbedtls_strerror(ret, (char *)buf, sizeof(buf));
         mbedtls_pk_free(&pkey);
-        return _libssh2_error(session, LIBSSH2_ERROR_FILE, buf);
+        return ssh2_err_flags(session, LIBSSH2_ERROR_FILE, buf,
+                              SSH2_ERR_FLAG_DUP);
     }
 
-    ret = _libssh2_mbedtls_pub_priv_key(session, method, method_len,
-                                        pubkeydata, pubkeydata_len, &pkey);
+    ret = mbed_pub_priv_key(session, method, method_len,
+                            pubkeydata, pubkeydata_len, &pkey);
 
     mbedtls_pk_free(&pkey);
 
     return ret;
 }
 
-int
-_libssh2_mbedtls_sk_pub_keyfilememory(LIBSSH2_SESSION *session,
-                                      unsigned char **method,
-                                      size_t *method_len,
-                                      unsigned char **pubkeydata,
-                                      size_t *pubkeydata_len,
-                                      int *algorithm,
-                                      unsigned char *flags,
-                                      const char **application,
-                                      const unsigned char **key_handle,
-                                      size_t *handle_len,
-                                      const char *privatekeydata,
-                                      size_t privatekeydata_len,
-                                      const char *passphrase)
+int ssh2_sk_pub_keyfilememory(LIBSSH2_SESSION *session,
+                              unsigned char **method,
+                              size_t *method_len,
+                              unsigned char **pubkeydata,
+                              size_t *pubkeydata_len,
+                              int *algorithm,
+                              unsigned char *flags,
+                              const char **application,
+                              const unsigned char **key_handle,
+                              size_t *handle_len,
+                              const char *privatekeydata,
+                              size_t privatekeydata_len,
+                              const char *passphrase)
 {
     (void)method;
     (void)method_len;
@@ -916,51 +831,41 @@ _libssh2_mbedtls_sk_pub_keyfilememory(LIBSSH2_SESSION *session,
     (void)privatekeydata_len;
     (void)passphrase;
 
-    return _libssh2_error(session, LIBSSH2_ERROR_FILE,
-                    "Unable to extract public SK key from private key file: "
-                    "Method unimplemented in mbedTLS backend");
+    return ssh2_err(session, LIBSSH2_ERROR_FILE,
+                    "Unable to extract public SK key from private key "
+                    "file: Method unimplemented in mbedTLS backend");
 }
-
-void _libssh2_init_aes_ctr(void)
-{
-    /* no implementation */
-}
-
 
 /*******************************************************************/
 /*
  * mbedTLS backend: Diffie-Hellman functions
  */
 
-void
-_libssh2_dh_init(_libssh2_dh_ctx *dhctx)
+void ssh2_dh_init(ssh2_dh_ctx *dhctx)
 {
-    *dhctx = _libssh2_mbedtls_bignum_init();    /* Random from client */
+    *dhctx = ssh2_mbed_bn_init(); /* Random from client */
 }
 
-int
-_libssh2_dh_key_pair(_libssh2_dh_ctx *dhctx, _libssh2_bn *public,
-                     _libssh2_bn *g, _libssh2_bn *p, int group_order)
+int ssh2_mbed_dh_key_pair(ssh2_dh_ctx *dhctx, ssh2_bn *pub, ssh2_bn *g,
+                          ssh2_bn *p, int group_order)
 {
     /* Generate x and e */
-    _libssh2_mbedtls_bignum_random(*dhctx, group_order * 8 - 1, 0, -1);
-    mbedtls_mpi_exp_mod(public, g, *dhctx, p, NULL);
+    mbed_bn_random(*dhctx, group_order * 8 - 1, 0, -1);
+    mbedtls_mpi_exp_mod(pub, g, *dhctx, p, NULL);
     return 0;
 }
 
-int
-_libssh2_dh_secret(_libssh2_dh_ctx *dhctx, _libssh2_bn *secret,
-                   _libssh2_bn *f, _libssh2_bn *p)
+int ssh2_mbed_dh_secret(ssh2_dh_ctx *dhctx, ssh2_bn *secret, ssh2_bn *f,
+                        ssh2_bn *p)
 {
     /* Compute the shared secret */
     mbedtls_mpi_exp_mod(secret, f, *dhctx, p, NULL);
     return 0;
 }
 
-void
-_libssh2_dh_dtor(_libssh2_dh_ctx *dhctx)
+void ssh2_dh_dtor(ssh2_dh_ctx *dhctx)
 {
-    _libssh2_mbedtls_bignum_free(*dhctx);
+    ssh2_mbed_bn_free(*dhctx);
     *dhctx = NULL;
 }
 
@@ -972,106 +877,93 @@ _libssh2_dh_dtor(_libssh2_dh_ctx *dhctx)
  */
 
 /*
- * _libssh2_ecdsa_create_key
- *
  * Creates a local private key based on input curve
  * and returns octal value and octal length
- *
  */
-
-int
-_libssh2_mbedtls_ecdsa_create_key(LIBSSH2_SESSION *session,
-                                  _libssh2_ec_key **privkey,
-                                  unsigned char **pubkey_oct,
-                                  size_t *pubkey_oct_len,
-                                  libssh2_curve_type curve)
+int ssh2_ecdsa_create_key(LIBSSH2_SESSION *session,
+                          ssh2_ec_key **out_private_key,
+                          unsigned char **out_public_key_octal,
+                          size_t *out_public_key_octal_len,
+                          ssh2_curve_type curve_type)
 {
     size_t plen = 0;
 
-    *privkey = LIBSSH2_ALLOC(session, sizeof(mbedtls_ecp_keypair));
+    *out_private_key = SSH2_ALLOC(session, sizeof(mbedtls_ecp_keypair));
 
-    if(!*privkey)
+    if(!*out_private_key)
         goto failed;
 
-    mbedtls_ecdsa_init(*privkey);
+    mbedtls_ecdsa_init(*out_private_key);
 
-    if(mbedtls_ecdsa_genkey(*privkey, (mbedtls_ecp_group_id)curve,
-                            mbedtls_ctr_drbg_random,
-                            &_libssh2_mbedtls_ctr_drbg))
+    if(mbedtls_ecdsa_genkey(*out_private_key, (mbedtls_ecp_group_id)curve_type,
+                            mbedtls_ctr_drbg_random, &mbed_ctr_drbg))
         goto failed;
 
-    plen = 2 * mbedtls_mpi_size(&(*privkey)->MBEDTLS_PRIVATE(grp).P) + 1;
-    *pubkey_oct = LIBSSH2_ALLOC(session, plen);
+    plen = 2 * mbedtls_mpi_size(
+        &(*out_private_key)->MBEDTLS_PRIVATE(grp).P) + 1;
+    *out_public_key_octal = SSH2_ALLOC(session, plen);
 
-    if(!*pubkey_oct)
+    if(!*out_public_key_octal)
         goto failed;
 
-    if(mbedtls_ecp_point_write_binary(&(*privkey)->MBEDTLS_PRIVATE(grp),
-                                      &(*privkey)->MBEDTLS_PRIVATE(Q),
-                                      MBEDTLS_ECP_PF_UNCOMPRESSED,
-                                      pubkey_oct_len, *pubkey_oct, plen) == 0)
+    if(mbedtls_ecp_point_write_binary(
+          &(*out_private_key)->MBEDTLS_PRIVATE(grp),
+          &(*out_private_key)->MBEDTLS_PRIVATE(Q),
+          MBEDTLS_ECP_PF_UNCOMPRESSED,
+          out_public_key_octal_len, *out_public_key_octal, plen) == 0)
         return 0;
 
 failed:
 
-    _libssh2_mbedtls_ecdsa_free(*privkey);
-    _libssh2_mbedtls_safe_free(*pubkey_oct, plen);
-    *privkey = NULL;
+    ssh2_ecdsa_free(*out_private_key);
+    mbed_safe_free(*out_public_key_octal, plen);
+    *out_private_key = NULL;
 
     return -1;
 }
 
-/* _libssh2_ecdsa_curve_name_with_octal_new
- *
+/*
  * Creates a new public key given an octal string, length and type
- *
  */
-
-int
-_libssh2_mbedtls_ecdsa_curve_name_with_octal_new(libssh2_ecdsa_ctx **ctx,
-                                                 const unsigned char *k,
-                                                 size_t k_len,
-                                                 libssh2_curve_type curve)
+int ssh2_ecdsa_curve_name_with_octal_new(ssh2_ecdsa_ctx **ec_ctx,
+                                         const unsigned char *k, size_t k_len,
+                                         ssh2_curve_type curve)
 {
-    *ctx = mbedtls_calloc(1, sizeof(mbedtls_ecp_keypair));
+    *ec_ctx = mbedtls_calloc(1, sizeof(mbedtls_ecp_keypair));
 
-    if(!*ctx)
+    if(!*ec_ctx)
         goto failed;
 
-    mbedtls_ecdsa_init(*ctx);
+    mbedtls_ecdsa_init(*ec_ctx);
 
-    if(mbedtls_ecp_group_load(&(*ctx)->MBEDTLS_PRIVATE(grp),
+    if(mbedtls_ecp_group_load(&(*ec_ctx)->MBEDTLS_PRIVATE(grp),
                               (mbedtls_ecp_group_id)curve))
         goto failed;
 
-    if(mbedtls_ecp_point_read_binary(&(*ctx)->MBEDTLS_PRIVATE(grp),
-                                     &(*ctx)->MBEDTLS_PRIVATE(Q),
-                                     k, k_len))
+    if(mbedtls_ecp_point_read_binary(&(*ec_ctx)->MBEDTLS_PRIVATE(grp),
+                                     &(*ec_ctx)->MBEDTLS_PRIVATE(Q), k, k_len))
         goto failed;
 
-    if(mbedtls_ecp_check_pubkey(&(*ctx)->MBEDTLS_PRIVATE(grp),
-                                &(*ctx)->MBEDTLS_PRIVATE(Q)) == 0)
+    if(mbedtls_ecp_check_pubkey(&(*ec_ctx)->MBEDTLS_PRIVATE(grp),
+                                &(*ec_ctx)->MBEDTLS_PRIVATE(Q)) == 0)
         return 0;
 
 failed:
 
-    _libssh2_mbedtls_ecdsa_free(*ctx);
-    *ctx = NULL;
+    ssh2_ecdsa_free(*ec_ctx);
+    *ec_ctx = NULL;
 
     return -1;
 }
 
-/* _libssh2_ecdh_gen_k
- *
+/*
  * Computes the shared secret K given a local private key,
  * remote public key and length
  */
-
-int
-_libssh2_mbedtls_ecdh_gen_k(_libssh2_bn **k,
-                            _libssh2_ec_key *privkey,
-                            const unsigned char *server_pubkey,
-                            size_t server_pubkey_len)
+int ssh2_ecdh_gen_k(ssh2_bn **k,
+                    ssh2_ec_key *private_key,
+                    const unsigned char *server_public_key,
+                    size_t server_public_key_len)
 {
     mbedtls_ecp_point pubkey;
     int rc = 0;
@@ -1081,23 +973,24 @@ _libssh2_mbedtls_ecdh_gen_k(_libssh2_bn **k,
 
     mbedtls_ecp_point_init(&pubkey);
 
-    if(mbedtls_ecp_point_read_binary(&privkey->MBEDTLS_PRIVATE(grp),
+    if(mbedtls_ecp_point_read_binary(&private_key->MBEDTLS_PRIVATE(grp),
                                      &pubkey,
-                                     server_pubkey, server_pubkey_len)) {
+                                     server_public_key,
+                                     server_public_key_len)) {
         rc = -1;
         goto cleanup;
     }
 
-    if(mbedtls_ecdh_compute_shared(&privkey->MBEDTLS_PRIVATE(grp), *k,
+    if(mbedtls_ecdh_compute_shared(&private_key->MBEDTLS_PRIVATE(grp), *k,
                                    &pubkey,
-                                   &privkey->MBEDTLS_PRIVATE(d),
+                                   &private_key->MBEDTLS_PRIVATE(d),
                                    mbedtls_ctr_drbg_random,
-                                   &_libssh2_mbedtls_ctr_drbg)) {
+                                   &mbed_ctr_drbg)) {
         rc = -1;
         goto cleanup;
     }
 
-    if(mbedtls_ecp_check_privkey(&privkey->MBEDTLS_PRIVATE(grp), *k))
+    if(mbedtls_ecp_check_privkey(&private_key->MBEDTLS_PRIVATE(grp), *k))
         rc = -1;
 
 cleanup:
@@ -1107,28 +1000,24 @@ cleanup:
     return rc;
 }
 
-#define LIBSSH2_MBEDTLS_ECDSA_VERIFY(digest_type)                           \
-    do {                                                                    \
-        unsigned char hsh[SHA##digest_type##_DIGEST_LENGTH];                \
-                                                                            \
-        if(libssh2_sha##digest_type(m, m_len, hsh) == 0) {                  \
-            rc = mbedtls_ecdsa_verify(&ctx->MBEDTLS_PRIVATE(grp), hsh,      \
-                                      SHA##digest_type##_DIGEST_LENGTH,     \
-                                      &ctx->MBEDTLS_PRIVATE(Q), &pr, &ps);  \
-        }                                                                   \
+#define SSH2_MBED_ECDSA_VERIFY(digest_type)                                   \
+    do {                                                                      \
+        unsigned char hsh[SHA##digest_type##_DIGEST_LENGTH];                  \
+                                                                              \
+        if(ssh2_sha##digest_type(m, m_len, hsh) == 0) {                       \
+            rc = mbedtls_ecdsa_verify(&ec_ctx->MBEDTLS_PRIVATE(grp), hsh,     \
+                                      SHA##digest_type##_DIGEST_LENGTH,       \
+                                      &ec_ctx->MBEDTLS_PRIVATE(Q), &pr, &ps); \
+        }                                                                     \
     } while(0)
 
-/* _libssh2_ecdsa_verify
- *
+/*
  * Verifies the ECDSA signature of a hashed message
- *
  */
-
-int
-_libssh2_mbedtls_ecdsa_verify(libssh2_ecdsa_ctx *ctx,
-                              const unsigned char *r, size_t r_len,
-                              const unsigned char *s, size_t s_len,
-                              const unsigned char *m, size_t m_len)
+int ssh2_ecdsa_verify(ssh2_ecdsa_ctx *ec_ctx,
+                      const unsigned char *r, size_t r_len,
+                      const unsigned char *s, size_t s_len,
+                      const unsigned char *m, size_t m_len)
 {
     mbedtls_mpi pr, ps;
     int rc = -1;
@@ -1142,15 +1031,15 @@ _libssh2_mbedtls_ecdsa_verify(libssh2_ecdsa_ctx *ctx,
     if(mbedtls_mpi_read_binary(&ps, s, s_len))
         goto cleanup;
 
-    switch(_libssh2_ecdsa_get_curve_type(ctx)) {
-    case LIBSSH2_EC_CURVE_NISTP256:
-        LIBSSH2_MBEDTLS_ECDSA_VERIFY(256);
+    switch(ssh2_ecdsa_get_curve_type(ec_ctx)) {
+    case SSH2_EC_CURVE_NISTP256:
+        SSH2_MBED_ECDSA_VERIFY(256);
         break;
-    case LIBSSH2_EC_CURVE_NISTP384:
-        LIBSSH2_MBEDTLS_ECDSA_VERIFY(384);
+    case SSH2_EC_CURVE_NISTP384:
+        SSH2_MBED_ECDSA_VERIFY(384);
         break;
-    case LIBSSH2_EC_CURVE_NISTP521:
-        LIBSSH2_MBEDTLS_ECDSA_VERIFY(512);
+    case SSH2_EC_CURVE_NISTP521:
+        SSH2_MBED_ECDSA_VERIFY(512);
         break;
     default:
         rc = -1;
@@ -1164,33 +1053,26 @@ cleanup:
     return (rc == 0) ? 0 : -1;
 }
 
-static int
-_libssh2_mbedtls_parse_eckey(libssh2_ecdsa_ctx **ctx,
-                             mbedtls_pk_context *pkey,
-                             LIBSSH2_SESSION *session,
-                             const unsigned char *data,
-                             size_t data_len,
-                             const unsigned char *pwd)
+static int mbed_parse_eckey(ssh2_ecdsa_ctx **ctx,
+                            mbedtls_pk_context *pkey,
+                            LIBSSH2_SESSION *session,
+                            const unsigned char *data,
+                            size_t data_len,
+                            const unsigned char *pwd)
 {
     size_t pwd_len;
 
-    pwd_len = pwd ? strlen((const char *) pwd) : 0;
+    pwd_len = pwd ? strlen((const char *)pwd) : 0;
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000
     if(mbedtls_pk_parse_key(pkey, data, data_len, pwd, pwd_len,
-                            mbedtls_ctr_drbg_random,
-                            &_libssh2_mbedtls_ctr_drbg))
+                            mbedtls_ctr_drbg_random, &mbed_ctr_drbg))
 
         goto failed;
-#else
-    if(mbedtls_pk_parse_key(pkey, data, data_len, pwd, pwd_len))
-        goto failed;
-#endif
 
     if(mbedtls_pk_get_type(pkey) != MBEDTLS_PK_ECKEY)
         goto failed;
 
-    *ctx = LIBSSH2_ALLOC(session, sizeof(libssh2_ecdsa_ctx));
+    *ctx = SSH2_ALLOC(session, sizeof(ssh2_ecdsa_ctx));
 
     if(!*ctx)
         goto failed;
@@ -1202,47 +1084,81 @@ _libssh2_mbedtls_parse_eckey(libssh2_ecdsa_ctx **ctx,
 
 failed:
 
-    _libssh2_mbedtls_ecdsa_free(*ctx);
+    ssh2_ecdsa_free(*ctx);
     *ctx = NULL;
 
     return -1;
 }
 
-static int
-_libssh2_mbedtls_parse_openssh_key(libssh2_ecdsa_ctx **ctx,
-                                   LIBSSH2_SESSION *session,
-                                   const unsigned char *data,
-                                   size_t data_len,
-                                   const unsigned char *pwd)
+/*
+ * returns key curve type that maps to ssh2_curve_type
+ */
+ssh2_curve_type ssh2_ecdsa_get_curve_type(ssh2_ecdsa_ctx *ec_ctx)
 {
-    libssh2_curve_type type;
+    return (ssh2_curve_type)ec_ctx->MBEDTLS_PRIVATE(grp).id;
+}
+
+/*
+ * returns 0 for success, key curve type that maps to ssh2_curve_type
+ */
+static int mbed_ecdsa_curve_type_from_name(const char *name,
+                                           ssh2_curve_type *out_type)
+{
+    ssh2_curve_type type;
+
+    if(!name || strlen(name) != 19)
+        return -1;
+
+    if(strcmp(name, "ecdsa-sha2-nistp256") == 0)
+        type = SSH2_EC_CURVE_NISTP256;
+    else if(strcmp(name, "ecdsa-sha2-nistp384") == 0)
+        type = SSH2_EC_CURVE_NISTP384;
+    else if(strcmp(name, "ecdsa-sha2-nistp521") == 0)
+        type = SSH2_EC_CURVE_NISTP521;
+    else {
+        return -1;
+    }
+
+    if(out_type) {
+        *out_type = type;
+    }
+
+    return 0;
+}
+
+static int mbed_parse_openssh_key(ssh2_ecdsa_ctx **ctx,
+                                  LIBSSH2_SESSION *session,
+                                  const unsigned char *data,
+                                  size_t data_len,
+                                  const unsigned char *pwd)
+{
+    ssh2_curve_type type;
     unsigned char *name = NULL;
     struct string_buf *decrypted = NULL;
     size_t curvelen, exponentlen, pointlen;
     unsigned char *curve, *exponent, *point_buf;
 
-    if(_libssh2_openssh_pem_parse_memory(session, pwd,
-                                         (const char *)data, data_len,
-                                         &decrypted))
+    if(ssh2_openssh_pem_parse_memory(session, pwd,
+                                     (const char *)data, data_len,
+                                     &decrypted))
         goto failed;
 
-    if(_libssh2_get_string(decrypted, &name, NULL))
+    if(ssh2_get_string(decrypted, &name, NULL))
         goto failed;
 
-    if(_libssh2_mbedtls_ecdsa_curve_type_from_name((const char *)name,
-                                                   &type))
+    if(mbed_ecdsa_curve_type_from_name((const char *)name, &type))
         goto failed;
 
-    if(_libssh2_get_string(decrypted, &curve, &curvelen))
+    if(ssh2_get_string(decrypted, &curve, &curvelen))
         goto failed;
 
-    if(_libssh2_get_string(decrypted, &point_buf, &pointlen))
+    if(ssh2_get_string(decrypted, &point_buf, &pointlen))
         goto failed;
 
-    if(_libssh2_get_bignum_bytes(decrypted, &exponent, &exponentlen))
+    if(ssh2_get_bignum_bytes(decrypted, &exponent, &exponentlen))
         goto failed;
 
-    *ctx = LIBSSH2_ALLOC(session, sizeof(libssh2_ecdsa_ctx));
+    *ctx = SSH2_ALLOC(session, sizeof(ssh2_ecdsa_ctx));
 
     if(!*ctx)
         goto failed;
@@ -1261,8 +1177,7 @@ _libssh2_mbedtls_parse_openssh_key(libssh2_ecdsa_ctx **ctx,
                        &(*ctx)->MBEDTLS_PRIVATE(Q),
                        &(*ctx)->MBEDTLS_PRIVATE(d),
                        &(*ctx)->MBEDTLS_PRIVATE(grp).G,
-                       mbedtls_ctr_drbg_random,
-                       &_libssh2_mbedtls_ctr_drbg))
+                       mbedtls_ctr_drbg_random, &mbed_ctr_drbg))
         goto failed;
 
     if(mbedtls_ecp_check_privkey(&(*ctx)->MBEDTLS_PRIVATE(grp),
@@ -1271,105 +1186,113 @@ _libssh2_mbedtls_parse_openssh_key(libssh2_ecdsa_ctx **ctx,
 
 failed:
 
-    _libssh2_mbedtls_ecdsa_free(*ctx);
+    ssh2_ecdsa_free(*ctx);
     *ctx = NULL;
 
 cleanup:
 
     if(decrypted) {
-        _libssh2_string_buf_free(session, decrypted);
+        ssh2_string_buf_free(session, decrypted);
     }
 
     return *ctx ? 0 : -1;
 }
 
-/* Force-expose internal mbedTLS function */
-#if MBEDTLS_VERSION_NUMBER >= 0x03060000
-int mbedtls_pk_load_file(const char *path, unsigned char **buf, size_t *n);
-#endif
-
-/* _libssh2_ecdsa_new_private
- *
+/*
  * Creates a new private key given a file path and password
- *
  */
-
-int
-_libssh2_mbedtls_ecdsa_new_private(libssh2_ecdsa_ctx **ctx,
-                                   LIBSSH2_SESSION *session,
-                                   const char *filename,
-                                   const unsigned char *pwd)
+int ssh2_ecdsa_new_private(ssh2_ecdsa_ctx **ec_ctx,
+                           LIBSSH2_SESSION *session,
+                           const char *filename,
+                           const unsigned char *passphrase)
 {
     mbedtls_pk_context pkey;
     unsigned char *data = NULL;
     size_t data_len = 0;
+    FILE *fp = NULL;
+    long file_size;
 
     mbedtls_pk_init(&pkey);
 
-    /* FIXME: Reimplement this functionality via a public API. */
-    if(mbedtls_pk_load_file(filename, &data, &data_len))
+    fp = fopen(filename, "rb");
+    if(!fp)
+        goto cleanup;
+    if(fseek(fp, 0, SEEK_END) != 0)
+        goto cleanup;
+    file_size = ftell(fp);
+    if(file_size < 0 || file_size > (1024 * 1024))
+        goto cleanup;
+    if(fseek(fp, 0, SEEK_SET) != 0)
+        goto cleanup;
+    data_len = (size_t)file_size;
+    if(data_len == 0)
+        goto cleanup;
+    data = SSH2_ALLOC(session, data_len);
+    if(!data)
+        goto cleanup;
+    if(fread(data, 1, data_len, fp) != data_len)
         goto cleanup;
 
-    if(_libssh2_mbedtls_parse_eckey(ctx, &pkey, session,
-                                    data, data_len, pwd) == 0)
+    if(mbed_parse_eckey(ec_ctx, &pkey, session,
+                        data, data_len, passphrase) == 0)
         goto cleanup;
 
-    _libssh2_mbedtls_parse_openssh_key(ctx, session, data, data_len, pwd);
+    mbed_parse_openssh_key(ec_ctx, session, data, data_len, passphrase);
 
 cleanup:
 
+    if(fp)
+        fclose(fp);
+    if(data) {
+        ssh2_explicit_zero(data, data_len);
+        SSH2_FREE(session, data);
+    }
+
     mbedtls_pk_free(&pkey);
 
-    _libssh2_mbedtls_safe_free(data, data_len);
-
-    return *ctx ? 0 : -1;
+    return *ec_ctx ? 0 : -1;
 }
 
-/* _libssh2_ecdsa_new_private
- *
+/*
  * Creates a new private key given a file data and password
- *
  */
-
-int
-_libssh2_mbedtls_ecdsa_new_private_frommemory(libssh2_ecdsa_ctx **ctx,
-                                              LIBSSH2_SESSION *session,
-                                              const char *data,
-                                              size_t data_len,
-                                              const unsigned char *pwd)
+int ssh2_ecdsa_new_private_frommemory(ssh2_ecdsa_ctx **ec_ctx,
+                                      LIBSSH2_SESSION *session,
+                                      const char *filedata,
+                                      size_t filedata_len,
+                                      const unsigned char *passphrase)
 {
     unsigned char *ntdata;
     mbedtls_pk_context pkey;
 
     mbedtls_pk_init(&pkey);
 
-    ntdata = LIBSSH2_ALLOC(session, data_len + 1);
+    ntdata = SSH2_ALLOC(session, filedata_len + 1);
 
     if(!ntdata)
         goto cleanup;
 
-    memcpy(ntdata, data, data_len);
+    memcpy(ntdata, filedata, filedata_len);
 
-    if(_libssh2_mbedtls_parse_eckey(ctx, &pkey, session,
-                                    ntdata, data_len + 1, pwd) == 0)
+    if(mbed_parse_eckey(ec_ctx, &pkey, session,
+                        ntdata, filedata_len + 1, passphrase) == 0)
         goto cleanup;
 
-    _libssh2_mbedtls_parse_openssh_key(ctx, session,
-                                       ntdata, data_len + 1, pwd);
+    mbed_parse_openssh_key(ec_ctx, session,
+                           ntdata, filedata_len + 1, passphrase);
 
 cleanup:
 
     mbedtls_pk_free(&pkey);
 
-    _libssh2_mbedtls_safe_free(ntdata, data_len);
+    mbed_safe_free(ntdata, filedata_len);
 
-    return *ctx ? 0 : -1;
+    return *ec_ctx ? 0 : -1;
 }
 
-static unsigned char *
-_libssh2_mbedtls_mpi_write_binary(unsigned char *buf,
-                                  const mbedtls_mpi *mpi,
-                                  size_t bytes)
+static unsigned char *mbed_mpi_write_binary(unsigned char *buf,
+                                            const mbedtls_mpi *mpi,
+                                            size_t bytes)
 {
     unsigned char *p = buf;
     uint32_t size = (uint32_t)bytes;
@@ -1389,26 +1312,20 @@ _libssh2_mbedtls_mpi_write_binary(unsigned char *buf,
         memmove(p, p + 1, --size);
     }
 
-    _libssh2_htonu32(p - 4, size);
+    ssh2_htonu32(p - 4, size);
 
 done:
 
     return p + size;
 }
 
-/* _libssh2_ecdsa_sign
- *
+/*
  * Computes the ECDSA signature of a previously-hashed message
- *
  */
-
-int
-_libssh2_mbedtls_ecdsa_sign(LIBSSH2_SESSION *session,
-                            libssh2_ecdsa_ctx *ctx,
-                            const unsigned char *hash,
-                            size_t hash_len,
-                            unsigned char **sign,
-                            size_t *sign_len)
+int ssh2_ecdsa_sign(LIBSSH2_SESSION *session,
+                    ssh2_ecdsa_ctx *ec_ctx,
+                    const unsigned char *hash, size_t hash_len,
+                    unsigned char **signature, size_t *signature_len)
 {
     size_t r_len, s_len, tmp_sign_len = 0;
     unsigned char *sp, *tmp_sign = NULL;
@@ -1417,109 +1334,58 @@ _libssh2_mbedtls_ecdsa_sign(LIBSSH2_SESSION *session,
     mbedtls_mpi_init(&pr);
     mbedtls_mpi_init(&ps);
 
-    if(mbedtls_ecdsa_sign(&ctx->MBEDTLS_PRIVATE(grp), &pr, &ps,
-                          &ctx->MBEDTLS_PRIVATE(d),
+    if(mbedtls_ecdsa_sign(&ec_ctx->MBEDTLS_PRIVATE(grp), &pr, &ps,
+                          &ec_ctx->MBEDTLS_PRIVATE(d),
                           hash, hash_len,
                           mbedtls_ctr_drbg_random,
-                          &_libssh2_mbedtls_ctr_drbg))
+                          &mbed_ctr_drbg))
         goto cleanup;
 
     r_len = mbedtls_mpi_size(&pr) + 1;
     s_len = mbedtls_mpi_size(&ps) + 1;
     tmp_sign_len = r_len + s_len + 8;
 
-    tmp_sign = LIBSSH2_CALLOC(session, tmp_sign_len);
+    tmp_sign = SSH2_CALLOC(session, tmp_sign_len);
 
     if(!tmp_sign)
         goto cleanup;
 
     sp = tmp_sign;
-    sp = _libssh2_mbedtls_mpi_write_binary(sp, &pr, r_len);
-    sp = _libssh2_mbedtls_mpi_write_binary(sp, &ps, s_len);
+    sp = mbed_mpi_write_binary(sp, &pr, r_len);
+    sp = mbed_mpi_write_binary(sp, &ps, s_len);
 
-    *sign_len = (size_t)(sp - tmp_sign);
+    *signature_len = (size_t)(sp - tmp_sign);
 
-    *sign = LIBSSH2_CALLOC(session, *sign_len);
+    *signature = SSH2_CALLOC(session, *signature_len);
 
-    if(!*sign)
+    if(!*signature)
         goto cleanup;
 
-    memcpy(*sign, tmp_sign, *sign_len);
+    memcpy(*signature, tmp_sign, *signature_len);
 
 cleanup:
 
     mbedtls_mpi_free(&pr);
     mbedtls_mpi_free(&ps);
 
-    _libssh2_mbedtls_safe_free(tmp_sign, tmp_sign_len);
+    mbed_safe_free(tmp_sign, tmp_sign_len);
 
-    return *sign ? 0 : -1;
+    return *signature ? 0 : -1;
 }
 
-/* _libssh2_ecdsa_get_curve_type
- *
- * returns key curve type that maps to libssh2_curve_type
- *
- */
-
-libssh2_curve_type
-_libssh2_mbedtls_ecdsa_get_curve_type(libssh2_ecdsa_ctx *ctx)
-{
-    return (libssh2_curve_type) ctx->MBEDTLS_PRIVATE(grp).id;
-}
-
-/* _libssh2_ecdsa_curve_type_from_name
- *
- * returns 0 for success, key curve type that maps to libssh2_curve_type
- *
- */
-
-int
-_libssh2_mbedtls_ecdsa_curve_type_from_name(const char *name,
-                                            libssh2_curve_type *out_type)
-{
-    int ret = 0;
-    libssh2_curve_type type;
-
-    if(!name || strlen(name) != 19)
-        return -1;
-
-    if(strcmp(name, "ecdsa-sha2-nistp256") == 0)
-        type = LIBSSH2_EC_CURVE_NISTP256;
-    else if(strcmp(name, "ecdsa-sha2-nistp384") == 0)
-        type = LIBSSH2_EC_CURVE_NISTP384;
-    else if(strcmp(name, "ecdsa-sha2-nistp521") == 0)
-        type = LIBSSH2_EC_CURVE_NISTP521;
-    else {
-        ret = -1;
-    }
-
-    if(ret == 0 && out_type) {
-        *out_type = type;
-    }
-
-    return ret;
-}
-
-void
-_libssh2_mbedtls_ecdsa_free(libssh2_ecdsa_ctx *ctx)
+void ssh2_ecdsa_free(ssh2_ecdsa_ctx *ctx)
 {
     mbedtls_ecdsa_free(ctx);
     mbedtls_free(ctx);
 }
 #endif /* LIBSSH2_ECDSA */
 
-
-/* _libssh2_supported_key_sign_algorithms
- *
+/*
  * Return supported key hash algo upgrades, see crypto.h
- *
  */
-
-const char *
-_libssh2_supported_key_sign_algorithms(LIBSSH2_SESSION *session,
-                                       unsigned char *key_method,
-                                       size_t key_method_len)
+const char *ssh2_supported_key_sign_algs(LIBSSH2_SESSION *session,
+                                         unsigned char *key_method,
+                                         size_t key_method_len)
 {
     (void)session;
 

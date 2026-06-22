@@ -283,6 +283,7 @@ export class Task {
 			moveTo : this.#task.moveTo,
 			style : this.#task.style,
 			noInheritStdio : this.#task.noInheritStdio,
+			programName : this.#task.programName,
 		} );
 		//console.log( "Task:", this.#task );
 		if( this.#run ) {
@@ -338,11 +339,13 @@ export class Task {
 			this_.ended = new Date();
 			this_.running = false;
 			this_.stopping = false;
+			/*
 			if( this_.#stopTimer !== null ) {
+				console.trace( "stop is clearing the stop timer...." );
 				clearTimeout( this_.#stopTimer );
 				this_.#stopTimer = null;
 			}
-
+			*/
 			let exitCode = this_.#run?this_.#run.exitCode:this_.#exitCode;
 			console.log( "Task ended:", this_.name, this_.ended, exitCode, exitCode.toString(16) );
 			this_.#ranOnce = true;
@@ -352,13 +355,15 @@ export class Task {
 				dep.stop();
 				dep.#ranOnce = false;
 			}
-			if( this_.#restart ) {
-				//console.log( "doing resume timeout", this_.#task.restartDelay)
-				console.log( "this should restart?" );
-				if( this_.#task.restartDelay )
-					setTimeout( ()=>this_.start(), this_.#task.restartDelay );
-				else 
-					setTimeout( ()=>this_.start(), 200 );
+			if( !this_.#stopTimer ) {
+				if( this_.#restart ) {
+					//console.log( "doing resume timeout", this_.#task.restartDelay)
+					console.log( "this should restart?" );
+					if( this_.#task.restartDelay )
+						setTimeout( ()=>this_.start(), this_.#task.restartDelay );
+					else 
+						setTimeout( ()=>this_.start(), 200 );
+				}
 			}
 			//console.log( "stopped:", this_.#task.name );
 			const msg = {op:"status", id:this_.id, running: false, ended: this_.ended, started: this_.started };
@@ -396,7 +401,7 @@ export class Task {
 			this.#run.terminate();
 	}
 	stop() {
-		console.log( "Stop command: ", this.stopped, this.#run, this.stopped );
+		//console.log( "Stop command: ", this.stopped, this.#run, this.stopped );
 		if( this.stopped ) return;
 		//console.trace( "STOPPED?", this.stopped, this.#run );
 		if( this.#run )
@@ -413,8 +418,9 @@ export class Task {
 			}
 			dep.#ranOnce = false;
 		}
-		timeoutTaskStop( this );
+		const p = timeoutTaskStop( this );
 		this.stopped = true;
+		return p;
 	}
 
 	update( task ) {
@@ -489,27 +495,32 @@ export function terminateTasks() {
 	} );
 }
 
+let zwaits = null;
+
 export function closeAllTasks( ws ) {
 	const local = config.local;
 	const waits = [];
+
 	local.tasks.forEach( task=>{
 		if( task.noKill ) return;
 		if (task.running){
 			task.restart = false;
-			task.stop()
-			waits.push( timeoutTaskStop( task ) );
+			waits.push( task.stop() );
 		} } );
+
 	return Promise.all( waits ).then( (waits)=>{
-		console.log( "Reply with a close?", ws );
+		//console.log( "Reply with a close?", ws );
 		if( ws ) ws.close( 1000, "Tasks Stopped" );
 		return waits;
 	} );
+
+
 }
 
 function timeoutTaskStop( task ) {
 	const started = Date.now();
 	task.stopping = true;
-	console.log( "A stop started... and now we wait on", task.name );
+	//console.log( "A stop started... and now we wait on", task.name );
 	config.local.connections.forEach( (conn)=>
 		{
 			if( conn.ws.readyState == 1 ) {
@@ -522,9 +533,9 @@ function timeoutTaskStop( task ) {
 			else console.log( "Connection is still in list but closed:", conn );
 		});
 
-	let resolve = null;
-	function tick() {
+	function tick( resolve, reject ) {
 		let del;
+		//console.log( "Clearing stop in tick:", task.name );
 		task.stopTimer = null;
 		if( (del=Date.now()-started) > 1500 ) {
 			if( task.running ) {
@@ -542,12 +553,12 @@ function timeoutTaskStop( task ) {
 
 		if( task.running ) {
 			console.log( "Still running...", task.name, del );
-			task.stopTimer = setTimeout( tick, 300 );
-		} else resolve( true );
+			task.stopTimer = setTimeout( ()=>tick(resolve, reject), 300 );
+		} else {
+			resolve( true );
+			//console.log( "Trigger resolve for stopped task:", task.name, zwaits );
+		}
 	}
-	return new Promise( (res,rej)=>{
-		resolve = res;
-		tick();
-	} );
+	return new Promise( tick );
 
 }

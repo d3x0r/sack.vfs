@@ -49,6 +49,7 @@ There are methods on the Sqlite() function call...
 | end | () | close this database.  Another command on this database will re-open it.  |
 | transaction | ()  |  begin a sql transaction, ```do()``` commands issued after this will be in a transaction. |
 | commit | ()  |  end a transaction successfully. |
+| rollback | ()  |  abort a transaction. |
 | autoTransact | (&lt;bool&gt;) | enabled/disable auto transaction features.    A command will begin a transaction, a timer will be set such that if no other command between happens, then a commit will be generated. So merely doing ```do()``` commands are optimized into transactions.
 | makeTable | (tableString) | evalute a sql create table clause, and create or update a table based on its definitions.          Additional columns will be added, old columns are untouched, even if the type specified changes.    Additional indexes and constraints can be added to existing tables.
 | provider | accessor | Get the database provider for the connection. (1=SQLite, 2=MySQL, 3=PSSQL, 4=Access, -1=unknown) |

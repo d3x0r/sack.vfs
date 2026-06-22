@@ -155,55 +155,64 @@ export function getRequestHandler( serverOpts ) {
 			 req.connection.socket.remoteAddress;
 		*/
 		//const resource_path = serverOpts.resourcePath || ".";
+		const paths = [];
+
 		if( req.url[req.url.length-1] === "/" ) req.url += "index.html";
 
-		let filePath = resourcePath + unescape(req.url);
-		if( req.url.startsWith( "/node_modules/" ) 
-		   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
-		      || req.url.startsWith( "/node_modules/jsox" )
-		      || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) )
-			filePath=npm_path  + unescape(req.url);
+		if( req.url.startsWith( "/common/" ) ) {
+			paths.push( commonPath );
+			req.url = req.url.replace("/common", "" );
+		} else if( req.url.startsWith( "/node_modules/" ) 
+			   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
+			      || req.url.startsWith( "/node_modules/jsox" )
+		   	   || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) ) {
+				if( npm_path instanceof Array ) paths.push( ...npm_path );
+				else paths.push( npm_path );
+		} else if( resourcePath instanceof Array ) paths.push(...resourcePath);
+			else paths.push( resourcePath );
+		lastFilePath = '';
+		for( let rpath of paths ) {
 
-		if( req.url.startsWith( "/common/" ) )
-			filePath = commonPath + decodeURI(req.url).replace( "/common", "" );
-
-		let extname = path.extname(filePath);		
-		let contentEncoding = encMap[extname];
-		if( contentEncoding ) {
-			extname = path.extname(path.basename(filePath,extname));
-		}
-
-		// if the name doesn't end in a slash, should generate a redirect to content... 
-		if( disk.isDir( filePath ) ) {filePath += "/index.html"; extname = ".html"; }
-
-		const contentType = extMap[extname] || "text/plain";
-		if( disk.exists( filePath ) ) {
-			const fc = disk.read(filePath );
-
-			if( fc ) {
-				const headers = { 'Content-Type': contentType
-						, 'Access-Control-Allow-Origin' : req.connection.headers.Origin
-						, "Permissions-Policy": "identity-credentials-get" };
-				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
-				res.writeHead(200, headers );
-				if( req.CGI['🔧'] ) {
-					const str = fc.toString();
-					const content = str.replaceAll( /import([^\(]?\s+[^\(]?.*from\s+|)["']((?!\/|.\/|..\/)[^'"]*)["']/g, 'import$1"/$2?🔧=1+🔨=' + req.CGI['🔨'] +'"' )
-					res.end( content );
-				} else {
-					res.end( fc );
-				}
-
-				if( requests.length !== 0 )
-					clearTimeout( reqTimeout );
-				reqTimeout = setTimeout( logRequests, 500 );
-				requests.push( req.url );
-			} else {
-				console.log( 'file exists, but reading it returned nothing?', filePath, fc );
-				return false;
+			let filePath = rpath + unescape(req.url);
+	   
+			let extname = path.extname(filePath);		
+			let contentEncoding = encMap[extname];
+			if( contentEncoding ) {
+				extname = path.extname(path.basename(filePath,extname));
 			}
-			return true;
-		} else {
+	   
+			// if the name doesn't end in a slash, should generate a redirect to content... 
+			if( disk.isDir( filePath ) ) {filePath += "/index.html"; extname = ".html"; }
+	   
+			const contentType = extMap[extname] || "text/plain";
+			if( disk.exists( filePath ) ) {
+				const fc = disk.read(filePath );
+	   
+				if( fc ) {
+					const headers = { 'Content-Type': contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
+					if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
+					res.writeHead(200, headers );
+					if( req.CGI && req.CGI['🔧'] ) {
+						const str = fc.toString();
+						const content = str.replaceAll( /import([^\(]?\s+[^\(]?.*from\s+|)["']((?!\/|.\/|..\/)[^'"]*)["']/g, 'import$1"/$2?🔧=1+🔨=' + req.CGI['🔨'] +'"' )
+						res.end( content );
+					} else {
+						res.end( fc );
+					}
+	   
+					if( requests.length !== 0 )
+						clearTimeout( reqTimeout );
+					reqTimeout = setTimeout( logRequests, 500 );
+					requests.push( req.url + "("+filePath+")" );
+				} else {
+					console.log( 'file exists, but reading it returned nothing?', filePath, fc );
+					return false;
+				}
+				return true;
+			} 
+			lastFilePath = (lastFilePath?lastFilePath+" or ":"") + filePath;
+		}
+		{
 			const foundModule = findModule( unescape(req.url), req, res );
 			if( foundModule ) {
 				if( "object" === typeof  foundModule ) {
@@ -221,7 +230,6 @@ export function getRequestHandler( serverOpts ) {
 				}
 				return true;
 			}
-			lastFilePath = filePath;
 			return false;
 		}
 	};
@@ -259,8 +267,8 @@ export function getRequestHandler( serverOpts ) {
 }
 
 function hookJSOX( serverOpts, server ) {
-const app = uExpress();
-server.addHandler( app.handle );
+	const app = uExpress();
+	server.addHandler( app.handle );
 
 	server.app = app;
 	app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
@@ -269,23 +277,27 @@ server.addHandler( app.handle );
 			'Content-Type': "text/javascript",
 		}
 
-		let filePath;
-		if( req.url.startsWith( "/common/" ) ) {
-			filePath = commonPath + decodeURI(req.url).replace( "/common", "" );
-		}else {
-			filePath = serverOpts.resourcePath + req.url;
-		}
+		const paths = [];
+		if( serverOpts.resourcePath instanceof Array ) paths.push(...serverOpts.resourcePath);
+		else paths.push( serverOpts.resourcePath );
+		for( let rpath of paths ) {
+			let filePath;
+			if( req.url.startsWith( "/common/" ) ) {
+				filePath = commonPath + decodeURI(req.url).replace( "/common", "" );
+				paths.length =0;
+			}else {
+				filePath = rpath + req.url;
+			}
 
-		const config = disk.read( filePath );
-		if( config ) {
-			res.writeHead( 200, headers );
-			const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
-			res.end( resultContent );
-			return true;
-		}else {
-			console.log( "no file.." );
-			return false;
+			const config = disk.read( filePath );
+			if( config ) {
+				res.writeHead( 200, headers );
+				const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
+				res.end( resultContent );
+				return true;
+			}
 		}
+		return false;
 	} ) 
 }
 
@@ -317,24 +329,23 @@ class Server extends Events {
 		}
 
 	handleEvent(req,res) {
-try {
-		for( let handler of this.handlers ) {
-			if( handler( req, res, this.serverOpts ) ) {
-				return true;
+		try {
+			for( let handler of this.handlers ) {
+				if( handler( req, res, this.serverOpts ) ) {
+					return true;
+				}
 			}
+			if( !this.reqHandler( req,res ) ) {
+				if( requests.length !== 0 )
+					clearTimeout( reqTimeout );
+				reqTimeout = setTimeout( logRequests, 100 );
+				requests.push( "Failed request: " + req.url + " as " + lastFilePath );
+				res.writeHead( 404, {'Access-Control-Allow-Origin' : req.connection.headers.Origin } );
+				res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
+			}
+		} catch(err){
+			console.log( "Handler exception:", err.message, err.stack );
 		}
-		if( !this.reqHandler( req,res ) ) {
-			if( requests.length !== 0 )
-				clearTimeout( reqTimeout );
-			reqTimeout = setTimeout( logRequests, 100 );
-				
-			requests.push( "Failed request: " + req.url + " as " + lastFilePath );
-			res.writeHead( 404, {'Access-Control-Allow-Origin' : req.connection.headers.Origin } );
-			res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
-		}
-} catch(err){
-	console.log( "Handler exception:", err.message, err.stack );
-}
 	}
 
 }

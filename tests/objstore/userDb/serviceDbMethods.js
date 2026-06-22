@@ -14,14 +14,14 @@ const JSOX = sack.JSOX;
 const disk = sack.Volume();
 // my path is poorly defined here...
 const srvc = disk.exists( "service.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "service.jsox" ) );
-if( srvc ) srvc.badges = srvc && disk.exists( "badges.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "badges.jsox" ) );
-let mySID = srvc.badges && disk.exists( "mySid.jsox" ) && sack.Volume.readAsString( "mySid.jsox" );
+if( srvc ) srvc.badges = srvc && disk.exists( "service.badges.jsox" ) && sack.JSOX.parse( sack.Volume.readAsString( "service.badges.jsox" ) );
+let mySID = srvc.badges && disk.exists( "service.sid.jsox" ) && sack.Volume.readAsString( "service.sid.jsox" );
 
 if( !srvc ) {
-	console.log( "Service definition not found..." );
+	console.log( "Service definition not found... (service.jsox)" );
 }
 else if( !srvc.badges ) {
-	console.log( "Badge definition not found for oranization..." );
+	console.log( "Badge definition not found for oranization...(service.badges.jsox)" );
 }
 //const SaltyRNGModule = await Import( "/javascript/d3x0r/srg/salty_random_generator.js" );
 const SaltyRNG = sack.SaltyRNG;

@@ -37,7 +37,7 @@ This provides an interface to receive notifications when files are created, modi
 ``` js
 
 var sack = require( "sack.vfs" );
-var monitor = sack.FileMonitor( <pathname>, idleDelay );
+var monitor = sack.FileMonitor( pathname [, idleDelay [,scan Subdirectories Boolean ]] );
 monitor.addFilter( "*.jpg", /* imageChanged */ (info)=>{
 	// info.path, info.size, info.date, info.directory, info.created, info.deleted
 	// if !created and !deleted, is just a change.
