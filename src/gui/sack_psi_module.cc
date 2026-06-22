@@ -17,7 +17,6 @@ static struct psiLocal {
 	PLIST registrations;
 	//uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE events;
-	PTHREAD nodeThread;
 	ControlObject *pendingCreate;
 	Local<Object> newControl;
 	RegistrationObject *pendingRegistration;
@@ -653,11 +652,12 @@ void ControlObject::Init( Local<Object> _exports ) {
 
 		VoidObject::Init( isolate );
 		//VulkanObject::Init( isolate, _exports );
-
-		SimpleRegisterMethod( "psi/control/rtti/extra init"
-			, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)" );
-		SimpleRegisterMethod( "psi/control/rtti/extra destroy"
-			, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)" );
+		if (!psiLocal.first_initialized) {
+			SimpleRegisterMethod("psi/control/rtti/extra init"
+				, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)");
+			SimpleRegisterMethod("psi/control/rtti/extra destroy"
+				, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)");
+		}
 
 		// get the current interfaces, and set PSI to them.
 		// (this will be delayed until require())
@@ -970,6 +970,7 @@ void ControlObject::Init( Local<Object> _exports ) {
 
 		c->ControlObject_registrationConstructor.Reset( isolate, regTemplate->GetFunction(context).ToLocalChecked() );
 		SET_READONLY( exports, "Registration", regTemplate->GetFunction(context).ToLocalChecked() );
+		psiLocal.first_initialized = 1;
 }
 
 void ControlObject::getControlColor( const FunctionCallbackInfo<Value>& args ) {

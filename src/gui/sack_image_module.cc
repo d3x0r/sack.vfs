@@ -359,8 +359,8 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 
 void ImageObject::getJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-  class constructorSet* c = getConstructors( isolate );
-  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
+	class constructorSet* c = getConstructors( isolate );
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, obj->jpegQuality ) );
@@ -375,8 +375,8 @@ void ImageObject::setJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 
 void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-  class constructorSet* c = getConstructors( isolate );
-  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
+	class constructorSet* c = getConstructors( isolate );
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		if( obj->image )
@@ -437,6 +437,7 @@ ImageObject::ImageObject( const char *filename )  {
    jpegQuality = 78;
    pii = NULL;
 }
+
 ImageObject::ImageObject( Image image ) {
 	this->image = image;
 	jpegQuality = 78;
@@ -470,7 +471,7 @@ ImageObject::~ImageObject(void) {
 void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-  class constructorSet* c = getConstructors( isolate );
+	class constructorSet* c = getConstructors( isolate );
 	if( args.IsConstructCall() ) {
 
 		int x = 0, y = 0, w = 1024, h = 768;

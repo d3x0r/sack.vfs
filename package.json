@@ -53,6 +53,9 @@
     "./protocol": {
       "import": "./apps/http-ws/server-protocol.mjs"
     },
+    "./document": {
+      "import": "./apps/browser-mimic/document.mjs"
+    },
     "./server-protocol": {
       "import": "./apps/http-ws/server-protocol.mjs"
     },

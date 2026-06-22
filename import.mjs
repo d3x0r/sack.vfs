@@ -9,8 +9,8 @@ import fs from "node:fs";
 import url from "node:url";
 import path from "node:path";
 import util from "node:util";
-const moduleName = "sack.vfs";
-import {sack} from "sack.vfs";
+const moduleName = "@d3x0r/sack-gui";
+import {sack} from "@d3x0r/sack-gui";
 
 const debug_ = false;
 const forceModule = ( process.env.FORCE_IMPORT_MODULE ) || false;
