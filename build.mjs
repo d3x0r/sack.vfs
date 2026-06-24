@@ -13,6 +13,7 @@ let skipConfigure = false;
 let arg = 2;
 const moreopts = [];
 
+const v8_version = process.versions.v8;
 
 for( arg = 2; arg < process.argv.length; arg++ ) {
 
@@ -32,7 +33,9 @@ for( arg = 2; arg < process.argv.length; arg++ ) {
         }
 }
 
+const v8_parts = v8_version.split('.');
 
+moreopts.push( "--CDV8_VERSION="+v8_version, "--CDV8_MAJOR="+v8_parts[0],  "--CDV8_MINOR="+v8_parts[1],  "--CDV8_PATCH="+v8_parts[2],  "--CDV8_BUILD="+v8_parts[3]+"."+v8_parts[4]  );
 const platform = process.platform;
 
 if( !skipConfigure )
