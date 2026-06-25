@@ -595,7 +595,7 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 		int n;
 		for( n = 0; n < argc; n++ )
 			argv[n+1] = args[n];
-		argv[0] = args.Holder();
+		argv[0] = args.This();
 
     class constructorSet* c = getConstructors( isolate );
     Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );

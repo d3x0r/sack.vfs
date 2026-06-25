@@ -1445,7 +1445,7 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_constructor2 );
 		Local<Object> newControl = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
-		ControlObject *container = ObjectWrap::Unwrap<ControlObject>( args.Holder() );
+		ControlObject *container = ObjectWrap::Unwrap<ControlObject>( args.This() );
 
 		if( argc > 0 ) {
 			String::Utf8Value fName( isolate, args[0] );

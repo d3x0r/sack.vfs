@@ -240,7 +240,7 @@ void ComObject::Init( Local<Object> exports ) {
 
 void ComObject::getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
-	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>( THIS( args ) );
 	if( obj )
 		args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
 
@@ -257,7 +257,7 @@ void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
 
 void ComObject::setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>( THIS( args ) );
 	if( obj )
 		SetCommRTS( obj->handle, obj->rts = value.As<Boolean>()->BooleanValue( isolate ) );
 }
@@ -620,7 +620,7 @@ void ComObject::onAdd(Local<Name> property, Local<Value> value, const PropertyCa
 void ComObject::getProperties( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
 	Isolate *isolate = args.GetIsolate();
 	//ComObject *com   = ObjectWrap::Unwrap<ComObject>( args.This() );
-	String::Utf8Value port( USE_ISOLATE( isolate ) args.This()
+	String::Utf8Value port( USE_ISOLATE( isolate ) THIS( args )
 	             ->Get( isolate->GetCurrentContext(), String::NewFromUtf8Literal( isolate, "port" ) )
 	             .ToLocalChecked().As<String>() );
 	Local<Object> result = Object::New( isolate );

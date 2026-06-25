@@ -127,21 +127,21 @@ void wireGenerated_GPUDevice( v8::Isolate* isolate, v8::Local<v8::FunctionTempla
 // GPUBuffer.size  →  wgpuBufferGetSize
 static void gen_get_GPUBuffer_size( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUBuffer* self = node::ObjectWrap::Unwrap<GPUBuffer>( info.This() );
+	GPUBuffer* self = node::ObjectWrap::Unwrap<GPUBuffer>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Number::New( isolate, (double)wgpuBufferGetSize( self->handle_ ) ) );
 }
 // GPUBuffer.usage  →  wgpuBufferGetUsage
 static void gen_get_GPUBuffer_usage( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUBuffer* self = node::ObjectWrap::Unwrap<GPUBuffer>( info.This() );
+	GPUBuffer* self = node::ObjectWrap::Unwrap<GPUBuffer>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Integer::NewFromUnsigned( isolate, (uint32_t)wgpuBufferGetUsage( self->handle_ ) ) );
 }
 // GPUBuffer.mapState  →  wgpuBufferGetMapState
 static void gen_get_GPUBuffer_mapState( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUBuffer* self = node::ObjectWrap::Unwrap<GPUBuffer>( info.This() );
+	GPUBuffer* self = node::ObjectWrap::Unwrap<GPUBuffer>( info.HolderV2() );
 	(void)property;
 	WGPUBufferMapState _v = wgpuBufferGetMapState( self->handle_ );
 	const char* _s = wgpu_str_from_GPUBufferMapState( _v );
@@ -167,42 +167,42 @@ void wireGenerated_GPUBuffer( v8::Isolate* isolate, v8::Local<v8::FunctionTempla
 // GPUTexture.width  →  wgpuTextureGetWidth
 static void gen_get_GPUTexture_width( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.This() );
+	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Integer::NewFromUnsigned( isolate, (uint32_t)wgpuTextureGetWidth( self->handle_ ) ) );
 }
 // GPUTexture.height  →  wgpuTextureGetHeight
 static void gen_get_GPUTexture_height( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.This() );
+	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Integer::NewFromUnsigned( isolate, (uint32_t)wgpuTextureGetHeight( self->handle_ ) ) );
 }
 // GPUTexture.depthOrArrayLayers  →  wgpuTextureGetDepthOrArrayLayers
 static void gen_get_GPUTexture_depthOrArrayLayers( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.This() );
+	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Integer::NewFromUnsigned( isolate, (uint32_t)wgpuTextureGetDepthOrArrayLayers( self->handle_ ) ) );
 }
 // GPUTexture.mipLevelCount  →  wgpuTextureGetMipLevelCount
 static void gen_get_GPUTexture_mipLevelCount( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.This() );
+	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Integer::NewFromUnsigned( isolate, (uint32_t)wgpuTextureGetMipLevelCount( self->handle_ ) ) );
 }
 // GPUTexture.sampleCount  →  wgpuTextureGetSampleCount
 static void gen_get_GPUTexture_sampleCount( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.This() );
+	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Integer::NewFromUnsigned( isolate, (uint32_t)wgpuTextureGetSampleCount( self->handle_ ) ) );
 }
 // GPUTexture.dimension  →  wgpuTextureGetDimension
 static void gen_get_GPUTexture_dimension( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.This() );
+	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.HolderV2() );
 	(void)property;
 	WGPUTextureDimension _v = wgpuTextureGetDimension( self->handle_ );
 	const char* _s = wgpu_str_from_GPUTextureDimension( _v );
@@ -212,7 +212,7 @@ static void gen_get_GPUTexture_dimension( v8::Local<v8::Name> property, const v8
 // GPUTexture.format  →  wgpuTextureGetFormat
 static void gen_get_GPUTexture_format( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.This() );
+	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.HolderV2() );
 	(void)property;
 	WGPUTextureFormat _v = wgpuTextureGetFormat( self->handle_ );
 	const char* _s = wgpu_str_from_GPUTextureFormat( _v );
@@ -222,7 +222,7 @@ static void gen_get_GPUTexture_format( v8::Local<v8::Name> property, const v8::P
 // GPUTexture.usage  →  wgpuTextureGetUsage
 static void gen_get_GPUTexture_usage( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.This() );
+	GPUTexture* self = node::ObjectWrap::Unwrap<GPUTexture>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Integer::NewFromUnsigned( isolate, (uint32_t)wgpuTextureGetUsage( self->handle_ ) ) );
 }
@@ -872,7 +872,7 @@ static void gen_GPUQuerySet_destroy( const v8::FunctionCallbackInfo<v8::Value>& 
 // GPUQuerySet.type  →  wgpuQuerySetGetType
 static void gen_get_GPUQuerySet_type( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUQuerySet* self = node::ObjectWrap::Unwrap<GPUQuerySet>( info.This() );
+	GPUQuerySet* self = node::ObjectWrap::Unwrap<GPUQuerySet>( info.HolderV2() );
 	(void)property;
 	WGPUQueryType _v = wgpuQuerySetGetType( self->handle_ );
 	const char* _s = wgpu_str_from_GPUQueryType( _v );
@@ -882,7 +882,7 @@ static void gen_get_GPUQuerySet_type( v8::Local<v8::Name> property, const v8::Pr
 // GPUQuerySet.count  →  wgpuQuerySetGetCount
 static void gen_get_GPUQuerySet_count( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {
 	v8::Isolate* isolate = info.GetIsolate();
-	GPUQuerySet* self = node::ObjectWrap::Unwrap<GPUQuerySet>( info.This() );
+	GPUQuerySet* self = node::ObjectWrap::Unwrap<GPUQuerySet>( info.HolderV2() );
 	(void)property;
 	info.GetReturnValue().Set( v8::Integer::NewFromUnsigned( isolate, (uint32_t)wgpuQuerySetGetCount( self->handle_ ) ) );
 }

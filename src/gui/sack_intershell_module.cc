@@ -590,7 +590,7 @@ void InterShellObject::NewButton( const FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( args.This() );
 	} else {
 		const int argc = 2;
-		Local<Value> argv[argc] = { args[0], args.Holder() };
+		Local<Value> argv[argc] = { args[0], args.This() };
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->InterShellObject_buttonConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
@@ -730,7 +730,7 @@ void InterShellObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else {
 		const int argc = 2;
-		Local<Value> argv[argc] = { args[0], args.Holder() };
+		Local<Value> argv[argc] = { args[0], args.This() };
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->InterShellObject_controlConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );
@@ -756,7 +756,7 @@ void InterShellObject::NewCustomControl( const FunctionCallbackInfo<Value>& args
 	}
 	else {
 		const int argc = 2;
-		Local<Value> argv[argc] = { args[0], args.Holder() };
+		Local<Value> argv[argc] = { args[0], args.This() };
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->InterShellObject_customControlConstructor );
 		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked() );

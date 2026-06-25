@@ -143,6 +143,19 @@ using namespace v8;
 #define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
 #define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
 
+#if V8_MAJOR < 13
+#define SETPROTO( context, obj, proto ) (obj)->SetPrototype(context,proto )
+#else
+#define SETPROTO( context, obj, proto ) (obj)->SetPrototypeV2( context, proto )
+#endif
+
+
+#if V8_MAJOR > 14 || (V8_MAJOR == 14 && V8_MINOR >= 6)
+#  define THIS(args)  args.HolderV2()
+#else
+#  define THIS(args)  args.This()
+#endif
+
 
 // --------- String Utilities for option objects ------------
 #define DEF_STRING(name) Eternal<String> *name##String

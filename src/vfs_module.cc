@@ -406,7 +406,7 @@ void decodeFlags( int flags ) {
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool isolated ) {
 	static int runOnce = 1;
-	Isolate* isolate = context->GetIsolate();// Isolate::GetCurrent();
+	Isolate* isolate = Isolate::GetCurrent();
 #ifdef _WIN32
 	{
 #if 0

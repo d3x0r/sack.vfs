@@ -1181,11 +1181,14 @@ function emitAttrGetter( cls, attrNode, dawnClassKey, dawnGetterName ) {
 		// per spec [SameObject]. Punt to HAND for now.
 		return null;
 	}
+	const v8_major = process.versions.v8.split('.')[0];
+console.log( "MAJOR VERSION:", v8_major );
+	const thisObj = (Number(process.versions.v8.split('.')[0])>13)?"info.HolderV2()":"info.This()";
 	return [
 		`// ${cls}.${attrNode.name}  →  ${cFn}`,
 		`static void ${fnName}( v8::Local<v8::Name> property, const v8::PropertyCallbackInfo<v8::Value>& info ) {`,
 		`\tv8::Isolate* isolate = info.GetIsolate();`,
-		`\t${cls}* self = node::ObjectWrap::Unwrap<${cls}>( info.This() );`,
+		`\t${cls}* self = node::ObjectWrap::Unwrap<${cls}>( ${thisObj} );`,
 		`\t(void)property;`,
 		body,
 		`}`,

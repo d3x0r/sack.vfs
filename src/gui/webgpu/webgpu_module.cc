@@ -358,7 +358,7 @@ void GPUAdapter::infoGetter( Local<Name> property,
 {
 	Isolate* isolate = cbInfo.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	GPUAdapter* self = node::ObjectWrap::Unwrap<GPUAdapter>( cbInfo.This() );
+	GPUAdapter* self = node::ObjectWrap::Unwrap<GPUAdapter>( THIS(cbInfo) );
 
 	WGPUAdapterInfo info = {};
 	WGPUStatus status = wgpuAdapterGetInfo( self->handle_, &info );
@@ -652,7 +652,7 @@ static void GPUAdapter_featuresGetter( Local<Name> property,
 {
 	Isolate* isolate = info.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	Local<Object> selfObj = info.This();
+	Local<Object> selfObj = THIS(info);
 	(void)property;
 
 	Local<Private> key = Private::ForApi( isolate,
@@ -688,7 +688,7 @@ static void GPUAdapter_limitsGetter( Local<Name> property,
 {
 	Isolate* isolate = info.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	Local<Object> selfObj = info.This();
+	Local<Object> selfObj = THIS(info);
 	(void)property;
 
 	Local<Private> key = Private::ForApi( isolate,
@@ -1419,7 +1419,7 @@ void GPUDevice_lostGetter( Local<Name> property,
 	Local<Context> context = isolate->GetCurrentContext();
 	(void)property; (void)context;
 
-	GPUDevice* self = node::ObjectWrap::Unwrap<GPUDevice>( info.This() );
+	GPUDevice* self = node::ObjectWrap::Unwrap<GPUDevice>( THIS(info) );
 	if( !self->lostState_ ) {
 		info.GetReturnValue().Set( Null( isolate ) );
 		return;
@@ -1435,7 +1435,7 @@ void GPUDevice_limitsGetter( Local<Name> property,
 {
 	Isolate* isolate = info.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	Local<Object> selfObj = info.This();
+	Local<Object> selfObj = THIS(info);
 	(void)property;
 
 	Local<Private> key = Private::ForApi( isolate,
@@ -1462,7 +1462,7 @@ void GPUDevice_featuresGetter( Local<Name> property,
 {
 	Isolate* isolate = info.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	Local<Object> selfObj = info.This();
+	Local<Object> selfObj = THIS(info);
 	(void)property;
 
 	Local<Private> key = Private::ForApi( isolate,
@@ -1497,7 +1497,7 @@ void GPUDevice_queueGetter( Local<Name> property,
 {
 	Isolate* isolate = info.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	Local<Object> devObj = info.This();
+	Local<Object> devObj = THIS(info);
 	(void)property;
 
 	// Read-cached check — store the queue wrapper as a private property.
@@ -1681,7 +1681,11 @@ static bool wgpu_isInstanceOf( Isolate* isolate, Local<Object> obj,
 	Local<Value> proto;
 	if( !f->Get( context, String::NewFromUtf8Literal( isolate, "prototype" ) )
 	     .ToLocal( &proto ) ) return false;
+#if V8_MAJOR > 13 
+	return obj->GetPrototypeV2()->StrictEquals( proto );
+#else
 	return obj->GetPrototype()->StrictEquals( proto );
+#endif
 }
 
 void GPUDevice_createBindGroup( const FunctionCallbackInfo<Value>& args ) {
