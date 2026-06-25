@@ -380,17 +380,23 @@ if( WIN32 )
                    #DEPENDS ${PROJECT}
   )
   add_dependencies( finalTarget ${PROJECT} )
-endif( WIN32 )
 
-
-
-if( WIN32 )
   set_property(TARGET ${PROJECT} PROPERTY
       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
    target_link_libraries(${PROJECT} winmm ws2_32 rpcrt4 iphlpapi odbc32 psapi ntdll crypt32 cryptui wlanapi Cfgmgr32 Setupapi Propsys )
+
 endif( WIN32 )
 
+
 if( UNIX )
+  add_custom_target( finalTarget ALL #TARGET ${PROJECT} POST_BUILD
+   			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
+   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/Dawn_tmp/$<CONFIG>/lib ${CMAKE_BINARY_DIR}/$<CONFIG>/lib
+		COMMENT "Updating Dependancies to build target"
+                   DEPENDS ${CMAKE_BINARY_DIR}/Dawn_tmp/${CMAKE_BUILD_TYPE}/lib/libwebgpu_dawn.so
+  )
+
+
    target_link_libraries( ${PROJECT} uuid )
 endif( UNIX )
 
