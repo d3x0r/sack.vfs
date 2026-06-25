@@ -22,6 +22,10 @@ if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
 	add_definitions( -Wno-deprecated-volatile)
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
+if( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" )
+	add_definitions( -Wno-volatile)
+endif()
+
 include( GNUInstallDirs )
 
 ADD_DEFINITIONS( -DBUILD_NODE_ADDON )
@@ -343,7 +347,7 @@ add_dependencies( ${PROJECT} sack intershell dekware )
 target_link_libraries( ${PROJECT} webgpu_dawn )
 
 if( UNIX )
-  target_link_libraries( ${PROJECT} tls ssl crypto )
+	#target_link_libraries( ${PROJECT} tls ssl crypto )
 	set( VFSLIB sack_vfs.pp )
 	set( EXTRACOPY 
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-$<CONFIG>/${CMAKE_INSTALL_LIBDIR} ${CMAKE_BINARY_DIR}/$<CONFIG>

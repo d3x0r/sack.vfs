@@ -61,7 +61,7 @@ class itemWrapper : public node::ObjectWrap {
 	}
 
 	static void setChecked( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void> &args ) { 
-		itemWrapper *wrapper = ObjectWrap::Unwrap<itemWrapper>( args.This() );
+		itemWrapper *wrapper = ObjectWrap::Unwrap<itemWrapper>(THIS(args) );
 		if( value->IsBoolean() ) {
 			wrapper->checked = value.As<Boolean>()->BooleanValue( args.GetIsolate() );
 			CheckSystrayMenuItem( wrapper->id, wrapper->checked );
@@ -72,7 +72,27 @@ class itemWrapper : public node::ObjectWrap {
 		}
 	}
 	static void getChecked( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
-		itemWrapper *wrapper = ObjectWrap::Unwrap<itemWrapper>( args.This() );
+		itemWrapper *wrapper = ObjectWrap::Unwrap<itemWrapper>( THIS(args) );
+		if( !wrapper ) 
+			args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), "invalid this passed to getter" ) );
+		else
+			args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), wrapper->checked ) );
+	}
+
+
+	static void setText( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void> &args ) { 
+		itemWrapper *wrapper = ObjectWrap::Unwrap<itemWrapper>( THIS(args) );
+		if( value->IsBoolean() ) {
+			wrapper->checked = value.As<Boolean>()->BooleanValue( args.GetIsolate() );
+			CheckSystrayMenuItem( wrapper->id, wrapper->checked );
+			//MakeSystrayEvent( wrapper->isolate, Event_Systray_MenuFunction, wrapper );
+		} else {
+			args.GetIsolate()->ThrowException(
+			     Exception::TypeError( String::NewFromUtf8Literal( args.GetIsolate(), "Checked must be a boolean" ) ) );
+		}
+	}
+	static void getText( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
+		itemWrapper *wrapper = ObjectWrap::Unwrap<itemWrapper>( THIS(args) );
 		if( !wrapper ) 
 			args.GetReturnValue().Set( String::NewFromUtf8Literal( args.GetIsolate(), "invalid this passed to getter" ) );
 		else
@@ -301,16 +321,14 @@ void InitSystray( Isolate* isolate, Local<Object> _exports ) {
 
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( itemTemplate, "remove", itemWrapper::remove );
-	itemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "checked" )
-	                                                      , FunctionTemplate::New( isolate, itemWrapper::getChecked2 )
-	                                                      , FunctionTemplate::New( isolate, itemWrapper::setChecked2 ) );
-	itemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "text" )
-	                                                      , FunctionTemplate::New( isolate, itemWrapper::getText )
-	                                                      , FunctionTemplate::New( isolate, itemWrapper::setText ) );
-#if 0
+
 #if ( NODE_MAJOR_VERSION >= 22 )
 	itemTemplate->PrototypeTemplate()->SetNativeDataProperty(
 	     String::NewFromUtf8Literal( isolate, "checked" ), itemWrapper::getChecked, itemWrapper::setChecked
+	     , Local<Value>()
+	     , PropertyAttribute::None, SideEffectType::kHasNoSideEffect, SideEffectType::kHasSideEffect );
+	itemTemplate->PrototypeTemplate()->SetNativeDataProperty(
+	     String::NewFromUtf8Literal( isolate, "text" ), itemWrapper::getText, itemWrapper::setText
 	     , Local<Value>()
 	     , PropertyAttribute::None, SideEffectType::kHasNoSideEffect, SideEffectType::kHasSideEffect );
 #elif ( NODE_MAJOR_VERSION >= 18 )
@@ -320,8 +338,14 @@ void InitSystray( Isolate* isolate, Local<Object> _exports ) {
 	     , PropertyAttribute::None, AccessControl::DEFAULT, SideEffectType::kHasNoSideEffect
 	     , SideEffectType::kHasSideEffect );
 #else
+	itemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "checked" )
+	                                                      , FunctionTemplate::New( isolate, itemWrapper::getChecked2 )
+	                                                      , FunctionTemplate::New( isolate, itemWrapper::setChecked2 ) );
+	itemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "text" )
+	                                                      , FunctionTemplate::New( isolate, itemWrapper::getText )
+	                                                      , FunctionTemplate::New( isolate, itemWrapper::setText ) );
 #endif
-#endif
+
 	class constructorSet *c = getConstructors( isolate );
 	Local<Function> itemFunc = itemTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
 	c->systrayItemConstructor.Reset( isolate, itemFunc );
