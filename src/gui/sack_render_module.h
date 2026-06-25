@@ -53,6 +53,9 @@ public:
 	static void is3D( const FunctionCallbackInfo<Value>& args );
 	static void lockMouse(const FunctionCallbackInfo<Value>& args);
 	static void unlockMouse(const FunctionCallbackInfo<Value>& args);
+	static void showMouse(const FunctionCallbackInfo<Value>& args);
+	static void hideMouse(const FunctionCallbackInfo<Value>& args);
+
 
    ~RenderObject();
 

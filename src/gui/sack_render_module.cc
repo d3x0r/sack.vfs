@@ -578,6 +578,8 @@ void RenderObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "close", RenderObject::close );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "lockMouse", RenderObject::lockMouse);
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "unlockMouse", RenderObject::unlockMouse);
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "hideMouse", RenderObject::hideMouse);
+		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "showMouse", RenderObject::showMouse);
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "on", RenderObject::on );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "off", RenderObject::off );
 		NODE_SET_PROTOTYPE_METHOD( renderTemplate, "getContext", RenderObject::getContext);
@@ -883,6 +885,19 @@ void RenderObject::lockMouse(const FunctionCallbackInfo<Value>& args) {
 void RenderObject::unlockMouse(const FunctionCallbackInfo<Value>& args) {
 	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
 	OwnMouse(r->r, FALSE);
+}
+
+void RenderObject::hideMouse(const FunctionCallbackInfo<Value>& args) {
+	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
+	int c = ShowCursor(TRUE);
+	int x;
+	//lprintf( "cursor count will be %d", c );
+	while (c && (x = ShowCursor(FALSE)));
+}
+
+void RenderObject::showMouse(const FunctionCallbackInfo<Value>& args) {
+	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
+	ShowCursor(TRUE);
 }
 
 void RenderObject::getContext( const FunctionCallbackInfo<Value>& args ) {

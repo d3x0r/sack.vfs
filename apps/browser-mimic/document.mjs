@@ -20,9 +20,12 @@ const document = {
 		if( type === "canvas" ) {
 			const canvas = {
 				requestPointerLock() {
-					
+					r.lockMouse();
+					r.hideMouse();
 				},
 				exitPointerLock() {
+					r.unlockMouse();
+					r.showMouse();
 				},
 				r: sack.Renderer( "Hello World", -1, -1, 1600, 800, null, sack.Renderer.attributes.DISPLAY_ATTRIBUTE_NO_REDIRECT ),
 				get width() { return canvas.r.width },

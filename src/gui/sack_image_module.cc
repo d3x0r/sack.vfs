@@ -1168,12 +1168,12 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	size_t length;
 #if ( NODE_MAJOR_VERSION >= 14 )
 	//lprintf( "IMAGE backing store for:%p", (POINTER)GetImageSurface( io->image ) );
-	std::shared_ptr<BackingStore> bs = SharedArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth * sizeof(CDATA), dontReleaseBufferBackingStore, NULL);
-	Local<SharedArrayBuffer> ab =
-		SharedArrayBuffer::New( isolate, bs );
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth * sizeof(CDATA), dontReleaseBufferBackingStore, NULL);
+	Local<ArrayBuffer> ab =
+		ArrayBuffer::New( isolate, bs );
 #else	
-	Local<SharedArrayBuffer> ab =
-		SharedArrayBuffer::New( isolate,
+	Local<ArrayBuffer> ab =
+		ArrayBuffer::New( isolate,
 			GetImageSurface( io->image ),
 			length = io->image->height * io->image->pwidth * sizeof( CDATA ) );
 #endif				
