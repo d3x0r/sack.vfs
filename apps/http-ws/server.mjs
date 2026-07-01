@@ -137,15 +137,13 @@ function logRequests() {
 }
 
 
-
-
 //exports.getRequestHandler = getRequestHandler;
 export function getRequestHandler( serverOpts ) {
 	serverOpts = serverOpts || {};
-	const resourcePath = serverOpts.resourcePath || ".";
-	const commonPath = serverOpts?.commonPath || ".";
-	const npm_path = serverOpts.npmPath || ".";
-
+	const resourcePath = serverOpts.resourcePath || process.env.RESOURCE_PATH || ".";
+	const commonPath = serverOpts?.commonPath || process.env.COMMON_PATH || ".";
+	const npm_path = serverOpts.npmPath || process.env.NPM_PATH || ".";
+console.log( "basic handler:", resourcePath, npm_path );
 	return function( req, res ) {
 		/*
 			this is the request remote address if required....
@@ -357,7 +355,6 @@ export function openServer( opts, cbAccept, cbConnect )
 	let handlers = [];
 	const serverOpts = opts || {};
 	if( !("port" in serverOpts )) serverOpts.port = Number(process.env.PORT)||(process.argv.length > 2?Number(process.argv[2]):0) || 8080;
-	if( !("resourcePath" in serverOpts ) ) serverOpts.resourcePath = "."
 	if( certChain ) 
 	{
 		if( !serverOpts.hosts ) serverOpts.hosts = [];
