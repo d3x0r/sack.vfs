@@ -129,6 +129,7 @@ static double GetDeviceVolume(String::Value* id) {
 #endif
 }
 
+#ifdef WIN32
 
 static bool StartsWithIW(const wchar_t* s, const wchar_t* prefix) {
 	if (!s || !prefix)
@@ -489,6 +490,7 @@ static BOOL ResetDeviceByInstanceIdWithFallbackW(const wchar_t* instanceId, BOOL
 
 	return TRUE;
 }
+#endif
 
 static void resetSoundDevice( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef WIN32
