@@ -351,6 +351,7 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	SetStyle( windowExStyles, WS_EX_ACCEPTFILES );
 	SetStyle( windowExStyles, WS_EX_APPWINDOW );
 	SetStyle( windowExStyles, WS_EX_CLIENTEDGE );
+	SetStyle( windowExStyles, WS_EX_STATICEDGE );
 	SetStyle( windowExStyles, WS_EX_COMPOSITED );
 	SetStyle( windowExStyles, WS_EX_CONTEXTHELP );
 	SetStyle( windowExStyles, WS_EX_CONTROLPARENT );
