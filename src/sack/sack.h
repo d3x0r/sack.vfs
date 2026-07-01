@@ -5419,7 +5419,11 @@ SYSTEM_PROC( void, AddKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_t )
   Remove a callback which was added to event callback list.
 */
 SYSTEM_PROC( void, RemoveKillSignalCallback )( int( *cb )( uintptr_t ), uintptr_t );
+#ifdef _WIN32
 SYSTEM_PROC( uint32_t, GetTaskProcessId )( PTASK_INFO task );
+#elif defined( __LINUX__ )
+SYSTEM_PROC( pid_t, GetTaskProcessId )( PTASK_INFO task );
+#endif
 #if _WIN32
 /*
   moves the window of the task; if there is a main window for the task within the timeout perioud.
