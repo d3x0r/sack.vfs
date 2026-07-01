@@ -409,43 +409,18 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	Isolate* isolate = context->GetIsolate();// Isolate::GetCurrent();
 #ifdef _WIN32
 	{
-#if 0
-		// debug attempt to figure out why ctrl-C event is not triggering node correctly.
-		DWORD dwInfoIn, dwInfoOut, dwInfoErr;
-		GetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), &dwInfoIn );
-		GetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), &dwInfoOut );
-		GetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), &dwInfoErr );
-		fprintf( stderr, "Default handles (in service?) %p %d %p %d %p %d"
-		       , GetStdHandle( STD_INPUT_HANDLE ), dwInfoIn
-		       , GetStdHandle( STD_OUTPUT_HANDLE ), dwInfoOut
-		       , GetStdHandle( STD_ERROR_HANDLE ), dwInfoErr );
-		BOOL a = AllocConsole();
-		fprintf( stderr, "Alloc Console : %d", a );
-#endif
+		// default input/output to not inherit in child processes.
 		SetHandleInformation( GetStdHandle( STD_INPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 		SetHandleInformation( GetStdHandle( STD_OUTPUT_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 		SetHandleInformation( GetStdHandle( STD_ERROR_HANDLE ), HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT );
 	}
 #endif
 #ifdef __LINUX__
-		fcntl( 0, F_SETFD, fcntl( 0, F_GETFD ) & ~FD_CLOEXEC );
-		fcntl( 1, F_SETFD, fcntl( 1, F_GETFD ) & ~FD_CLOEXEC );
-		fcntl( 2, F_SETFD, fcntl( 2, F_GETFD ) & ~FD_CLOEXEC );
-
-/*
-		decodeFlags( fcntl( 0, F_GETFL, 0 ) );
-		decodeFlags( fcntl( 1, F_GETFL, 0 ) );
-		decodeFlags( fcntl( 2, F_GETFL, 0 ) );
-		decodeFlags2( fcntl( 0, F_GETFD, 0 ) );
-		decodeFlags2( fcntl( 1, F_GETFD, 0 ) );
-		decodeFlags2( fcntl( 2, F_GETFD, 0 ) );
-
-		fprintf( stderr, "Default handle inherit in node: %08x %08x %08x\n"
-		       , fcntl( 0, F_GETFL, 0 )
-		       , fcntl( 1, F_GETFL, 0 )
-		       , fcntl( 2, F_GETFL, 0 ) );
-*/
+	fcntl( 0, F_SETFD, fcntl( 0, F_GETFD ) & ~FD_CLOEXEC );
+	fcntl( 1, F_SETFD, fcntl( 1, F_GETFD ) & ~FD_CLOEXEC );
+	fcntl( 2, F_SETFD, fcntl( 2, F_GETFD ) & ~FD_CLOEXEC );
 #endif
+
 	if( runOnce ) {
 #ifdef __ANDROID__
 		{
@@ -477,38 +452,32 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 	} else {
 		GetThisThreadID();
 	}
-	//else
-		//lprintf( "Init Exports for this new object?");
-	//lprintf( "Stdout Logging Enabled." );
-	/*
-	{
-		PTEXT textOutput ;
-		textOutput = TextParse( SegCreateFromText( "GET /url/url.nme.text.xxx" ), NULL, NULL, 1, 1, NULL, 0 );
-		GetFieldsInSQLEx( "create table groupBytes (user_id char, \tgroup_id char(20), \tsent int,\tsent_to int,\treceived int, \tindex userBytes(user_id), \tlogged_from DATETIME, \tlogged DATETIME DEFAULT CURRENT_TIMESTAMP,   )", FALSE DBG_SRC );
-	}
-	*/
 	Local<FunctionTemplate> volumeTemplate;
 
 	class constructorSet* c = getConstructors( isolate );
-	if( !isolated ) {
+	if (c->volConstructor.IsEmpty()) {
+		if( !isolated ) {
 #if ( NODE_MAJOR_VERSION > 9 )
-		node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, c );
+			node::AddEnvironmentCleanupHook( isolate, CleanupThreadResources, c );
 #else
-		node::AtExit( moduleExit );
+			node::AtExit( moduleExit );
 #endif
-	} else {
-		lprintf( "Isolated module, no cleanup hook(yet)" );
-		IsolateHolder* (*GetCurrentIsolate)( void ) = (IsolateHolder*(*)(void))LoadFunction( "isolated_vm.node", "GetCurrentIsolate" );
-		Local<Context> ( *GetDefaultContext )( void )
-		     = (Local<Context> ( * )( void ))LoadFunction( "isolated_vm.node", "GetDefaultContext" );
-		if( GetCurrentIsolate ) {
-			c->ivm_holder   = GetCurrentIsolate();
-			c->ivm_get_default_context = GetDefaultContext;
-			c->ivm_post = ( void ( * )( IsolateHolder *hIsolate, std::unique_ptr<Runnable> task ) )
-			     LoadFunction( "isolated_vm.node", "ScheduleTask" );
+		} else {
+			lprintf( "Isolated module VM, no cleanup hook(yet)" );
+			IsolateHolder* (*GetCurrentIsolate)( void ) = (IsolateHolder*(*)(void))LoadFunction( "isolated_vm.node", "GetCurrentIsolate" );
+			Local<Context> ( *GetDefaultContext )( void )
+				 = (Local<Context> ( * )( void ))LoadFunction( "isolated_vm.node", "GetDefaultContext" );
+			if( GetCurrentIsolate ) {
+				c->ivm_holder   = GetCurrentIsolate();
+				c->ivm_get_default_context = GetDefaultContext;
+				c->ivm_post = ( void ( * )( IsolateHolder *hIsolate, std::unique_ptr<Runnable> task ) )
+					 LoadFunction( "isolated_vm.node", "ScheduleTask" );
+			}
+			//lprintf( "Good pointers? %p %p", c->holder, c->ivm_post );
 		}
-		//lprintf( "Good pointers? %p %p", c->holder, c->ivm_post );
 	}
+	// need to still register the classes on the new exported object, even if same isolate/context
+	// is a different export object.
 
 	ThreadObject::Init( exports );
 	FileObject::Init();
