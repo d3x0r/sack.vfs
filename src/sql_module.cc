@@ -1230,6 +1230,7 @@ SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Lo
 	state = NewArray( struct sql_object_state, 1 );
 	state->pending = 0;
 	state->sql = this;
+	state->ivm_hosted = FALSE;
 	memset( &state->async, 0, sizeof( state->async ) );
 	state->messages = NULL;
 	state->userFunctions = NULL;
@@ -1828,7 +1829,6 @@ void sqlUserAsyncMsgEx_( Isolate *isolate , Local<Context> context, struct sql_o
 				// probably results in a Resolve();
 				buildQueryResult( msg->params ); // this is in charge of releasing any data... 
 			}
-			LineRelease( msg->params->statement );
 
 			// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
 			//lprintf( "Releasing message..." );
