@@ -2417,8 +2417,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	LOGICAL found_content_length = FALSE;
 	int include_close = 1;
 	struct HttpState *pHttpState = obj->pc?GetWebSocketHttpState( obj->pc ):obj->wss?GetWebSocketPipeHttpState( obj->wss->wsPipe ):NULL;
-	if( pHttpState ) // not sure how this WOULDn't be valid...
+	if( pHttpState ) { // not sure how this WOULDn't be valid...
 		LockHttp( pHttpState );
+		Hold(pHttpState);
+	}
 	{
 		PLIST headers = obj->pc?GetWebSocketHeaders( obj->pc ):obj->wss->wsPipe?GetWebSocketPipeHeaders( obj->wss->wsPipe ): NULL;
 		INDEX idx;
@@ -2569,7 +2571,6 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	if( obj->pc )
 		ClearNetWork( obj->pc, (uintptr_t)obj->wss );
 	{
-		Hold( pHttpState );
 		if( include_close ) {
 			//lprintf( "Close is included... is this a reset close?" );
 			if( obj->pc )
