@@ -1,6 +1,7 @@
 
 import {sack} from "sack.vfs"
 
+console.log( "buttons?", sack.Mouse.buttons );
 const keys = sack.Keyboard( keyEvents );
 
 const control_keys = {
@@ -54,7 +55,7 @@ function doClick( ) {
 	const oldPos = sack.Mouse.cursor;
 	const pos = clickPos;//sack.Mouse.cursor;
         //console.log( "POS:", pos, oldPos );
-	sack.Mouse.event( [{ x:pos.x, y:pos.y, buttons:sack.Mouse.buttons.left }
+	sack.Mouse.event( [{ x:pos.x, y:pos.y, buttons:sack.Mouse.buttons.left | sack.Mouse.buttons.right | sack.Mouse.buttons.middle }
 				,{ x:pos.x, y:pos.y, buttons:0 }
 			//	,{ x:oldPos.x, y:oldPos.y, buttons:0} 
 			] );        
