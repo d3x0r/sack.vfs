@@ -125,13 +125,13 @@ Move options are applied after styles are set.
 Styles defined for the window of a task are applied first, and then any move options specified (otherwise the border of
 the window may disappear, and the client area of the window would result smaller than the position information specified).
 
-| Move options | Type | Description |
+| Style options | Type | Description |
 |----|----|-----|
 | timeout | number | specifies milliseconds to wait for window to exist.  If no task window is found, status is `false`.  Default is 500.|
 | window | number | Specifies bits to set in window style.  If -1 or undefined, option is ignored.|
 | windowEx | number | Specifies bits to set in window Ex style.  If -1 or undefined, option is ignored.|
 | class | number | Specifies bits to set in window's class style.  If -1 or undefined, option is ignored.|
-| cb | function | callback function which receives 0-7 parameter indicating the result of the move operation.  `0` results if the display number is invalid, or if the timeout occurs before finding the window. |
+| cb | function | ? |
 
 
 ### Style Values
