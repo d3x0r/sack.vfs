@@ -104,6 +104,9 @@
     },
     "./ref": {
       "import": "./apps/ref/ref.mjs"
+    },
+    "./getRoot": {
+      "import": "./apps/find-package-root/getRoot.mjs"
     }
   },
   "old_exports": {
