@@ -257,7 +257,16 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 ---
 
 ## Changelog
-- 1.3.133(in progress)
+- 1.3.134(in progress)
+- 1.3.133
+   - Added `getRoot` export utility that can find the root package.json.
+   - Added program name to task information in task manager.  Program name support is used for process exit signal generation.
+   - Added user database login support to default task manager app.
+   - Added environment configuration for task manager configuration files.
+   - Added reset ability to windows sound device support module.
+   - Added `rollback()` function to SQL module; internally transaction sets up tracking states.
+   - VFS initialization failed if same context and isolate was used but a new export object; fixed so it doesn't crash; not a completed solution. (check uv async event registrations)
+   - Added `bytes` field to content response for HTTP requests.
 - 1.3.132
    - Improve handling when there's no COM ports.
    - Fix CMake build to support PSEUDOCON option on windows.
