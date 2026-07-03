@@ -1,3 +1,6 @@
+#ifndef SACK_GUI_GLOBAL_H
+#define SACK_GUI_GLOBAL_H
+
 #if defined( _MSC_VER )
 #  pragma warning( disable: 4251 4275 26495)
 // C26495 - uninitialized member; yes; It will be.
@@ -139,6 +142,19 @@ using namespace v8;
 #define SETVAR(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, (key), v8::NewStringType::kNormal ).ToLocalChecked(), val )
 #define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
 #define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
+
+#if V8_MAJOR < 13
+#define SETPROTO( context, obj, proto ) (obj)->SetPrototype(context,proto )
+#else
+#define SETPROTO( context, obj, proto ) (obj)->SetPrototypeV2( context, proto )
+#endif
+
+
+#if V8_MAJOR > 14 || (V8_MAJOR == 14 && V8_MINOR >= 6)
+#  define THIS(args)  args.HolderV2()
+#else
+#  define THIS(args)  args.This()
+#endif
 
 
 // --------- String Utilities for option objects ------------
@@ -338,8 +354,46 @@ class constructorSet {
 	v8::Persistent<v8::Function> RenderObject_constructor2;
 	v8::Persistent<v8::Object> mouse_object;
 	v8::Persistent<v8::Object> pen_object;
+	// Cached event-method functions attached to each browser-shaped
+	// event object. All three live as separate flags so the dispatcher
+	// can apply each effect independently:
+	//   preventDefault           → signals sack the event was handled
+	//                              (rv truthy → window proc returns non-zero)
+	//   stopImmediatePropagation → dispatcher breaks the listener loop
+	//                              (sibling listeners on same Renderer skipped)
+	//   stopPropagation          → no-op stub. sack has no parent elements
+	//                              to bubble to; exists so copy-pasted
+	//                              browser code doesn't TypeError.
+	v8::Persistent<v8::Function> preventDefault_fn;
+	v8::Persistent<v8::Function> stopImmediatePropagation_fn;
+	v8::Persistent<v8::Function> stopPropagation_fn;
 
 	v8::Persistent<v8::Function> VulkanObject_constructor;
+
+	// WebGPU bindings (src/gui/webgpu/) — one slot per JS-visible class.
+	v8::Persistent<v8::Function> GPU_constructor;
+	v8::Persistent<v8::Function> GPUAdapter_constructor;
+	v8::Persistent<v8::Function> GPUDevice_constructor;
+	v8::Persistent<v8::Function> GPUBuffer_constructor;
+	v8::Persistent<v8::Function> GPUSampler_constructor;
+	v8::Persistent<v8::Function> GPUTexture_constructor;
+	v8::Persistent<v8::Function> GPUTextureView_constructor;
+	v8::Persistent<v8::Function> GPUQuerySet_constructor;
+	v8::Persistent<v8::Function> GPUCommandBuffer_constructor;
+	v8::Persistent<v8::Function> GPUCommandEncoder_constructor;
+	v8::Persistent<v8::Function> GPUComputePassEncoder_constructor;
+	v8::Persistent<v8::Function> GPURenderPassEncoder_constructor;
+	v8::Persistent<v8::Function> GPURenderBundleEncoder_constructor;
+	v8::Persistent<v8::Function> GPUBindGroupLayout_constructor;
+	v8::Persistent<v8::Function> GPURenderPipeline_constructor;
+	v8::Persistent<v8::Function> GPUComputePipeline_constructor;
+	v8::Persistent<v8::Function> GPUQueue_constructor;
+
+	v8::Persistent<v8::Function> GPURenderBundle_constructor;
+	v8::Persistent<v8::Function> GPUBindGroup_constructor;
+	v8::Persistent<v8::Function> GPUPipelineLayout_constructor;
+	v8::Persistent<v8::Function> GPUShaderModule_constructor;
+	v8::Persistent<v8::Function> GPUCanvasContext_constructor;
 #endif
 };
 class constructorSet * getConstructors( Isolate *isolate );
@@ -688,3 +742,5 @@ void ReleaseCommandLineResults( PLIST* ppResults );
 //----------- win32 wifiInterface.cc
 
 void InitWifiInterface( Isolate *isolate, Local<Object>exports );
+
+#endif
