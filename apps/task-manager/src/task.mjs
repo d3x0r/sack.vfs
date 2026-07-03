@@ -110,13 +110,22 @@ export class Task {
 
 	clickWindow() {
 		let x, y;
-		if( "display" in this.#task.moveTo || "monitor" in this.#task.moveTo) {					
+		if( "connector" in this.#task.moveTo || "display" in this.#task.moveTo || "monitor" in this.#task.moveTo) {
 			const displays = sack.Task.getDisplays();
 			let dev;
+			// click on the connector, display or monitor the task is supposed to be at
+			// otherwise use the expected position of the window to find where to click.
 			for( let device of displays.device ) {
-				if( device.display === this.#task.moveTo.display ) dev = device;
+				if( device.connector === this.#task.moveTo.connector ) {
+					dev = device;
+				}
+				else if( device.display === this.#task.moveTo.display ) {
+					dev = device;
+				}
+				// fixup monitor links, join records.
 				for( let monitor of displays.monitor ) {
 					if( monitor.display === device.display ) {
+						device.monitorName = device.monitor;
 						device.monitor = monitor;
 						monitor.device = device;
 						break;
@@ -495,8 +504,6 @@ export function terminateTasks() {
 	} );
 }
 
-let zwaits = null;
-
 export function closeAllTasks( ws ) {
 	const local = config.local;
 	const waits = [];
@@ -505,7 +512,8 @@ export function closeAllTasks( ws ) {
 		if( task.noKill ) return;
 		if (task.running){
 			task.restart = false;
-			waits.push( task.stop() );
+			task.stop()
+			waits.push( timeoutTaskStop( task ) );
 		} } );
 
 	return Promise.all( waits ).then( (waits)=>{
@@ -556,7 +564,6 @@ function timeoutTaskStop( task ) {
 			task.stopTimer = setTimeout( ()=>tick(resolve, reject), 300 );
 		} else {
 			resolve( true );
-			//console.log( "Trigger resolve for stopped task:", task.name, zwaits );
 		}
 	}
 	return new Promise( tick );
