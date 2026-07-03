@@ -17,7 +17,6 @@ static struct psiLocal {
 	PLIST registrations;
 	//uv_async_t async; // keep this instance around for as long as we might need to do the periodic callback
 	PLINKQUEUE events;
-	PTHREAD nodeThread;
 	ControlObject *pendingCreate;
 	Local<Object> newControl;
 	RegistrationObject *pendingRegistration;
@@ -227,6 +226,16 @@ static void dispatchEvent( 	v8::Isolate* isolate
 		cb = Local<Function>::New( isolate, evt->control->customEvents[0] );
 		Local<Value> argv[1] = { localStringExternal( isolate, GetText( evt->data.console.text ) ) };
 		r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+		break;
+	}
+	case Event_Control_ConsoleResize: {
+		if( !evt->control->customEvents[ 1 ].IsEmpty() ) {
+			cb                     = Local<Function>::New( isolate, evt->control->customEvents[ 1 ] );
+			Local<Value> argv[ 4 ] = {
+			     Number::New( isolate, evt->data.consoleSize.width ), Number::New( isolate, evt->data.consoleSize.height ),
+			     Number::New( isolate, evt->data.consoleSize.cols ), Number::New( isolate, evt->data.consoleSize.rows ) };
+			r = cb->Call( context, evt->control->state.Get( isolate ), 1, argv ).ToLocalChecked();
+		}
 		break;
 	}
 	case Event_Control_Resize: {
@@ -643,11 +652,12 @@ void ControlObject::Init( Local<Object> _exports ) {
 
 		VoidObject::Init( isolate );
 		//VulkanObject::Init( isolate, _exports );
-
-		SimpleRegisterMethod( "psi/control/rtti/extra init"
-			, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)" );
-		SimpleRegisterMethod( "psi/control/rtti/extra destroy"
-			, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)" );
+		if (!psiLocal.first_initialized) {
+			SimpleRegisterMethod("psi/control/rtti/extra init"
+				, CustomDefaultInit, "int", "sack-gui init", "(PCOMMON)");
+			SimpleRegisterMethod("psi/control/rtti/extra destroy"
+				, CustomDefaultDestroy, "int", "sack-gui destroy", "(PCOMMON)");
+		}
 
 		// get the current interfaces, and set PSI to them.
 		// (this will be delayed until require())
@@ -960,6 +970,7 @@ void ControlObject::Init( Local<Object> _exports ) {
 
 		c->ControlObject_registrationConstructor.Reset( isolate, regTemplate->GetFunction(context).ToLocalChecked() );
 		SET_READONLY( exports, "Registration", regTemplate->GetFunction(context).ToLocalChecked() );
+		psiLocal.first_initialized = 1;
 }
 
 void ControlObject::getControlColor( const FunctionCallbackInfo<Value>& args ) {
@@ -1218,6 +1229,12 @@ void onItemOpened( uintptr_t psv, PSI_CONTROL pc, PLISTITEM pli, LOGICAL bOpened
 	//	SetListItemOpenHandler( obj->control, onItemOpened, (uintptr_t)obj );
 }
 
+static void onConsoleSizeChange( uintptr_t psv, int width, int height, int cols, int rows ) {
+	ControlObject *obj = (ControlObject *)psv;
+	MakePSIEvent( obj, true, Event_Control_ConsoleResize, width, height, cols, rows );
+}
+
+
 
 static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObject *obj ) {
 	Local<Context>context = isolate->GetCurrentContext();
@@ -1232,6 +1249,7 @@ static void ProvideKnownCallbacks( Isolate *isolate, Local<Object>c, ControlObje
 			, Function::New( context, ControlObject::getConsoleEcho ).ToLocalChecked()
 			, Function::New( context, ControlObject::setConsoleEcho ).ToLocalChecked()
 			, DontDelete );
+		PSI_Console_SetSizeCallback( obj->control, onConsoleSizeChange, (uintptr_t)obj );
 		SET( c, "oninput", Function::New( context, ControlObject::setConsoleRead ).ToLocalChecked() );
 	} else if( StrCmp( type, NORMAL_BUTTON_NAME ) == 0 ) {
 		int ID = GetControlID( obj->control );
@@ -1427,7 +1445,7 @@ void ControlObject::NewControl( const FunctionCallbackInfo<Value>& args ) {
 		class constructorSet* c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->ControlObject_constructor2 );
 		Local<Object> newControl = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked();
-		ControlObject *container = ObjectWrap::Unwrap<ControlObject>( args.Holder() );
+		ControlObject *container = ObjectWrap::Unwrap<ControlObject>( args.This() );
 
 		if( argc > 0 ) {
 			String::Utf8Value fName( isolate, args[0] );

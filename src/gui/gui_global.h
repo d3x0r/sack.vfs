@@ -64,6 +64,11 @@ enum GUI_eventType {
 	Event_Render_Pen,
 	Event_Render_Key,
 	Event_Render_Draw,
+	// Browser-shaped expansions of the above. doMouse synthesizes
+	// mousedown/mouseup/mousemove/wheel from the bitmask diff; doKey
+	// captures GetKeyText at callback time (live OS state).
+	Event_Render_MouseExpanded,
+	Event_Render_KeyExpanded,
 
 	Event_Intershell_CreateControl,
 	Event_Intershell_CreateButton,
@@ -99,6 +104,7 @@ enum GUI_eventType {
 	/* console events*/
 	Event_Control_ConsoleInput,
 	Event_Control_Close_Loop,
+	Event_Control_ConsoleResize,
 	/* listbox Events */
 	Event_Listbox_Selected,
 	Event_Listbox_DoubleClick,
@@ -141,9 +147,33 @@ struct event {
 		struct {
 			uint32_t code;
 		}key;
+		// Browser-shaped MouseEvent. Type names match DOM:
+		//   "mousedown", "mouseup", "mousemove", "wheel".
+		// "button" is the transitioned browser button (0/1/2/3/4) or -1
+		// for move/wheel. "buttons" is the currently-held bitmask in
+		// browser order (1=L 2=R 4=M 8=back 16=forward).
+		struct {
+			const char* type;       // static string — not freed
+			int32_t  x, y;
+			int32_t  movementX, movementY;
+			int8_t   button;        // -1 for non-button events
+			uint32_t buttons;
+			float    deltaX, deltaY;// for "wheel"
+			uint8_t  shiftKey, ctrlKey, altKey;
+		}mouseExpanded;
+		// Browser-shaped KeyboardEvent. `text` is a heap copy of
+		// GetKeyText() captured on the sack thread; ProcessEvent frees.
+		struct {
+			uint32_t packed;        // raw packed key (includes KEY_PRESSED, KEY_MOD bits)
+			char*    text;          // owned; freed after JS callback
+			size_t   textLen;
+		}keyExpanded;
 		struct {
 			PTEXT text;
 		}console;
+		struct {
+			int width, height, rows, cols;
+		} consoleSize;
 		struct {
 			uintptr_t pli;
 			LOGICAL opened;
@@ -185,6 +215,7 @@ struct global {
 		is_control *control;
 	} nextControlCreatePosition;
 } g;
+
 
 void InitInterfaces( int opengl, int vulkan );
 uintptr_t MakeEvent( RenderObject*r, enum GUI_eventType type, ... );

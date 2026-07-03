@@ -1,6 +1,13 @@
 #define DEFINE_GLOBAL
 #include "../global.h"
 
+// Resolve which IMAGE_INTERFACE this ImageObject's JS draw methods route
+// through. Per-object override (ImageObject::pii) takes precedence; falls
+// back to the global g.pii (= the registered "image" interface). Lets the
+// surface ImageObject for a webgpu-backed renderer route drawing through
+// webgpu.image while other ImageObjects keep using the global default.
+#define IMG_INTF(io) ((io)->pii ? (PIMAGE_INTERFACE)(io)->pii : g.pii)
+
 
 void InitInterfaces( int opengl, int vulkan ) {
 #if 0
@@ -198,6 +205,8 @@ void ImageObject::Init( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageOver", ImageObject::putImageOver );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "drawImageMS", ImageObject::putImageMultiShaded );
 	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "imageSurface", ImageObject::imageData );
+	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "text", ImageObject::text );
+	NODE_SET_PROTOTYPE_METHOD( imageTemplate, "putString", ImageObject::text );  // alias
 
 	imageTemplate->PrototypeTemplate()->SetAccessorProperty( localStringExternal( isolate, "png" )
 		, FunctionTemplate::New( isolate, ImageObject::getPng )
@@ -350,8 +359,8 @@ void ImageObject::getJpeg( const FunctionCallbackInfo<Value>&  args ) {
 
 void ImageObject::getJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-  class constructorSet* c = getConstructors( isolate );
-  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
+	class constructorSet* c = getConstructors( isolate );
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		args.GetReturnValue().Set( Integer::New( isolate, obj->jpegQuality ) );
@@ -366,8 +375,8 @@ void ImageObject::setJpegQuality( const FunctionCallbackInfo<Value>&  args ) {
 
 void ImageObject::getWidth( const FunctionCallbackInfo<Value>&  args ) {
 	Isolate* isolate = args.GetIsolate();
-  class constructorSet* c = getConstructors( isolate );
-  Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
+	class constructorSet* c = getConstructors( isolate );
+	Local<FunctionTemplate> tpl = c->ImageObject_tpl.Get( isolate );
 	if( tpl->HasInstance( args.This() ) ) {
 		ImageObject *obj = ObjectWrap::Unwrap<ImageObject>( args.This() );
 		if( obj->image )
@@ -420,19 +429,27 @@ void ImageObject::getHeight( const FunctionCallbackInfo<Value>&  args ) {
 ImageObject::ImageObject( uint8_t *buf, size_t len ) {
 	image = DecodeMemoryToImage( buf, len );
 	jpegQuality = 78;
+	pii = NULL;
 }
 
 ImageObject::ImageObject( const char *filename )  {
    image = LoadImageFile( filename );
    jpegQuality = 78;
+   pii = NULL;
 }
+
 ImageObject::ImageObject( Image image ) {
 	this->image = image;
 	jpegQuality = 78;
+	pii = NULL;
 }
 
 ImageObject::ImageObject( int x, int y, int w, int h, ImageObject * within )  {
 	jpegQuality = 78;
+	// Inherit pii from the container — a sub-image on a webgpu-backed
+	// surface should itself be webgpu-backed. (Top-level images default
+	// to NULL = global interface.)
+	pii = within ? within->pii : NULL;
 	if( within )
 	{
 		container = within;
@@ -454,7 +471,7 @@ ImageObject::~ImageObject(void) {
 void ImageObject::New( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-  class constructorSet* c = getConstructors( isolate );
+	class constructorSet* c = getConstructors( isolate );
 	if( args.IsConstructCall() ) {
 
 		int x = 0, y = 0, w = 1024, h = 768;
@@ -578,7 +595,7 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 		int n;
 		for( n = 0; n < argc; n++ )
 			argv[n+1] = args[n];
-		argv[0] = args.Holder();
+		argv[0] = args.This();
 
     class constructorSet* c = getConstructors( isolate );
     Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
@@ -589,17 +606,23 @@ void ImageObject::NewSubImage( const FunctionCallbackInfo<Value>& args ) {
 
 
 Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL external ) {
-	// Invoked as constructor: `new MyObject(...)`
-	ImageObject* obj;
+	return NewImage( isolate, image, external, NULL );
+}
 
+Local<Object> ImageObject::NewImage( Isolate*isolate, Image image, LOGICAL external,
+                                      struct image_interface_tag *pii )
+{
+	ImageObject* obj;
 	int argc = 0;
 	Local<Value> *argv = new Local<Value>[argc];
-  class constructorSet* c = getConstructors( isolate );
-  Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
+	class constructorSet* c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->ImageObject_constructor );
 	Local<Object> lo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv ).ToLocalChecked();
 	obj = ObjectWrap::Unwrap<ImageObject>( lo );
-	obj->image = image;
+	obj->image    = image;
 	obj->external = external;
+	obj->pii      = pii;
+	delete[] argv;
 	return lo;
 }
 
@@ -622,9 +645,18 @@ ImageObject * ImageObject::MakeNewImage( Isolate*isolate, Image image, LOGICAL e
 void ImageObject::reset( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
-	args[3]->ToObject( context).ToLocalChecked();
 	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
-	ClearImage( io->image );
+	PIMAGE_INTERFACE pii = IMG_INTF(io);
+	// Prefer the dedicated ResetImageBuffers entry — for the webgpu
+	// driver it invalidates the cached bundle and clears the op-list,
+	// which is what "reset" actually means. Fall back to BlatColor with
+	// 0 if the active driver doesn't implement reset (the puregl2 /
+	// CPU sack.image cases). With premultiplied output that's a no-op
+	// blit, but it matches the historical semantics there.
+	if( pii->_ResetImageBuffers )
+		pii->_ResetImageBuffers( io->image, FALSE );
+	else
+		pii->_BlatColor( io->image, 0, 0, io->image->width, io->image->height, 0 );
 }
 
 void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
@@ -672,7 +704,66 @@ void ImageObject::fill( const FunctionCallbackInfo<Value>& args ) {
 				c = 0;
 		}
 	}
-	BlatColor( io->image, x, y, w, h, c );
+	IMG_INTF(io)->_BlatColor( io->image, x, y, w, h, c );
+}
+
+// surface.text( str, x, y[, color[, font[, background[, height]]]] )
+//
+// Routes through PutStringFontEx on the per-image pii. On a webgpu-bound
+// surface (renderer has a webgpu context), this fires sack's font cache
+// machinery: AllocateCharacterSpace allocates a cell on the per-font atlas,
+// the glyph is rasterized into the cell via the CPU code path, and the
+// terminal BlotImage routes back through the image's reverse_interface
+// (= our webgpu driver) to record a textured quad sampling the atlas.
+void ImageObject::text( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	ImageObject *io = ObjectWrap::Unwrap<ImageObject>( args.This() );
+	int argc = args.Length();
+	if( argc < 1 || !args[ 0 ]->IsString() ) {
+		isolate->ThrowException( Exception::TypeError( localStringExternal(
+			isolate, "text(str, x, y, color?, font?, background?, height?)" ) ) );
+		return;
+	}
+	String::Utf8Value str( isolate, args[ 0 ] );
+	int     x         = ( argc > 1 ) ? (int)args[ 1 ]->IntegerValue( context ).FromMaybe( 0 ) : 0;
+	int     y         = ( argc > 2 ) ? (int)args[ 2 ]->IntegerValue( context ).FromMaybe( 0 ) : 0;
+	CDATA   color     = 0xFFFFFFFFu;   // opaque white default
+	CDATA   background = 0;            // transparent default
+	SFTFont font      = NULL;          // resolved → GetDefaultFont() below
+	int     height    = 0;             // 0 = use font's natural height
+
+	if( argc > 3 ) {
+		if( args[ 3 ]->IsObject() ) {
+			Local<Object> co = args[ 3 ]->ToObject( context ).ToLocalChecked();
+			ColorObject *cobj = ObjectWrap::Unwrap<ColorObject>( co );
+			color = cobj->color;
+		} else {
+			color = (CDATA)args[ 3 ]->Uint32Value( context ).FromMaybe( color );
+		}
+	}
+	if( argc > 4 && args[ 4 ]->IsObject() ) {
+		Local<Object> fo = args[ 4 ]->ToObject( context ).ToLocalChecked();
+		FontObject *fobj = ObjectWrap::Unwrap<FontObject>( fo );
+		if( fobj ) font = fobj->font;
+	}
+	if( argc > 5 ) {
+		if( args[ 5 ]->IsObject() ) {
+			Local<Object> bo = args[ 5 ]->ToObject( context ).ToLocalChecked();
+			ColorObject *bobj = ObjectWrap::Unwrap<ColorObject>( bo );
+			background = bobj->color;
+		} else {
+			background = (CDATA)args[ 5 ]->Uint32Value( context ).FromMaybe( background );
+		}
+	}
+	if( argc > 6 )
+		height = (int)args[ 6 ]->IntegerValue( context ).FromMaybe( 0 );
+
+	PIMAGE_INTERFACE pii = IMG_INTF(io);
+	if( !font ) font = pii->_GetDefaultFont();
+	if( !height ) height = (int)pii->_GetFontHeight( font );
+	pii->_PutStringFontEx( io->image, x, y, height, color, background,
+		(CTEXTSTR)*str, (size_t)str.length(), font );
 }
 
 void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
@@ -702,7 +793,7 @@ void ImageObject::fillOver( const FunctionCallbackInfo<Value>& args ) {
 			c = (int)args[4]->Uint32Value(context).ToChecked();
 		c = (int)args[4]->NumberValue(context).ToChecked();
 	}
-	BlatColorAlpha( io->image, x, y, w, h, c );
+	IMG_INTF(io)->_BlatColorAlpha( io->image, x, y, w, h, c );
 }
 
 void ImageObject::plot( const FunctionCallbackInfo<Value>& args ) {
@@ -727,7 +818,7 @@ void ImageObject::plot( const FunctionCallbackInfo<Value>& args ) {
 		else
 			c = (int)args[2]->NumberValue(context).ToChecked();
 	}
-	g.pii->_plot( io->image, x, y, c );
+	IMG_INTF(io)->_plot( io->image, x, y, c );
 }
 
 void ImageObject::plotOver( const FunctionCallbackInfo<Value>& args ) {
@@ -752,7 +843,7 @@ void ImageObject::plotOver( const FunctionCallbackInfo<Value>& args ) {
 		else
 			c = (int)args[2]->NumberValue(context).ToChecked();
 	}
-	plotalpha( io->image, x, y, c );
+	IMG_INTF(io)->_plotalpha( io->image, x, y, c );
 }
 
 void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
@@ -784,11 +875,11 @@ void ImageObject::line( const FunctionCallbackInfo<Value>& args ) {
 			c = (int)args[4]->NumberValue(context).ToChecked();
 	}
 	if( x == xTo )
-		do_vline( io->image, x, y, yTo, c );
+		IMG_INTF(io)->_do_vline( io->image, x, y, yTo, c );
 	else if( y == yTo )
-		do_hline( io->image, y, x, xTo, c );
+		IMG_INTF(io)->_do_hline( io->image, y, x, xTo, c );
 	else
-		do_line( io->image, x, y, xTo, yTo, c );
+		IMG_INTF(io)->_do_line( io->image, x, y, xTo, yTo, c );
 }
 
 void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
@@ -820,11 +911,11 @@ void ImageObject::lineOver( const FunctionCallbackInfo<Value>& args ) {
 			c = (int)args[4]->NumberValue(context).ToChecked();
 	}
 	if( x == xTo )
-		do_vlineAlpha( io->image, x, y, yTo, c );
+		IMG_INTF(io)->_do_vlineAlpha( io->image, x, y, yTo, c );
 	else if( y == yTo )
-		do_hlineAlpha( io->image, y, x, xTo, c );
+		IMG_INTF(io)->_do_hlineAlpha( io->image, y, x, xTo, c );
 	else
-		do_lineAlpha( io->image, x, y, xTo, yTo, c );
+		IMG_INTF(io)->_do_lineAlpha( io->image, x, y, xTo, yTo, c );
 }
 
 // {x, y output
@@ -896,19 +987,19 @@ void ImageObject::putImage( const FunctionCallbackInfo<Value>& args ) {
 					if( h < 0 ) h = ii->image->height;
 				}
 				if( ow && oh && w && h )
-					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
+					IMG_INTF(io)->_BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, 1, BLOT_COPY );
 			}
 			else
-				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, 0, BLOT_COPY );
+				IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, 0, BLOT_COPY );
 		}
 		else  {
 			w = xAt; 
 			h = yAt;
-			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, 0, BLOT_COPY );
+			IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, 0, BLOT_COPY );
 		}
 	}
 	else
-		BlotImageEx( io->image, ii->image, x, y, 0, BLOT_COPY );
+		IMG_INTF(io)->_BlotImageEx( io->image, ii->image, x, y, 0, BLOT_COPY );
 }
 
 void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
@@ -960,18 +1051,18 @@ void ImageObject::putImageOver( const FunctionCallbackInfo<Value>& args ) {
 						h = ii->image->height;
 				}
 				if( ow && oh && w && h )
-					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT
+					IMG_INTF(io)->_BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT
 					                      , BLOT_COPY );
 			} else
-				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
+				IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
 		} else {
 			w = xAt;
 			h = yAt;
-			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
+			IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_COPY );
 		}
 	}
 	else
-		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_COPY );
+		IMG_INTF(io)->_BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_COPY );
 }
 
 // {x, y output
@@ -1051,20 +1142,20 @@ void ImageObject::putImageMultiShaded( const FunctionCallbackInfo<Value>& args )
 				} else
 					h = ii->image->height;
 				if( ow && oh && w && h )
-					BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+					IMG_INTF(io)->_BlotScaledImageSizedEx( io->image, ii->image, x, y, ow, oh, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
 			}
 			else
-				BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn
+				IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, xAt, yAt, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn
 				                , b );
 		}
 		else  {
 			w = xAt; 
 			h = yAt;
-			BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+			IMG_INTF(io)->_BlotImageSizedEx( io->image, ii->image, x, y, 0, 0, w, h, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
 		}
 	}
 	else
-		BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
+		IMG_INTF(io)->_BlotImageEx( io->image, ii->image, x, y, ALPHA_TRANSPARENT, BLOT_MULTISHADE, r, grn, b );
 }
 
 
@@ -1077,12 +1168,12 @@ void ImageObject::imageData( const FunctionCallbackInfo<Value>& args ) {
 	size_t length;
 #if ( NODE_MAJOR_VERSION >= 14 )
 	//lprintf( "IMAGE backing store for:%p", (POINTER)GetImageSurface( io->image ) );
-	std::shared_ptr<BackingStore> bs = SharedArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth * sizeof(CDATA), dontReleaseBufferBackingStore, NULL);
-	Local<SharedArrayBuffer> ab =
-		SharedArrayBuffer::New( isolate, bs );
+	std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)GetImageSurface( io->image ), length=io->image->height * io->image->pwidth * sizeof(CDATA), dontReleaseBufferBackingStore, NULL);
+	Local<ArrayBuffer> ab =
+		ArrayBuffer::New( isolate, bs );
 #else	
-	Local<SharedArrayBuffer> ab =
-		SharedArrayBuffer::New( isolate,
+	Local<ArrayBuffer> ab =
+		ArrayBuffer::New( isolate,
 			GetImageSurface( io->image ),
 			length = io->image->height * io->image->pwidth * sizeof( CDATA ) );
 #endif				
