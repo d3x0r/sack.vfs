@@ -421,7 +421,8 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 				AddLink( &revive->parser->prototypes, holder );
 			}
 			sub_o = Object::New( revive->isolate );
-			sub_o->SetPrototype( revive->context, holder->cls[0].Get( revive->isolate ) );
+			SETPROTO( revive->context, sub_o, holder->cls[0].Get( revive->isolate ) );
+			//sub_o->SetPrototype( revive->context, holder->cls[0].Get( revive->isolate ) );
 		}
 	}
 	else {
