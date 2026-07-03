@@ -2637,7 +2637,6 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	if( wss ) {
 		httpObject *req;
 		INDEX idx;
-		int tot = 0;
 		LOGICAL requested = FALSE;
 		struct wssEvent *pevt;
 		// close on wssObjectEvent; may have served HTTP requests
@@ -2649,13 +2648,10 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 			}
 		}
 		LIST_FORALL( wss->requests, idx, httpObject *, req ) {
-			tot++;
 			if( req->pc == pc ) {
 				//lprintf( "Removing request from wss %d %d", idx, tot );
 				SetLink( &wss->requests, idx, NULL );
 				requested = TRUE;
-				tot--;
-				//return;
 			}
 		}
 		if( requested )

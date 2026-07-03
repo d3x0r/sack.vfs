@@ -149,6 +149,7 @@ using namespace v8;
 #define SETPROTO( context, obj, proto ) (obj)->SetPrototypeV2( context, proto )
 #endif
 
+#undef THIS  // defined in combaseapi.h  #define THIS                    void
 
 #if V8_MAJOR > 14 || (V8_MAJOR == 14 && V8_MINOR >= 6)
 #  define THIS(args)  args.HolderV2()

@@ -44,7 +44,8 @@ message( "NODE VERSION: ${NODE_VERSION_MAJOR} ${NODE_VERSION_MINOR} ${NODE_VERSI
 message( "COMPILER: ${CMAKE_CXX_COMPILER_ID}" )
 if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
 	add_definitions( -Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion -Wno-unused-parameter )
-	add_definitions( -Wno-deprecated-volatile)
+	add_definitions( -Wno-deprecated-volatile) 
+	add_definitions( -Wno-varargs )
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 

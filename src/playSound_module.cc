@@ -82,23 +82,21 @@ static void SetDefault(const v8::FunctionCallbackInfo<Value>& args) {
 static void SetDeviceVolume( String::Value *id, double val ) {
 #ifdef WIN32
 
-	HRESULT hr;
-
 	IMMDevice* pDevice;
 	IMMDeviceEnumerator* pEnum = NULL;
 	// Create a multimedia device enumerator.
-	hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL,
+	CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL,
 		CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&pEnum);
-	hr = pEnum->GetDevice((const wchar_t*)**id, &pDevice);
+	pEnum->GetDevice((const wchar_t*)**id, &pDevice);
 	IAudioEndpointVolume* pVolInfo = NULL;
-	hr = pDevice->Activate(__uuidof(IAudioEndpointVolume),
+	pDevice->Activate(__uuidof(IAudioEndpointVolume),
 		CLSCTX_ALL, NULL, (void**)&pVolInfo);
 	//double val = args[0]->NumberValue(context).FromMaybe(0.0);
 	if( !val )
 		pVolInfo->SetMute( true, NULL );
 	else
 		pVolInfo->SetMute( false, NULL );
-	hr = pVolInfo->SetMasterVolumeLevelScalar( val, NULL);
+	pVolInfo->SetMasterVolumeLevelScalar( val, NULL);
 	pEnum->Release();
 	pDevice->Release();
 	pVolInfo->Release();
@@ -108,20 +106,18 @@ static void SetDeviceVolume( String::Value *id, double val ) {
 static double GetDeviceVolume(String::Value* id) {
 #ifdef WIN32
 
-	HRESULT hr;
-
 	IMMDevice* pDevice;
 	IMMDeviceEnumerator* pEnum = NULL;
 	// Create a multimedia device enumerator.
-	hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL,
+	CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL,
 		CLSCTX_ALL, __uuidof(IMMDeviceEnumerator), (void**)&pEnum);
-	hr = pEnum->GetDevice((const wchar_t*)**id, &pDevice);
+	pEnum->GetDevice((const wchar_t*)**id, &pDevice);
 	IAudioEndpointVolume* pVolInfo = NULL;
-	hr = pDevice->Activate(__uuidof(IAudioEndpointVolume),
+	pDevice->Activate(__uuidof(IAudioEndpointVolume),
 		CLSCTX_ALL, NULL, (void**)&pVolInfo);
 	//double val = args[0]->NumberValue(context).FromMaybe(0.0);
 	float fVolume;
-	hr = pVolInfo->GetMasterVolumeLevelScalar(&fVolume);
+	pVolInfo->GetMasterVolumeLevelScalar(&fVolume);
 	pEnum->Release();
 	pDevice->Release();
 	pVolInfo->Release();

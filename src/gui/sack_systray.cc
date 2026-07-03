@@ -322,29 +322,12 @@ void InitSystray( Isolate* isolate, Local<Object> _exports ) {
 	// Prototype
 	NODE_SET_PROTOTYPE_METHOD( itemTemplate, "remove", itemWrapper::remove );
 
-#if ( NODE_MAJOR_VERSION >= 22 )
-	itemTemplate->PrototypeTemplate()->SetNativeDataProperty(
-	     String::NewFromUtf8Literal( isolate, "checked" ), itemWrapper::getChecked, itemWrapper::setChecked
-	     , Local<Value>()
-	     , PropertyAttribute::None, SideEffectType::kHasNoSideEffect, SideEffectType::kHasSideEffect );
-	itemTemplate->PrototypeTemplate()->SetNativeDataProperty(
-	     String::NewFromUtf8Literal( isolate, "text" ), itemWrapper::getText, itemWrapper::setText
-	     , Local<Value>()
-	     , PropertyAttribute::None, SideEffectType::kHasNoSideEffect, SideEffectType::kHasSideEffect );
-#elif ( NODE_MAJOR_VERSION >= 18 )
-	itemTemplate->PrototypeTemplate()->SetNativeDataProperty(
-	     String::NewFromUtf8Literal( isolate, "checked" ), itemWrapper::getChecked, itemWrapper::setChecked
-	     , Local<Value>()
-	     , PropertyAttribute::None, AccessControl::DEFAULT, SideEffectType::kHasNoSideEffect
-	     , SideEffectType::kHasSideEffect );
-#else
 	itemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "checked" )
 	                                                      , FunctionTemplate::New( isolate, itemWrapper::getChecked2 )
 	                                                      , FunctionTemplate::New( isolate, itemWrapper::setChecked2 ) );
 	itemTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "text" )
 	                                                      , FunctionTemplate::New( isolate, itemWrapper::getText )
 	                                                      , FunctionTemplate::New( isolate, itemWrapper::setText ) );
-#endif
 
 	class constructorSet *c = getConstructors( isolate );
 	Local<Function> itemFunc = itemTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
