@@ -8,12 +8,15 @@ export class System {
 	upstream = null; // tracks which system owns this system by upstream relation 
 	#connection = null; // websocket connection to this system(saves IP address)
 	#taskMap = {};
+	#systems = []; // systems beyond this system that were upstreamed to this
 	get address() {
 		return this.#connection.address;
 	}
 	get connection() {
 		return this.#connection;
 	}
+	get systems() { return this.#systems }
+
 	constructor(connection, id, port, system, tasks ) {
 		this.id = id;
 		this.port = port;
