@@ -56,7 +56,7 @@ public:
 	int closing;
 	PTHREAD event_waker;
 	PLIST opening = NULL;
-	PLIST requests = NULL;
+	//PLIST requests = NULL;
 	uv_async_t async = {}; // keep this instance around for as long as we might need to do the periodic callback
 	class constructorSet *c;
 
