@@ -499,6 +499,7 @@ public:
 	wssObject* wss;
 	Isolate *isolate;
 	bool headWritten = false;
+	LOGICAL found_content_length = FALSE;
 public:
 
 	httpObject();
@@ -885,43 +886,42 @@ Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket*
 	return result;
 }
 
-static Local<Value> makeRequest( Isolate *isolate, struct optionStrings *strings, PCLIENT pc, int sslRedirect, wssObject *wss ) {
+static Local<Value> makeRequest(struct HttpState* pHttpState, Isolate *isolate, struct optionStrings *strings, PCLIENT pc, int sslRedirect, wssObject *wss ) {
 	
 	// .url
 	// .socket
 	Local<Context> context = isolate->GetCurrentContext();
 	Local<Object> req = Object::New( isolate );
 	Local<Object> socket;
-	struct HttpState *pHttpState = pc?GetWebSocketHttpState( pc ):wss?GetWebSocketPipeHttpState( wss->wsPipe ):NULL;
-	if( pHttpState ) {
-		struct cgiParams cgi;
-		PTEXT content;
-		cgi.isolate = isolate;
-		cgi.cgi = Object::New( isolate );
-		ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
-		SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
-		SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
-		SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpRequestVersion( pHttpState ) ) );
-		if (content = GetHttpContent(pHttpState)) {
-			SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
-			void* newBuf = NewArray(uint8_t, GetTextSize(content));
-			MemCpy(newBuf, GetText(content), GetTextSize(content));
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
-				GetTextSize(content), releaseBufferBackingStore, NULL);
 
-			SETV( req, strings->bytesString->Get(isolate), ArrayBuffer::New(isolate, bs));
-		} else
-			SETV( req, strings->contentString->Get(isolate), Null(isolate));
-		if (!GetText(GetHttpRequest(pHttpState))) {
-			//lprintf("lost request url");
-			return Null( isolate );
-		}
-		else
-			SETV( req, strings->urlString->Get(isolate)
-				, String::NewFromUtf8(isolate
-					, GetText(GetHttpRequest(pHttpState)),v8::NewStringType::kNormal).ToLocalChecked());
-		//ResetHttpContent(pc, pHttpState);
+	struct cgiParams cgi;
+	PTEXT content;
+	cgi.isolate = isolate;
+	cgi.cgi = Object::New( isolate );
+	ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
+	SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
+	SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
+	SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpRequestVersion( pHttpState ) ) );
+	if (content = GetHttpContent(pHttpState)) {
+		SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
+		void* newBuf = NewArray(uint8_t, GetTextSize(content));
+		MemCpy(newBuf, GetText(content), GetTextSize(content));
+		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
+			GetTextSize(content), releaseBufferBackingStore, NULL);
+
+		SETV( req, strings->bytesString->Get(isolate), ArrayBuffer::New(isolate, bs));
+	} else
+		SETV( req, strings->contentString->Get(isolate), Null(isolate));
+	if (!GetText(GetHttpRequest(pHttpState))) {
+		//lprintf("lost request url");
+		return Null( isolate );
 	}
+	else
+		SETV( req, strings->urlString->Get(isolate)
+			, String::NewFromUtf8(isolate
+				, GetText(GetHttpRequest(pHttpState)),v8::NewStringType::kNormal).ToLocalChecked());
+	//ResetHttpContent(pc, pHttpState);
+
 	SETV( req, strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc, wss->wsPipe, wss, NULL, NULL ) );
 	SETV( req, strings->headerString->Get( isolate ), GETV( socket, strings->headerString->Get( isolate ) ) );
 	return req;
@@ -1209,6 +1209,8 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 		while( eventMessage = (struct wssEvent *)DequeLink( &myself->eventQueue ) ) {
 			Local<Value> argv[3];
 			handled++;
+
+			//lprintf("Queue is smaller? %d  %d   %d", myself->eventQueue->Cnt, myself->eventQueue->Top, myself->eventQueue->Bottom );
 			//lprintf( "handling an event from somewhere %p  %s", GetWebSocketHttpState( eventMessage->pc ), GetText( GetHttpRequest( GetWebSocketHttpState( eventMessage->pc ) ) ) );
 			myself->eventMessage = eventMessage;
 			if( eventMessage->eventType == WS_EVENT_LOW_ERROR ) {
@@ -1269,17 +1271,24 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 #if USE_NETWORK_AGGREGATE 
 					SetTCPWriteAggregation( eventMessage->pc, TRUE );
 #endif
-					AddLink( &myself->requests, httpInternal );
+					//lprintf("Adding request %d", myself->requests?myself->requests->Cnt:-1);
+					//AddLink( &myself->requests, httpInternal );
 					//if( myself->requests->Cnt > 200 )
 					//	DebugBreak();
 					//lprintf( "requests %p is %d", myself->requests, myself->requests->Cnt );
 					//lprintf( "New request..." );
-					argv[0] = makeRequest( isolate, strings, eventMessage->pc, sslRedirect, myself );
-					if( !argv[0]->IsNull() ) {
-						argv[1] = http;
-						Local<Function> cb = Local<Function>::New( isolate, myself->requestCallback );
-						cb->Call( context, eventMessage->_this->_this.Get( isolate ), 2, argv );
-						// and then even after this returns, the write might be pending...
+					struct HttpState* pHttpState = eventMessage->pc ? GetWebSocketHttpState(eventMessage->pc) : myself ? GetWebSocketPipeHttpState(myself->wsPipe) : NULL;
+					if (!pHttpState) {
+						lprintf("Request pHttpState disappeared in WS_EVENT_REQUEST?");
+					}
+					else {
+						argv[0] = makeRequest(pHttpState, isolate, strings, eventMessage->pc, sslRedirect, myself);
+						if (!argv[0]->IsNull()) {
+							argv[1] = http;
+							Local<Function> cb = Local<Function>::New(isolate, myself->requestCallback);
+							cb->Call(context, eventMessage->_this->_this.Get(isolate), 2, argv);
+							// and then even after this returns, the write might be pending...
+						}
 					}
 					//else
 					//	lprintf( "This request was a false alarm, and was empty." );
@@ -2139,6 +2148,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	else {
 		uintptr_t psvServer = WebSocketGetServerData( pc );
 		wssObject *wss = (wssObject*)psvServer;
+		if(0)
 		if( wss ) {	
 			httpObject *req;
 			INDEX idx;
@@ -2146,18 +2156,18 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 			LOGICAL requested = FALSE;
 			// close on wssObjectEvent; may have served HTTP requests
 			//lprintf( "requests %p is %d", wss->requests, wss->requests?wss->requests->Cnt:0 );
-			LIST_FORALL( wss->requests, idx, httpObject *, req ) {
+			//LIST_FORALL( wss->requests, idx, httpObject *, req ) {
 				//tot++;
-				if( req->pc == pc ) {
-					//lprintf( "Removing request from wss %d %d", idx, tot );
-					SetLink( &wss->requests, idx, NULL );
-					requested = TRUE;
+			//	if( req->pc == pc ) {
+			//		lprintf( "Removing request from wss %d %d", idx );
+					//SetLink( &wss->requests, idx, NULL );
+			//		requested = TRUE;
 					//tot--;
 					//return;
-				}
-			}
-			if( requested ) 
-				return;
+				//}
+			//}
+			//if( requested ) 
+			//	return;
 		}
 		//DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
@@ -2349,10 +2359,11 @@ httpObject::httpObject() {
 }
 
 httpObject::~httpObject() {
-	INDEX idx = FindLink( &this->wss->requests, this );
-	if( idx != INVALID_INDEX ) {
-		SetLink( &wss->requests, idx, NULL );
-	}
+	//INDEX idx = FindLink( &this->wss->requests, this );
+	//lprintf("Http object garbage collected get to remove it...");
+	//if( idx != INVALID_INDEX ) {
+	//	SetLink( &wss->requests, idx, NULL );
+	//}
 	VarTextDestroy( &pvtResult );
 }
 
@@ -2396,6 +2407,10 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Value> key = GETN( keys, i );
 				Local<Value> val = GETV( headers, key );
 				String::Utf8Value keyname( USE_ISOLATE( isolate ) key );
+				if (StrCaseCmp(*keyname, "content-length") == 0) {
+					obj->found_content_length = TRUE;
+					//lprintf( "Found content-length header, will not add one." );
+				}
 				String::Utf8Value keyval( USE_ISOLATE( isolate ) val );
 				vtprintf( obj->pvtResult, "%s:%s\r\n", *keyname, *keyval );
 			}
@@ -2414,7 +2429,6 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	httpObject* obj = Unwrap<httpObject>( args.This() );
 	char* content = NULL;
 	size_t contentLen = 0;
-	LOGICAL found_content_length = FALSE;
 	int include_close = 1;
 	struct HttpState *pHttpState = obj->pc?GetWebSocketHttpState( obj->pc ):obj->wss?GetWebSocketPipeHttpState( obj->wss->wsPipe ):NULL;
 	if( pHttpState ) { // not sure how this WOULDn't be valid...
@@ -2426,9 +2440,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		INDEX idx;
 		struct HttpField *header;
 		LIST_FORALL( headers, idx, struct HttpField *, header ) {
-			if( StrCaseCmp( GetText( header->name ), "content-length" ) == 0 ) {
-				found_content_length = TRUE;
-			}
+			// // this is checking headers on the request....
+			//if( StrCaseCmp( GetText( header->name ), "content-length" ) == 0 ) {
+			//   found_content_length = TRUE;
+			//}
 			if( StrCmp( GetText( header->name ), "Connection" ) == 0 ) {
 				if( StrCaseCmp( GetText( header->value ), "keep-alive" ) == 0 ) {
 					include_close = 0;
@@ -2439,9 +2454,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			vtprintf( obj->pvtResult, "Connection: keep-alive\r\n" );
 	}
 	if( args.Length() > 0 && !args[0]->IsNull() ) {
+		//lprintf("Considering adding content-length %d", obj->found_content_length );
 		if( args[0]->IsString() ) {
 			String::Utf8Value body( USE_ISOLATE( isolate ) args[0] );
-			if( !found_content_length )
+			if( !obj->found_content_length )
 				vtprintf( obj->pvtResult, "content-length:%d\r\n", body.length() );
 			vtprintf( obj->pvtResult, "\r\n" );
 			vtprintf( obj->pvtResult, "%*.*s", body.length(), body.length(), *body );
@@ -2449,7 +2465,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		else if( args[0]->IsUint8Array() ) {
 			Local<Uint8Array> body = args[0].As<Uint8Array>();
 			Local<ArrayBuffer> bodybuf = body->Buffer();
-			if( !found_content_length )
+			if( !obj->found_content_length )
 				vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
 #if ( NODE_MAJOR_VERSION >= 14 )
@@ -2471,7 +2487,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		}
 		else if( args[0]->IsArrayBuffer() ) {
 			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-			if( !found_content_length )
+			if( !obj->found_content_length )
 				vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
 			vtprintf( obj->pvtResult, "\r\n" );
 #if ( NODE_MAJOR_VERSION >= 14 )
@@ -2601,7 +2617,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						SetNetworkWriteComplete( obj->pc, webSocketWriteComplete );
 					}
 
-
+					struct HttpState* pHttpState = obj->pc ? GetWebSocketHttpState(obj->pc) : obj ? GetWebSocketPipeHttpState(obj->wss->wsPipe) : NULL;
+					if (!pHttpState) {
+						lprintf("Http State was gone even before sending the request...");
+					}
 					(*pevt).eventType = WS_EVENT_REQUEST;
 					//(*pevt).waiter = MakeThread();
 					(*pevt).pc = obj->pc;
@@ -2647,13 +2666,15 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 				pevt->pc = NULL;
 			}
 		}
+		/*
 		LIST_FORALL( wss->requests, idx, httpObject *, req ) {
 			if( req->pc == pc ) {
-				//lprintf( "Removing request from wss %d %d", idx, tot );
+				lprintf( "Removing request from wss %d", idx );
 				SetLink( &wss->requests, idx, NULL );
 				requested = TRUE;
 			}
 		}
+		*/
 		if( requested )
 			return;
 	}
@@ -2735,6 +2756,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
 		else
 			uv_async_send( &wss->async );
+
 		//while (!(*pevt).done) WakeableSleep(SLEEP_FOREVER);
 		//lprintf("queued and evented  request event to JS");
 	} else {
