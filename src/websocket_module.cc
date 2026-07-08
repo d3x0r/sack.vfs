@@ -1279,7 +1279,11 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 					//lprintf( "New request..." );
 					struct HttpState* pHttpState = eventMessage->pc ? GetWebSocketHttpState(eventMessage->pc) : myself ? GetWebSocketPipeHttpState(myself->wsPipe) : NULL;
 					if (!pHttpState) {
-						lprintf("Request pHttpState disappeared in WS_EVENT_REQUEST?");
+						lprintf("Request pHttpState disappeared in WS_EVENT_REQUEST? (closing connection)%p", eventMessage->pc);
+						// should generate an end...
+						if (eventMessage->pc)
+							RemoveClientEx(eventMessage->pc, 0, 1);
+
 					}
 					else {
 						argv[0] = makeRequest(pHttpState, isolate, strings, eventMessage->pc, sslRedirect, myself);
@@ -2096,7 +2100,7 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 
 static void webSockServerCloseEvent( wssObject *wss ) {
 	struct wssEvent *pevt = GetWssEvent();
-	lprintf( "Server Websocket closed(almost never happens); post to javascript %p", wss, wss->pc );
+	//lprintf( "Server Websocket closed(almost never happens); post to javascript %p %p", wss, wss->pc );
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wss;
 	wss->closing = 1;
