@@ -43,9 +43,7 @@ message( "NODE VERSION: ${NODE_VERSION_MAJOR} ${NODE_VERSION_MINOR} ${NODE_VERSI
 #message( "WHAT? ${NODE_RUNTIMEVERSION} ${NONDE_VERSION_MAJOR}" )
 message( "COMPILER: ${CMAKE_CXX_COMPILER_ID}" )
 if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
-	add_definitions( -Wno-unused-result -Wno-address-of-packed-member -Wno-parentheses -Wno-empty-body -Wno-switch -Wno-null-conversion -Wno-unused-parameter )
-	add_definitions( -Wno-deprecated-volatile) 
-	add_definitions( -Wno-varargs )
+	add_definitions( -Wno-unused-result -Wno-address-of-packed-member )
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 
@@ -54,7 +52,7 @@ if( MSVC )
   #add_definitions( -wd4996 )
 # 4197 - top-level volatile in cast is ignored (so?)
 # 4090 - 'function': different 'volatile' qualifiers (usually don't care)
-  add_definitions( -wd4197 -wd4090 )
+#  add_definitions( -wd4197 -wd4090 )
 
 
 
@@ -599,8 +597,8 @@ if( CMAKE_COMPILER_IS_GNUCC )
 		set( OLD_CPP_SOURCE_FLAGS "" )
 	endif()
 	message( "compile flgs are NOTFOUND?  ${OLD_CPP_SOURCE_FLAGS}" )
-	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
-			COMPILE_FLAGS "${OLD_CPP_SOURCE_FLAGS} -Wno-volatile" )
+#	set_source_files_properties( ${CPP_SOURCES} PROPERTIES 
+#			COMPILE_FLAGS "${OLD_CPP_SOURCE_FLAGS} -Wno-volatile" )
 
    set_target_properties(${PROJECT} PROPERTIES COMPILE_FLAGS "-Wno-unused-result -Wno-address-of-packed-member -Wno-stringop-overflow -Wno-format-truncation" )
 endif( CMAKE_COMPILER_IS_GNUCC )
