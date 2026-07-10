@@ -39,6 +39,14 @@ function uExpress() {
 				req_maps.push( { expr:a, cb:b } );
 		},
 		handle( req, res) {
+			if( typeof req.url === "undefined" ) {
+				console.log( "Bad request:", req );
+				return false;
+			}
+			if( typeof req.url === "null" ){
+				console.log( "Bad request:", req );
+				return false;
+			}
 			const parts = req.url.split("?");
 			const url = unescape(parts[0]);
 			const filepath = url;//path.dirname(url)+((path.dirname(url)&&path.basename(url))?"/":"")+path.basename(url);
@@ -74,3 +82,4 @@ function uExpress() {
     }
 }
 
+export default uExpress;

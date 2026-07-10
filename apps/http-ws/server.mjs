@@ -143,8 +143,17 @@ export function getRequestHandler( serverOpts ) {
 	const resourcePath = serverOpts.resourcePath || process.env.RESOURCE_PATH || ".";
 	const commonPath = serverOpts?.commonPath || process.env.COMMON_PATH || ".";
 	const npm_path = serverOpts.npmPath || process.env.NPM_PATH || ".";
-console.log( "basic handler:", resourcePath, npm_path );
+	//console.log( "basic handler:", resourcePath, npm_path );
 	return function( req, res ) {
+
+		if( typeof req.url === "undefined" ) {
+			console.log( "Bad request:", req );
+			return false;
+		}
+		if( typeof req.url === "null" ){
+			console.log( "Bad request:", req );
+			return false;
+		}
 		/*
 			this is the request remote address if required....
 		const ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
