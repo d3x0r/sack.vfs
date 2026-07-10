@@ -362,7 +362,7 @@ private:
 			if( e->changes ) {
 				if( long0 > longest0 ) longest0 = long0;
 				if( long1 > longest1 ) longest1 = long1;
-				if( long0 = e->out0 ) {
+				if( ( long0 = e->out0 ) ) {
 					is0 = 1;
 					is1 = 0;
 				} 

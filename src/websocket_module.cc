@@ -902,7 +902,7 @@ static Local<Value> makeRequest(struct HttpState* pHttpState, Isolate *isolate, 
 	SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
 	SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
 	SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpRequestVersion( pHttpState ) ) );
-	if (content = GetHttpContent(pHttpState)) {
+	if( (content = GetHttpContent(pHttpState)) ) {
 		SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
 		void* newBuf = NewArray(uint8_t, GetTextSize(content));
 		MemCpy(newBuf, GetText(content), GetTextSize(content));
@@ -987,11 +987,13 @@ static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, htt
 	struct HTTPRequestOptions *opts = myself->opts;
 	{
 		struct httpRequestEvent* eventMessage;
-		while( eventMessage = (struct httpRequestEvent*)DequeLink( &myself->eventQueue ) ) {
+		while( ( eventMessage = (struct httpRequestEvent*)DequeLink( &myself->eventQueue ) ) ) {
 			Local<Value> argv[1];
 			//Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
-
+			default:
+				lprintf("Unhandled event type dispatched to %s %d", __func__, eventMessage->eventType);
+				break;
 			case WS_EVENT_RESPONSE:
 			{
 				HTTPState state;
@@ -1090,10 +1092,14 @@ static void wssiAsyncMsg__( Isolate *isolate, Local<Context> context, wssiObject
 		struct wssiEvent* eventMessage;
 		INDEX idx;
 		callbackFunction* callback;
-		while( eventMessage = ( struct wssiEvent* )DequeLink( &myself->eventQueue ) ) {
+		while( ( eventMessage = ( struct wssiEvent* )DequeLink( &myself->eventQueue ) ) ) {
 			Local<Value> argv[2];
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
+			default:
+				lprintf("Unhandled event type dispatched to %s %d", __func__, eventMessage->eventType);
+				break;
+
 			case WS_EVENT_OPEN:
 				if( !myself->thrown && !myself->server->openCallback.IsEmpty() ) {
 					Local<Function> cb = Local<Function>::New( isolate, myself->server->openCallback );
@@ -1206,7 +1212,7 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 	int handled = 0;
 	{
 		struct wssEvent *eventMessage;
-		while( eventMessage = (struct wssEvent *)DequeLink( &myself->eventQueue ) ) {
+		while( ( eventMessage = (struct wssEvent *)DequeLink( &myself->eventQueue ) ) ) {
 			Local<Value> argv[3];
 			handled++;
 
@@ -1496,9 +1502,12 @@ static void wscAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wscObje
 	wscEvent *eventMessage;
 	{
 		Local<Value> argv[2];
-		while( eventMessage = (struct wscEvent*)DequeLink( &wsc->eventQueue ) ) {
+		while( ( eventMessage = (struct wscEvent*)DequeLink( &wsc->eventQueue ) ) ) {
 			Local<ArrayBuffer> ab;
 			switch( eventMessage->eventType ) {
+			default:
+				lprintf("Unhandled event type dispatched to %s %d", __func__, eventMessage->eventType);
+				break;
 			case WS_EVENT_OPEN:
 				//cb = Local<Function>::New( isolate, wsc->openCallback );
 				//if( !cb.IsEmpty() ) 
@@ -2152,27 +2161,6 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	else {
 		uintptr_t psvServer = WebSocketGetServerData( pc );
 		wssObject *wss = (wssObject*)psvServer;
-		if(0)
-		if( wss ) {	
-			httpObject *req;
-			INDEX idx;
-			//int tot = 0;
-			LOGICAL requested = FALSE;
-			// close on wssObjectEvent; may have served HTTP requests
-			//lprintf( "requests %p is %d", wss->requests, wss->requests?wss->requests->Cnt:0 );
-			//LIST_FORALL( wss->requests, idx, httpObject *, req ) {
-				//tot++;
-			//	if( req->pc == pc ) {
-			//		lprintf( "Removing request from wss %d %d", idx );
-					//SetLink( &wss->requests, idx, NULL );
-			//		requested = TRUE;
-					//tot--;
-					//return;
-				//}
-			//}
-			//if( requested ) 
-			//	return;
-		}
 		//DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
 		if( ( (*pevt).waiter = MakeThread() ) != wss->c->thread )  {
@@ -2658,27 +2646,16 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	//uintptr_t psvServer = WebSocketGetServerData( pc );
 	if( wss ) {
-		httpObject *req;
 		INDEX idx;
 		LOGICAL requested = FALSE;
 		struct wssEvent *pevt;
 		// close on wssObjectEvent; may have served HTTP requests
-		//lprintf( "Are there outstanding requests?" );
-		for( idx = 0; pevt = (struct wssEvent *)PeekQueueEx( wss->eventQueue, idx ); idx++ ) {
+		for( idx = 0; ( pevt = (struct wssEvent *)PeekQueueEx( wss->eventQueue, idx ) ); idx++ ) {
 			if (pevt->pc == pc) {
 				//lprintf( "Found pending request...%d", idx);
 				pevt->pc = NULL;
 			}
 		}
-		/*
-		LIST_FORALL( wss->requests, idx, httpObject *, req ) {
-			if( req->pc == pc ) {
-				lprintf( "Removing request from wss %d", idx );
-				SetLink( &wss->requests, idx, NULL );
-				requested = TRUE;
-			}
-		}
-		*/
 		if( requested )
 			return;
 	}
@@ -2774,7 +2751,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 	return 0;
 }
 
-static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdentifier error, ... ) {
+static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError error, ... ) {
 	wssObject *wss = (wssObject*)psv;
 	va_list args;
 	struct wssEvent *pevt = GetWssEvent();
@@ -2813,7 +2790,7 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkEr
 
 	if( ( *pevt ).data.error.fallback_ssl ) {
 		// increment this, so the caller can recognize the fallback happened...
-		( *pevt ).data.error.fallback_ssl++;
+		( *pevt ).data.error.fallback_ssl = (*pevt).data.error.fallback_ssl + 1;
 		ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
 	} else
 		lprintf( "didn't end secure on %p", pc );
@@ -3568,11 +3545,12 @@ void wssiObject::close( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wssiObject *obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 	if( args.Length() == 0 ) {
-		if( obj->pc && !obj->closed )
+		if( obj->pc && !obj->closed ) {
 			if( obj->pc )
 				WebSocketClose( obj->pc, 1000, NULL );
 			else if( obj->wsPipe )
 				WebSocketPipeClose( obj->wsPipe, 1000, NULL );
+		}
 	}
 	if( args[0]->IsNumber() ) {
 		int code = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );

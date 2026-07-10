@@ -6,7 +6,7 @@ export function getRoot( min ) {
 	let levels = (typeof(min )=== "number")?min:0;
 	do {
 		let s = '';
-		for( let l = 0; l <= levels; l++ ) s += s?"/..":"..";
+		for( let l = 0; l < levels; l++ ) s += s?"/..":"..";
 		if( !s ) s = '.';
 		const d = disk.dir( s, "package.json" );
 		if( d.length ) {

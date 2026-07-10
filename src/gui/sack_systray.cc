@@ -23,7 +23,7 @@ class itemWrapper : public node::ObjectWrap {
 		if( args[0]->IsBoolean() ) {
 			wrapper->checked = args[ 0 ].As<Boolean>()->BooleanValue( args.GetIsolate() );
 			CheckSystrayMenuItem( wrapper->id, wrapper->checked );
-			// MakeSystrayEvent( wrapper->isolate, Event_Systray_MenuFunction, wrapper );
+			// MakeSystrayEvent( Event_Systray_MenuFunction, wrapper->isolate, wrapper );
 		} else {
 			args.GetIsolate()->ThrowException(
 			     Exception::TypeError( String::NewFromUtf8Literal( args.GetIsolate(), "Checked must be a boolean" ) ) );
@@ -53,7 +53,7 @@ class itemWrapper : public node::ObjectWrap {
 				Release( wrapper->text );
 			wrapper->text = StrDup( *text );
 			SetSystrayMenuItemText( wrapper->id, *text );
-			// MakeSystrayEvent( wrapper->isolate, Event_Systray_MenuFunction, wrapper );
+			// MakeSystrayEvent( Event_Systray_MenuFunction, wrapper->isolate, wrapper );
 		} else {
 			args.GetIsolate()->ThrowException(
 			     Exception::TypeError( String::NewFromUtf8Literal( args.GetIsolate(), "Text must be a string" ) ) );
@@ -65,7 +65,7 @@ class itemWrapper : public node::ObjectWrap {
 		if( value->IsBoolean() ) {
 			wrapper->checked = value.As<Boolean>()->BooleanValue( args.GetIsolate() );
 			CheckSystrayMenuItem( wrapper->id, wrapper->checked );
-			//MakeSystrayEvent( wrapper->isolate, Event_Systray_MenuFunction, wrapper );
+			//MakeSystrayEvent( Event_Systray_MenuFunction, wrapper->isolate, wrapper );
 		} else {
 			args.GetIsolate()->ThrowException(
 			     Exception::TypeError( String::NewFromUtf8Literal( args.GetIsolate(), "Checked must be a boolean" ) ) );
@@ -85,7 +85,7 @@ class itemWrapper : public node::ObjectWrap {
 		if( value->IsBoolean() ) {
 			wrapper->checked = value.As<Boolean>()->BooleanValue( args.GetIsolate() );
 			CheckSystrayMenuItem( wrapper->id, wrapper->checked );
-			//MakeSystrayEvent( wrapper->isolate, Event_Systray_MenuFunction, wrapper );
+			//MakeSystrayEvent( Event_Systray_MenuFunction, wrapper->isolate, wrapper );
 		} else {
 			args.GetIsolate()->ThrowException(
 			     Exception::TypeError( String::NewFromUtf8Literal( args.GetIsolate(), "Checked must be a boolean" ) ) );
@@ -111,7 +111,7 @@ enum systrayEvents {
 	Event_Systray_DoubleClick,
 	Event_Systray_MenuFunction,
 	Event_Systray_Close_Loop,
-	Event_Systray_,
+	//Event_Systray_,
 };
 
 struct systrayEvent {
@@ -137,7 +137,7 @@ static struct sytrayLocal {
 
 } systrayLocal;
 
-static uintptr_t MakeSystrayEvent( Isolate* isolate, enum systrayEvents type, ... );
+static uintptr_t MakeSystrayEvent(enum systrayEvents type, Isolate* isolate,  ... );
 
 
 static void asyncmsg( uv_async_t* handle ) {
@@ -170,6 +170,9 @@ static void asyncmsg( uv_async_t* handle ) {
 			break;
 	
 		switch( evt->type ) {
+		case Event_Systray_Close_Loop:
+			// disableEventLoop();
+			break;
 		case Event_Systray_DoubleClick:
 			if( wrapper ) {
 				if( !wrapper->cb.IsEmpty() ) {
@@ -209,22 +212,11 @@ static void enableEventLoop( Isolate *isolate ) {
 	}
 }
 
-#if 0
-static void disableEventLoop( void ) {
-	if( systrayLocal.eventLoopRegistered ) {
-		if( !(--systrayLocal.eventLoopEnables) ) {
-			systrayLocal.eventLoopRegistered = FALSE;
-			MakeSystrayEvent( Event_Systray_Close_Loop );
-		}
-	}
-}
-#endif
-
-static uintptr_t MakeSystrayEvent( Isolate *isolate, enum systrayEvents type, ... ) {
+static uintptr_t MakeSystrayEvent(enum systrayEvents type, Isolate *isolate, ... ) {
 	systrayEvent* pe;
 #define e (*pe)
 	va_list args;
-	va_start( args, type );
+	va_start( args, isolate );
 	if( type != Event_Systray_Close_Loop )
 		enableEventLoop( isolate );
 	pe = GetFromSet( SS_EVENT, &systrayLocal.event_pool );
@@ -249,12 +241,12 @@ static uintptr_t MakeSystrayEvent( Isolate *isolate, enum systrayEvents type, ..
 
 
 static void CPROC menuCallback( uintptr_t p) {
-	MakeSystrayEvent( ((itemWrapper*)p)->isolate, Event_Systray_MenuFunction, p );
+	MakeSystrayEvent( Event_Systray_MenuFunction, ((itemWrapper*)p)->isolate, p );
 }
 
 static void CPROC doubleClickCallback( uintptr_t psv ) {
 	clickWrapper *wrapper = (clickWrapper *)psv; 
-	MakeSystrayEvent( wrapper->isolate, Event_Systray_DoubleClick, psv );
+	MakeSystrayEvent( Event_Systray_DoubleClick, wrapper->isolate, psv );
 }
 
 void setSystrayIcon( const v8::FunctionCallbackInfo<Value>& args ) {

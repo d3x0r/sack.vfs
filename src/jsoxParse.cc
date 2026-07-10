@@ -8,7 +8,7 @@
 //#define DEBUG_SET_FIELDCB
 //#define JSOX_USE_TIMING
 
-static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
+static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive );
 
 #if defined( JSOX_USE_TIMING )
@@ -1029,7 +1029,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 	}
 	return result;
 }
-static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
+static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
 	Isolate* isolate = revive->isolate;
 	Local<Context> context = revive->context;
 	struct jsox_value_container *val;
@@ -1391,13 +1391,14 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 				}
 				if( revive->failed )
 					return;
-				if( !sub_v->IsUndefined() )
+				if( !sub_v->IsUndefined() ) {
 					if( val->name ) {
 						SETV( o, revive->fieldName, sub_v );
 					}
 					else {
 						SETN( o, currentIndex, sub_v );
 					}
+				}
 			}
 			break;
 		}
@@ -1407,7 +1408,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 	revive->refObject = priorRefObject;
 }
 
-Local<Value> convertMessageToJS2( PDATALIST msg, struct reviver_data *revive ) {
+Local<Value> convertMessageToJS2( PNVDATALIST msg, struct reviver_data *revive ) {
 	Local<Object> o;
 
 	struct jsox_value_container *val = (struct jsox_value_container *)GetDataItem( &msg, 0 );

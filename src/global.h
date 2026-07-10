@@ -640,8 +640,8 @@ struct reviver_data {
 	}
 };
 
-Local<Value> convertMessageToJS( PDATALIST msg_data, struct reviver_data *reviver );
-Local<Value> convertMessageToJS2( PDATALIST msg_data, struct reviver_data *reviver );
+Local<Value> convertMessageToJS( PNVDATALIST msg_data, struct reviver_data *reviver );
+Local<Value> convertMessageToJS2( PNVDATALIST msg_data, struct reviver_data *reviver );
 
 struct prototypeHolder {
 	Persistent<Value> *cls;
@@ -734,7 +734,7 @@ struct command_line_result {
 
 #endif
 // returns a PLIST of struct command_line_results
-PLIST GetProcessCommandLines( const char* process, int pid );
+PNVLIST GetProcessCommandLines( const char* process, int pid );
 int GetProcessParent( int pid );
 
 void ReleaseCommandLineResults( PLIST* ppResults );

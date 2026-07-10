@@ -1813,7 +1813,7 @@ void sqlUserAsyncMsgEx_( Isolate *isolate , Local<Context> context, struct sql_o
 	pClosing[0] = FALSE;
 	//LOGICAL closing = FALSE;
 	struct userMessage *msg;
-	while( msg  = (struct userMessage*)DequeLink( &myself->messages ) ) {
+	while( ( msg  = (struct userMessage*)DequeLink( &myself->messages ) ) ) {
 		if (msg->mode == UserMessageModes::Query) {
 			if( msg->params->error ) {
 				struct query_thread_params * const params = msg->params;

@@ -67,7 +67,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 
 static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Object * ssh ) {
 	SSH2_Event* event;
-	while( event = (SSH2_Event*)DequeLink( &ssh->eventQueue ) ) {
+	while( ( event = (SSH2_Event*)DequeLink( &ssh->eventQueue ) ) ) {
 		switch( event->code ) {
 			default:
 				lprintf( "Unhandled event: %d", event->code );

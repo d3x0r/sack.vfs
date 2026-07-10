@@ -489,7 +489,7 @@ static void udpAsyncMsg_( Isolate *isolate, Local<Context> context, udpObject*ob
 
 	{
 		Local<Value> argv[2];
-		while( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) {
+		while( ( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) ) {
 			Local<Function> cb;
 			Local<Object> ab;
 			switch( eventMessage->eventType ) {
@@ -855,7 +855,7 @@ static void tcpAsyncMsg_( Isolate *isolate, Local<Context> context, tcpObject * 
 
 	{
 		Local<Value> argv[2];
-		while( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) {
+		while( ( eventMessage = (struct networkEvent*)DequeLink( &obj->eventQueue ) ) ) {
 			Local<Function> cb;
 			Local<Object> ab;
 			//lprintf( "Handle posted message?%d %p", eventMessage->eventType, &obj->async );
@@ -1083,10 +1083,11 @@ void TCP_Notify( uintptr_t psv, PCLIENT pcNew ) {
 	//lprintf( "Notified of connect; waited for callback...");
 }
 
-static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdentifier error, ... ) {
+// redirect into this for variable args...
+static void sockLowError( uintptr_t psv, PCLIENT pc, SackNetworkError error, ... ) {
 	class tcpObject *obj = (class tcpObject*)psv;
 	va_list args;
-	va_start( args, error );
+	va_start( args, error);
 	//lprintf( "Low Error: %p %p %p %d", pc, obj->pc, obj, error );
 	// auto handling callback...
 	switch( error ) {
@@ -1118,7 +1119,6 @@ static void sockLowError( uintptr_t psv, PCLIENT pc, enum SackNetworkErrorIdenti
 		break;
 	}
 }
-
 
 tcpObject::tcpObject( struct tcpOptions *opts ) {
 	if( !opts ) {

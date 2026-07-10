@@ -75,7 +75,7 @@ static void monitorAsyncMsg__( Isolate *isolate, Local<Context> context, changeT
 	struct changeEvent *event;
 	Local<Value> argv[1];
 	Local<Object> o; 
-	while( event = (struct changeEvent*)DequeLink( &changes->events ) ) {
+	while( ( event = (struct changeEvent*)DequeLink( &changes->events ) ) ) {
 		switch( event->event ) {
 		case FileMonitor_Event_Change:
 

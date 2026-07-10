@@ -1622,6 +1622,7 @@ _CONTAINER_NAMESPACE
 	POINTER pNode[1];
 } LIST;
 typedef struct LinkBlock volatile* volatile PLIST;
+typedef struct LinkBlock volatile* PNVLIST;
 _LINKLIST_NAMESPACE_END
 #ifdef __cplusplus
 using namespace sack::containers::list;
@@ -1631,6 +1632,7 @@ _DATALIST_NAMESPACE
 typedef struct DataBlock  DATALIST;
 /* A typedef of a pointer to a DATALIST struct DataList. */
 typedef struct DataBlock volatile * volatile PDATALIST;
+typedef struct DataBlock volatile * PNVDATALIST;
 /* Data Blocks are like LinkBlocks, and store blocks of data in
    slab format. If the count of elements exceeds available, the
    structure is grown, to always contain a continuous array of
@@ -1675,6 +1677,7 @@ _DATALIST_NAMESPACE_END
 	POINTER pNode[1];
 } LINKSTACK;
 typedef struct LinkStack volatile* volatile PLINKSTACK;
+typedef struct LinkStack volatile* PNVLINKSTACK;
 /* A Stack that stores information in an array of structures of
    known size.
    Remarks
@@ -1698,6 +1701,7 @@ typedef struct DataListStack
 	uint8_t      data[1];
 } DATASTACK;
 typedef struct DataListStack volatile* volatile PDATASTACK;
+typedef struct DataListStack volatile* PNVDATASTACK;
 /* A queue which contains pointers to user objects. If the queue
    is filled to capacity and new queue is allocated, and all
    existing pointers are transferred.                            */
@@ -1721,6 +1725,7 @@ typedef struct LinkQueue
 	POINTER pNode[2];
 } LINKQUEUE;
 typedef struct LinkQueue volatile* volatile PLINKQUEUE;
+typedef struct LinkQueue volatile* PNVLINKQUEUE;
 /* A queue of structure elements.
    Remarks
    The size of each element must be known at stack creation
@@ -1752,6 +1757,7 @@ typedef struct DataQueue
 	uint8_t      data[1];
 } DATAQUEUE;
 typedef struct DataQueue volatile* volatile PDATAQUEUE;
+typedef struct DataQueue volatile* PNVDATAQUEUE;
 /* A mostly obsolete function, but can return the status of
    whether all initially scheduled startups are completed. (Or
    maybe whether we are not complete, and are processing
@@ -1790,7 +1796,8 @@ _CONTAINER_NAMESPACE_END
 namespace list {
 #  endif
 //--------------------------------------------------------
-TYPELIB_PROC  PLIST TYPELIB_CALLTYPE        CreateListEx   ( DBG_VOIDPASS );
+TYPELIB_PROC  PNVLIST TYPELIB_CALLTYPE        CreateListEx   ( DBG_VOIDPASS );
+TYPELIB_PROC  PNVLIST TYPELIB_CALLTYPE        CreateList2Ex(PLIST *ppList DBG_PASS);
 TYPELIB_PROC  void TYPELIB_CALLTYPE        MakeListEx   ( PLIST *pList DBG_PASS );
 /* Destroy a PLIST. */
 TYPELIB_PROC  void TYPELIB_CALLTYPE        DeleteListEx   ( PLIST *plist DBG_PASS );
@@ -1839,14 +1846,14 @@ TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        FindLink       ( PLIST *pList, POINT
 	Return Value
 	   number of things in the list.
 */
-TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetLinkCount   ( PLIST pList );
+TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetLinkCount   ( PNVLIST pList );
 #define GetLinkCount(l) GetLinksUsed(&(l))
 TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetLinksUsed( PLIST *pList );
 /* pack items in the list, moving items from the end into any empty spots
  that are found.
    return the count of items in the list.
 */
-TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        PackLinks( PLIST pList );
+TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        PackLinks( PNVLIST pList );
 /* Uses FindLink on the list for the value to delete, and then
    sets the index of the found link to NULL.
    Parameters
@@ -2018,7 +2025,8 @@ namespace data_list {
 /* Creates a data list which hold data elements of the specified
    size.
                                                                  */
-TYPELIB_PROC  PDATALIST TYPELIB_CALLTYPE  CreateDataListEx ( uintptr_t nSize DBG_PASS );
+TYPELIB_PROC  PNVDATALIST TYPELIB_CALLTYPE  CreateDataListEx ( uintptr_t nSize DBG_PASS );
+TYPELIB_PROC  PNVDATALIST TYPELIB_CALLTYPE  CreateDataList2Ex( PDATALIST *ppdl, uintptr_t nSize DBG_PASS);
 /* <combine sack::containers::data_list::DeleteDataList>
    \ \                                                   */
 TYPELIB_PROC  void TYPELIB_CALLTYPE       DeleteDataListEx ( PDATALIST *ppdl DBG_PASS );
@@ -2128,7 +2136,15 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE       EmptyDataList ( PDATALIST *ppdl );
                allocation of the stack.
    Returns
    Pointer to a new link stack.                               */
-TYPELIB_PROC  PLINKSTACK TYPELIB_CALLTYPE   CreateLinkStackEx( DBG_VOIDPASS );
+TYPELIB_PROC  PNVLINKSTACK TYPELIB_CALLTYPE   CreateLinkStackEx( DBG_VOIDPASS );
+/* Creates a new stack for links (POINTERS).
+   Parameters
+   ppls :       address of a link stack pointer
+   DBG_PASS :  Debug file and line information to use for the
+			   allocation of the stack.
+   Returns
+   Pointer to a new link stack.                               */
+TYPELIB_PROC  PNVLINKSTACK TYPELIB_CALLTYPE   CreateLinkStack2Ex(PLINKSTACK *ppls DBG_PASS);
 /* Creates a new stack for links (POINTERS).  Link stack has a limited number of entries.
     When the stack fills, the oldest item on the stack is removed automatically.
 	 Parameters
@@ -2138,7 +2154,8 @@ TYPELIB_PROC  PLINKSTACK TYPELIB_CALLTYPE   CreateLinkStackEx( DBG_VOIDPASS );
    Returns
    Pointer to a new link stack.                               */
          // creates a link stack with maximum entries - any extra entries are pushed off the bottom into NULL
-TYPELIB_PROC  PLINKSTACK TYPELIB_CALLTYPE      CreateLinkStackLimitedEx        ( int max_entries  DBG_PASS );
+TYPELIB_PROC  PNVLINKSTACK TYPELIB_CALLTYPE      CreateLinkStackLimitedEx        ( int max_entries  DBG_PASS );
+TYPELIB_PROC  PNVLINKSTACK TYPELIB_CALLTYPE      CreateLinkStackLimited2Ex( PLINKSTACK *ppls, int max_entries  DBG_PASS);
 /* <combine sack::containers::link_stack::CreateLinkStackLimitedEx@int max_entries>
    Macro to pass default debug file and line information.                           */
 #define CreateLinkStackLimited(n) CreateLinkStackLimitedEx(n DBG_SRC)
@@ -2211,7 +2228,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE   MakeDataStackEx( PDATASTACK *pds, size_t s
    Parameters
    size :       size of elements in the stack
    DBG_PASS :  debug file and line information.                 */
-TYPELIB_PROC  PDATASTACK TYPELIB_CALLTYPE   CreateDataStackEx( size_t size DBG_PASS );
+TYPELIB_PROC  PNVDATASTACK TYPELIB_CALLTYPE   CreateDataStackEx( size_t size DBG_PASS );
 /* Creates a data stack for data element of the specified size.
    Parameters
    size :       size of items in the stack
@@ -2223,7 +2240,14 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE   MakeDataStackLimitedEx( PDATASTACK *pds, s
    size :       size of items in the stack
    count :      max items in stack (oldest gets deleted)
    DBG_PASS :  debug file and line information.                 */
-TYPELIB_PROC PDATASTACK TYPELIB_CALLTYPE CreateDataStackLimitedEx( size_t size, INDEX count DBG_PASS );
+TYPELIB_PROC PNVDATASTACK TYPELIB_CALLTYPE CreateDataStackLimitedEx( size_t size, INDEX count DBG_PASS );
+/* Creates a data stack for data element of the specified size.
+   Parameters
+   ppds :       address of a data stack pointer
+   size :       size of items in the stack
+   count :      max items in stack (oldest gets deleted)
+   DBG_PASS :  debug file and line information.                 */
+TYPELIB_PROC PNVDATASTACK TYPELIB_CALLTYPE CreateDataStackLimited2Ex(PDATASTACK *ppds, size_t size, INDEX count DBG_PASS);
 /* Destroys a data stack.
    Parameters
    pds :       address of a data stack pointer. The pointer will
@@ -2287,7 +2311,7 @@ TYPELIB_PROC  void TYPELIB_CALLTYPE   MakeLinkQueueEx( PLINKQUEUE *into DBG_PASS
 /* Creates a <link sack::containers::PLINKQUEUE, LinkQueue>. In
    debug mode, gets passed the current source and file so it can
    blame the user for the allocation.                            */
-TYPELIB_PROC  PLINKQUEUE TYPELIB_CALLTYPE   CreateLinkQueueEx( DBG_VOIDPASS );
+TYPELIB_PROC  PNVLINKQUEUE TYPELIB_CALLTYPE   CreateLinkQueueEx( DBG_VOIDPASS );
 /* Delete a link queue. Pass the address of the pointer to the
    queue to delete, this function sets the pointer to NULL if
    the queue is actually deleted.                              */
@@ -2307,15 +2331,15 @@ TYPELIB_PROC POINTER  TYPELIB_CALLTYPE      DequeLinkNL      ( PLINKQUEUE *pplq 
 /* Return TRUE/FALSE if the queue is empty or not. */
 TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE      IsQueueEmpty     ( PLINKQUEUE *pplq );
 /* Gets the number of elements current in the queue. */
-TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetQueueLength   ( PLINKQUEUE plq );
+TYPELIB_PROC  INDEX TYPELIB_CALLTYPE        GetQueueLength   ( PNVLINKQUEUE plq );
 // get a PLINKQUEUE element at index
 //  If idx < 0 then count from the end of the queue, otherwise count from the start of the queue
 // start of the queue is the next element to be dequeue, end of the queue is the last element added to the queue.
-TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekQueueEx    ( PLINKQUEUE plq, int idx );
+TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekQueueEx    ( PNVLINKQUEUE plq, int idx );
 /* Can be used to look at the next element in the queue without
    removing it from the queue. PeekQueueEx allows you to specify
    an index of an item in the queue to get.                      */
-TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekQueue    ( PLINKQUEUE plq );
+TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekQueue    ( PNVLINKQUEUE plq );
 /* <combinewith sack::containers::queue::CreateLinkQueueEx@DBG_VOIDPASS>
    \ \                                                                   */
 #define     CreateLinkQueue()     CreateLinkQueueEx( DBG_VOIDSRC )
@@ -2350,7 +2374,7 @@ TYPELIB_PROC  POINTER TYPELIB_CALLTYPE      PeekQueue    ( PLINKQUEUE plq );
 TYPELIB_PROC  void TYPELIB_CALLTYPE   MakeDataQueueEx( PDATAQUEUE *into, INDEX size DBG_PASS );
 /* Creates a PDATAQUEUE. Can pass DBG_FILELINE information to
    blame other code for the allocation.                       */
-TYPELIB_PROC  PDATAQUEUE TYPELIB_CALLTYPE   CreateDataQueueEx( INDEX size DBG_PASS );
+TYPELIB_PROC  PNVDATAQUEUE TYPELIB_CALLTYPE   CreateDataQueueEx( INDEX size DBG_PASS );
 /* Creates a PDATAQUEUE that has an overridden expand-by amount
    and initial amount of entries in the queue. (expecting
    something like 1000 to start and expand by 500, instead of
@@ -2360,7 +2384,7 @@ TYPELIB_PROC void TYPELIB_CALLTYPE MakeLargeDataQueueEx( PDATAQUEUE *pdq, INDEX 
    and initial amount of entries in the queue. (expecting
    something like 1000 to start and expand by 500, instead of
    the default 0, and expand by 1.                              */
-TYPELIB_PROC  PDATAQUEUE TYPELIB_CALLTYPE   CreateLargeDataQueueEx( INDEX size, INDEX entries, INDEX expand DBG_PASS );
+TYPELIB_PROC  PNVDATAQUEUE TYPELIB_CALLTYPE   CreateLargeDataQueueEx( INDEX size, INDEX entries, INDEX expand DBG_PASS );
 /* Destroys a data queue. */
 TYPELIB_PROC  void TYPELIB_CALLTYPE         DeleteDataQueueEx( PDATAQUEUE *pplq DBG_PASS );
 /* Add a data element into the queue. */
@@ -2380,7 +2404,7 @@ TYPELIB_PROC  LOGICAL TYPELIB_CALLTYPE      IsDataQueueEmpty ( PDATAQUEUE *pplq 
 /* Empty a dataqueue of all data. (Sets head=tail). */
 TYPELIB_PROC  void TYPELIB_CALLTYPE         EmptyDataQueue ( PDATAQUEUE *pplq );
 /* returns how many entries are in the queue. */
-TYPELIB_PROC  INDEX   TYPELIB_CALLTYPE      GetDataQueueLength( PDATAQUEUE pdq );
+TYPELIB_PROC  INDEX   TYPELIB_CALLTYPE      GetDataQueueLength( PNVDATAQUEUE pdq );
 /*
  * get a PDATAQUEUE element at index
  * result buffer is a pointer to the type of structure expected to be
@@ -5229,6 +5253,10 @@ typedef void (CPROC*TaskOutput)(uintptr_t, PTASK_INFO task, CTEXTSTR buffer, siz
 // this is a Linux option - uses forkpty() instead of just fork() to
 // start a process - meant for interactive processes.
 #define LPP_OPTION_INTERACTIVE        2048
+// on windows, enable nShow as minimized (else normal)
+#define LPP_OPTION_MINIMIZED          4096
+// on windows, enable nShow as maximized (else normal)
+#define LPP_OPTION_MAXIMIZED          8192
 struct environmentValue {
 	char* field;
 	char* value;
@@ -5255,7 +5283,7 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
                                                , TaskOutput OutputHandler2
                                                , TaskEnd EndNotice
                                                , uintptr_t psv
-                                               , PLIST envStrings
+                                               , PNVLIST envStrings
                                                 DBG_PASS
                                                );
 SYSTEM_PROC( PTASK_INFO, LaunchProgramEx )( CTEXTSTR program, CTEXTSTR path, PCTEXTSTR args, TaskEnd EndNotice, uintptr_t psv );
@@ -5505,7 +5533,7 @@ struct process_tree_pair {
       }
     }
 */
-SYSTEM_PROC( PDATALIST, GetProcessTree )( PTASK_INFO task );
+SYSTEM_PROC( PNVDATALIST, GetProcessTree )( PTASK_INFO task );
 #endif
 #ifdef __LINUX__
 /*
@@ -7612,7 +7640,16 @@ enum SackNetworkErrorIdentifier {
  // host name could not be resolved
 	SACK_NETWORK_ERROR_HOST_NOT_FOUND,
 };
-typedef void (CPROC*cErrorCallback)(uintptr_t psvError, PCLIENT pc, enum SackNetworkErrorIdentifier error, ... );
+/* Anchor type for the last named parameter of error callbacks.
+   C++ makes va_start() on a parameter that undergoes default argument
+   promotion (any unscoped enum) undefined behavior [-Wvarargs], so C++
+   builds use int; the values are enum SackNetworkErrorIdentifier either way. */
+#ifdef __cplusplus
+typedef int SackNetworkError;
+#else
+typedef enum SackNetworkErrorIdentifier SackNetworkError;
+#endif
+typedef void (CPROC*cErrorCallback)(uintptr_t psvError, PCLIENT pc, SackNetworkError error, ... );
 NETWORK_PROC( void, SetNetworkWriteComplete )( PCLIENT, cWriteComplete );
 #ifdef __cplusplus
 /* <combine sack::network::SetNetworkWriteComplete@PCLIENT@cWriteComplete>
@@ -7741,7 +7778,7 @@ NETWORK_PROC( LOGICAL, IsThisAddressMe )( SOCKADDR *addr, uint16_t myport );
 /*
  *  Get the list of SOCKADDR addresses that are on this box (for this name)
  */
-NETWORK_PROC( PLIST, GetLocalAddresses )( void );
+NETWORK_PROC( PNVLIST, GetLocalAddresses )( void );
 /*
  * Return the text of a socket's IP address
  */
@@ -8216,7 +8253,7 @@ enum GetNetworkLongAccessInternal{
 NETWORK_PROC( int, GetMacAddress)(PCLIENT pc, uint8_t* bufLocal, size_t *bufLocalLen, uint8_t* bufRemote, size_t *bufRemoteLen );
 //NETWORK_PROC( int, GetMacAddress)(PCLIENT pc );
 //int get_mac_addr (char *device, unsigned char *buffer)
-NETWORK_PROC( PLIST, GetMacAddresses)( void );
+NETWORK_PROC( PNVLIST, GetMacAddresses)( void );
 NETWORK_PROC( LOGICAL, sack_network_is_active )( PCLIENT pc );
 // mark that a socket has outstanding work.  If a close is handled while in network read
 // prevent the automatic close until work is cleared.
@@ -10250,7 +10287,7 @@ HTTP_EXPORT PTEXT HTTPAPI GetHttpResource( HTTPState pHttpState );
    members of the list are of type struct HttpField.
    see also: ProcessHttpFields and ProcessCGIFields
 */
-HTTP_EXPORT PLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
+HTTP_EXPORT PNVLIST HTTPAPI GetHttpHeaderFields( HTTPState pHttpState );
 //HTTP_EXPORT int HTTPAPI GetHttpVersion( HTTPState pHttpState );
 /* get the version of the current reply which has been parsed into the state.
     will be 0 if it is a reply and not a reply.
@@ -10576,12 +10613,12 @@ HTML5_WEBSOCKET_PROC( PCLIENT, WebSocketSetProtocols )( PCLIENT pc, const char *
 /* a server side utility to get the request headers that came in.
 this is for going through proxy agents mostly where the header might have x-forwarded-for
 */
-HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketHeaders )( PCLIENT pc );
+HTML5_WEBSOCKET_PROC( PNVLIST, GetWebSocketHeaders )( PCLIENT pc );
 /* for server side sockets, get the requested resource path from the client request.
 */
 HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketResource )( PCLIENT pc );
 HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketHttpState )( PCLIENT pc );
-HTML5_WEBSOCKET_PROC( PLIST, GetWebSocketPipeHeaders )( struct html5_web_socket* socket );
+HTML5_WEBSOCKET_PROC( PNVLIST, GetWebSocketPipeHeaders )( struct html5_web_socket* socket );
 HTML5_WEBSOCKET_PROC( PTEXT, GetWebSocketPipeResource )( struct html5_web_socket* socket );
 HTML5_WEBSOCKET_PROC( HTTPState, GetWebSocketPipeHttpState )( struct html5_web_socket* socket );
 HTML5_WEBSOCKET_PROC( void, ResetWebsocketRequestHandler )( PCLIENT pc_client );
@@ -11840,7 +11877,7 @@ PSSQL_PROC( int, SQLRecordQuery_js )( PODBC odbc
 	, CTEXTSTR query
 	, size_t queryLen
 	, PDATALIST *pdlResults
-	, PDATALIST pdlParams
+	, PNVDATALIST pdlParams
 	DBG_PASS );
 /*
 	this properly releases the list and all allocated strings within the entires
@@ -11873,7 +11910,7 @@ PSSQL_PROC( int, SQLRecordQuery_v4 )( PODBC odbc
                                    , CTEXTSTR **result
                                    , size_t **resultLengths
                                    , CTEXTSTR **fields
-                                   , PDATALIST pdlParameters
+                                   , PNVDATALIST pdlParameters
                                    DBG_PASS);
 /* <combine sack::sql::SQLRecordQueryEx@PODBC@CTEXTSTR@int *@CTEXTSTR **@CTEXTSTR **fields>
    \ \                                                                                      */
@@ -13952,7 +13989,7 @@ JSON_EMITTER_PROC( int, json_parse_add_data )( struct json_parse_state *context
                                              , size_t msglen
                                              );
 // these are common functions that work for json or json6 stream parsers
-JSON_EMITTER_PROC( PDATALIST, json_parse_get_data )( struct json_parse_state *context );
+JSON_EMITTER_PROC( PNVDATALIST, json_parse_get_data )( struct json_parse_state *context );
 // get actual allocated root for a value... allows holding that.
 JSON_EMITTER_PROC( const char *, json_get_parse_buffer )(struct json_parse_state *pState, const char *buf);
 JSON_EMITTER_PROC( void, json_parse_dispose_state )( struct json_parse_state **context );
@@ -13993,7 +14030,7 @@ JSON_EMITTER_PROC( int, json6_parse_add_data )( struct json_parse_state *context
                                               , size_t msglen
                                               );
 JSON_EMITTER_PROC( LOGICAL, json_decode_message )( struct json_context *format
-                                                 , PDATALIST parsedMsg
+                                                 , PNVDATALIST parsedMsg
                                                  , struct json_context_object **result_format
                                                  , POINTER *msg_data_out
                                                  );
@@ -14117,7 +14154,7 @@ VESL_EMITTER_PROC( int, vesl_parse_add_data )( struct vesl_parse_state *context
                                                  , size_t msglen
                                                  );
 // these are common functions that work for VESL stream parsers
-VESL_EMITTER_PROC( PDATALIST, vesl_parse_get_data )( struct vesl_parse_state *context );
+VESL_EMITTER_PROC( PNVDATALIST, vesl_parse_get_data )( struct vesl_parse_state *context );
 VESL_EMITTER_PROC( void, vesl_parse_dispose_state )( struct vesl_parse_state **context );
 // when an error occurs during streaming, use this to reset the parser and continue
 // using the existing parser.
@@ -14387,7 +14424,7 @@ JSOX_PARSER_PROC( int, jsox_parse_add_data )(struct jsox_parse_state *context
 	, size_t msglen
 	);
 JSOX_PARSER_PROC( PTEXT, jsox_parse_get_error )(struct jsox_parse_state *state);
-JSOX_PARSER_PROC( PDATALIST, jsox_parse_get_data )(struct jsox_parse_state *context);
+JSOX_PARSER_PROC( PNVDATALIST, jsox_parse_get_data )(struct jsox_parse_state *context);
 // single all-in-one parsing of an input buffer.
 JSOX_PARSER_PROC( LOGICAL, jsox_parse_message )(const char * msg
 	, size_t msglen
@@ -14422,7 +14459,7 @@ JSOX_PARSER_PROC( char *, jsox_escape_string )(const char *string);
 	jsox_get_parsed_value() returns a value from a PDATALIST
 	jsox_get_parsed_object_value() and jsox_get_parsed_array_value() :  returns a value from a value member.
 */
-JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_value )(PDATALIST pdlMessage, const char *path
+JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_value )(PNVDATALIST pdlMessage, const char *path
 	, void( *callback )(uintptr_t psv, struct jsox_value_container *val), uintptr_t psv
 	);
 JSOX_PARSER_PROC( struct jsox_value_container *, jsox_get_parsed_object_value )(struct jsox_value_container *pdlMessage, const char *path
@@ -15387,16 +15424,16 @@ TRANSLATION_PROC void TRANSLATION_API LoadTranslationDataFromFile( FILE *file );
 /*
    return: PLIST is a list of PTranslation
 */
-TRANSLATION_PROC PLIST TRANSLATION_API GetTranslations( void );
+TRANSLATION_PROC PNVLIST TRANSLATION_API GetTranslations( void );
 TRANSLATION_PROC CTEXTSTR TRANSLATION_API GetTranslationName( struct translation *translation );
 /*
 	return: PLIST of CTEXTSTR which are result strings of this translation
 */
-TRANSLATION_PROC PLIST TRANSLATION_API GetTranslationStrings( struct translation *translation );
+TRANSLATION_PROC PNVLIST TRANSLATION_API GetTranslationStrings( struct translation *translation );
 /*
   return: PLIST of CTEXTSTR which are source index strings
   */
-TRANSLATION_PROC PLIST TRANSLATION_API GetTranslationIndexStrings( );
+TRANSLATION_PROC PNVLIST TRANSLATION_API GetTranslationIndexStrings( );
 SACK_TRANSLATION_NAMESPACE_END
 USE_TRANSLATION_NAMESPACE
 #endif
