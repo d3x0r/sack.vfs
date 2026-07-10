@@ -88,7 +88,9 @@ to interact with the process.
 | errorInput| callback(buffer) | A callback, which if specified, redirects stderr to this callback function; otherwise stderr is not captured. |
 | end | callback() | This callback will be triggered when the task exits. |
 | impersonate | bool | (Needs work;updated compatibility... this is for a service to launch a task as a user which is now impossible(?)) |
-| hidden | bool | set windows UI flags such that the next process is created with a hidden window.  Default: false |
+| hidden | bool | set windows UI flags such that the next process is created with a hidden window. (pre-empts minimized and maximized) Default: false |
+| minimized | bool | set windows UI flags such that the next process is created with a minimized window.  Default: false |
+| maximized | bool | set windows UI flags such that the next process is created with a maximized window.  Default: false |
 | newGroup | bool | (Windows)create task as a new task group instead of a child of this group.  Default: false|
 | newConsole | bool | (Windows)create a new console for the new task; instead of ineriting the existing console, default false |
 | suspend | bool | create task suspended.  Default: false |
