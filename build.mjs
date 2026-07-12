@@ -64,9 +64,9 @@ case "linux":
 	proc.stdout.pipe( process.stdout );
 	proc.stderr.pipe( process.stderr );
 	proc.on( "exit", (a,b)=>{
-			if( a ) process.exit(a);
-			else runBuild();
-		console.log( "build exitged?" );
+		if( a ) process.exit(a);
+		else runBuild();
+		//console.log( "build exited?" );
 	} );
 
 	}
