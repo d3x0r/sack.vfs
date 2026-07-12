@@ -592,7 +592,7 @@ void ComObject::onAdd(Local<Name> property, Local<Value> value, const PropertyCa
 void ComObject::getProperties( Local<Name> property, const PropertyCallbackInfo<Value> &args ) {
 	Isolate *isolate = args.GetIsolate();
 	//ComObject *com   = ObjectWrap::Unwrap<ComObject>( args.This() );
-	String::Utf8Value port( USE_ISOLATE( isolate ) args.This()
+	String::Utf8Value port( USE_ISOLATE( isolate ) THIS(args)
 	             ->Get( isolate->GetCurrentContext(), String::NewFromUtf8Literal( isolate, "port" ) )
 	             .ToLocalChecked().As<String>() );
 	Local<Object> result = Object::New( isolate );

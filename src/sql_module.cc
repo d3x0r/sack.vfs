@@ -1562,7 +1562,7 @@ void OptionTreeObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& a
 
 void OptionTreeObject::readOptionNode( v8::Local<v8::Name> field,
                               const PropertyCallbackInfo<v8::Value>& info ) {
-	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.This() );
+	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( THIS(info) );
 	char *buffer;
 	size_t buflen;
 	int res = (int)GetOptionStringValueEx( oto->odbc, oto->node, &buffer, &buflen DBG_SRC );
@@ -1575,7 +1575,7 @@ void OptionTreeObject::writeOptionNode( v8::Local<v8::Name> field,
                               v8::Local<v8::Value> val,
                               const PropertyCallbackInfo<void>&info ) {
 	String::Utf8Value tmp( USE_ISOLATE( info.GetIsolate() ) val );
-	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.Holder() );
+	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( THIS(info) );
 	SetOptionStringValueEx( oto->odbc, oto->node, *tmp );
 }
 
