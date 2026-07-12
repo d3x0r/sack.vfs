@@ -240,6 +240,7 @@ struct wssEvent {
 	}data;
 	PLIST send;
 	PCLIENT pc;
+	uint32_t pcSerial; // connection generation of pc when the event was posted
 	PTHREAD waiter;
 	volatile LOGICAL done;
 	class wssiObject *result;
@@ -493,6 +494,7 @@ public:
 class httpObject : public node::ObjectWrap {
 public:
 	PCLIENT pc;
+	uint32_t pcSerial = 0; // connection generation of pc; pc is only usable while NetworkClientValid(pc,pcSerial)
 	//static Persistent<Function> constructor;
 	PVARTEXT pvtResult;
 	bool ssl;
@@ -1254,6 +1256,15 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 						WakeThread( eventMessage -> waiter );
 					continue;
 				}
+				if( !NetworkClientValid( eventMessage->pc, eventMessage->pcSerial ) ) {
+					// connection closed (and the client may already belong to a
+					// new connection) between posting the event and dispatch;
+					// there is nothing valid to act on.
+					eventMessage->done = 1;
+					if( eventMessage->waiter )
+						WakeThread( eventMessage->waiter );
+					continue;
+				}
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
 				if( !myself->requestCallback.IsEmpty() ) {
 					class constructorSet *c = getConstructors( isolate );
@@ -1274,7 +1285,8 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 						httpInternal->ssl = ssl_IsClientSecure( eventMessage->pc );
 					int sslRedirect = (httpInternal->ssl != myself->ssl);
 					httpInternal->pc = eventMessage->pc;
-#if USE_NETWORK_AGGREGATE 
+					httpInternal->pcSerial = eventMessage->pcSerial;
+#if USE_NETWORK_AGGREGATE
 					SetTCPWriteAggregation( eventMessage->pc, TRUE );
 #endif
 					//lprintf("Adding request %d", myself->requests?myself->requests->Cnt:-1);
@@ -1285,9 +1297,16 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 					//lprintf( "New request..." );
 					struct HttpState* pHttpState = eventMessage->pc ? GetWebSocketHttpState(eventMessage->pc) : myself ? GetWebSocketPipeHttpState(myself->wsPipe) : NULL;
 					if (!pHttpState) {
-						lprintf("Request pHttpState disappeared in WS_EVENT_REQUEST? (closing connection)%p", eventMessage->pc);
+						lprintf("Request pHttpState disappeared in WS_EVENT_REQUEST? (closing connection)%p active:%d serial:%u/%u long0:%p"
+							, eventMessage->pc
+							, eventMessage->pc ? sack_network_is_active(eventMessage->pc) : 0
+							, eventMessage->pcSerial
+							, eventMessage->pc ? NetworkClientSerial(eventMessage->pc) : 0
+							, eventMessage->pc ? (POINTER)GetNetworkLong(eventMessage->pc, 0) : NULL);
 						// should generate an end...
-						if (eventMessage->pc)
+						// re-validate; the connection can close between the check at
+						// dispatch and here, and a recycled client must not be closed.
+						if (eventMessage->pc && NetworkClientValid(eventMessage->pc, eventMessage->pcSerial))
 							RemoveClientEx(eventMessage->pc, 0, 1);
 
 					}
@@ -2373,6 +2392,8 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
 	httpObject* obj = Unwrap<httpObject>( args.This() );
+	if( obj->pc && !NetworkClientValid( obj->pc, obj->pcSerial ) )
+		obj->pc = NULL; // connection closed (maybe recycled) while the request was deferred to JS
 	PTEXT tmp;
 	tmp = VarTextPeek( obj->pvtResult );
 	if( tmp && GetTextSize( tmp ) ) {
@@ -2419,6 +2440,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	bool doSend = true;
 	httpObject* obj = Unwrap<httpObject>( args.This() );
+	if( obj->pc && !NetworkClientValid( obj->pc, obj->pcSerial ) )
+		obj->pc = NULL; // connection closed (maybe recycled) while the request was deferred to JS
 	char* content = NULL;
 	size_t contentLen = 0;
 	int include_close = 1;
@@ -2583,8 +2606,9 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			//lprintf( "Close is included... is this a reset close?" );
 			if( obj->pc )
 				RemoveClientEx( obj->pc, 0, 1 );
-			else
+			else if( obj->wss->wsPipe )
 				WebSocketPipeSocketClose( obj->wss->wsPipe );
+			// else the socket already closed on its own; nothing to close.
 		}
 		//else {
 
@@ -2602,7 +2626,9 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					struct wssEvent *pevt = GetWssEvent();
 					//lprintf( "A posting request event to JS %p %s", obj->pc, GetText( GetHttpRequest( pHttpState ) ) );
 					if( obj->pc ) {
-						AddNetWork( obj->pc, (uintptr_t)obj );
+						// the wss is what end() ClearNetWork()s; adding obj here left
+						// the in-use mark set forever on pipelined requests.
+						AddNetWork( obj->pc, (uintptr_t)obj->wss );
 						// lprintf( "posting request event to JS  %s", GetText( GetHttpRequest( GetWebSocketHttpState( pc ) )
 						// ) );
 						SetWebSocketHttpCloseCallback( obj->pc, webSockHttpClose );
@@ -2616,6 +2642,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					(*pevt).eventType = WS_EVENT_REQUEST;
 					//(*pevt).waiter = MakeThread();
 					(*pevt).pc = obj->pc;
+					(*pevt).pcSerial = obj->pcSerial;
 					(*pevt)._this = obj->wss;
 					obj->ssl = obj->pc?ssl_IsClientSecure( obj->pc ):0;
 					EnqueLink(&obj->wss->eventQueue, pevt);
@@ -2646,15 +2673,23 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	wssObject *wss = (wssObject*)psv;
 	//uintptr_t psvServer = WebSocketGetServerData( pc );
 	if( wss ) {
-		INDEX idx;
 		LOGICAL requested = FALSE;
 		struct wssEvent *pevt;
 		// close on wssObjectEvent; may have served HTTP requests
-		for( idx = 0; ( pevt = (struct wssEvent *)PeekQueueEx( wss->eventQueue, idx ) ); idx++ ) {
-			if (pevt->pc == pc) {
-				//lprintf( "Found pending request...%d", idx);
+		// PeekQueueEx reads the queue with no lock; a concurrent EnqueLink can
+		// expand (reallocate+free) the queue under the scan and the stale queue
+		// is read as freed memory.  Rotate the queue through the internally
+		// locked Deque/Enque instead; order among rotated events is preserved.
+		INDEX count = GetQueueLength( wss->eventQueue );
+		while( count-- ) {
+			pevt = (struct wssEvent *)DequeLink( &wss->eventQueue );
+			if( !pevt )
+				break;
+			if( pevt->pc == pc ) {
+				//lprintf( "Found pending request..." );
 				pevt->pc = NULL;
 			}
+			EnqueLink( &wss->eventQueue, pevt );
 		}
 		if( requested )
 			return;
@@ -2728,6 +2763,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 		(*pevt).eventType = WS_EVENT_REQUEST;
 		//(*pevt).waiter = MakeThread();
 		(*pevt). pc = pc;
+		(*pevt).pcSerial = NetworkClientSerial( pc );
 		(*pevt)._this = wss;
 		EnqueLink( &wss->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
