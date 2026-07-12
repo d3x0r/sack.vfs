@@ -8,6 +8,13 @@ const servePort = Number(process.env.PORT) || (process.argv.length > 2?Number(pr
 	for( let p of ports ) {
 		if( p.port === servePort) {
 			const task = sack.Task.getProcessList( p.pid );
+			if( task instanceof Array ) {
+				for( let t of task ) {
+					if( t.id === p.pid ) {
+						console.log( "process ", p.pid, "is already serving on port", servePort, t );
+					}
+				}
+			}else
 			console.log( "process ", p.pid, "is already serving on port", servePort, task );
 		}
 	}

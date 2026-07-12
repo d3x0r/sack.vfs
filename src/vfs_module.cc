@@ -406,7 +406,14 @@ void decodeFlags( int flags ) {
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool isolated ) {
 	static int runOnce = 1;
-	Isolate* isolate = context->GetIsolate();// Isolate::GetCurrent();
+	Isolate* isolate = 
+#if V8_MAJOR_VERSION >= 14
+		// context lost GetIsolate();  
+		Isolate::GetCurrent();
+#else
+		context->GetIsolate();
+#endif
+
 #ifdef _WIN32
 	{
 		// default input/output to not inherit in child processes.
