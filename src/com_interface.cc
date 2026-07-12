@@ -77,9 +77,9 @@ public:
 private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getPorts( Local<Name> property, const PropertyCallbackInfo<Value>& info );
-	static void getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+	//static void getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args );
 	static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
-	static void setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args );
+	//static void setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args );
 	static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
@@ -215,23 +215,6 @@ void ComObject::Init( Local<Object> exports ) {
 		class constructorSet *c = getConstructors( isolate );
 		c->comConstructor.Reset( isolate, ComFunc );
 		SET( exports, "ComPort", ComFunc );
-}
-
-
-void ComObject::getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
-	//Isolate* isolate = args.GetIsolate();
-	Local<Object> self = args.This();
-	if (self->InternalFieldCount() == 0) {
-		//lprintf("not a com object itself (safe catch)");
-		args.GetReturnValue().Set(Undefined( args.GetIsolate() ));
-		return;
-	}	
-	ComObject* obj = ObjectWrap::Unwrap<ComObject>( self );
-	if (obj) {
-		args.GetReturnValue().Set(Boolean::New(args.GetIsolate(), (int)obj->rts));
-	} 
-	else
-		lprintf("No com object found (or null)");
 }
 
 
