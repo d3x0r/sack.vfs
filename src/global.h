@@ -143,7 +143,11 @@ using namespace v8;
 #define SETT(o,key,val)  (void)(o)->Set( context, String::NewFromUtf8( isolate, GetText(key), v8::NewStringType::kNormal, (int)GetTextSize( key ) ).ToLocalChecked(), val )
 #define SETN(o,key,val)  (void)(o)->Set( context, Integer::New( isolate, key ), val )
 
-#if V8_MAJOR < 13
+#ifndef V8_MAJOR_VERSION
+#error V8_MAJOR Needs to be defined?
+#endif
+
+#if V8_MAJOR_VERSION < 13
 #define SETPROTO( context, obj, proto ) (obj)->SetPrototype(context,proto )
 #else
 #define SETPROTO( context, obj, proto ) (obj)->SetPrototypeV2( context, proto )
@@ -151,7 +155,7 @@ using namespace v8;
 
 #undef THIS  // defined in combaseapi.h  #define THIS                    void
 
-#if V8_MAJOR > 14 || (V8_MAJOR == 14 && V8_MINOR >= 6)
+#if V8_MAJOR_VERSION > 14 || (V8_MAJOR_VERSION == 14 && V8_MINOR_VERSION >= 6)
 #  define THIS(args)  args.HolderV2()
 #else
 #  define THIS(args)  args.This()
