@@ -1306,8 +1306,13 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 						// should generate an end...
 						// re-validate; the connection can close between the check at
 						// dispatch and here, and a recycled client must not be closed.
-						if (eventMessage->pc && NetworkClientValid(eventMessage->pc, eventMessage->pcSerial))
+						if (eventMessage->pc && NetworkClientValid(eventMessage->pc, eventMessage->pcSerial)) {
+							// balance the AddNetWork done when this request event was posted;
+							// without it bInUse stays set and the deferred close never completes
+							// (the !bInUse close guards leave the socket in CLOSE_WAIT).
+							ClearNetWork(eventMessage->pc, (uintptr_t)myself);
 							RemoveClientEx(eventMessage->pc, 0, 1);
+						}
 
 					}
 					else {
@@ -1317,6 +1322,12 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 							Local<Function> cb = Local<Function>::New(isolate, myself->requestCallback);
 							cb->Call(context, eventMessage->_this->_this.Get(isolate), 2, argv);
 							// and then even after this returns, the write might be pending...
+						} else if( eventMessage->pc ) {
+							// empty/bogus request: the handler is skipped, so end() (which does the
+							// ClearNetWork) never runs.  Balance the AddNetWork done when this event
+							// was posted, or bInUse stays set and the deferred close never completes
+							// (the !bInUse close guards then strand the socket in CLOSE_WAIT).
+							ClearNetWork( eventMessage->pc, (uintptr_t)myself );
 						}
 					}
 					//else
@@ -2820,16 +2831,22 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
 	else
 		uv_async_send( &wss->async );
-	while( !(*pevt).done )
-		WakeableSleep( 1000 );
-	//lprintf( "probably doing endsecure on %p %d", pc, ( *pevt ).data.error.fallback_ssl );
-
-	if( ( *pevt ).data.error.fallback_ssl ) {
-		// increment this, so the caller can recognize the fallback happened...
-		( *pevt ).data.error.fallback_ssl = (*pevt).data.error.fallback_ssl + 1;
-		ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
-	} else
-		lprintf( "didn't end secure on %p", pc );
+	// Only the SSL first-packet handshake failure blocks here for the app's
+	// synchronous fallback-to-http decision.  Blocking on any other error
+	// deadlocks when the error is raised from inside ProcessHttp while the
+	// http lock is held: this thread waits for the JS thread to mark the
+	// event done, but the JS thread is blocked acquiring that same http lock.
+	if( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
+		while( !(*pevt).done )
+			WakeableSleep( 1000 );
+		//lprintf( "probably doing endsecure on %p %d", pc, ( *pevt ).data.error.fallback_ssl );
+		if( ( *pevt ).data.error.fallback_ssl ) {
+			// increment this, so the caller can recognize the fallback happened...
+			( *pevt ).data.error.fallback_ssl = (*pevt).data.error.fallback_ssl + 1;
+			ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
+		} else
+			lprintf( "didn't end secure on %p", pc );
+	}
 	DropWssEvent( pevt );
 }
 
@@ -3246,7 +3263,13 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 
 	//Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
-	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR ) {
+	// only an actual SSL first-packet handshake error can be "disabled" (fall
+	// back to plain http).  webSockServerLowError only completes the fallback_ssl
+	// handshake (increment to 2) for SACK_NETWORK_ERROR_SSL_HANDSHAKE, so engaging
+	// it for any other LOW_ERROR (e.g. a parse error raised while re-feeding the
+	// bytes as http after a fallback) would spin here forever.
+	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR
+	    && obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
 		// delay until we return to the thread that dispatched this error.
 		obj->eventMessage->data.error.fallback_ssl = 1;
 		// allow this to return immediately, so the SSL layer will give up its lock.
