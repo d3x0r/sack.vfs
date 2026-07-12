@@ -8255,6 +8255,23 @@ NETWORK_PROC( int, GetMacAddress)(PCLIENT pc, uint8_t* bufLocal, size_t *bufLoca
 //int get_mac_addr (char *device, unsigned char *buffer)
 NETWORK_PROC( PNVLIST, GetMacAddresses)( void );
 NETWORK_PROC( LOGICAL, sack_network_is_active )( PCLIENT pc );
+// get the connection generation of a client.  The serial changes when the
+// connection closes; capture it while the connection is known alive (in a
+// network callback) and pass it to NetworkClientValid at time of use.
+NETWORK_PROC( uint32_t, NetworkClientSerial )( PCLIENT pc );
+// TRUE only while pc is still the same connection the serial was captured
+// from.  sack_network_is_active alone cannot tell a recycled client (a new
+// connection reusing this PCLIENT) from the connection a stored pointer meant.
+NETWORK_PROC( LOGICAL, NetworkClientValid )( PCLIENT pc, uint32_t serial );
+// diagnostic: TRUE if the client has data queued in its own pending-send chain.
+NETWORK_PROC( LOGICAL, NetworkClientHasPendingSend )( PCLIENT pc );
+// diagnostic: raw connection flags (CF_*).
+NETWORK_PROC( uint32_t, NetworkClientFlags )( PCLIENT pc );
+// diagnostic: bit0 = attached to event thread, bit1 = event object signaled,
+// bit2 = thread busy processing; byte1 = thread nWaitEvents, byte2 = nEvents.
+NETWORK_PROC( int, NetworkClientEventState )( PCLIENT pc );
+// diagnostic: count of this client's writes held in the deferred write queue.
+NETWORK_PROC( uint32_t, NetworkClientWritesPended )( PCLIENT pc );
 // mark that a socket has outstanding work.  If a close is handled while in network read
 // prevent the automatic close until work is cleared.
 NETWORK_PROC( void, AddNetWork )( PCLIENT lpClient, uintptr_t psv );
