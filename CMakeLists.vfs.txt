@@ -14,8 +14,6 @@ endif( CMAKE_HOST_SYSTEM_NAME STREQUAL "Android" )
 
 OPTION( HOST_NWJS "Target is hosted in NWJS which isn't quite node. " ${HOST_NWJS} )
 
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
-
 IF( HOST_NWJS )
    ADD_DEFINITIONS( -DHOST_NWJS )
 	set( NODE_RUNTIMEVERSION "24.3.0" )
@@ -43,7 +41,10 @@ message( "NODE VERSION: ${NODE_VERSION_MAJOR} ${NODE_VERSION_MINOR} ${NODE_VERSI
 #message( "WHAT? ${NODE_RUNTIMEVERSION} ${NONDE_VERSION_MAJOR}" )
 message( "COMPILER: ${CMAKE_CXX_COMPILER_ID}" )
 if( CMAKE_CXX_COMPILER_ID STREQUAL "Clang" )
-	add_definitions( -Wno-unused-result -Wno-address-of-packed-member )
+	add_definitions( -Wno-unused-result # Lots of functions can return values we don't care about, and we don't want to check them all.
+		-Wno-address-of-packed-member   # packed members that are taken the address of are designed to be aligned by platform size.
+		-Wno-empty-body #Deallocate is in a for() loop.
+	) 
 endif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 
 
@@ -104,6 +105,7 @@ ADD_DEFINITIONS( -DNO_OPEN_MACRO )
 
 if( ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
    ADD_DEFINITIONS( -D_REL_DEBUG )
+	set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDebugDLL")
 endif()
 
 if( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
