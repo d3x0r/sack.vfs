@@ -100,7 +100,7 @@ void addProc( uintptr_t psvUser, CTEXTSTR name, ScanFileProcessFlags flags ){
 
 }
 
-PLIST GetProcessCommandLines( const char* process, int pid ) {
+PNVLIST GetProcessCommandLines( const char* process, int pid ) {
 	struct addArgs params = {process, (int)( process?strlen( process ):0), NULL};
 	POINTER info = NULL;
 	if( pid )
