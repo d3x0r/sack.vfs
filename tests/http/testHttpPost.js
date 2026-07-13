@@ -7,7 +7,7 @@ function getPage( addr, port ) {
                 			 addr,//'google.com',
 					  port : port || 443,
 					  method : "POST",
-					timeout:15000,
+					timeout:500,
 				content: "args=true",
 					  ca : null,
 					  rejectUnauthorized: true,
@@ -19,7 +19,6 @@ function getPage( addr, port ) {
 					};
 
 		var res = https.get( opts );
-		//console.log( "Result:", res );
                 if( res.error ) {
                 	// error
                 }
@@ -28,7 +27,7 @@ function getPage( addr, port ) {
 			const statusCode = res.statusCode;
 			const contentType = res.headers['content-type'] || res.headers['Content-Type'];
 			let error;
-          console.log( "https get response happened...", contentType, res );
+			console.log( "https get response happened...", contentType, res.statusCode );
 			if (statusCode === 301) { 
 				return getPage( res.headers.Location.substring( 8, res.headers.Location.length-1 ), port );	
 			}
@@ -58,7 +57,7 @@ function getPage( addr, port ) {
 		};
 }
 //getPage( "google.com" );
-for( let i = 0; i < 100; i++ )
-	getPage( "bingodemos.com", 80 );
+for( let i = 0; i < 500; i++ )
+	getPage( "localhost", 7000 );
 		
 console.log( "completed" );
