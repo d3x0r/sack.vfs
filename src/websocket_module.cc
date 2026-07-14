@@ -2808,9 +2808,14 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 	switch( error ) {
 	default:
 		break;
+	case SACK_NETWORK_ERROR_SSL_HANDSHAKE_2: // handshake fail on a later packet;
+		// firstPacket labeling is fragile (a WANT_READ retry flips it to 0 before
+		// the handshake definitively fails), so a real first-packet failure can
+		// surface as _2.  The offending buffer is passed for both, so both are
+		// fallback-eligible - capture it and let the app decide.
 	case SACK_NETWORK_ERROR_SSL_HANDSHAKE: // first packet handshake fail
 		(*pevt).data.error.buffer = va_arg( args, const char * );
-		//( ( *pevt ).data.error.buffer ); // keep the buffer, allow SSL to 
+		//( ( *pevt ).data.error.buffer ); // keep the buffer, allow SSL to
 		(*pevt).data.error.buflen = va_arg( args, size_t );
 		(*pevt).data.error.fallback_ssl = 0; // make sure this is cleared.
 		break;
@@ -2836,7 +2841,7 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 	// deadlocks when the error is raised from inside ProcessHttp while the
 	// http lock is held: this thread waits for the JS thread to mark the
 	// event done, but the JS thread is blocked acquiring that same http lock.
-	if( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
+	if( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE || error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) {
 		while( !(*pevt).done )
 			WakeableSleep( 1000 );
 		//lprintf( "probably doing endsecure on %p %d", pc, ( *pevt ).data.error.fallback_ssl );
@@ -3269,7 +3274,8 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 	// it for any other LOW_ERROR (e.g. a parse error raised while re-feeding the
 	// bytes as http after a fallback) would spin here forever.
 	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR
-	    && obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
+	    && ( obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+	      || obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) ) {
 		// delay until we return to the thread that dispatched this error.
 		obj->eventMessage->data.error.fallback_ssl = 1;
 		// allow this to return immediately, so the SSL layer will give up its lock.
