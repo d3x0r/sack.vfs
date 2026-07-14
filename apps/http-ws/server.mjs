@@ -207,10 +207,12 @@ export function getRequestHandler( serverOpts ) {
 						res.end( fc );
 					}
 	   
-					if( requests.length !== 0 )
-						clearTimeout( reqTimeout );
-					reqTimeout = setTimeout( logRequests, 500 );
-					requests.push( req.url + "("+filePath+")" );
+					if( this.logRequests ) {
+						if( requests.length !== 0 )
+							clearTimeout( reqTimeout );
+						reqTimeout = setTimeout( logRequests, 500 );
+						requests.push( req.url + "("+filePath+")" );
+					}
 				} else {
 					console.log( 'file exists, but reading it returned nothing?', filePath, fc );
 					return false;
@@ -223,17 +225,19 @@ export function getRequestHandler( serverOpts ) {
 			const foundModule = findModule( unescape(req.url), req, res );
 			if( foundModule ) {
 				if( "object" === typeof  foundModule ) {
-				const headers = { 'Content-Type': foundModule.contentType
-						, 'Access-Control-Allow-Origin' : req.connection.headers.Origin
-						, "Permissions-Policy": "identity-credentials-get" };
-				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
-				res.writeHead(200, headers );
-				res.end( foundModule.content );
-
-				if( requests.length !== 0 )
-					clearTimeout( reqTimeout );
-				reqTimeout = setTimeout( logRequests, 500 );
-				requests.push( req.url );
+					const headers = { 'Content-Type': foundModule.contentType
+							, 'Access-Control-Allow-Origin' : req.connection.headers.Origin
+							, "Permissions-Policy": "identity-credentials-get" };
+					if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
+					res.writeHead(200, headers );
+					res.end( foundModule.content );
+				   
+					if( this.logRequests ) {
+						if( requests.length !== 0 )
+							clearTimeout( reqTimeout );
+						reqTimeout = setTimeout( logRequests, 500 );
+						requests.push( req.url );
+					}
 				}
 				return true;
 			}
@@ -313,6 +317,7 @@ class Server extends Events {
 	resourcePath = ".";
 	npmPath = ".";
 	app = null;
+	logRequests = true; // default mode was true, but now can disable it.
 	constructor( server, serverOpts, reqHandler ) {
 		super();
 		this.reqHandler = reqHandler;
@@ -343,10 +348,12 @@ class Server extends Events {
 				}
 			}
 			if( !this.reqHandler( req,res ) ) {
-				if( requests.length !== 0 )
-					clearTimeout( reqTimeout );
-				reqTimeout = setTimeout( logRequests, 100 );
-				requests.push( "Failed request: " + req.url + " as " + lastFilePath );
+				if( this.logRequests ) {
+					if( requests.length !== 0 )
+						clearTimeout( reqTimeout );
+					reqTimeout = setTimeout( logRequests, 100 );
+					requests.push( "Failed request: " + req.url + " as " + lastFilePath );
+				}
 				res.writeHead( 404, {'Access-Control-Allow-Origin' : req.connection.headers.Origin } );
 				res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
 			}
@@ -385,6 +392,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	server.onrequest = srvr.handleEvent.bind( srvr );
 
 	server.on( "lowError",function (error, address, buffer) {
+        	console.log( "Low error:", error, address );
 		if( error !== 1 && error != 6 ) 
 			if( error === 7 ) {
 				console.log( "Requested host not found:", address.remoteAddress, "requested:", buffer );
