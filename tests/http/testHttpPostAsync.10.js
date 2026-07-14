@@ -4,7 +4,6 @@ var https = sack.HTTP;
 
 const results = [];
 
-
 function getPage( addr, port ) {
 		var opts = {  hostname:  //'216.58.192.142',
                 			 addr,//'google.com',
@@ -17,15 +16,13 @@ function getPage( addr, port ) {
 					  path : "/test/test.php",
 					headers: {
 						"Content-Type":"application/x-www-form-urlencoded",
-					}
+					},
                                           //, agent : false
-					};
-
-		var res = https.get( opts );
-                if( res.error ) {
-                	// error
-                }
-                else
+					onReply( res ) {
+      if( res.error ) {
+      	// error
+      }
+      else
 		{
 			const statusCode = res.statusCode;
 			const contentType = res.headers['content-type'] || res.headers['Content-Type'];
@@ -53,15 +50,35 @@ function getPage( addr, port ) {
 			}
 			if (error) {
 				results.push( error.message );
-				//console.log(error.message);
-				// consume response data to free up memory
-				return;
 			}
-        
-		};
+        	pending--;
+		}
+					}
+					};
+
+		https.get( opts );
 }
+
+let pending = 0;
+let requests = 0;
+function pend() {
+	if( requests < 499 ) {
+		if( pending < 10 ) {
+		//console.log( "Doing a request?", pending, requests );
+		requests++;
+		pending++;
+			getPage( "10.173.0.1", 443 );
+			return pend();
+		} else { 
+			setImmediate( pend );
+			return;
+		}
+	} else {
+		console.log( "completed" );
+		//console.log( results );
+
+	}
+}
+pend();
 //getPage( "google.com" );
-for( let i = 0; i < 500; i++ )
-	getPage( "localhost", 7000 );
 		
-console.log( "completed", results );
