@@ -10243,16 +10243,20 @@ enum ProcessHttpResult{
 };
 /* Creates an empty http state, the next operation should be
    AddHttpData.                                              */
-HTTP_EXPORT HTTPState  HTTPAPI CreateHttpState( PCLIENT *pc );
+HTTP_EXPORT HTTPState  HTTPAPI CreateHttpState();
 /*Get the http state associated with a network client */
 HTTP_EXPORT HTTPState HTTPAPI GetHttpState( PCLIENT pc );
 HTTP_EXPORT void HTTPAPI LockHttp( struct HttpState *state );
 HTTP_EXPORT void HTTPAPI UnlockHttp( struct HttpState *state );
+/* closes an http state, which should trigger Destroy once the socket has closed.
+ */
+HTTP_EXPORT void HTTPAPI ShutdownHttpStateEx( struct HttpState *pHttpState DBG_PASS );
+#define ShutdownHttpState(state)  xShutdownHttpStateEx(state DBG_SRC )
 /* Destroys a http state, releasing all resources associated
    with it.                                                  */
-HTTP_EXPORT void HTTPAPI DestroyHttpState( HTTPState pHttpState );
-HTTP_EXPORT
- /* Add another bit of data to the block. After adding data,
+HTTP_EXPORT void HTTPAPI DestroyHttpStateEx( HTTPState pHttpState DBG_PASS );
+#define DestroyHttpState(state) DestroyHttpStateEx(state DBG_SRC )
+/* Add another bit of data to the block. After adding data,
    ProcessHttp should be called to see if the data has completed
    a packet.
    Parameters
@@ -10261,7 +10265,7 @@ HTTP_EXPORT
    size :        length of data bytes
    Returns: TRUE if content is added... if collecting chunked encoding may return FALSE.
    */
-LOGICAL HTTPAPI AddHttpData( HTTPState pHttpState, CPOINTER buffer, size_t size );
+HTTP_EXPORT LOGICAL HTTPAPI AddHttpData( HTTPState pHttpState, CPOINTER buffer, size_t size );
 /* \returns TRUE if completed until content-length if
    content-length is not specified, data is still collected, but
    the status never results TRUE.
