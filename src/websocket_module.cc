@@ -328,6 +328,7 @@ static struct local {
 	int data;
 	//uv_loop_t* loop;
 	int waiting;
+	int netInit;
 	CRITICALSECTION csWssEvents;
 	PWSS_EVENTSET wssEvents;
 	CRITICALSECTION csWssiEvents;
@@ -2922,7 +2923,10 @@ wssObject::wssObject( struct wssOptions *opts ) : task(this) {
 		eventQueue = CreateLinkQueue();
 		readyState = LISTENING;
 	} else {
-		NetworkWait( NULL, 256, 2 );  // 1GB memory
+		if( !l.netInit) {
+			l.netInit = 1;
+			NetworkWait( NULL, 256, 2 );  // 1GB memory
+		}
 		pc = WebSocketCreate_v2( opts->url, webSockServerOpen, webSockServerEvent, webSockServerClosed
 					, webSockServerError, (uintptr_t)this, WEBSOCK_SERVER_OPTION_WAIT );
 		wsPipe = NULL;
@@ -3850,7 +3854,10 @@ wscObject::wscObject( wscOptions *opts ) : task(this) {
 	this->resolveMac = opts->getMAC;
 	this->resolveAddr = opts->resolveName;
 	//lprintf( "Init async handle. (wsc) %p", &async );
-	NetworkWait( NULL, 256, 2 );  // 1GB memory
+	if( !l.netInit) {
+		l.netInit = 1;
+		NetworkWait( NULL, 256, 2 );  // 1GB memory
+	}
 	this->c = opts->c;
 	if( c->ivm_post )
 		this->ivm_hosted = true;
@@ -4364,6 +4371,11 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 
 
 httpRequestObject::httpRequestObject():_this() {
+	if( !l.netInit) {
+		l.netInit = 1;
+		NetworkWait( NULL, 256, 2 );  // 1GB memory
+	}
+
 	ivm_hosted         = false;
 	pc = NULL;
 	ssl = false;
@@ -4604,7 +4616,6 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	}
 
 	// make sure we have at least 2 words?
-	NetworkWait( NULL, 256, 2 );
 
 	if (!httpRequest->resultCallback.IsEmpty()) {
 		class constructorSet* c = getConstructors(isolate);
@@ -4655,6 +4666,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		while (!httpRequest->finished)
 			WakeableSleep(1000);
 
+lprintf( "finished? %d %p", httpRequest->finished, httpRequest->state );
 		{
 			HTTPState state = httpRequest->state;
 			Local<Object> result; result = Object::New(isolate);
