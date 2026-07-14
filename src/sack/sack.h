@@ -10251,7 +10251,7 @@ HTTP_EXPORT void HTTPAPI UnlockHttp( struct HttpState *state );
 /* closes an http state, which should trigger Destroy once the socket has closed.
  */
 HTTP_EXPORT void HTTPAPI ShutdownHttpStateEx( struct HttpState *pHttpState DBG_PASS );
-#define ShutdownHttpState(state)  xShutdownHttpStateEx(state DBG_SRC )
+#define ShutdownHttpState(state)  ShutdownHttpStateEx(state DBG_SRC )
 /* Destroys a http state, releasing all resources associated
    with it.                                                  */
 HTTP_EXPORT void HTTPAPI DestroyHttpStateEx( HTTPState pHttpState DBG_PASS );

@@ -1057,7 +1057,7 @@ static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, htt
 					}
 					SET( result, "headers", arr );
 
-					DestroyHttpState( state );
+					ShutdownHttpState( state );
 				} else {
 					SET( result, "error",
 						state ? String::NewFromUtf8Literal( isolate, "No Content" )
@@ -4700,7 +4700,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 				} else {
 					SET( result, "error", String::NewFromUtf8Literal( isolate, "Bad Parsing State" ) );
 				}
-				DestroyHttpState( state );
+				ShutdownHttpState( state );
 			}
 			args.GetReturnValue().Set(result);
 		}
