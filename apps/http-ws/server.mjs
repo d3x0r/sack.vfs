@@ -89,6 +89,8 @@ if( certChain )
 	if( !process.env.SSL_HOST ) {
 		process.env.SSL_HOST = sack.TLS.hosts( certChain ).join("~");
 		console.log( "Host not specified, using certificate hosts:", process.env.SSL_HOST );
+	} else {
+		console.log( "host not checked?" );
 	}
 //console.log( "certChain loaded?", sack.TLS.hosts( certChain ) );
 const certKey = read( getCertKey() );
