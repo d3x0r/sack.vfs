@@ -1,6 +1,6 @@
 
 var sack = require( 'sack.vfs' );
-var https = sack.HTTP;
+var https = sack.HTTPS;
 
 const results = [];
 
