@@ -400,8 +400,12 @@ export function openServer( opts, cbAccept, cbConnect )
 			}
 			else console.log( "Low Error with:", error, address, buffer  );
 			//if( buffer )
-		//	buffer = new TextDecoder().decode( buffer );
-		server.disableSSL(); // resume with non SSL
+		//buffer = new TextDecoder().decode( buffer );
+		if( error === 6 ) {
+			console.log( "Received unsupported HTTP command (not GET,PUT,POST)")
+		}
+		else if( error === 1 )
+			server.disableSSL(); // resume with non SSL
 	} );
 
 	server.onaccept = function ( ws ) {

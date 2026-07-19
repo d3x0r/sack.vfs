@@ -903,6 +903,8 @@ static Local<Value> makeRequest(struct HttpState* pHttpState, Isolate *isolate, 
 	cgi.cgi = Object::New( isolate );
 	ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
 	SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
+	SETV( req, strings->methodString->Get(isolate), String::NewFromUtf8(isolate
+				, GetText(GetHttpMethod(pHttpState)),v8::NewStringType::kNormal).ToLocalChecked() );
 	SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
 	SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpRequestVersion( pHttpState ) ) );
 	if( (content = GetHttpContent(pHttpState)) ) {
@@ -2196,6 +2198,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		struct wssEvent *pevt = GetWssEvent();
 		if( ( (*pevt).waiter = MakeThread() ) != wss->c->thread )  {
 			//lprintf( "Server Websocket closed; post to javascript %p", wss );
+			lprintf( "Sourced close event2 (haven't seen this happen...)" );
 			(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
 			(*pevt).waiter = MakeThread();
 			if( (*pevt).done ) lprintf( "FAIL!" );
@@ -2710,12 +2713,15 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 	//lprintf( "(close before accept)Illegal connection" );
 
 	struct wssEvent *pevt = GetWssEvent();
+	//lprintf( "Sourced close event" );
+	//AddNetWork( pc, 1234 ); // re-entrant close?
 	(*pevt).eventType = WS_EVENT_ERROR_CLOSE;
 	(*pevt)._this = wss;
 	(*pevt).pc = pc;
 	(*pevt).waiter = MakeThread();
 	EnqueLink( &wss->eventQueue, pevt );
 	if( (*pevt).waiter == wss->c->thread ) {
+		//lprintf( "Managed to generate close in the main thread?");
 		wssAsyncMsg_( &wss->async );
 	}
 	else {
@@ -2726,10 +2732,11 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
 		else
 			uv_async_send( &wss->async );
-		while( (*pevt).done )
-			Wait();
+		while( !(*pevt).done )
+			WakeableSleep( 1000 );
+			//Wait();  // calls Idle instead, which might prevent a deadlock?
 	}
-
+	//ClearNetWork( pc, 1234 ); // re-entrant close?
 }
 
 void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len ) {
@@ -4626,6 +4633,19 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		httpRequest->async.data = httpRequest;
 	}
 	{
+		// hostname may arrive bare ("host") or with an embedded port ("host:port" /
+		// "[ipv6]:port").  Split it out once (an embedded port overrides the numeric
+		// field, matching CreateSockAddressV2) so the socket address isn't doubled
+		// ("host:port:port") and Host:/SNI both derive from a single clean host + port.
+		if( httpRequest->hostname ) {
+			char *scan = httpRequest->hostname;
+			if( scan[0] == '[' ) { while( *scan && *scan != ']' ) scan++; }
+			char *colon = strrchr( scan, ':' );
+			if( colon ) {
+				if( colon[1] ) httpRequest->port = atoi( colon + 1 );
+				*colon = 0;  // truncate to the clean host in place
+			}
+		}
 		PVARTEXT pvtAddress = VarTextCreate();
 		vtprintf( pvtAddress, "%s:%d", httpRequest->hostname, httpRequest->port );
 
@@ -4641,7 +4661,14 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->url = url;
 		opts->rejectUnauthorized = httpRequest->rejectUnauthorized;
 		opts->address = address;
-		opts->hostname = httpRequest->hostname;
+		// The Host: header must carry a nonstandard port (default 443/80 are implied).
+		// Leaving hostname NULL makes GetHttpsQueryEx fall back to the address text
+		// ("host:port"); a default port sends a bare host.  SNI is derived from the
+		// socket name separately and is stripped to a portless hostname in the ssl layer.
+		if( httpRequest->port == ( httpRequest->ssl ? 443 : 80 ) )
+			opts->hostname = httpRequest->hostname;
+		else
+			opts->hostname = NULL;
 		opts->ssl = httpRequest->ssl;
 		opts->headers = httpRequest->headers;
 		opts->httpVersion = httpRequest->httpVersion;
@@ -4666,7 +4693,6 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		while (!httpRequest->finished)
 			WakeableSleep(1000);
 
-lprintf( "finished? %d %p", httpRequest->finished, httpRequest->state );
 		{
 			HTTPState state = httpRequest->state;
 			Local<Object> result; result = Object::New(isolate);
