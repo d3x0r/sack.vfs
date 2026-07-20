@@ -842,7 +842,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 							//record->Set( context
 							//           , fields[colMap[idx].col].jsName
 							//           , fields[colMap[idx].col].array = Array::New( isolate ) );
-							//fields[colMap[idx].col].hasArray = TRUE;
+							fields[colMap[idx].col].hasArray = TRUE;
 						}
 					}
 
