@@ -715,24 +715,22 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					colMap[idx].depth = fields[m].used;
 					if (colMap[idx].depth > maxDepth)
 						maxDepth = colMap[idx].depth + 1;
-					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
-					colMap[idx].jsAlias = String::NewFromUtf8( USE_ISOLATE(isolate) PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) ).ToLocalChecked(); 
+					const char* alias = PSSQL_GetColumnTableAliasName(sql->state->odbc, (int)idx);
+					colMap[idx].alias = StrDup( alias );
+					colMap[idx].jsAlias = String::NewFromUtf8( USE_ISOLATE(isolate) alias ).ToLocalChecked(); 
 					//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
 					int table;
 					for (table = 0; table < usedTables; table++) {
 						if (StrCmp( tables[table].alias, colMap[idx].alias ) == 0) {
-							//lprintf( "Table already existed?");
 							colMap[idx].t = tables + table;
 							break;
 						}
 					}
 					if (table == usedTables) {
-						//tables[table].table = colMap[idx].table;
 						tables[table].alias = colMap[idx].alias;
 						tables[table].jsAlias = colMap[idx].jsAlias;
 						colMap[idx].t = tables + table;
 						usedTables++;
-						//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
 					}
 					fields[m].used++;
 					break;
@@ -744,8 +742,9 @@ static void buildQueryResult( struct query_thread_params* params ) {
 				colMap[idx].depth = 0;
 				// this value is invalid once this row is stepped; so duplicate it.
 				// could be invalidated on the next call - though a different index should be a new constant value from ODBC...
-				colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
-				colMap[idx].jsAlias = String::NewFromUtf8( isolate, PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) ).ToLocalChecked();
+				const char* alias = PSSQL_GetColumnTableAliasName(sql->state->odbc, (int)idx);
+				colMap[idx].alias = StrDup( alias );
+				colMap[idx].jsAlias = String::NewFromUtf8( isolate, alias ).ToLocalChecked();
 
 				//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
 				if (colMap[idx].alias && colMap[idx].alias[0]) {
@@ -812,12 +811,14 @@ static void buildQueryResult( struct query_thread_params* params ) {
 			names[nameidx++] = fields[colMap[idx].col].jsName;
 		}
 
+		//lprintf("start with %d fields, %d tables, max depth %d  names:%d", usedFields, usedTables, maxDepth, nameidx );
+
 		Local<Array> records = Array::New( isolate );
 		Local<Object> record;
 		if (pdlRecord) {
 			int row = 0;
-			int validx = 0;
 			do {
+				int validx = 0;
 				EscapableHandleScope rowScope( isolate );
 				Local<Value> val;
 				tables[0].container = record = Object::New( isolate );
@@ -851,12 +852,11 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						break;
 					case JSOX_VALUE_DATE:
 					{
-
-                    if (StrCmp(jsval->string, "0000-01-01T00:00:00.000Z") == 0)
-                        val = Null(isolate);
-                    else
-                        val = Date::New(context, iso_to_ms(jsval->string)).ToLocalChecked();
-                    break;
+						if (StrCmp(jsval->string, "0000-01-01T00:00:00.000Z") == 0)
+							val = Null(isolate);
+						else
+							val = Date::New(context, iso_to_ms(jsval->string)).ToLocalChecked();
+						break;
 
 #if OLD_CONVERSION_METHOD
 						Local<Script> script;
@@ -941,6 +941,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						}
 					}
 				}
+				//lprintf("At the end we had %d values for %d names", validx, nameidx);
 				Local<Object> record = Object::New( isolate, proto, names, values, nameidx );
 				records->Set( context, row++, rowScope.Escape( record ) );
 			} while (FetchSQLRecordJS( sql->state->odbc, &pdlRecord ));
@@ -956,6 +957,8 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		Deallocate( struct fieldTypes*, fields );
 		Deallocate( struct tables*, tables );
 		Deallocate( struct colMap*, colMap );
+		Deallocate(Local<Name>*, names);
+		Deallocate(Local<Value>*, values);
 
 		//SQLEndQuery( sql->state->odbc );
 		if (!params->promise.IsEmpty()) {
