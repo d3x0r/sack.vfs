@@ -609,26 +609,75 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 	return TRUE;
 }
 
+// days since 1970-01-01 (Howard Hinnant's civil algorithm), no library calls
+static inline long days_from_civil(int y, unsigned m, unsigned d) {
+    y -= m <= 2;
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const unsigned yoe = (unsigned)(y - era * 400);
+    const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    const unsigned doe = yoe * 365 + yoe/4 - yoe/100 + doy;
+    return era * 146097L + (long)doe - 719468L;
+}
+
+// "YYYY-MM-DDTHH:MM:SS.mmmZ" -> epoch ms (assumes the fixed layout you emit)
+static inline double iso_to_ms(const char* s) {
+    int Y = (s[0]-'0')*1000+(s[1]-'0')*100+(s[2]-'0')*10+(s[3]-'0');
+    int Mo=(s[5]-'0')*10+(s[6]-'0'), Da=(s[8]-'0')*10+(s[9]-'0');
+    double ms = (double)days_from_civil(Y,Mo,Da) * 86400000.0;
+    const char* p = s + 10;
+    if (*p=='T' || *p==' ') {
+        ++p;
+        int H=(p[0]-'0')*10+(p[1]-'0'), Mi=(p[3]-'0')*10+(p[4]-'0');
+        p += 5;
+        int Se = 0;
+        if (*p==':') { Se=(p[1]-'0')*10+(p[2]-'0'); p += 3; }
+        ms += ((H*60+Mi)*60+Se)*1000.0;
+        if (*p=='.') {                       // fractional: consume all, keep ms
+            ++p; double w = 100.0; int i = 0;
+            while (*p>='0'&&*p<='9') { if (i<3) ms += (*p-'0')*w, w/=10.0; ++p; ++i; }
+        }
+    }
+    if (*p=='+' || *p=='-') {                 // shift local -> UTC
+        int sign = (*p=='+')?1:-1; ++p;
+        int oh=(p[0]-'0')*10+(p[1]-'0');
+        int om = (p[2]==':') ? (p[3]-'0')*10+(p[4]-'0') : (p[2]-'0')*10+(p[3]-'0');
+        ms -= sign*(oh*60+om)*60000.0;
+    }   // 'Z' or end → already UTC
+    return ms;
+}
+
 static void buildQueryResult( struct query_thread_params* params ) {
 	Isolate* isolate = params->isolate;
 	Local<Context> context = isolate->GetCurrentContext();
 	SqlObject* sql = params->sql;
 	INDEX idx = 0;
+#if (V8_MAJOR_VERSION > 12) || (V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 5)
+	Local<Value> proto = Object::New(isolate)->GetPrototypeV2();
+#else
+	Local<Value> proto = Object::New(isolate)->GetPrototype();
+#endif
+
 	int items;
 	struct jsox_value_container* jsval;
 	PDATALIST pdlRecord = params->pdlRecord;
 	class constructorSet* c = NULL;
 	DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
+		// This is passed the first record in the select also...
+		// this is how many fields will be in each row from the database.
+		// find end of list.
+		// VALUE_UNDEFINED is also 0 - so an empty record in a datalist will be
+		// the end of the list, even if nothing ever put one there.
 		if (jsval->value_type == JSOX_VALUE_UNDEFINED) break;
 	}
 	items = (int)idx;
-	//&sql->columns, &sql->result, &sql->resultLens, &sql->fields
+	// if data for all ends and there was no ending valuevalue type pdlRecord will be null
 	if (pdlRecord)
 	{
 		int usedFields = 0;
 		int maxDepth = 0;
 		struct fieldTypes {
 			const char* name;
+			Local<String> jsName;
 			int used;
 			int first;
 			int hasArray;
@@ -638,6 +687,9 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		struct tables {
 			//const char *table;
 			const char* alias;
+			Local<Name>  *names;//  = NewArray( Local<Name>,  usedFields );
+			Local<Value> *values;// = NewArray( Local<Value>, usedFields );  // reused each row
+			Local<String> jsAlias;
 			Local<Object> container;
 		}  *tables = NewArray( struct tables, items + 1 );
 		struct colMap {
@@ -645,6 +697,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 			int col;
 			//const char *table;
 			const char* alias;
+			Local<String> jsAlias;
 			Local<Object> container;
 			struct tables* t;
 		}  *colMap = NewArray( struct colMap, items );
@@ -664,7 +717,8 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					colMap[idx].depth = fields[m].used;
 					if (colMap[idx].depth > maxDepth)
 						maxDepth = colMap[idx].depth + 1;
-					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
+//					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
+					colMap[idx].jsAlias = String::NewFromUtf8( USE_ISOLATE(isolate) PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) ).ToLocalChecked(); 
 					//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
 					int table;
 					for (table = 0; table < usedTables; table++) {
@@ -677,6 +731,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					if (table == usedTables) {
 						//tables[table].table = colMap[idx].table;
 						tables[table].alias = colMap[idx].alias;
+						tables[table].jsAlias = colMap[idx].jsAlias;
 						colMap[idx].t = tables + table;
 						usedTables++;
 						//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
@@ -689,8 +744,11 @@ static void buildQueryResult( struct query_thread_params* params ) {
 			if (m == usedFields) {
 				colMap[idx].col = m;
 				colMap[idx].depth = 0;
-				//colMap[idx].table = StrDup( PSSQL_GetColumnTableName( sql->state->odbc, (int)idx ) );
+				// this value is invalid once this row is stepped; so duplicate it.
+				// could be invalidated on the next call - though a different index should be a new constant value from ODBC...
 				colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
+				colMap[idx].jsAlias = String::NewFromUtf8( isolate, PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) ).ToLocalChecked();
+
 				//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
 				if (colMap[idx].alias && colMap[idx].alias[0]) {
 					int table;
@@ -703,6 +761,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					if (table == usedTables) {
 						//tables[table].table = colMap[idx].table;
 						tables[table].alias = colMap[idx].alias;
+						tables[table].jsAlias = colMap[idx].jsAlias;
 						colMap[idx].t = tables + table;
 						usedTables++;
 						//lprintf( "adding a table usage %s", colMap[idx].alias, colMap[idx].table);
@@ -711,6 +770,8 @@ static void buildQueryResult( struct query_thread_params* params ) {
 				else
 					colMap[idx].t = tables;
 				fields[usedFields].first = (int)idx;
+				// we can expect these to not have nul in them SQL would fail if column names had nuls.
+				fields[usedFields].jsName = String::NewFromUtf8( isolate, jsval->name,v8::NewStringType::kNormal, (int)jsval->nameLen ).ToLocalChecked();
 				fields[usedFields].name = jsval->name;// sql->fields[idx];
 				fields[usedFields].used = 1;
 				fields[usedFields].hasArray = FALSE;
@@ -726,17 +787,46 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					}
 				}
 			}
+
+		int extraUsedFields = 0;
+
+		// table values won't have come back as a column in the data
+		// so these extra names are sued.
+		// default names on the nested results are an array of 
+		// results with named and indexed members.
+		if (usedTables > 2 && maxDepth > 1)
+			for (int n = 1; n < usedTables; n++) {
+				extraUsedFields++;
+			}
+
+
+		Local<Name>  *names  = NewArray( Local<Name>,  usedFields + extraUsedFields );
+		Local<Value> *values = NewArray( Local<Value>, usedFields + extraUsedFields );  // reused each row
+		int nameidx = 0;
+
+		if (usedTables > 2 && maxDepth > 1)
+			// add table-named columns first, then all normal columns.
+			for (int n = 1; n < usedTables; n++) {
+				names[nameidx++] = tables[n].jsAlias;
+			}
+
+		for( int idx = 0; idx < usedFields; idx++ ) {
+			names[nameidx++] = fields[colMap[idx].col].jsName;
+		}
+
 		Local<Array> records = Array::New( isolate );
 		Local<Object> record;
 		if (pdlRecord) {
 			int row = 0;
+			int validx = 0;
 			do {
+				EscapableHandleScope rowScope( isolate );
 				Local<Value> val;
 				tables[0].container = record = Object::New( isolate );
 				if (usedTables > 2 && maxDepth > 1)
 					for (int n = 1; n < usedTables; n++) {
-						tables[n].container = Object::New( isolate );
-						SETVAR( record, tables[n].alias, tables[n].container );
+						values[validx++] = tables[n].container = Object::New( isolate );
+						//record->Set( context, tables[n].jsAlias, tables[n].container );
 					}
 				else
 					for (int n = 0; n < usedTables; n++)
@@ -749,14 +839,11 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					if (fields[colMap[idx].col].used > 1) {
 						// add an array on the name for each result to be stored
 						if (fields[colMap[idx].col].first == idx) {
-							if (!jsval->name)
-								lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( params->statement ) );
-							else {
-								SETVAR( record, jsval->name
-									, fields[colMap[idx].col].array = Array::New( isolate )
-								);
-								fields[colMap[idx].col].hasArray = TRUE;
-							}
+							values[validx++] = fields[colMap[idx].col].array = Array::New( isolate );
+							//record->Set( context
+							//           , fields[colMap[idx].col].jsName
+							//           , fields[colMap[idx].col].array = Array::New( isolate ) );
+							//fields[colMap[idx].col].hasArray = TRUE;
 						}
 					}
 
@@ -766,6 +853,13 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						break;
 					case JSOX_VALUE_DATE:
 					{
+
+                    if (StrCmp(jsval->string, "0000-01-01T00:00:00.000Z") == 0)
+                        val = Null(isolate);
+                    else
+                        val = Date::New(context, iso_to_ms(jsval->string)).ToLocalChecked();
+                    break;
+
 #if OLD_CONVERSION_METHOD
 						Local<Script> script;
 						char buf[64];
@@ -782,20 +876,6 @@ static void buildQueryResult( struct query_thread_params* params ) {
 							script = Script::Compile(
 							              isolate->GetCurrentContext()
 							              , String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked()
-#if ( V8_MAJOR_VERSION >= 13 || ( V8_MAJOR_VERSION == 12 && V8_MINOR_VERSION >= 9 ) )
-							              , new ScriptOrigin(
-							                     String::NewFromUtf8( isolate, "DateFormatter", NewStringType::kInternalized )
-							                          .ToLocalChecked() )
-#elif ( NODE_MAJOR_VERSION >= 16 )
-							              , new ScriptOrigin( isolate
-							                                , String::NewFromUtf8( isolate, "DateFormatter"
-							                                                       , NewStringType::kInternalized )
-							                                       .ToLocalChecked() )
-#else
-							              , new ScriptOrigin(
-							                     String::NewFromUtf8( isolate, "DateFormatter", NewStringType::kInternalized )
-							                          .ToLocalChecked() )
-#endif
 							                   )
 							     .ToLocalChecked();
 							val = script->Run( isolate->GetCurrentContext() ).ToLocalChecked();
@@ -850,30 +930,28 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						break;
 					}
 					if (fields[colMap[idx].col].used == 1) {
-						if (!jsval->name)
-							lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( params->statement ) );
-						else
-							SETVAR( record, jsval->name, val );
+						values[validx++] = val;
+						//record->Set( context, fields[colMap[idx].col].jsName, val );
 					}
 					else if (fields[colMap[idx].col].used > 1) {
-						if (!jsval->name)
-							lprintf( "FAILED TO GET RESULTING NAME FROM SQL QUERY: %s", GetText( params->statement ) );
-						else
-							SETVAR( colMap[idx].t->container, jsval->name, val );
+						colMap[idx].t->container->Set( context, fields[colMap[idx].col].jsName, val );
+
 						if (fields[colMap[idx].col].hasArray) {
 							if (colMap[idx].alias)
-								SETVAR( fields[colMap[idx].col].array, colMap[idx].alias, val );
-							SETN( fields[colMap[idx].col].array, colMap[idx].depth, val );
+								fields[colMap[idx].col].array->Set( context, colMap[idx].jsAlias, val );
+							fields[colMap[idx].col].array->Set( context, colMap[idx].depth, val );
 						}
 					}
 				}
-				SETN( records, row++, record );
+				Local<Object> record = Object::New( isolate, proto, names, values, nameidx );
+				records->Set( context, row++, rowScope.Escape( record ) );
 			} while (FetchSQLRecordJS( sql->state->odbc, &pdlRecord ));
 		}
 		{
 			int c;
 			for (c = 0; c < items; c++) {
 				if (colMap[c].alias) Deallocate( const char*, colMap[c].alias );
+				//colMap[c].jsAlias = ;
 				//if( colMap[c].table ) Deallocate( char*, colMap[c].table );
 			}
 		}
