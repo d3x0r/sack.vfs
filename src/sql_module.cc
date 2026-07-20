@@ -807,8 +807,16 @@ static void buildQueryResult( struct query_thread_params* params ) {
 				names[nameidx++] = tables[n].jsAlias;
 			}
 
-		for( int idx = 0; idx < usedFields; idx++ ) {
-			names[nameidx++] = fields[colMap[idx].col].jsName;
+		// names[] MUST be built with the same order/predicate as values[] is
+		// filled in the row loop below, or the two desync on duplicated columns.
+		for( int idx = 0; idx < items; idx++ ) {
+			int col = colMap[idx].col;
+			if (fields[col].used > 1) {
+				if (fields[col].first == idx)
+					names[nameidx++] = fields[col].jsName;   // one array slot per dup field
+			} else {
+				names[nameidx++] = fields[col].jsName;       // scalar slot
+			}
 		}
 
 		//lprintf("start with %d fields, %d tables, max depth %d  names:%d", usedFields, usedTables, maxDepth, nameidx );
