@@ -687,8 +687,6 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		struct tables {
 			//const char *table;
 			const char* alias;
-			Local<Name>  *names;//  = NewArray( Local<Name>,  usedFields );
-			Local<Value> *values;// = NewArray( Local<Value>, usedFields );  // reused each row
 			Local<String> jsAlias;
 			Local<Object> container;
 		}  *tables = NewArray( struct tables, items + 1 );
@@ -717,7 +715,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					colMap[idx].depth = fields[m].used;
 					if (colMap[idx].depth > maxDepth)
 						maxDepth = colMap[idx].depth + 1;
-//					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
+					colMap[idx].alias = StrDup( PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) );
 					colMap[idx].jsAlias = String::NewFromUtf8( USE_ISOLATE(isolate) PSSQL_GetColumnTableAliasName( sql->state->odbc, (int)idx ) ).ToLocalChecked(); 
 					//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
 					int table;
