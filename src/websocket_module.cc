@@ -1479,6 +1479,7 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 			} else if( eventMessage->eventType == WS_EVENT_RELEASE_BUFFER ) {
 				// allow buffer to get freed through GC system.
 				eventMessage->data.write->buffer.Reset();
+				delete eventMessage->data.write;
 			} else if( eventMessage->eventType == WS_EVENT_CLOSE ) {
 				myself->readyState = CLOSED;
 				lprintf( "Sack uv_close2 %p", &myself->async);
@@ -2459,8 +2460,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 		obj->pc = NULL; // connection closed (maybe recycled) while the request was deferred to JS
 	char* content = NULL;
 	size_t contentLen = 0;
-	int include_close = 1;
 	struct HttpState *pHttpState = obj->pc?GetWebSocketHttpState( obj->pc ):obj->wss?GetWebSocketPipeHttpState( obj->wss->wsPipe ):NULL;
+	int include_close = ( pHttpState && ( GetHttpRequestVersion( pHttpState ) >= 101 ) ) ? 0 : 1;
 	if( pHttpState ) { // not sure how this WOULDn't be valid...
 		LockHttp( pHttpState );
 		Hold(pHttpState);
@@ -2474,9 +2475,11 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			//if( StrCaseCmp( GetText( header->name ), "content-length" ) == 0 ) {
 			//   found_content_length = TRUE;
 			//}
-			if( StrCmp( GetText( header->name ), "Connection" ) == 0 ) {
+			if( StrCaseCmp( GetText( header->name ), "Connection" ) == 0 ) {
 				if( StrCaseCmp( GetText( header->value ), "keep-alive" ) == 0 ) {
 					include_close = 0;
+				} else if( StrCaseCmp( GetText( header->value ), "close" ) == 0 ) {
+					include_close = 1;
 				}
 			}
 		}
@@ -2507,7 +2510,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			contentLen = bodybuf->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
 #endif
-			{
+			if( obj->pc && !obj->ssl ) {
 				struct pendingWrite* write = new struct pendingWrite();
 				write->wss = obj->wss;
 				write->buffer.Reset( isolate, bodybuf );
@@ -2529,7 +2532,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			contentLen = ab->ByteLength();
 			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
 #endif
-			{
+			if( obj->pc && !obj->ssl ) {
 				struct pendingWrite* write = new struct pendingWrite();
 				write->wss = obj->wss;
 				write->buffer.Reset( isolate, ab );
@@ -2614,19 +2617,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 #ifdef DEBUG_AGGREGATE_WRITES
 	else lprintf( "Decided not to send?" );
 #endif
-	if( obj->pc )
-		ClearNetWork( obj->pc, (uintptr_t)obj->wss );
 	{
-		if( include_close ) {
-			//lprintf( "Close is included... is this a reset close?" );
-			if( obj->pc )
-				RemoveClientEx( obj->pc, 0, 1 );
-			else if( obj->wss->wsPipe )
-				WebSocketPipeSocketClose( obj->wss->wsPipe );
-			// else the socket already closed on its own; nothing to close.
-		}
-		//else {
-
 		if (pHttpState) {
 			int result;
 			//lprintf( "ending http %p on %p, checking for more data", pHttpState, obj->pc );
@@ -2680,6 +2671,16 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			Release( pHttpState );  // just my hold on it.
 		}
 	}
+	if( obj->pc )
+		ClearNetWork( obj->pc, (uintptr_t)obj->wss );
+	if( include_close ) {
+		//lprintf( "Close is included... is this a reset close?" );
+		if( obj->pc )
+			RemoveClientEx( obj->pc, 0, 1 );
+		else if( obj->wss->wsPipe )
+			WebSocketPipeSocketClose( obj->wss->wsPipe );
+		// else the socket already closed on its own; nothing to close.
+	}
 
 	VarTextEmpty( obj->pvtResult );
 }
@@ -2703,6 +2704,7 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 			if( pevt->pc == pc ) {
 				//lprintf( "Found pending request..." );
 				pevt->pc = NULL;
+				requested = TRUE;
 			}
 			EnqueLink( &wss->eventQueue, pevt );
 		}
@@ -4891,4 +4893,3 @@ uintptr_t WSReverseCallback( uintptr_t psv, struct ssh_listener* listener, int b
 	return (uintptr_t)result;
 
 }
-
