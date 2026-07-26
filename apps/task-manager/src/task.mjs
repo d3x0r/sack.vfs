@@ -241,6 +241,12 @@ export class Task {
 			console.log( "Already started:", this.#task.name );
 			return;
 		}
+		// these track the state of a single run instance; a new #run gets a
+		// clean slate, otherwise a forced kill in one run leaves #killed set
+		// and timeoutTaskStop() will never escalate to kill() again.
+		this.#killed = false;
+		this.stopping = false;
+		this.failed = false;
 		if( this.#task.work && !disk.isDir( this.#task.work ) ){
 			console.log( "Task not available (working path doesn't exist", this.#task.work );
 			this.running = false;
@@ -359,9 +365,12 @@ export class Task {
 			}
 			*/
 			let exitCode = this_.#run?this_.#run.exitCode:this_.#exitCode;
-			console.log( "Task ended:", this_.name, this_.ended, exitCode, exitCode.toString(16) );
+			// exitCode can be null/undefined; a throw here would skip clearing
+			// #run and the status broadcast below.
+			console.log( "Task ended:", this_.name, this_.ended, exitCode
+			           , (exitCode??0).toString(16) );
 			this_.#ranOnce = true;
-			this_.#exitCode = this_.#run.exitCode;
+			this_.#exitCode = exitCode;
 			this_.#run = null;
 			for( let dep of this_.#dependants ) {
 				dep.stop();
