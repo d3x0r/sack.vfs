@@ -11643,6 +11643,23 @@ SQLGETOPTION_PROC( int, SACK_GetProfileBlob )( CTEXTSTR pSection, CTEXTSTR pOptn
 /* <combine sack::sql::options::SACK_GetPrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@TEXTCHAR *@size_t@CTEXTSTR@LOGICAL>
    \ \                                                                                                                        */
 SQLGETOPTION_PROC( int, SACK_GetProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer );
+/* Read an option's string value without a default and without creating the option.
+   Unlike SACK_GetProfileString(), no default is taken or applied, a missing option is not
+   materialized in the option tree, and the value is returned by reference (like
+   SACK_GetProfileBlob) so no maximum option length need be known.  The returned buffer is
+   allocated for the caller to Release(); the length is in characters and the buffer is also
+   null terminated.  Returns TRUE if the option exists (an empty value reads TRUE with length
+   0), else FALSE leaving the caller's pointer untouched.                                     */
+SQLGETOPTION_PROC( int, SACK_ReadProfileString )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer );
+/* <combine sack::sql::options::SACK_ReadProfileString@CTEXTSTR@CTEXTSTR@TEXTCHAR **@size_t *>
+   \ \                                                                                                                        */
+SQLGETOPTION_PROC( int, SACK_ReadProfileStringOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer );
+/* <combine sack::sql::options::SACK_ReadProfileString@CTEXTSTR@CTEXTSTR@TEXTCHAR **@size_t *>
+   \ \                                                                                                                        */
+SQLGETOPTION_PROC( int, SACK_ReadPrivateProfileString )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer, CTEXTSTR pINIFile );
+/* <combine sack::sql::options::SACK_ReadProfileString@CTEXTSTR@CTEXTSTR@TEXTCHAR **@size_t *>
+   \ \                                                                                                                        */
+SQLGETOPTION_PROC( int, SACK_ReadPrivateProfileStringOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer, CTEXTSTR pINIFile );
 /* <combine sack::sql::options::SACK_GetPrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@TEXTCHAR *@size_t@CTEXTSTR@LOGICAL>
    \ \                                                                                                                        */
 SQLGETOPTION_PROC( int32_t, SACK_GetProfileInt )( CTEXTSTR pSection, CTEXTSTR pOptname, int32_t defaultval );
@@ -37491,16 +37508,24 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 			if( OutputHandler2 )
 				CreatePipe( &task->hReadErr, &task->hWriteErr, &sa, 0 );
 			CreatePipe( &task->hReadIn, &task->hWriteIn, &sa, 0 );
-			task->si.StartupInfo.hStdInput = task->hReadIn;
-			if( OutputHandler2 )
-				task->si.StartupInfo.hStdError = task->hWriteErr;
-			if( OutputHandler )
-				task->si.StartupInfo.hStdOutput = task->hWriteOut;
-			if( OutputHandler && !OutputHandler2 ) {
+			// For an interactive pseudoconsole the child's console I/O is provided by the pty
+			// (PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE below); it must NOT also be given redirected
+			// std handles, or cmd treats stdin as a non-interactive pipe (no echo / no line input)
+			// and hReadIn ends up double-consumed by both conpty and the child.  Only wire the std
+			// handles for the plain-pipe (non-pty) case.
+			if( !( flags & LPP_OPTION_INTERACTIVE ) ) {
+				task->si.StartupInfo.hStdInput = task->hReadIn;
+				if( OutputHandler2 )
+					task->si.StartupInfo.hStdError = task->hWriteErr;
+				if( OutputHandler )
+					task->si.StartupInfo.hStdOutput = task->hWriteOut;
+				if( OutputHandler && !OutputHandler2 ) {
  // if this is not set, then stderr gets inherited.
-				task->si.StartupInfo.hStdError = task->hWriteOut;
+					task->si.StartupInfo.hStdError = task->hWriteOut;
+				}
+				task->si.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
 			}
-			task->si.StartupInfo.dwFlags |= STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+			task->si.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW;
 			if( !( flags & LPP_OPTION_DO_NOT_HIDE ) )
 				task->si.StartupInfo.wShowWindow = SW_HIDE;
 			else
@@ -37643,6 +37668,14 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 					//task->hStdIn.pdp		 = pdp;
 					task->hStdIn.hThread  = 0;
 					task->hStdIn.bNextNew = TRUE;
+					// NOTE: win32-input-mode ( ESC[?9001h ) was tried to let SendPTYKeyEvent deliver
+					// full-fidelity key records, but ConPTY did not consume those sequences here even
+					// when the mode enabled successfully, so SendPTYKeyEvent now writes raw characters
+					// and we leave ConPTY in its default VT-input mode.
+					//if( task->hPty ) {
+					//	DWORD dwEnable = 0;
+					//	WriteFile( task->hStdIn.handle, "\x1b[?9001h", 8, &dwEnable, NULL );
+					//}
 					if( task->OutputEvent ) {
 						task->hStdOut.handle   = task->hReadOut;
 						task->hStdOut.pLine	   = NULL;
@@ -38143,8 +38176,38 @@ int SendPTYKeyEvent( PTASK_INFO task, uint32_t key ) {
 	    Cs: the value of dwControlKeyState - any number. If omitted, defaults to '0'.
 	    Rc: the value of wRepeatCount - any number. If omitted, defaults to '1'.
 	*/
-	pprintf( task, "\x1b[%d;%d;%d;%d;%d;%d_", KEY_CODE( key ), KEY_REAL_CODE( key ), text ? GetUtfChar( &text ) : 0,
-	         IsKeyPressed( key ) ? 1 : 0, ( KEY_MOD( key ) & KEY_MOD_CTRL ) ? 1 : 0, 1 );
+	// ConPTY win32-input-mode ( ESC[Vk;Sc;Uc;Kd;Cs;Rc_ ) was not being consumed here even with
+	// ?9001h enabled, so send raw character input instead - the input path cmd.exe/ConPTY always
+	// accept.  The key dispatch currently delivers each transition twice, and we get both key-down
+	// and key-up; track per-VK pressed state so each physical press transmits its character exactly
+	// once (on the first key-down), and clear it on key-up.
+	// NOTE: KEY_MOD() (key bits 28-30) is not populated by the Win32 key packing in vidlib.c, so
+	// modifiers/Ctrl-combos do not reach here yet; and keys with no character (arrows, F-keys) are
+	// not yet mapped to VT sequences.
+	{
+		static uint8_t s_down[256];
+		int vk = KEY_CODE( key );
+		int uc = text ? GetUtfChar( &text ) : 0;
+		int kd = IsKeyPressed( key ) ? 1 : 0;
+		int vkIdx = vk & 0xFF;
+		lprintf( "WTX: PTYKey key=%08x vk=%d uc=%d kd=%d held=%d", key, vk, uc, kd, s_down[vkIdx] );
+		if( kd ) {
+			if( !s_down[vkIdx] ) {
+				s_down[vkIdx] = 1;
+				if( uc ) {
+					uint8_t buf[8]; int n = 0;
+					if( uc < 0x80 ) buf[n++] = (uint8_t)uc;
+					else if( uc < 0x800 ) { buf[n++] = (uint8_t)(0xC0|(uc>>6)); buf[n++] = (uint8_t)(0x80|(uc&0x3F)); }
+					else if( uc < 0x10000 ) { buf[n++] = (uint8_t)(0xE0|(uc>>12)); buf[n++] = (uint8_t)(0x80|((uc>>6)&0x3F)); buf[n++] = (uint8_t)(0x80|(uc&0x3F)); }
+					else { buf[n++] = (uint8_t)(0xF0|(uc>>18)); buf[n++] = (uint8_t)(0x80|((uc>>12)&0x3F)); buf[n++] = (uint8_t)(0x80|((uc>>6)&0x3F)); buf[n++] = (uint8_t)(0x80|(uc&0x3F)); }
+					task_send( task, buf, n );
+				}
+			}
+		}
+		else {
+			s_down[vkIdx] = 0;
+		}
+	}
 	return 0;
 }
 int pprintf( PTASK_INFO task, CTEXTSTR format, ... )
@@ -119834,11 +119897,14 @@ int DumpInfoEx( PODBC odbc, PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle, L
 				//
 				//return 0;
 			}
+			//  (S1000)[5014]:[ma-3.1.15][10.11.13-MariaDB-0ubuntu0.24.04.1]Write error: Broken pipe (32)
 			// native 2003 == could not connect... (do not retry)
 			// native 2013 == lost connection during query.
 			// state 08S01, native 5014 == (mariadb) Connection reset by peer (104)
+			// state S1000, native 5014 == (mariadb) Connection reset by peer (104)
 			if( ( ( strcmp( statecode, "S1T00" ) == 0 ) ||
-				 ( strcmp( statecode, "08S01" ) == 0 ) )
+				 ( strcmp( statecode, "08S01" ) == 0 ) ||
+				 ( strcmp( statecode, "S1000" ) == 0 ) )
 				&& ( native == 2013 || native == 5014 ) )
 			{
 				if( g.feedback_handler ) g.feedback_handler( "SQL Connection Lost...\nWaiting for reconnect..." );
@@ -127828,6 +127894,75 @@ SQLGETOPTION_PROC( int, SACK_GetProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection
 SQLGETOPTION_PROC( int, SACK_GetProfileBlob )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer )
 {
    return SACK_GetProfileBlobOdbc( og.Option, pSection, pOptname, pBuffer, pnBuffer );
+}
+//------------------------------------------------------------------------
+// Plain read of an option's string value.
+//
+// Unlike SACK_GetProfileString(), these do not take a default, and reading is not a write:
+// when the option does not exist it is NOT created/materialized in the option tree, and nothing
+// is stored.  The value comes back by reference like SACK_GetProfileBlob() does, so no maximum
+// option length has to be known up front; the returned buffer is allocated and belongs to the
+// caller ( Release() it ).  Length is in characters, and the buffer is null terminated as a
+// convenience even though the length is returned.
+//
+// Returns TRUE when the option exists and has a value ( an empty value still reads TRUE with
+// length 0, so "missing" and "present but empty" stay distinguishable ), else FALSE with the
+// caller's pointer left untouched.
+SQLGETOPTION_PROC( int, SACK_ReadPrivateProfileStringOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer, CTEXTSTR pINIFile )
+{
+	POPTION_TREE_NODE optval;
+	LOGICAL drop_odbc = FALSE;
+	int success = FALSE;
+	EnterCriticalSec( &og.cs_option );
+	if( !odbc )
+	{
+		odbc = GetOptionODBC( GetDefaultOptionDatabaseDSN() );
+		drop_odbc = TRUE;
+	}
+	if( !pINIFile )
+		pINIFile = DEFAULT_PUBLIC_KEY;
+	else
+	{
+		TEXTCHAR buf[128];
+		pINIFile = ResolveININame( odbc, pSection, buf, pINIFile );
+	}
+	// bCreate FALSE - a read must not add the option to the tree.
+	optval = GetOptionIndexExx( odbc, OPTION_ROOT_VALUE, NULL, pINIFile, pSection, pOptname, FALSE, FALSE DBG_SRC );
+	if( optval )
+	{
+		TEXTCHAR *value = NULL;
+		size_t len = 0;
+		if( ( GetOptionStringValueEx( odbc, optval, &value, &len DBG_SRC ) != INVALID_INDEX ) && value )
+		{
+			// value points into an internal rotating result buffer; return a copy the caller owns.
+			if( pBuffer )
+			{
+				(*pBuffer) = NewArray( TEXTCHAR, len + 1 );
+				if( len )
+					MemCpy( (*pBuffer), value, len * sizeof( TEXTCHAR ) );
+				(*pBuffer)[len] = 0;
+			}
+			if( pnBuffer )
+				(*pnBuffer) = len;
+			success = TRUE;
+		}
+	}
+	if( drop_odbc )
+		DropOptionODBC( odbc );
+	LeaveCriticalSec( &og.cs_option );
+	return success;
+}
+SQLGETOPTION_PROC( int, SACK_ReadPrivateProfileString )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer, CTEXTSTR pINIFile )
+{
+	return SACK_ReadPrivateProfileStringOdbc( og.Option, pSection, pOptname, pBuffer, pnBuffer, pINIFile );
+}
+SQLGETOPTION_PROC( int, SACK_ReadProfileStringOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer )
+{
+	return SACK_ReadPrivateProfileStringOdbc( odbc, pSection, pOptname, pBuffer, pnBuffer, NULL );
+}
+SQLGETOPTION_PROC( int, SACK_ReadProfileString )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer )
+{
+	return SACK_ReadPrivateProfileStringOdbc( og.Option, pSection, pOptname, pBuffer, pnBuffer, NULL );
 }
 //------------------------------------------------------------------------
 SQLGETOPTION_PROC( int32_t, SACK_GetProfileIntEx )( CTEXTSTR pSection, CTEXTSTR pOptname, int32_t defaultval, LOGICAL bQuiet )

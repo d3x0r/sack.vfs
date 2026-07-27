@@ -12575,6 +12575,23 @@ SQLGETOPTION_PROC( int, SACK_GetProfileBlob )( CTEXTSTR pSection, CTEXTSTR pOptn
 /* <combine sack::sql::options::SACK_GetPrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@TEXTCHAR *@size_t@CTEXTSTR@LOGICAL>
    \ \                                                                                                                        */
 SQLGETOPTION_PROC( int, SACK_GetProfileBlobOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer );
+/* Read an option's string value without a default and without creating the option.
+   Unlike SACK_GetProfileString(), no default is taken or applied, a missing option is not
+   materialized in the option tree, and the value is returned by reference (like
+   SACK_GetProfileBlob) so no maximum option length need be known.  The returned buffer is
+   allocated for the caller to Release(); the length is in characters and the buffer is also
+   null terminated.  Returns TRUE if the option exists (an empty value reads TRUE with length
+   0), else FALSE leaving the caller's pointer untouched.                                     */
+SQLGETOPTION_PROC( int, SACK_ReadProfileString )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer );
+/* <combine sack::sql::options::SACK_ReadProfileString@CTEXTSTR@CTEXTSTR@TEXTCHAR **@size_t *>
+   \ \                                                                                                                        */
+SQLGETOPTION_PROC( int, SACK_ReadProfileStringOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer );
+/* <combine sack::sql::options::SACK_ReadProfileString@CTEXTSTR@CTEXTSTR@TEXTCHAR **@size_t *>
+   \ \                                                                                                                        */
+SQLGETOPTION_PROC( int, SACK_ReadPrivateProfileString )( CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer, CTEXTSTR pINIFile );
+/* <combine sack::sql::options::SACK_ReadProfileString@CTEXTSTR@CTEXTSTR@TEXTCHAR **@size_t *>
+   \ \                                                                                                                        */
+SQLGETOPTION_PROC( int, SACK_ReadPrivateProfileStringOdbc )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pOptname, TEXTCHAR **pBuffer, size_t *pnBuffer, CTEXTSTR pINIFile );
 /* <combine sack::sql::options::SACK_GetPrivateProfileStringEx@CTEXTSTR@CTEXTSTR@CTEXTSTR@TEXTCHAR *@size_t@CTEXTSTR@LOGICAL>
    \ \                                                                                                                        */
 SQLGETOPTION_PROC( int32_t, SACK_GetProfileInt )( CTEXTSTR pSection, CTEXTSTR pOptname, int32_t defaultval );
