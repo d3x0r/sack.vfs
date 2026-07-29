@@ -284,7 +284,7 @@ function addTaskLog( task, log ) {
 	loadObserver.observe(logEnd); // Asynchronous call
 
 	
-	local.logs[task.id] = { logFrame, logList, logEnd, task, log, add };
+	local.logs[task.id] = { logFrame, logList, logEnd, task, log, add, loadObserver };
 	for( let lineIdx = 0; lineIdx < log.log.length; lineIdx++ ){
 		const line = log.log[lineIdx];
 		add( line );
@@ -315,19 +315,28 @@ function addTaskLog( task, log ) {
 
 
 function insertBackLog( log, msg ) {
-		console.log( "backlog insert...")
+		// content gets added *above* the current view, so anchor on the distance
+		// from the bottom; scrollHeight grows by exactly what was inserted.
+		const anchor = log.logList.scrollHeight - log.logList.scrollTop;
 		let firstAdd = null;
 		for( let lineIdx = 0; lineIdx < msg.log.length; lineIdx++ ){
 			const line = msg.log[lineIdx];
 			 const newline = log.add( line, log.logEnd );
 			 if( !firstAdd ) firstAdd = newline;
 		}
-		const scrollat = log.logEnd.getBoundingClientRect();
-		log.logEnd.remove();
-		if( msg.at )
-			log.logList.insertBefore( log.logEnd, firstAdd );
 		log.log.at = msg.at;
-		log.logList.scrollTop = scrollat.top;
+		log.logEnd.remove();
+		if( msg.at && firstAdd ) {
+			log.logList.insertBefore( log.logEnd, firstAdd );
+			// IntersectionObserver only reports *transitions*, and it reports
+			// asynchronously; the remove/insert above happens in one synchronous
+			// block so it collapses to "no change" and the sentinel never reports
+			// again.  Re-observing forces a fresh report - which also chains the
+			// next page when the one just added didn't fill the view.
+			log.loadObserver.unobserve( log.logEnd );
+			log.loadObserver.observe( log.logEnd );
+		}
+		log.logList.scrollTop = log.logList.scrollHeight - anchor;
 }
 
 local.display = new Display();

@@ -11,6 +11,12 @@ export const config = {
 
 let pendingDepends = [];
 
+// lines of output retained per task; a long lived service would otherwise grow
+// #log without bound.  Override per task with `maxLogLines` in the task config.
+const DEFAULT_MAX_LOG_LINES = 5000;
+// trim in chunks - splicing the front on every line is O(n) per line.
+const LOG_TRIM_SLACK = 1024;
+
 export class Task {
 	started = new Date(0);
 	starting = false;
@@ -24,6 +30,7 @@ export class Task {
 
 	#autoEndBatch = false;
 	#log = [];
+	#logBase = 0; // lines discarded off the front of #log; `at` stays absolute
 	#task = null; // task definition
 	#run = null;  // running service instance handle
 	#exitCode = null; // set before clearing #run
@@ -195,18 +202,23 @@ export class Task {
 	}
 
 	get log() {
+		const total = this.#logBase + this.#log.length;
 		if( this.#log.length > 20 )
-			return { at:this.#log.length-20, log:this.#log.slice( this.#log.length - 20, this.#log.length ) };
-		else return { at:0, log: this.#log };
+			return { at:total-20, log:this.#log.slice( this.#log.length - 20 ) };
+		else return { at:this.#logBase, log: this.#log.slice() };
 	}
 
+	// `from` is an absolute line index - the oldest line the client holds.
+	// Returns the 20 lines before it, clamped to what is still retained.
+	// `at:0` tells the client to stop asking; `truncated` says why.
 	getLog( from ) {
 		//console.log( "reading log from:", from, from - 20, from  );
-		if( from > 20 )
-			return { at:from-20, log:this.#log.slice( from - 20, from  ) };
-		else {
-			return { at:0, log:this.#log.slice( 0, from ) };
-		}
+		const start = Math.max( from - 20, this.#logBase );
+		const end   = Math.max( from, this.#logBase );
+		const atFloor = start <= this.#logBase && this.#logBase > 0;
+		return { at: atFloor?0:start
+		       , truncated: atFloor
+		       , log: this.#log.slice( start - this.#logBase, end - this.#logBase ) };
 	}
 
 	set ws( val) {
@@ -407,10 +419,16 @@ export class Task {
 		}
 	}
 
-	#send( buffer ) {	
+	#send( buffer ) {
 		this.#log.push( buffer );
+		const maxLog = this.#task.maxLogLines || DEFAULT_MAX_LOG_LINES;
+		if( this.#log.length > maxLog + LOG_TRIM_SLACK ) {
+			const drop = this.#log.length - maxLog;
+			this.#log.splice( 0, drop );
+			this.#logBase += drop;
+		}
 		if( !this.#ws.length )
-			return;	
+			return;
 		const msg = { op:"log", system:local.id, id:this.id, log: buffer };
 		const msg_ = JSOX.stringify( msg ) ;
 		//console.log( "msg to send:", msg_ );

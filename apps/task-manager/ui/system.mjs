@@ -15,6 +15,11 @@ export class System {
 	get connection() {
 		return this.#connection;
 	}
+	// a peer that reconnects keeps its id but arrives on a new Connection;
+	// without this setter the re-bind throws (getter-only, and modules are strict).
+	set connection( val ) {
+		this.#connection = val;
+	}
 	get systems() { return this.#systems }
 
 	constructor(connection, id, port, system, tasks ) {
