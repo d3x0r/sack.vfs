@@ -38190,7 +38190,7 @@ int SendPTYKeyEvent( PTASK_INFO task, uint32_t key ) {
 		int uc = text ? GetUtfChar( &text ) : 0;
 		int kd = IsKeyPressed( key ) ? 1 : 0;
 		int vkIdx = vk & 0xFF;
-		lprintf( "WTX: PTYKey key=%08x vk=%d uc=%d kd=%d held=%d", key, vk, uc, kd, s_down[vkIdx] );
+		//lprintf( "WTX: PTYKey key=%08x vk=%d uc=%d kd=%d held=%d", key, vk, uc, kd, s_down[vkIdx] );
 		if( kd ) {
 			if( !s_down[vkIdx] ) {
 				s_down[vkIdx] = 1;
@@ -64306,9 +64306,16 @@ SegSplit( &pCurrent, start );
 					}
 					else if( StrCaseStr( GetText( field->value ), "close" ) ) {
 						// the close defines the length of content...
+						// ... but only when reading a RESPONSE.  On a request this
+						// clobbers the no_content_length=0 that the GET/PUT request-line
+						// parse just set, so the dispatch gate below never fires and the
+						// request is never delivered - the server sits waiting for a body
+						// that a GET/PUT is never going to send.  (node's http client sends
+						// 'Connection: close' whenever it isn't using a keep-alive agent.)
+						if( pHttpState->response_version )
  // might have length already specified...
-						if( !pHttpState->content_length )
-							pHttpState->flags.no_content_length = 1;
+							if( !pHttpState->content_length )
+								pHttpState->flags.no_content_length = 1;
 					}
 				}
 				else if( TextLike( field->name, "Transfer-Encoding" ) )
@@ -64459,18 +64466,18 @@ void EndHttp( struct HttpState *pHttpState )
 }
 PTEXT GetHttpContent( struct HttpState *pHttpState )
 {
+	PTEXT result = NULL;
 	lockHttp( pHttpState );
 	if( pHttpState->read_chunks )
 	{
 		/* did a timeout happen? */
 		if( pHttpState->content_length == pHttpState->read_chunk_total_length )
-			return pHttpState->content;
-		return NULL;
+			result = pHttpState->content;
 	}
+	else if( pHttpState->content_length )
+		result = pHttpState->content;
 	unlockHttp( pHttpState );
-	if( pHttpState->content_length )
-		return pHttpState->content;
-	return NULL;
+	return result;
 }
 void ProcessHttpFields( struct HttpState *pHttpState, void (CPROC*f)( uintptr_t psv, PTEXT name, PTEXT value ), uintptr_t psv )
 {
@@ -64500,15 +64507,18 @@ PTEXT GetHttpField( struct HttpState *pHttpState, CTEXTSTR name )
 {
 	INDEX idx;
 	struct HttpField *field;
+	PTEXT result = NULL;
 	lockHttp( pHttpState );
 	if( pHttpState->fields )
 		LIST_FORALL( pHttpState->fields, idx, struct HttpField *, field )
 		{
-			if( StrCaseCmp( GetText( field->name ), name ) == 0 )
-				return field->value;
+			if( StrCaseCmp( GetText( field->name ), name ) == 0 ) {
+				result = field->value;
+				break;
+			}
 		}
 	unlockHttp( pHttpState );
-	return NULL;
+	return result;
 }
 PTEXT GetHttpResponse( struct HttpState *pHttpState )
 {
@@ -65295,12 +65305,19 @@ PTEXT GetHTTPField( struct HttpState *pHttpState, CTEXTSTR name )
 {
 	INDEX idx;
 	struct HttpField *field;
+	PTEXT result = NULL;
+	// the field list is emptied by EndHttp on the JS end() thread; walking it
+	// unlocked can trip over LineRelease'd names/values mid-iteration.
+	lockHttp( pHttpState );
 	LIST_FORALL( pHttpState->fields, idx, struct HttpField *, field )
 	{
-		if( TextLike( field->name, name ) )
-			return field->value;
+		if( TextLike( field->name, name ) ) {
+			result = field->value;
+			break;
+		}
 	}
-	return NULL;
+	unlockHttp( pHttpState );
+	return result;
 }
 PNVLIST GetHttpHeaderFields( HTTPState pHttpState )
 {
@@ -69482,7 +69499,23 @@ static void CPROC destroyHttpState( HTML5WebSocket socket, PCLIENT pc_client ) {
 	//HTML5WebSocket socket = (HTML5WebSocket)GetNetworkLong( pc_client, 0 );
 	if( !socket ) return;
 	if( socket->input_state.flags.in_open_event ) {
+		// not a destroy yet - deferred until the open event finishes; leave Magic alone.
 		socket->flags.closed = 1;
+		return;
+	}
+	// Two threads reach here for the same socket: the JS end() thread via
+	// RemoveClient -> ssl_CloseSession (which closes synchronously), and a network
+	// thread via InternalRemoveClientExx.  A plain "is it still valid" test is a
+	// TOCTOU - both read a valid Magic, both proceed, and the loser then reads fields
+	// the winner has already torn down.  The observed fault read close_reason as
+	// 0xFACEBEAD... (FREE_MEMORY_TAG = never allocated, as opposed to
+	// CLEAR_MEMORY_TAG 0xDEADBEEF... which marks released), so the loser was reading
+	// memory that is not a live allocation at all, and handing it to Release.
+	// Claim the teardown atomically: only the thread that takes the valid Magic away
+	// runs it, everyone else returns immediately.
+	uint32_t magic = LockedExchange( &socket->Magic, 0 );
+	if( magic != 0x20130912 && magic != 0x20240310 ) {
+		//lprintf( "destroyHttpState: socket %p already claimed by another thread", socket );
 		return;
 	}
 	//lprintf( "destoyHttpState %p %p", socket, pc_client );
@@ -69490,7 +69523,8 @@ static void CPROC destroyHttpState( HTML5WebSocket socket, PCLIENT pc_client ) {
 		SetNetworkLong( pc_client, 0, 0 );
 		SetNetworkLong( pc_client, 1, 0 );
 	}
-	else if( socket->Magic == 0x20130912 && socket->pc ) {
+ // Magic was zeroed by the claim above
+	else if( magic == 0x20130912 && socket->pc ) {
 		// freeing without a close event (deferred destroy); the client must not
 		// be able to reach this socket after it is freed, or a later close
 		// event reads freed memory.
@@ -69520,6 +69554,7 @@ static void CPROC destroyHttpState( HTML5WebSocket socket, PCLIENT pc_client ) {
 #endif
 	Deallocate( uint8_t*, socket->input_state.fragment_collection );
 	DestroyHttpState( socket->http_state );
+	socket->http_state = NULL;
 	Deallocate( POINTER, socket->buffer );
 #ifdef DEBUG_WEBSOCKET_CLOSE
  // TRACE close-path debugging
@@ -80149,6 +80184,12 @@ struct network_global_data{
 	PCLIENT ActiveClients;
 	PCLIENT ClosedClients;
 	CRITICALSECTION csNetwork;
+	// Serializes the peer_thread_info chain (root_thread/parent_peer/child_peer) in
+	// AddThreadEvent.  Separate from csNetwork so it cannot interact with the close
+	// paths' lock order; nothing taken while holding this needs csNetwork.
+	CRITICALSECTION csPeerChain;
+	// gethostbyname2 hands back static storage; serialize resolution (see network_addresses.c)
+	CRITICALSECTION csResolve;
 	volatile uint32_t uNetworkPauseTimer;
 	uint32_t uPendingTimer;
 #ifndef __LINUX__
@@ -80376,8 +80417,11 @@ static void LowLevelNetworkInit( void )
 	if( !global_network_data ) {
 		SimpleRegisterAndCreateGlobal( global_network_data );
 	}
-	if( !globalNetworkData.ClientSlabs )
+	if( !globalNetworkData.ClientSlabs ) {
 		InitializeCriticalSec( &globalNetworkData.csNetwork );
+		InitializeCriticalSec( &globalNetworkData.csPeerChain );
+		InitializeCriticalSec( &globalNetworkData.csResolve );
+	}
 }
 PRIORITY_PRELOAD( InitNetworkGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY - 1 )
 {
@@ -81678,7 +81722,7 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 		if( !bLinger || !(lpClient->lpFirstPending || ( lpClient->dwFlags & CF_WRITEPENDING ) ) ) {
 			shutdown( lpClient->Socket, SHUT_WR );
 		} else {
-			lprintf( "linger and still pending write data..." );
+			//lprintf( "linger and still pending write data..." ); // normal path; noisy under load
 			lpClient->dwFlags |= CF_TOCLOSE;
 		}
 		lpClient->dwFlags |= CF_WANTCLOSE;
@@ -83223,12 +83267,26 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 		lprintf( "Add thread event %p %d %08x  %s", pc, broadcast?pc->SocketBroadcast:pc->Socket, pc->dwFlags, broadcast?"broadcast":"direct" );
 #endif
 	if( !broadcast ) {
+		// The whole select-a-peer / create-a-peer sequence has to be serialized, not
+		// just the relink at the end.  Two threads that both decide to add a peer to
+		// the same parent each call ThreadTo, and then BOTH new threads assign
+		// peer_thread->child_peer, so the chain is already corrupt before the relink
+		// runs - and one thread's `peer->child_peer = NULL` below lands while the
+		// other is between its spin and its own store, which is the observed NULL
+		// dereference.  The new NetworkThreadProc sets child_peer without taking any
+		// lock (network.c, and it only touches csNetwork on exit), so holding this
+		// across the spin cannot deadlock against the thread being waited for.
+		EnterCriticalSec( &globalNetworkData.csPeerChain );
 		for( ; peer; peer = peer->child_peer ) {
 			if( !peer->child_peer ) {
 #ifdef LOG_NOTICES
 				if( globalNetworkData.flags.bLogNotices )
 					lprintf( "On last peer..." );
 #endif
+				// NOTE (debugging aid): temporarily changing this to `peer->nEvents > 0`
+				// spreads one socket per peer thread, which makes the close-path races
+				// reproduce roughly 3 runs in 4 instead of 1 in 26.  Useful for verifying
+				// a fix; not a behaviour change to ship.
 				if( peer->nEvents > globalNetworkData.nPeers ) {
 #ifdef LOG_NOTICES
 					if( globalNetworkData.flags.bLogNotices )
@@ -83284,6 +83342,7 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 			else
 				peer = peer->child_peer;
 		}
+		LeaveCriticalSec( &globalNetworkData.csPeerChain );
 	} else {
  // add broadcast to the same event as the original.
 		peer = pc->this_thread;
@@ -85316,6 +85375,15 @@ SOCKADDR *CreateRemoteV2( CTEXTSTR lpName, uint16_t nHisPort, enum NetworkAddres
 #  else
 			int found = 0;
 			int try_again;
+			// gethostbyname2 returns a pointer to static per-process storage, so it is
+			// not thread safe - concurrent resolvers overwrite each other's hostent and
+			// the memcpy below reads a replaced h_addr/h_length.  This crashed inside
+			// libc under the async http client, which spawns a request thread each call
+			// and resolves from all of them at once.  Serialize the call AND the copy of
+			// its result.  (Better long-term: getaddrinfo, which is thread safe and is
+			// already what the WIN32 branch of this function uses - a lock here also
+			// serializes genuinely slow DNS for distinct hosts.)
+			EnterCriticalSec( &globalNetworkData.csResolve );
 			do {
 				try_again = 0;
 				if( !( flags & NETWORK_ADDRESS_FLAG_PREFER_V4 )
@@ -85348,6 +85416,7 @@ SOCKADDR *CreateRemoteV2( CTEXTSTR lpName, uint16_t nHisPort, enum NetworkAddres
 					}
 				}
 			} while( try_again && !found );
+			LeaveCriticalSec( &globalNetworkData.csResolve );
 			if( !found )
 			{
 				// could not find the name in the host file.
@@ -90103,18 +90172,27 @@ void ssl_ClosePipeSession( struct ssl_session** ssl_session )
 #if defined( DEBUG_SSL_FALLBACK )
 	lprintf( "Close generic session %p", ssl_session );
 #endif
-	if( ssl_session[0] )
+	// Take the session out of the slot atomically.  ssl_ClosePipe claims this same
+	// slot from the network thread; reading it here and then freeing races that -
+	// both threads capture the same pointer and both call Release, which the
+	// allocator's block check caught as a double free (SIGTRAP in DropMemEx).
+	struct ssl_session *ses = (struct ssl_session*)(uintptr_t)LockedExchangePtrSzVal( ssl_session, 0 );
+	if( ses )
 	{
-		struct ssl_session *ses = ssl_session[0];
 		struct ssl_hostContext* hostctx;
 		INDEX idx;
 		PTEXT seg;
-		SSL_shutdown( ses->ssl );
-		//lprintf( "SSL Shutdown... but this should only be done if handshake complete..." );
+		// The shutdown has to be inside this test, not before it: SSL_shutdown sends a
+		// close_notify alert, and on a session whose handshake never completed the
+		// TLS1.3 record layer has no wire_write callback yet - libressl then calls
+		// through a NULL pointer (tls13_record_send with wire_write=0x0) and the
+		// process dies.  A connection torn down mid-handshake has no session to
+		// notify anyway, so there is nothing to send.
 		if( SSL_is_init_finished( ses->ssl ) ) {
 #if defined( DEBUG_SSL_FALLBACK )
 			lprintf( "SSL Shutdown... but this should only be done if handshake complete..." );
 #endif
+			SSL_shutdown( ses->ssl );
 			ssl_handlePendingControlwrites( ses );
 		}
 		// usually this isn't released... the server socket (LISTENER)
@@ -90139,7 +90217,7 @@ void ssl_ClosePipeSession( struct ssl_session** ssl_session )
 			ses->hostname = NULL;
 		}
 		/* this should probably have a do_close action event too like send/recv */
-		ssl_session[0] = NULL;
+ // slot was already cleared by the claim above
 		Release( ses );
 	} else {
 		//lprintf( "Session already closed" );
@@ -90283,6 +90361,13 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 		{
 			int len;
 			int hs_rc;
+			// ses[0] is &pc->ssl_session - shared state that the closing thread stores
+			// NULL into.  Re-reading it at every use is why a passing `if( ses[0] )`
+			// check is followed by a faulting deref on the next line.  Capture it into
+			// this local at each point where the value is about to be used repeatedly.
+			// inUse is held across those regions, so the object cannot be freed while
+			// we work with it; only the attachment (ses[0]) can be dropped.
+			struct ssl_session *s;
 			//lprintf( "Read from network: %d", length );
 			//LogBinary( (const uint8_t*)buffer, length );
 			EnterCriticalSec( &ses[0]->csReadWrite );
@@ -90321,8 +90406,8 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 				return;
 			}
 			if( !ses[0] ) {
-				ses[0]->inUse--;
-				LeaveCriticalSec( &ses[0]->csReadWrite );
+				// the session is already gone - it cannot be un-marked or unlocked,
+				// both of those dereference the NULL this branch just tested for.
 				return;
 			}
 			// == 1 if is already done, and not newly done
@@ -90360,6 +90445,12 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 						else
 							pc->pcServer->ssl_session->user_connected( pc->pcServer, pc );
 					}
+					// We are OUTSIDE the lock from here until the re-enter below, and the
+					// callback just dispatched can close the connection - that frees the
+					// session and clears pc->ssl_session, which is this ses[0].  Everything
+					// following dereferences it, so re-validate before going on.  Nothing is
+					// held at this point, so returning is clean.
+					if( !ses[0] ) return;
 					//lprintf( "Initial read dispatch.. %d", ses[0]->dwOriginalFlags & CF_CPPREAD );
 					if( ses[0]->dwOriginalFlags & CF_CPPREAD ) {
 						if( ses[0]->cpp_user_read )
@@ -90370,6 +90461,9 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 							ses[0]->user_read( pc, NULL, 0 );
 						else lprintf( "Couldn't send initial read - no function?!" );
 					}
+					// same again: the initial-read callback can close the connection.
+					// (crash was at the SSL_pending( ses[0]->ssl ) below, from a core dump)
+					if( !ses[0] ) return;
 					if( ses[0]->deleteInUse ){
 						lprintf( "Pending close... was in-use when closed.");
 					}
@@ -90381,33 +90475,37 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 			{
 				// 1 is 'needs to send some data to complete handshake'
 			read_more:
+				// arrived here either by falling through or by the `goto` after the
+				// application read callback, which may have detached the session.
+				s = ses[0];
+				if( !s ) return;
 				// if read isn't done before pending, pending doesn't get set
 				// but this read doens't return a useful length.
  //-V575
-				len = SSL_read( ses[0]->ssl, NULL, 0 );
+				len = SSL_read( s->ssl, NULL, 0 );
 				//lprintf( "return of 0 read: %d", len );
 				//if( len < 0 )
-				//	lprintf( "error of 0 read is %d", SSL_get_error( ses[0]->ssl, len ) );
-				len = SSL_pending( ses[0]->ssl );
+				//	lprintf( "error of 0 read is %d", SSL_get_error( s->ssl, len ) );
+				len = SSL_pending( s->ssl );
 				if( len ) {
-					if( len > (int)ses[0]->dbuflen ) {
+					if( len > (int)s->dbuflen ) {
 						//lprintf( "Needed to expand buffer..." );
-						Release( ses[0]->dbuffer );
-						ses[0]->dbuflen = ( len + 4095 ) & 0xFFFF000;
-						ses[0]->dbuffer = NewArray( uint8_t, ses[0]->dbuflen );
+						Release( s->dbuffer );
+						s->dbuflen = ( len + 4095 ) & 0xFFFF000;
+						s->dbuffer = NewArray( uint8_t, s->dbuflen );
 					}
-					len = SSL_read( ses[0]->ssl, ses[0]->dbuffer, (int)ses[0]->dbuflen );
+					len = SSL_read( s->ssl, s->dbuffer, (int)s->dbuflen );
 #ifdef DEBUG_SSL_IO_VERBOSE
 					lprintf( "normal read - just get the data from the other buffer : %d", len );
 #endif
 					if( len < 0 ) {
-						int error = SSL_get_error( ses[0]->ssl, len );
+						int error = SSL_get_error( s->ssl, len );
 						if( error == SSL_ERROR_WANT_READ ) {
 							lprintf( "want more data?" );
 						} else
 							lprintf( "SSL_Read failed. %d", error );
-						if( pc && ses[0]->errorCallback )
-							ses[0]->errorCallback( ses[0]->psvErrorCallback, pc, SACK_NETWORK_ERROR_SSL_FAIL );
+						if( pc && s->errorCallback )
+							s->errorCallback( s->psvErrorCallback, pc, SACK_NETWORK_ERROR_SSL_FAIL );
 					}
 				}
 			}
@@ -90467,37 +90565,46 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 			}
 			else
 				len = 0;
-			ssl_handlePendingControlwrites( ses[0] );
-			LeaveCriticalSec( &ses[0]->csReadWrite );
+			// ses[0] is pc->ssl_session, which a concurrent close clears (ssl_ClosePipe
+			// takes the session out of it).  This check has to happen BEFORE the two
+			// dereferences below, not after them: unlocking &ses[0]->csReadWrite on a
+			// NULL session computes a bogus lock address (0xf0) and faults.  The lock
+			// is gone along with the session, so there is nothing to release here.
 			if( !ses[0] ) {
 				return;
 			}
+			// this is the block that faulted with pcs=0xf0: the check above passed and
+			// then ses[0] was NULLed before the unlock re-read it.
+			s = ses[0];
+			ssl_handlePendingControlwrites( s );
+			LeaveCriticalSec( &s->csReadWrite );
 			// do was have any decrypted data to give to the application?
-			if( ses[0] && len > 0 ) {
+			if( len > 0 ) {
 #ifdef DEBUG_SSL_IO_BUFFERS
 				if( ssl_global.flags.bLogBuffers ) {
 					lprintf( "READ BUFFER:" );
-					LogBinary( ses[0]->dbuffer, (( ssl_global.flags.bLogBuffers ) || ( 256 > len ))? len : 256 );
+					LogBinary( s->dbuffer, (( ssl_global.flags.bLogBuffers ) || ( 256 > len ))? len : 256 );
 				}
 #endif
-				if( ses[0]->dwOriginalFlags & CF_CPPREAD ) {
-					if( ses[0]->cpp_user_read )
-						ses[0]->cpp_user_read( ses[0]->psvRead, ses[0]->dbuffer, len );
+				if( s->dwOriginalFlags & CF_CPPREAD ) {
+					if( s->cpp_user_read )
+						s->cpp_user_read( s->psvRead, s->dbuffer, len );
 					else lprintf( "Somehow missing the C++ read function?");
 				} else {
-					if( ses[0]->user_read )
-						ses[0]->user_read( pc, ses[0]->dbuffer, len );
+					if( s->user_read )
+						s->user_read( pc, s->dbuffer, len );
 					else lprintf( "Somehow missing the read function?");
 				}
- // might have closed during read.
+				// the read callback above may have closed/detached; ses[0] is the
+				// attachment test, s stays valid because inUse is still held.
 				if( ses[0] ) {
-					if( ses[0] && ses[0]->deleteInUse ){
+					if( s->deleteInUse ){
 						//lprintf( "Pending close(3)... was in-use when closed.");
-						ses[0]->inUse--;
+						s->inUse--;
 						RemoveClient( pc );
 					}
 					else {
-						EnterCriticalSec( &ses[0]->csReadWrite );
+						EnterCriticalSec( &s->csReadWrite );
 						goto read_more;
 					}
 				} else {
@@ -90505,7 +90612,7 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 				}
 			}
 			else if( len == 0 ) {
-				ses[0]->inUse--;
+				s->inUse--;
 #ifdef DEBUG_SSL_IO_VERBOSE
 				lprintf( "incomplete read (no more data to read)" );
 #endif
@@ -90680,10 +90787,14 @@ unsigned long pthreads_thread_id(void)
 {
 	return (unsigned long)GetThisThreadID();
 }
+// ex_data slot on the SSL itself, so the servername callback can get straight to the
+// accepting session instead of searching a list that other threads are mutating.
+static int ssl_ex_session_idx = -1;
 LOGICAL ssl_InitLibrary( void ){
 	if( !ssl_global.flags.bInited )
 	{
 		SSL_library_init();
+		ssl_ex_session_idx = SSL_get_ex_new_index( 0, (void*)"sack ssl_session", NULL, NULL, NULL );
 		ssl_global.lock_cs = NewArray( uint32_t, CRYPTO_num_locks() );
 		memset( ssl_global.lock_cs, 0, sizeof( uint32_t ) * CRYPTO_num_locks() );
 		CRYPTO_set_locking_callback(win32_locking_callback);
@@ -90705,6 +90816,7 @@ static void ssl_InitSession( struct ssl_session *ses ) {
 	//InitializeCriticalSec( &ses->csWrite );
 }
 void ssl_ClosePipe( struct ssl_session **ses ) {
+	struct ssl_session *session;
 	if (!ses[0]) {
 		//lprintf("(ClosePipe)already closed?");
 		return;
@@ -90714,23 +90826,30 @@ void ssl_ClosePipe( struct ssl_session **ses ) {
 		ses[0]->deleteInUse++;
 		return;
 	}
-	DeleteCriticalSec( &ses[0]->csReadWrite );
+	// Take the session away atomically before tearing it down.  The JS end() thread
+	// (RemoveClient -> ssl_CloseSession) and a network thread (InternalRemoveClientExx
+	// -> close.CloseCallback -> ssl_CloseCallback) both reach here for the same
+	// connection; the !ses[0] test above is a TOCTOU that lets both through, and the
+	// loser then double-frees ->ssl / ->ctx (crash was in SSL_CTX_free).  Only the
+	// thread that takes the pointer runs the teardown.
+	session = (struct ssl_session*)(uintptr_t)LockedExchangePtrSzVal( ses, 0 );
+	if( !session ) return;
+	DeleteCriticalSec( &session->csReadWrite );
 	//DeleteCriticalSec( &ses->csWrite );
-	Release( ses[0]->dbuffer );
-	Release( ses[0]->ibuffer );
-	Release( ses[0]->obuffer );
-	if( ses[0]->cert ) {
-		EVP_PKEY_free( ses[0]->cert->pkey );
-		X509_free( ses[0]->cert->x509 );
-		Release( ses[0]->cert );
+	Release( session->dbuffer );
+	Release( session->ibuffer );
+	Release( session->obuffer );
+	if( session->cert ) {
+		EVP_PKEY_free( session->cert->pkey );
+		X509_free( session->cert->x509 );
+		Release( session->cert );
 	}
-	SSL_free( ses[0]->ssl );
-	SSL_CTX_free( ses[0]->ctx );
+	SSL_free( session->ssl );
+	SSL_CTX_free( session->ctx );
 	// these are closed... with the ssl connection.
 	//BIO_free( ses->rbio );
 	//BIO_free( ses->wbio );
-	Release( ses[0] );
-	ses[0] = NULL;
+	Release( session );
 }
 // this is from network layer, so it will be a PCLIENT
 static void ssl_CloseCallback( PCLIENT pc ) {
@@ -90793,6 +90912,8 @@ static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 #endif
 	ses->hostname = DupCStrLen( (CTEXTSTR)"no extension", 12 );
 	ses->pc = pcNew;
+ // servername callback looks this up
+	SSL_set_ex_data( ses->ssl, ssl_ex_session_idx, ses );
 	AddLink( &pcServer->ssl_session->accepting, ses );
 	ses->errorCallback = pcServer->ssl_session?pcServer->ssl_session->errorCallback:pcServer->errorCallback;
 	ses->psvErrorCallback = pcServer->ssl_session?pcServer->ssl_session->psvErrorCallback:pcServer->psvErrorCallback;
@@ -90839,6 +90960,8 @@ struct ssl_session* ssl_ClientPipeConnected( struct ssl_session* session, uintpt
 	SSL_set_accept_state( ses->ssl );
 	ses->hostname = DupCStrLen( (CTEXTSTR)"no extension", 12 );
 	ses->pc = (PCLIENT)psvNew;
+ // servername callback looks this up
+	SSL_set_ex_data( ses->ssl, ssl_ex_session_idx, ses );
 	AddLink( &session->accepting, ses);
 	//pcNew->ssl_session = ses;
 #ifdef DEBUG_SSL_IO_VERBOSE
@@ -90859,10 +90982,11 @@ static int handleServerName( SSL* ssl, int* al, void* param ) {
 	struct ssl_session* ses = (struct ssl_session*)param;
 	struct ssl_session* ssl_Accept;
 	INDEX idx;
-	LIST_FORALL( ses->accepting, idx, struct ssl_session*, ssl_Accept) {
-		if( ses && (ses->ssl == ssl) )
-			break;
-	}
+	// same as the libressl branch below: look the session up on the SSL rather than
+	// walking the unlocked accepting list.  (The walk this replaces also tested
+	// `ses->ssl == ssl` - the listener - instead of the `ssl_Accept` it was iterating,
+	// so it never actually matched on the entries it was searching.)
+	ssl_Accept = (struct ssl_session*)SSL_get_ex_data( ssl, ssl_ex_session_idx );
 	if( !ssl_Accept ) {
 		lprintf( "FATAL, NO SUCH ACCEPTING SOCKET" );
 		return 0;
@@ -90987,18 +91111,20 @@ static int handleServerName( SSL* ssl, int* al, void* param ) {
 static int handleServerName( SSL* ssl, int* al, void* param ) {
 	//PCLIENT pcListener = (PCLIENT)param;
 	struct ssl_session* ses = (struct ssl_session*)param;
-	PLIST list = ses->accepting;
 	struct ssl_session *ssl_Accept;
 	INDEX idx;
-	LIST_FORALL( list, idx, struct ssl_session*, ssl_Accept ) {
-		if( ssl_Accept->ssl == ssl)
-			break;
-	}
+	// The session is hung off the SSL itself at accept time.  Searching ses->accepting
+	// for it used to dereference every entry (ssl_Accept->ssl == ssl) while other
+	// threads were AddLink/SetLink-ing that same unlocked PLIST - at any real handshake
+	// concurrency this faults on an entry being replaced mid-walk.
+	ssl_Accept = (struct ssl_session*)SSL_get_ex_data( ssl, ssl_ex_session_idx );
 	if( !ssl_Accept ) {
 		lprintf( "FATAL, NO SUCH ACCEPTING SOCKET" );
 		return 0;
 	}
-	SetLink( &ses->accepting, idx, NULL );
+	// remove by value - there is no walk to hand us an index any more, and comparing
+	// pointers (rather than dereferencing each entry) cannot fault on a stale one.
+	DeleteLink( &ses->accepting, ssl_Accept );
 	PLIST* ctxList = &ses->hosts;
 	// if no hosts to check.
 	if( !ctxList[0] ) return SSL_TLSEXT_ERR_OK;
@@ -91026,12 +91152,14 @@ static int handleServerName( SSL* ssl, int* al, void* param ) {
 	LIST_FORALL( ctxList[0], idx, struct ssl_hostContext*, hostctx ) {
 		char const* checkName;
 		char const* nextName;
-		size_t maxhosts = StrLen( hostctx->host );
+		size_t maxhosts;
 		if( !hostctx->host ) {
+			// a host context registered without a name is the default/fallback cert
 			//lprintf(" No host - setup default result?" );
 			defaultHostctx = hostctx;
 			continue;
 		}
+		maxhosts = StrLen( hostctx->host );
 		//lprintf( "Host:%s", hostctx->host );
 		for( checkName = hostctx->host; checkName ? (nextName = StrChr( checkName, '~' )), 1 : 0; checkName = nextName ) {
 			//lprintf( "check: %s next: %s %d", checkName, nextName, maxhosts );
@@ -91050,9 +91178,26 @@ static int handleServerName( SSL* ssl, int* al, void* param ) {
 		}
 	}
 	if( defaultHostctx ) {
-		//SSL_set_SSL_CTX( ssl, defaultHostctx->ctx );
-		//return SSL_TLSEXT_ERR_OK;
-		return SSL_TLSEXT_ERR_NOACK;
+		// a nameless host context was registered as the fallback; use its cert.
+		// (NOACK here would leave the accepting SSL_CTX in place, which carries no
+		// certificate of its own, so the handshake would fail instead of falling back.)
+		SSL_set_SSL_CTX( ssl, defaultHostctx->ctx );
+		return SSL_TLSEXT_ERR_OK;
+	}
+	if( !strlen ) {
+		// The client sent no SNI at all (connected to a bare IP, or older tooling).
+		// The match loop above cannot select anything in that case - every configured
+		// name has a non-zero length, so the namelen != strlen test skips them all.
+		// With exactly one host context configured there is no ambiguity to resolve,
+		// so accept using it rather than failing the handshake.  With several, the
+		// choice really is ambiguous; fall through to the error below.
+		if( GetLinkCount( ctxList[0] ) == 1 ) {
+			hostctx = (struct ssl_hostContext*)GetLink( ctxList, 0 );
+			if( hostctx ) {
+				SSL_set_SSL_CTX( ssl, hostctx->ctx );
+				return SSL_TLSEXT_ERR_OK;
+			}
+		}
 	}
 	//lprintf( "NOACK! %p", ssl_Accept );
 	ssl_Accept->noHost = TRUE;
