@@ -2668,7 +2668,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 			UnlockHttp( pHttpState );
-			Release( pHttpState );  // just my hold on it.
+			// the hold is NOT dropped here; RemoveClientEx below runs close callbacks
+			// synchronously (ssl_CloseSession does), and those tear this state down.
 		}
 	}
 	if( obj->pc )
@@ -2681,6 +2682,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			WebSocketPipeSocketClose( obj->wss->wsPipe );
 		// else the socket already closed on its own; nothing to close.
 	}
+	if( pHttpState )
+		Release( pHttpState );  // just my hold on it (kept across the close above).
 
 	VarTextEmpty( obj->pvtResult );
 }
