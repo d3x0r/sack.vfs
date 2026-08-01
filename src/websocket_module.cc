@@ -901,10 +901,24 @@ static Local<Value> makeRequest(struct HttpState* pHttpState, Isolate *isolate, 
 	PTEXT content;
 	cgi.isolate = isolate;
 	cgi.cgi = Object::New( isolate );
+
+	// EndHttp - on the JS end() thread, or a close teardown - LineReleases and
+	// nulls method/resource/content while this request event is still sitting in
+	// the queue, so every field read here has to happen under one lock against a
+	// single capture.  The resource read already had a NULL guard ("lost request
+	// url"); the method and content reads come before it and had none, and a NULL
+	// method reaches strlen inside String::NewFromUtf8 and segfaults the process.
+	LockHttp( pHttpState );
+	PTEXT method = GetHttpMethod( pHttpState );
+	PTEXT resource = GetHttpRequest( pHttpState );
+	if( !method || !resource ) {
+		UnlockHttp( pHttpState );
+		return Null( isolate );
+	}
 	ProcessCGIFields( pHttpState, cgiParamSave, (uintptr_t)&cgi );
 	SETV( req, strings->redirectString->Get( isolate ), sslRedirect?True( isolate ):False(isolate) );
 	SETV( req, strings->methodString->Get(isolate), String::NewFromUtf8(isolate
-				, GetText(GetHttpMethod(pHttpState)),v8::NewStringType::kNormal).ToLocalChecked() );
+				, GetText(method),v8::NewStringType::kNormal).ToLocalChecked() );
 	SETV( req, strings->CGIString->Get( isolate ), cgi.cgi );
 	SETV( req, strings->versionString->Get( isolate ), Integer::New( isolate, GetHttpRequestVersion( pHttpState ) ) );
 	if( (content = GetHttpContent(pHttpState)) ) {
@@ -917,14 +931,10 @@ static Local<Value> makeRequest(struct HttpState* pHttpState, Isolate *isolate, 
 		SETV( req, strings->bytesString->Get(isolate), ArrayBuffer::New(isolate, bs));
 	} else
 		SETV( req, strings->contentString->Get(isolate), Null(isolate));
-	if (!GetText(GetHttpRequest(pHttpState))) {
-		//lprintf("lost request url");
-		return Null( isolate );
-	}
-	else
-		SETV( req, strings->urlString->Get(isolate)
-			, String::NewFromUtf8(isolate
-				, GetText(GetHttpRequest(pHttpState)),v8::NewStringType::kNormal).ToLocalChecked());
+	SETV( req, strings->urlString->Get(isolate)
+		, String::NewFromUtf8(isolate
+			, GetText(resource),v8::NewStringType::kNormal).ToLocalChecked());
+	UnlockHttp( pHttpState );
 	//ResetHttpContent(pc, pHttpState);
 
 	SETV( req, strings->connectionString->Get( isolate ), socket = makeSocket( isolate, pc, wss->wsPipe, wss, NULL, NULL ) );
