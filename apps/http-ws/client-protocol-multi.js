@@ -2,6 +2,17 @@
 import {Events} from "../events/events.mjs"
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
+// Heartbeat ops - ordinary data messages, not websocket control frames, since a
+// browser cannot observe control-frame ping/pong.  Must match server-protocol.mjs.
+// Bare string, not JSOX.  🏓 is U+1F3D3 (above the BMP) so it is a surrogate
+// PAIR - data[0] is only the high surrogate; ⚪ is U+26AA and is one code unit.
+// Compare code points, and use [...data] when indexing by character.
+const PING = "🏓"; // server -> client
+const PONG = "⚪"; // client -> server
+const PING_CP = PING.codePointAt( 0 );
+const PONG_CP = PONG.codePointAt( 0 );
+const HB_BIAS = 0x10000; // server biases the cadence out of the surrogate block
+
 
 export class Protocol extends Events {
 	static debug = false;
@@ -53,6 +64,7 @@ export class Protocol extends Events {
 
 	static onclose( ws, evt ){
 		const Protocol = Object.getPrototypeOf( this ).constructor;
+		Protocol.clearHeartbeat( this );
 		Protocol.debug && console.log( "close?", this, evt );
 		const event = this.on( "close", [ws, evt.code, evt.reason] );
 		Protocol.ws = null;
@@ -62,10 +74,39 @@ export class Protocol extends Events {
 
 	static onmessage( ws, evt ) {
 		Protocol.debug && console.log( "got:", this, evt );
+		const cp = evt.data.codePointAt( 0 );
+		if( cp === PING_CP ) {
+			// answer, then re-arm; the cadence comes from the server so this side
+			// needs no configuration of its own.  Not dispatched to the app.
+			this.send( PONG );
+			const parts = [...evt.data]; // index by character, not code unit
+			Protocol.armHeartbeat( this, ws, parts[1].codePointAt(0) - HB_BIAS
+			                              , parts[2].codePointAt(0) - HB_BIAS );
+			return;
+		}
+		if( cp === PONG_CP ) return; // server answering our ping; nothing to do
 		const msg = JSOX.parse( evt.data );
 		if( !this.on( msg.op, [ws, msg] ) ){
 			Protocol.debug && console.log( "Unhandled message:", msg );
 		}
+	}
+
+	/**
+	 * Watchdog for the ping the server promised; only ever armed by receiving one,
+	 * so servers without a heartbeat are unaffected.
+	 */
+	static armHeartbeat( this_, ws, interval, timeout ) {
+		Protocol.clearHeartbeat( this_ );
+		const budget = ( interval || 25000 ) + ( timeout || 20000 );
+		this_.hbTimer = setTimeout( ()=>{
+			this_.hbTimer = null;
+			Protocol.debug && console.log( "server missed its heartbeat; closing" );
+			if( ws && ws.readyState === 1 ) ws.close( 1001, "no heartbeat from server" );
+		}, budget );
+	}
+
+	static clearHeartbeat( this_ ) {
+		if( this_.hbTimer ) { clearTimeout( this_.hbTimer ); this_.hbTimer = null; }
 	}
 
 	send( msg ) {

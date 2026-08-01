@@ -44613,6 +44613,53 @@ struct global_memory_tag global_memory_data = { 0x10000 * 0x08, 1, 1
 // block_tag is at the start of the padding...
 #define BLOCK_FILE(pc) (*(CTEXTSTR*)((pc)->byData + (pc)->dwSize - MAGIC_SIZE*2))
 #define BLOCK_LINE(pc) (*(int*)((pc)->byData + (pc)->dwSize - MAGIC_SIZE))
+/* --- release trace ring -------------------------------------------------------
+   When the allocator catches a double release it can say WHERE it was noticed
+   but not who released the block first; BLOCK_FILE/BLOCK_LINE only carry that in
+   _DEBUG builds, and turning on full allocator debug is so slow that it changes
+   the timing of the very race being hunted (it stops reproducing).  This keeps
+   the last MEM_TRACE_ENTRIES release events in a fixed ring instead: two stores
+   and one atomic increment, no I/O and no formatting, so it is cheap enough to
+   leave on while a race reproduces at full speed.  The ring is then read out of a
+   CORE DUMP - two entries for the same block are the double release, with both
+   call sites.  A ring that overwrites its oldest entry gives the same "last N
+   events" property as trimming a queue, without the bookkeeping.
+   From gdb on a core:
+     p memTrace.next
+     set $i=0
+     while $i < 50000
+       if memTrace.entries[$i].block == (POINTER)0xADDRESS
+         p memTrace.entries[$i]
+       end
+       set $i=$i+1
+     end
+   Costs ~1.2MB of static storage and one atomic increment plus three stores per
+   release; define NO_MEM_TRACE to compile it out entirely.                     */
+#ifndef NO_MEM_TRACE
+#  define MEM_TRACE_ENTRIES 50000
+enum { MEM_TRACE_RELEASE = 1, MEM_TRACE_DOUBLE = 2 };
+struct mem_trace_entry {
+	POINTER block;
+	CTEXTSTR file;
+	uint32_t line;
+	uint32_t op;
+};
+static struct {
+	struct mem_trace_entry entries[MEM_TRACE_ENTRIES];
+ // ever-increasing; newest slot is (next-1) % MEM_TRACE_ENTRIES
+	volatile uint32_t next;
+} memTrace;
+static void MemTrace( POINTER block, CTEXTSTR file, uint32_t line, uint32_t op ) {
+	uint32_t n = LockedIncrement( &memTrace.next ) - 1;
+	struct mem_trace_entry *e = memTrace.entries + ( n % MEM_TRACE_ENTRIES );
+	e->block = block;
+	e->file = file;
+	e->line = line;
+	e->op = op;
+}
+#else
+#  define MemTrace(block,file,line,op)
+#endif
 #ifndef _WIN32
 #endif
 PRIORITY_PRELOAD( Deadstart_finished_enough, GLOBAL_INIT_PRELOAD_PRIORITY + 1 )
@@ -46519,6 +46566,7 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 	}
 	if( pData )
 	{
+		MemTrace( pData, pFile, nLine, MEM_TRACE_RELEASE );
 #ifndef __NO_MMAP__
 		// how to figure if it's a CHUNK or a HEAP_CHUNK?
 		if( !( ((uintptr_t)pData) & 0x3FF ) )
@@ -46657,6 +46705,9 @@ POINTER ReleaseEx ( POINTER pData DBG_PASS )
 						// CRITICAL ERROR!
 						_xlprintf( 2 DBG_RELAY)( "Block is already Free! %p ", pc );
 #endif
+					// tag it in the ring as well, so a core shows this release next to
+					// the earlier release(s) of the same block
+					MemTrace( pData, pFile, nLine, MEM_TRACE_DOUBLE );
 					DebugBreak();
 					DropMem( pMem );
 					return pData;
@@ -53709,7 +53760,18 @@ enum SackNetworkErrorIdentifier {
 	SACK_NETWORK_ERROR_HTTP_UNSUPPORTED,
  // host name could not be resolved
 	SACK_NETWORK_ERROR_HOST_NOT_FOUND,
+	// a websocket peer's fragmented message exceeded WEBSOCKET_MAX_MESSAGE_SIZE; the
+	// message is refused and the socket closed rather than growing the collection
+	// buffer without bound.  Reported so an application can react (rate limit, ban,
+	// firewall rule, ...) rather than just seeing a closed connection.
+	SACK_NETWORK_ERROR_WS_MESSAGE_TOO_BIG,
 };
+/* Upper bound on a single (possibly fragmented) inbound websocket message.  The
+   frame length is attacker-controlled - a 64-bit length frame can claim up to
+   2^63 bytes - so the fragment collection buffer needs a ceiling. */
+#ifndef WEBSOCKET_MAX_MESSAGE_SIZE
+#  define WEBSOCKET_MAX_MESSAGE_SIZE ( 128 * 1024 * 1024 )
+#endif
 /* Anchor type for the last named parameter of error callbacks.
    C++ makes va_start() on a parameter that undergoes default argument
    promotion (any unscoped enum) undefined behavior [-Wvarargs], so C++
@@ -64349,12 +64411,20 @@ SegSplit( &pCurrent, start );
 	}
 	unlockHttp( pHttpState );
 	if( pHttpState->final &&
-		( !pHttpState->read_chunks ) &&
-		( ( pHttpState->content_length
-			&& ( ( GetTextSize( pHttpState->partial ) >= pHttpState->content_length )
-				||( GetTextSize( pHttpState->content ) >= pHttpState->content_length ) ) )
-			|| ( !pHttpState->content_length && !pHttpState->flags.no_content_length )
-			) )
+		( ( ( !pHttpState->read_chunks ) &&
+			( ( pHttpState->content_length
+				&& ( ( GetTextSize( pHttpState->partial ) >= pHttpState->content_length )
+					||( GetTextSize( pHttpState->content ) >= pHttpState->content_length ) ) )
+				|| ( !pHttpState->content_length && !pHttpState->flags.no_content_length )
+				) )
+		// A chunked response never satisfied the length tests above (its length is
+		// only known after de-chunking), so this gate could not fire for it and
+		// returned_status was never set - the blocking client in GetHttpsQueryEx then
+		// waited out its ENTIRE timeout budget on every chunked response, and the
+		// reader never woke it.  flags.success is set exactly when the terminating
+		// zero-length chunk is consumed, so that is the chunked completion signal.
+		|| ( pHttpState->read_chunks && pHttpState->flags.success )
+		) )
 	{
 		pHttpState->returned_status = 1;
 		//lprintf( "return http %d l:%d nl:%d",pHttpState->numeric_code, pHttpState->content_length, pHttpState->flags.no_content_length );
@@ -67641,6 +67711,12 @@ WEBSOCKET_EXPORT void SetWebSocketPipeDataCompletion( struct html5_web_socket* w
 typedef struct web_socket_input_state *WebSocketInputState;
 struct web_socket_input_state
 {
+	// The socket this input state is reading, so protocol-level failures detected in
+	// the common parser (which is handed only the input state) can be reported with
+	// the peer identity attached - web_socket_error takes a PCLIENT, and an
+	// application reacting to an abusive peer needs its address.  NULL for pipe
+	// sockets, which have no PCLIENT.
+	PCLIENT pc;
 	struct web_socket_common_flags
 	{
 		BIT_FIELD closed : 1;
@@ -68089,6 +68165,30 @@ void ProcessWebSockProtocol( WebSocketInputState websock, const uint8_t* msg, si
 			if( websock->fragment_collection_avail < ( websock->fragment_collection_length + websock->frame_length ) )
 			{
 				uint8_t* new_fragbuf;
+				// frame_length comes off the wire - a 64-bit length frame can claim up
+				// to 2^63 - and fragments accumulate across continuation frames, so
+				// without a ceiling a peer can drive this Allocate without bound and
+				// exhaust memory.  Refuse the message instead, and report it so the
+				// application can decide what to do about the peer (rate limit, ban,
+				// firewall rule); a bare disconnect gives it nothing to act on.
+				if( ( websock->fragment_collection_length + websock->frame_length )
+				    > WEBSOCKET_MAX_MESSAGE_SIZE )
+				{
+					lprintf( "websocket message of %" _size_f " bytes exceeds the %" _size_f " byte limit; refusing"
+					       , (size_t)( websock->fragment_collection_length + websock->frame_length )
+					       , (size_t)WEBSOCKET_MAX_MESSAGE_SIZE );
+					if( websock->on_error )
+						websock->on_error( websock->pc, websock->psv_on
+						                 , SACK_NETWORK_ERROR_WS_MESSAGE_TOO_BIG );
+					else if( websock->pc )
+						TriggerNetworkErrorCallback( websock->pc, SACK_NETWORK_ERROR_WS_MESSAGE_TOO_BIG );
+					ResetInputState( websock );
+					if( websock->pc )
+						RemoveClient( websock->pc );
+					else if( websock->do_close )
+						websock->do_close( websock->psvCloser );
+					return;
+				}
 				websock->fragment_collection_avail += websock->frame_length;
 				if( websock->fragment_collection_avail > websock->fragment_collection_buffer_size ) {
 					new_fragbuf = (uint8_t*)Allocate( websock->fragment_collection_avail * 2 );
@@ -68509,6 +68609,12 @@ void SetWebSocketPipeDataCompletion( struct html5_web_socket *ws, web_socket_com
 typedef struct web_socket_input_state *WebSocketInputState;
 struct web_socket_input_state
 {
+	// The socket this input state is reading, so protocol-level failures detected in
+	// the common parser (which is handed only the input state) can be reported with
+	// the peer identity attached - web_socket_error takes a PCLIENT, and an
+	// application reacting to an abusive peer needs its address.  NULL for pipe
+	// sockets, which have no PCLIENT.
+	PCLIENT pc;
 	struct web_socket_common_flags
 	{
 		BIT_FIELD closed : 1;
@@ -68929,6 +69035,8 @@ PCLIENT WebSocketOpen( CTEXTSTR url_address
 		{
 			SetNetworkLong( websock->pc, 0, (uintptr_t)websock );
 			SetNetworkLong( websock->pc, 1, (uintptr_t)&websock->input_state );
+ // so the common parser can report errors against this peer
+			websock->input_state.pc = websock->pc;
 			SetTCPNoDelay( websock->pc, TRUE );
 #ifndef NO_SSL
 			if( StrCaseCmp( websock->url->protocol, "wss" ) == 0 )
@@ -69021,6 +69129,20 @@ void WebSocketPipeClose( struct html5_web_socket* wss, int code, const char* rea
 }
 static void WebSocketEnableAutoPing_( WebSocketInputState input , uint32_t delay )
 {
+		// This never actually pings.  WebSocketTimer walks wsc_local.clients, and
+		// nothing anywhere adds to that list, so its body never runs for any socket -
+		// ping_delay, last_reception and sent_ping are read only from inside that
+		// unreachable loop.  Left in place rather than silently removed so existing
+		// callers keep linking, but say so, because a caller here believes it has a
+		// keep-alive and does not.
+		// A control-frame ping is the wrong layer for this regardless: a browser's
+		// WebSocket API gives script no access to ping/pong frames, so the server
+		// learning that a peer is gone never reaches a browser client.  Put the
+		// heartbeat in the protocol layer instead - see the server/client protocol
+		// modules under apps/http-ws, which exchange it as an ordinary message.
+		lprintf( "WebSocketEnableAutoPing: not implemented - no pings will be sent."
+		         "  Use a protocol-level heartbeat (apps/http-ws protocol modules);"
+		         " browsers cannot observe websocket ping/pong control frames." );
 		if( !wsc_local.timer )
 			wsc_local.timer = AddTimer( 2000, WebSocketTimer, 0 );
 		input->ping_delay = delay;
@@ -69920,6 +70042,8 @@ static void CPROC connected( PCLIENT pc_server, PCLIENT pc_new )
 	socket->input_state.close_code = 1006;
 	socket->input_state.close_reason = StrDup( "Because I don't Like You?");
 	socket->input_state.psvSender = (uintptr_t)pc_new;
+	// after the clone above, which would otherwise overwrite it with the listener's
+	socket->input_state.pc = pc_new;
 	// assume secure, when the handshake fails, it demotes to insecure
 	socket->input_state.flags.use_ssl = 1;
 	socket->input_state.on_send = WebSocketSendSSL;
@@ -80188,8 +80312,6 @@ struct network_global_data{
 	// AddThreadEvent.  Separate from csNetwork so it cannot interact with the close
 	// paths' lock order; nothing taken while holding this needs csNetwork.
 	CRITICALSECTION csPeerChain;
-	// gethostbyname2 hands back static storage; serialize resolution (see network_addresses.c)
-	CRITICALSECTION csResolve;
 	volatile uint32_t uNetworkPauseTimer;
 	uint32_t uPendingTimer;
 #ifndef __LINUX__
@@ -80420,7 +80542,6 @@ static void LowLevelNetworkInit( void )
 	if( !globalNetworkData.ClientSlabs ) {
 		InitializeCriticalSec( &globalNetworkData.csNetwork );
 		InitializeCriticalSec( &globalNetworkData.csPeerChain );
-		InitializeCriticalSec( &globalNetworkData.csResolve );
 	}
 }
 PRIORITY_PRELOAD( InitNetworkGlobal, CONFIG_SCRIPT_PRELOAD_PRIORITY - 1 )
@@ -80861,30 +80982,16 @@ void TriggerNetworkErrorCallback( PCLIENT pc, enum SackNetworkErrorIdentifier er
 		pc->errorCallback( pc->psvErrorCallback, pc, error );
 }
 //----------------------------------------------------------------------------
-#ifdef _WIN32
-static void CPROC checkStuckConnects( uintptr_t psv )
-{
-	PCLIENT pc;
-	uint32_t now = timeGetTime();
-	EnterCriticalSec( &globalNetworkData.csNetwork );
-	for( pc = globalNetworkData.ActiveClients; pc; pc = pc->next ) {
-		if( ( pc->dwFlags & CF_CONNECTING ) && !( pc->dwFlags & ( CF_CONNECTED | CF_CONNECTERROR ) )
-		  && pc->this_thread && IsValid( pc->Socket )
-		  && ( now - pc->LastEvent ) > 1500 ) {
-			// rarely (under heavy socket churn) a connecting socket's event
-			// association never delivers FD_CONNECT and the socket sits
-			// CF_CONNECTING forever with its request queued.  Re-select; a
-			// socket that is already writable re-posts FD_WRITE, which now
-			// completes the connect from the event handler.
-			lprintf( "Connect stuck without events %p; re-selecting socket:%p event:%p", pc, (POINTER)(uintptr_t)pc->Socket, pc->event );
-			WSAEventSelect( pc->Socket, pc->event, FD_CONNECT | FD_READ | FD_WRITE | FD_CLOSE );
- // don't re-poke every tick
-			pc->LastEvent = now;
-		}
-	}
-	LeaveCriticalSec( &globalNetworkData.csNetwork );
-}
-#endif
+/* checkStuckConnects used to live here: a 1s timer that re-selected any socket
+   sitting CF_CONNECTING without events.  It was a safety net for a winsock case
+   where FD_CONNECT was never delivered even though the connection had been
+   established - but that is handled properly at the source now, in the
+   network_win32.c FD_WRITE handler, which completes the connect when the socket
+   turns out to be writable while still CF_CONNECTING.  Re-selecting adds nothing
+   on top of that: if the socket really is connected, FD_WRITE already heals it;
+   if it is not (no service on the port, or the traffic is being dropped) there is
+   no event to recover and the re-select just logged once a second forever.  That
+   false positive is all it produced in practice, so it is gone. */
 uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 {
 	struct peer_thread_info *peer_thread = (struct peer_thread_info*)GetThreadParam( thread );
@@ -80897,8 +81004,6 @@ uintptr_t CPROC NetworkThreadProc( PTHREAD thread )
 		globalNetworkData.uNetworkPauseTimer = AddTimerEx( 1, 1000, NetworkPauseTimer, 0 );
 		if( !globalNetworkData.client_schedule )
 			globalNetworkData.client_schedule = CreateLinkQueue();
-		// watchdog for connects whose events were never delivered
-		AddTimerEx( 1000, 1000, checkStuckConnects, 0 );
 #endif
 #ifdef __LINUX__
 		globalNetworkData.flags.bNetworkReady = TRUE;
@@ -82928,6 +83033,14 @@ void AddThreadEvent( PCLIENT pc, int broadcsat )
 	if( globalNetworkData.flags.bLogNotices )
 		lprintf( "Add thread event %p %p %08x", pc, pc->event, pc->dwFlags );
 #endif
+	// Same serialization as the linux build: the select-a-peer / create-a-peer
+	// sequence has to be atomic, not just the relink.  Two threads that both pick
+	// the same parent each call ThreadTo, and then BOTH new threads assign
+	// peer_thread->child_peer, corrupting the chain before the relink runs; and one
+	// thread's `peer->child_peer = NULL` below lands while the other sits between
+	// its spin and its own store.  NetworkThreadProc sets child_peer without taking
+	// any lock, so holding this across the spin cannot deadlock against it.
+	EnterCriticalSec( &globalNetworkData.csPeerChain );
 	for( ; peer; peer = peer->child_peer ) {
 		if( !peer->child_peer ) {
 #ifdef LOG_NOTICES
@@ -82989,6 +83102,7 @@ void AddThreadEvent( PCLIENT pc, int broadcsat )
 		else
 			peer = peer->child_peer;
 	}
+	LeaveCriticalSec( &globalNetworkData.csPeerChain );
 	// make sure to only add this handle when the first peer will also be added.
 	// this means the list can be 61 and at this time no more.
 	AddLink( &peer->monitor_list, pc );
@@ -83971,14 +84085,27 @@ static struct mac_data {
 // Never held across a sleep; nesting would be safe (sack critical sections
 // are owner-reentrant) but none of the call paths nest it.
 static CRITICALSECTION macLock;
+// serializes networkAddressBufferSet; see the note at its declaration below
+static CRITICALSECTION csAddressPool;
 PRELOAD( InitMacAddressLock ) {
 	// windows requires explicit initialization; linux/mac accept the zeroed static
 	InitializeCriticalSec( &macLock );
+	InitializeCriticalSec( &csAddressPool );
 }
 typedef uint8_t NETWORK_ADDRESS_BUFFER[MAGIC_SOCKADDR_LENGTH + 2 * sizeof( uintptr_t )];
 #define MAXNETWORK_ADDRESS_BUFFERSPERSET 256
 DeclareSet( NETWORK_ADDRESS_BUFFER );
 static PNETWORK_ADDRESS_BUFFERSET networkAddressBufferSet;
+/* SETs are not thread safe - sets.c contains no locking at all, yet it walks and
+   mutates a shared chain of set blocks (next/nBias/used bitmask) and allocates new
+   ones.  This pool is hit by AllocAddr on every address created and ReleaseAddress
+   on every address freed, concurrently from every network thread AND every request
+   thread, so the free list gets corrupted: blocks handed out twice, or a release
+   walking into a neighbouring block.  Observed as ClearClient -> ReleaseAddress
+   freeing a block that was actually an HTTP PTEXT segment (proved with the release
+   trace ring), i.e. the pointers were fine and the pool was not.  Serialize just
+   this pool; nothing is called while holding it, so it cannot invert with the
+   network locks (csAddressPool, declared above with macLock). */
 //----------------------------------------------------------------------------
 #if !defined( __MAC__ ) && !defined( __EMSCRIPTEN__ )
 #  define INCLUDE_MAC_SUPPORT
@@ -85101,8 +85228,11 @@ void SetAddrName( SOCKADDR *addr, const char *name )
 //---------------------------------------------------------------------------
 SOCKADDR *AllocAddrEx( DBG_VOIDPASS )
 {
+	SOCKADDR *lpsaAddr;
+	EnterCriticalSec( &csAddressPool );
 //(SOCKADDR*)AllocateEx( MAGIC_SOCKADDR_LENGTH + 2 * sizeof( uintptr_t ) DBG_RELAY );
-	SOCKADDR *lpsaAddr=(SOCKADDR*)GetFromSet( NETWORK_ADDRESS_BUFFER, &networkAddressBufferSet );
+	lpsaAddr = (SOCKADDR*)GetFromSet( NETWORK_ADDRESS_BUFFER, &networkAddressBufferSet );
+	LeaveCriticalSec( &csAddressPool );
 #ifdef DEBUG_ADDRESSES
 	lprintf( "New Length: %d", MAGIC_SOCKADDR_LENGTH);
 #endif
@@ -85373,50 +85503,62 @@ SOCKADDR *CreateRemoteV2( CTEXTSTR lpName, uint16_t nHisPort, enum NetworkAddres
 				      , phe->h_length);
 			}
 #  else
+			// getaddrinfo instead of gethostbyname2: the latter returns a pointer to
+			// static per-process storage, so concurrent resolvers overwrite each
+			// other's hostent and the copy below reads a replaced h_addr/h_length.
+			// That crashed inside libc under the async http client, which spawns a
+			// request thread per call and resolves from all of them at once.
+			// getaddrinfo is thread safe and hands back a caller-owned list (freed
+			// with freeaddrinfo), so no lock is needed - which also means genuinely
+			// slow DNS for distinct hosts still runs in parallel.  This is what the
+			// WIN32 branch of this same function already does.
 			int found = 0;
-			int try_again;
-			// gethostbyname2 returns a pointer to static per-process storage, so it is
-			// not thread safe - concurrent resolvers overwrite each other's hostent and
-			// the memcpy below reads a replaced h_addr/h_length.  This crashed inside
-			// libc under the async http client, which spawns a request thread each call
-			// and resolves from all of them at once.  Serialize the call AND the copy of
-			// its result.  (Better long-term: getaddrinfo, which is thread safe and is
-			// already what the WIN32 branch of this function uses - a lock here also
-			// serializes genuinely slow DNS for distinct hosts.)
-			EnterCriticalSec( &globalNetworkData.csResolve );
-			do {
-				try_again = 0;
-				if( !( flags & NETWORK_ADDRESS_FLAG_PREFER_V4 )
-				    && ( phe = gethostbyname2( lpName, AF_INET6 ) ) ) {
-					found = 1;
-					SET_SOCKADDR_LENGTH( lpsaAddr, IN6_SOCKADDR_LENGTH );
-         // InetAddress Type.
-					lpsaAddr->sin_family = AF_INET6;
-					//lprintf( "This copy:%d", phe->h_length );
-           // save IP address from host entry.
-					memcpy( ( (struct sockaddr_in6*)lpsaAddr )->sin6_addr.s6_addr
-						, phe->h_addr
-						, phe->h_length );
-				}
-				if( !found
-				    && !( flags & NETWORK_ADDRESS_FLAG_PREFER_V6 )
-				    && ( phe = gethostbyname2( lpName, AF_INET ) ) ) {
-					found = 1;
-					//lprintf( "Strange, gethostbyname failed, but AF_INET worked... %s", tmp );
-					SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
-					lpsaAddr->sin_family = AF_INET;
-           // save IP address from host entry.
-					memcpy( &lpsaAddr->sin_addr.S_un.S_addr
-						, phe->h_addr
-						, phe->h_length );
+			{
+				struct addrinfo hints;
+				struct addrinfo *result = NULL;
+				struct addrinfo *ai;
+				int families[2];
+				int nFamilies;
+				int n;
+				// preserve the previous preference order exactly:
+				//   PREFER_V4   -> v4, then fall back to v6
+				//   PREFER_V6   -> v6 only (the old loop never fell back to v4)
+				//   PREFER_NONE -> v6, then v4
+				if( flags & NETWORK_ADDRESS_FLAG_PREFER_V4 ) {
+					families[0] = AF_INET; families[1] = AF_INET6; nFamilies = 2;
+				} else if( flags & NETWORK_ADDRESS_FLAG_PREFER_V6 ) {
+					families[0] = AF_INET6; nFamilies = 1;
 				} else {
-					if( flags & NETWORK_ADDRESS_FLAG_PREFER_V4 ) {
-						flags = NETWORK_ADDRESS_FLAG_PREFER_V6;
-						try_again = 1;
-					}
+					families[0] = AF_INET6; families[1] = AF_INET; nFamilies = 2;
 				}
-			} while( try_again && !found );
-			LeaveCriticalSec( &globalNetworkData.csResolve );
+				MemSet( &hints, 0, sizeof( hints ) );
+				hints.ai_family = AF_UNSPEC;
+				hints.ai_socktype = SOCK_STREAM;
+				if( getaddrinfo( lpName, NULL, &hints, &result ) == 0 ) {
+					for( n = 0; n < nFamilies && !found; n++ ) {
+						for( ai = result; ai; ai = ai->ai_next ) {
+							if( ai->ai_family != families[n] ) continue;
+							if( families[n] == AF_INET6 ) {
+								SET_SOCKADDR_LENGTH( lpsaAddr, IN6_SOCKADDR_LENGTH );
+         // InetAddress Type.
+								lpsaAddr->sin_family = AF_INET6;
+								memcpy( ( (struct sockaddr_in6*)lpsaAddr )->sin6_addr.s6_addr
+									, &( (struct sockaddr_in6*)ai->ai_addr )->sin6_addr
+									, sizeof( struct in6_addr ) );
+							} else {
+								SET_SOCKADDR_LENGTH( lpsaAddr, IN_SOCKADDR_LENGTH );
+								lpsaAddr->sin_family = AF_INET;
+								memcpy( &lpsaAddr->sin_addr.S_un.S_addr
+									, &( (struct sockaddr_in*)ai->ai_addr )->sin_addr
+									, sizeof( struct in_addr ) );
+							}
+							found = 1;
+							break;
+						}
+					}
+					freeaddrinfo( result );
+				}
+			}
 			if( !found )
 			{
 				// could not find the name in the host file.
@@ -85832,7 +85974,9 @@ void ReleaseAddress(SOCKADDR *lpsaAddr)
 	if( lpsaAddr )
 	{
 		ReleaseEx( ((POINTER*)( ( (uintptr_t)lpsaAddr ) - sizeof(uintptr_t) ))[0] DBG_SRC );
+		EnterCriticalSec( &csAddressPool );
 		DeleteFromSet( NETWORK_ADDRESS_BUFFER, &networkAddressBufferSet, (POINTER)( ( (uintptr_t)lpsaAddr ) - 2 * sizeof(uintptr_t) ));
+		LeaveCriticalSec( &csAddressPool );
 		//Deallocate(POINTER, (POINTER)( ( (uintptr_t)lpsaAddr ) - 2 * sizeof(uintptr_t) ));
 	}
 }
@@ -86219,8 +86363,7 @@ static inline void scheduleSocket( PCLIENT pc, struct peer_thread_info *this_thr
 	// else: on another network event thread (accept path).  Must not block
 	// here - the root thread's close sweep (RemoveThreadEvent) can be waiting
 	// for THIS thread to reach its wait state while we would be waiting for
-	// root to drain the schedule: livelock.  The enqueue+wake above is enough;
-	// checkStuckConnects covers any loss.
+	// root to drain the schedule: livelock.  The enqueue+wake above is enough.
 #endif
 #ifdef __LINUX__
 	{
@@ -91307,7 +91450,7 @@ struct ssl_hostContext* ssl_setupHost( struct ssl_session* ses, CTEXTSTR hosts, 
 		}
 		*/
 		if( certStruc && certStruc->chain ) {
-			lprintf( "checking cert because chain was made?");
+			//lprintf( "checking cert because chain was made?");
 			r = SSL_CTX_use_certificate( ctx->ctx, sk_X509_value( certStruc->chain, 0 ) );
 			if( r <= 0 ) {
 				ERR_print_errors_cb( logerr, (void*)__LINE__ );
