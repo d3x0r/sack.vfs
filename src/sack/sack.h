@@ -7639,7 +7639,18 @@ enum SackNetworkErrorIdentifier {
 	SACK_NETWORK_ERROR_HTTP_UNSUPPORTED,
  // host name could not be resolved
 	SACK_NETWORK_ERROR_HOST_NOT_FOUND,
+	// a websocket peer's fragmented message exceeded WEBSOCKET_MAX_MESSAGE_SIZE; the
+	// message is refused and the socket closed rather than growing the collection
+	// buffer without bound.  Reported so an application can react (rate limit, ban,
+	// firewall rule, ...) rather than just seeing a closed connection.
+	SACK_NETWORK_ERROR_WS_MESSAGE_TOO_BIG,
 };
+/* Upper bound on a single (possibly fragmented) inbound websocket message.  The
+   frame length is attacker-controlled - a 64-bit length frame can claim up to
+   2^63 bytes - so the fragment collection buffer needs a ceiling. */
+#ifndef WEBSOCKET_MAX_MESSAGE_SIZE
+#  define WEBSOCKET_MAX_MESSAGE_SIZE ( 128 * 1024 * 1024 )
+#endif
 /* Anchor type for the last named parameter of error callbacks.
    C++ makes va_start() on a parameter that undergoes default argument
    promotion (any unscoped enum) undefined behavior [-Wvarargs], so C++
