@@ -200,6 +200,7 @@ export class Protocol extends Events {
 					const log = config.local.logs[msg.id];
 					const task = config.local.tasks[msg.id];
 					if( task && !log ) {
+						protocol.on( "addTaskLog", [task,msg.log] );
 						config.addTaskLog( task, msg.log );
 					} else {
 						//log.logFrame.show();
