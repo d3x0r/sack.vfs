@@ -44656,8 +44656,9 @@ static void MemTrace( POINTER block DBG_PASS, uint32_t op ) {
 	uint32_t n = LockedIncrement( &memTrace.next ) - 1;
 	struct mem_trace_entry *e = memTrace.entries + ( n % MEM_TRACE_ENTRIES );
 	e->block = block;
-	e->file = file;
-	e->line = line;
+ // DBG_PASS names its parameters pFile/nLine
+	e->file = pFile;
+	e->line = nLine;
 	e->op = op;
 }
 #else
@@ -81694,7 +81695,12 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 #endif
 			return;
 		}
-		if( bLinger && ( lpClient->lpFirstPending || ( lpClient->dwFlags & CF_WRITEPENDING ) ) ) {
+		// nWritesPended counts writes parked on the global pdqPendingWrites queue
+		// (and the stall list).  Those set neither lpFirstPending nor
+		// CF_WRITEPENDING, so without it a graceful close reads "nothing pending"
+		// and tears down a socket whose response has not been written yet.
+		if( bLinger && ( lpClient->lpFirstPending || ( lpClient->dwFlags & CF_WRITEPENDING )
+		               || lpClient->nWritesPended ) ) {
 #ifdef LOG_DEBUG_CLOSING
 			lprintf( "GRACEFUL CLOSE WHILE WAITING FOR WRITE TO FINISH... %p", lpClient );
 #endif
@@ -81827,7 +81833,11 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 			}
 		}
 #endif
-		if( !bLinger || !(lpClient->lpFirstPending || ( lpClient->dwFlags & CF_WRITEPENDING ) ) ) {
+		// see InternalRemoveClientExx: a write deferred to pdqPendingWrites shows up
+		// only in nWritesPended, and shutting down here discards it (send() then
+		// fails EPIPE and the peer gets a clean FIN with no response).
+		if( !bLinger || !(lpClient->lpFirstPending || ( lpClient->dwFlags & CF_WRITEPENDING )
+		               || lpClient->nWritesPended ) ) {
 			shutdown( lpClient->Socket, SHUT_WR );
 		} else {
 			//lprintf( "linger and still pending write data..." ); // normal path; noisy under load
@@ -83011,6 +83021,15 @@ void RemoveThreadEvent( PCLIENT pc ) {
 		lprintf( "peer %p now has %d events", thread, thread->nEvents );
 #endif
 	}
+	// Same as the linux build: this bubble-sort mutates the peer chain that
+	// AddThreadEvent serializes with csPeerChain, and doing it unlocked lets a
+	// concurrent add corrupt the parent_peer links - a cycle makes this `while`
+	// never terminate, and RemoveThreadEvent runs from TerminateClosedClientEx with
+	// globalNetworkData.csNetwork HELD, so the whole process wedges behind it (on
+	// linux: one thread spinning here, 321 request threads stuck in
+	// GetFreeNetworkClientEx waiting for csNetwork).  Order is csNetwork ->
+	// csPeerChain; AddThreadEvent never takes csNetwork inside its region.
+	EnterCriticalSec( &globalNetworkData.csPeerChain );
   // don't bubble sort root thread
 	if( thread->parent_peer )
 		while( ( thread->nEvents < thread->parent_peer->nEvents ) && thread->parent_peer->parent_peer ) {
@@ -83026,6 +83045,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			tmp->parent_peer = thread;
 			thread->child_peer = tmp;
 		}
+	LeaveCriticalSec( &globalNetworkData.csPeerChain );
 }
 // unused parameter broadcsat on windows; not needed.
 void AddThreadEvent( PCLIENT pc, int broadcsat )
@@ -83351,6 +83371,16 @@ void RemoveThreadEvent( PCLIENT pc ) {
 #    ifdef LOG_NETWORK_EVENT_THREAD
 	lprintf( "peer %p now has %d events", thread, thread->nEvents );
 #    endif
+	// This bubble-sort mutates the SAME peer chain that AddThreadEvent serializes
+	// with csPeerChain, and used to do it unlocked - so a concurrent add could
+	// corrupt the parent_peer links and leave a cycle, and then this `while` never
+	// terminates.  That wedges the whole process, because RemoveThreadEvent is
+	// called from TerminateClosedClientEx with globalNetworkData.csNetwork HELD:
+	// observed as one thread spinning here while 321 request threads sat in
+	// GetFreeNetworkClientEx waiting for csNetwork.
+	// Lock order is csNetwork -> csPeerChain; AddThreadEvent never takes csNetwork
+	// inside its csPeerChain region, so there is no inversion.
+	EnterCriticalSec( &globalNetworkData.csPeerChain );
 	// don't bubble sort root thread
 	if( thread->parent_peer )
 		while( (thread->nEvents < thread->parent_peer->nEvents) && thread->parent_peer->parent_peer ) {
@@ -83366,6 +83396,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 			tmp->parent_peer = thread;
 			thread->child_peer = tmp;
 		}
+	LeaveCriticalSec( &globalNetworkData.csPeerChain );
 }
 struct event_data {
 	PCLIENT pc;
@@ -87792,7 +87823,13 @@ setsockopt(pc->fd, IPPROTO_TCP, TCP_CORK, &state, sizeof(state));
 					return TRUE;
 				}
 				if( dwError == EPIPE ) {
-					//_lprintf(DBG_RELAY)( "EPIPE on send() to socket...");
+					// This drops response data that was already handed to the network
+					// layer, so it must not be silent - and it has to survive the
+					// release log filter (lprintf defaults to LOG_LEVEL_DEBUG, which
+					// is filtered at the release level of 1000).
+					xlprintf( LOG_ERROR )( "EPIPE on send(); %" _size_f " bytes discarded unsent. %s"
+					                     , pc->lpFirstPending->dwAvail
+					                     , NetworkExpandFlags( pc ) );
 					pc->dwFlags |= CF_TOCLOSE;
 					return FALSE;
 				}
@@ -88064,13 +88101,12 @@ static LOGICAL deliverPendingWrite( struct PendingWrite *pending, PTHREAD thread
 			Release( pending->buffer );
 		return TRUE;
 	}
-	if( pending->pc->dwFlags & CF_TOCLOSE ) {
-		lprintf( "Socket is intended to close already... %08x %p", pending->pc->dwFlags, pending->pc );
-		LockedDecrement( &pending->pc->nWritesPended );
-		if( !pending->bLong && pending->buffer )
-			Release( pending->buffer );
-		return TRUE;
-	}
+	// CF_TOCLOSE is NOT a reason to drop this write.  Now that the close path
+	// counts nWritesPended as outstanding data, the flag means "close once these
+	// have flushed" - a close requested after this write was queued.  Discarding
+	// here would throw away exactly the response the close is waiting on; the
+	// socket is still ACTIVE and not CLOSED, so deliver it and let the drain
+	// check below finish the close.
 	if( !NetworkLockEx( pending->pc, 0 DBG_SRC ) ) {
 		// still contended; make sure the lock owner wakes this thread on unlock.
 		pending->pc->wakeOnUnlock = thread;
@@ -88086,10 +88122,33 @@ static LOGICAL deliverPendingWrite( struct PendingWrite *pending, PTHREAD thread
 	// has to pend); long buffers belong to the caller in all cases.
 	if( !pending->bLong && pending->buffer )
 		Release( pending->buffer );
-	LockedDecrement( &pending->pc->nWritesPended );
-	if( !pending->pc->nWritesPended )
-		pending->pc->wakeOnUnlock = NULL;
-	NetworkUnlockEx( pending->pc, 0|0x10 DBG_SRC );
+	{
+		PCLIENT pc = pending->pc;
+		uint32_t serial = pc->serial;
+		LOGICAL finishClose;
+		LockedDecrement( &pc->nWritesPended );
+		if( !pc->nWritesPended )
+			pc->wakeOnUnlock = NULL;
+		// A close that was deferred because this write was outstanding has nothing
+		// else to retrigger it when the write goes straight out: the deferred-close
+		// machinery keys off lpFirstPending draining on a write-ready event, and a
+		// pdqPendingWrites entry never produces one.  (If doTCPWriteV2 did have to
+		// pend it, lpFirstPending is set and that machinery still owns the close.)
+		// bInUse means the application still holds the socket; ClearNetWork closes
+		// it on release, as the event threads do.
+		finishClose = ( !pc->nWritesPended && !pc->lpFirstPending
+		             && ( pc->dwFlags & CF_TOCLOSE ) && !pc->flags.bInUse );
+		if( finishClose )
+			pc->dwFlags &= ~CF_TOCLOSE;
+		NetworkUnlockEx( pc, 0|0x10 DBG_SRC );
+		// Deliberately the public graceful close, after the unlock and re-validated
+		// against the serial: it takes its own locks and now sees nothing pending,
+		// so it does the same shutdown(SHUT_WR) an undeferred response would have,
+		// and the normal event teardown follows.  Tearing the client down inline
+		// here instead recycles it underneath the unlock above.
+		if( finishClose && NetworkClientValid( pc, serial ) )
+			RemoveClientEx( pc, FALSE, TRUE );
+	}
 	return TRUE;
 }
 uintptr_t WaitToWrite( PTHREAD thread ) {
@@ -88199,6 +88258,13 @@ LOGICAL doTCPWriteV2( PCLIENT lpClient
   // cannot process a closed channel. data not sent.
 		return FALSE;
 	}
+	// A zero length write has nothing to deliver, and letting one through is
+	// actively harmful: it reaches send() with a 0 length, whose 0 return is
+	// read as "peer closed" and sets CF_TOCLOSE on a healthy connection.  It
+	// would also count against nWritesPended and hold a graceful close open
+	// for a write that can never move any bytes.
+	if( !nInLen )
+		return TRUE;
 	// nWritesPended gates the direct path: while any older write for this client
 	// is still in the deferred queue/stall list, this write has to follow it
 	// through the queue or it would pass it on the wire.  (wakeOnUnlock can't be

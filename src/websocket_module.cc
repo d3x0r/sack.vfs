@@ -1505,12 +1505,23 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 			}
 
 			myself->eventMessage = NULL;
-			if( !eventMessage->done ) { // only set done on messages that weren't previously done.
-				eventMessage->done = TRUE;
-				if( eventMessage->waiter )
-					WakeThread( eventMessage->waiter );
+			{
+				// waiter doubles as the ownership marker: a posting thread that
+				// blocks on ->done owns the event and drops it after its wait.
+				// Dropping it here would recycle it (GetWssEvent memsets, clearing
+				// done) while that thread is still polling - and this side is often
+				// quick enough to finish before the waiter even reaches its first
+				// check, so the waiter then sleeps on an event that is no longer its
+				// own.  Fire-and-forget events have no waiter and are dropped here.
+				PTHREAD waiter = eventMessage->waiter;
+				if( !eventMessage->done ) { // only set done on messages that weren't previously done.
+					eventMessage->done = TRUE;
+					if( waiter )
+						WakeThread( waiter );
+				}
+				if( !waiter )
+					DropWssEvent( eventMessage );
 			}
-			DropWssEvent( eventMessage );
 		}
 		myself->last_count_handled = handled;
 	}
@@ -2231,6 +2242,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 
 			while( !(*pevt).done )
 				Wait();
+			DropWssEvent( pevt );  // this thread waited on it, so this thread owns it
 		} else {
 			Isolate *isolate = Isolate::GetCurrent();
 			Local<Object> closingSock = makeSocket( isolate, pc, wss->wsPipe, wss, NULL, NULL );
@@ -2308,13 +2320,16 @@ static void webSockServerAcceptAsync( PCLIENT pc, uintptr_t psv, const char* pro
 	//lprintf( "Websocket accepted... (blocks until handled.)" );
 	( *pevt ).eventType = WS_EVENT_ACCEPT;
 	( *pevt ).done = FALSE;
-	( *pevt ).waiter = MakeThread();
+	// waiter stays NULL: nothing below waits on ->done, so this event is
+	// fire-and-forget and wssAsyncMsg_ owns the drop.  The dispatch test only
+	// needs to know which thread we are on, so keep that in a local rather than
+	// marking the event as owned by a waiter that does not exist.
+	PTHREAD self = MakeThread();
 	( *pevt ).channel = NULL;
 	( *pevt )._this = wss;
-	//HoldWssEvent( pevt );
 
 	EnqueLink( &wss->eventQueue, pevt );
-	if( ( *pevt ).waiter == wss->c->thread ) {
+	if( self == wss->c->thread ) {
 		wssAsyncMsg_( &wss->async );
 	} else {
 #ifdef DEBUG_EVENTS
@@ -2751,6 +2766,7 @@ void webSockHttpClose( PCLIENT pc, uintptr_t psv ) {
 			WakeableSleep( 1000 );
 			//Wait();  // calls Idle instead, which might prevent a deadlock?
 	}
+	DropWssEvent( pevt );  // this thread waited on it, so this thread owns it
 	//ClearNetWork( pc, 1234 ); // re-entrant close?
 }
 
@@ -2850,11 +2866,12 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 	(*pevt).pc = pc;
 	(*pevt)._this = wss;
 	(*pevt).waiter = MakeThread();
-	HoldWssEvent( pevt );
+	// no HoldWssEvent needed: waiter is set, so wssAsyncMsg_ leaves the event to
+	// this thread and the DropWssEvent below is the only release.
 	EnqueLink( &wss->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "socket HTTP LowError Send %p", &wss->async);
-#endif	
+#endif
 	if( wss->ivm_hosted )
 		wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
 	else
