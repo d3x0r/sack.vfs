@@ -6347,6 +6347,24 @@ MEM_PROC  uint32_t MEM_API  LockedIncrement ( volatile uint32_t* p );
    Parameters
    p :  pointer to a 32 bit value to decrement.         */
 MEM_PROC  uint32_t MEM_API  LockedDecrement ( volatile uint32_t* p );
+/* Multi-processor safe bitwise OR into a variable.  Use this instead of
+   `flags |= bits` for any flag word written from more than one thread - a plain
+   |= is a read-modify-write, so two threads setting different bits can lose one
+   of them entirely.
+   Parameters
+   p :     pointer to a 32 bit value to OR into.
+   bits :  bits to set.
+   Returns
+   The value *before* the OR (matching InterlockedOr / __atomic_fetch_or).  */
+MEM_PROC  uint32_t MEM_API  LockedOr ( volatile uint32_t* p, uint32_t bits );
+/* Multi-processor safe bitwise AND into a variable.  Use this instead of
+   `flags &= ~bits`; see LockedOr for why.  Pass the mask already inverted.
+   Parameters
+   p :     pointer to a 32 bit value to AND into.
+   mask :  mask to AND with (i.e. ~bits to clear those bits).
+   Returns
+   The value *before* the AND.                                              */
+MEM_PROC  uint32_t MEM_API  LockedAnd ( volatile uint32_t* p, uint32_t mask );
 #ifdef __cplusplus
 // like also __if_assembly__
 //extern "C" {
@@ -44763,6 +44781,25 @@ uint32_t LockedDecrement( volatile uint32_t* p ) {
 	return __atomic_sub_fetch( p, 1, __ATOMIC_RELAXED );
 #endif
 }
+// Both of these return the value PRIOR to the operation, which is what
+// InterlockedOr/InterlockedAnd and __atomic_fetch_or/and naturally give, so the
+// two platforms agree without extra work.
+uint32_t LockedOr( volatile uint32_t* p, uint32_t bits ) {
+#ifdef _WIN32
+	return (uint32_t)InterlockedOr( (volatile LONG *)p, (LONG)bits );
+#endif
+#ifdef __LINUX__
+	return __atomic_fetch_or( p, bits, __ATOMIC_RELAXED );
+#endif
+}
+uint32_t LockedAnd( volatile uint32_t* p, uint32_t mask ) {
+#ifdef _WIN32
+	return (uint32_t)InterlockedAnd( (volatile LONG *)p, (LONG)mask );
+#endif
+#ifdef __LINUX__
+	return __atomic_fetch_and( p, mask, __ATOMIC_RELAXED );
+#endif
+}
 uint64_t  LockedExchange64( volatile uint64_t* p, uint64_t val )
 {
 	// Windows only available - for linux platforms please consult
@@ -54399,6 +54436,16 @@ NETWORK_PROC( void, AddNetWork )( PCLIENT lpClient, uintptr_t psv );
 // to close, then a oustanding close operation will be performed when the last work is cleared.
 //
 NETWORK_PROC( void, ClearNetWork )( PCLIENT lpClient, uintptr_t psv );
+/*
+   Get the reference of the list of oustanding work on this client.
+   Someone put it there, they might want to know it... it holds a lock
+   for the list until the list is dropped.
+*/
+NETWORK_PROC( PLIST*, GetNetWork )( PCLIENT lpClient );
+/*
+   drops the lock held on the NetWork list returned.
+*/
+NETWORK_PROC( void, DropNetWork )( PCLIENT lpClient );
 NETWORK_PROC( void, RemoveClientExx )(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLinger DBG_PASS );
 /* <combine sack::network::RemoveClientExx@PCLIENT@LOGICAL@LOGICAL bLinger>
    \ \                                                                      */
@@ -62968,8 +63015,7 @@ INDEX GetMemberIndex(GENERICSET **ppSet, POINTER unit, int unitsize, int max )
 }
 #define GetMemberIndex(name,set,member) GetMemberIndex( (GENERICSET**)set, member, sizeof( name ), MAX##name##SPERSET )
 //----------------------------------------------------------------------------
-#undef MemberValidInSet
-int MemberValidInSet( GENERICSET *pSet, void *unit, int unitsize, int max )
+int MemberValidInSetEx( GENERICSET *pSet, void *unit, int unitsize, int max )
 {
 	uintptr_t nUnit = (uintptr_t)unit;
 	int ofs = ( ( max + (FLAGSET_MIN_SIZE-1) ) / FLAGSET_MIN_SIZE) * (FLAGSET_MIN_SIZE/8);
@@ -79902,6 +79948,27 @@ void vesl_dispose_message( PDATALIST *msg_data )
 #ifdef _WIN32
 #include <wincrypt.h>
 #endif
+// DEBUG PROBE (temporary, not for shipping): per-client ring of every csLockRead /
+// csLockWrite acquire and release, with the caller's file:line and the resulting
+// lock count.  Stores only, no I/O, so the race is left intact; the ring lives past
+// the lock words in the struct so ClearClient scrubs it and each ring covers exactly
+// ONE client lifetime - which is the window the leaked +1 was narrowed to.
+// Per-client ring of lock + lifecycle events.  Stores only, no I/O and no
+// allocation, so it does not perturb the timing the way lprintf probes did (which
+// demonstrably masked this class of bug).  Read it out of a core dump.
+//#define DEBUG_CLIENT_LOCK_TRACE
+// SEPARATE, and normally OFF: the spin-giveup probe abandons the event when a
+// lock can't be taken.  That is a real behaviour change - it distorts hang rates
+// and must never be on while measuring a fix.  The ring above is passive; this is
+// not.  Enable only to catch a live lock convoy.
+//#define DEBUG_LOCK_SPIN_GIVEUP
+// Which peer thread did each accepted socket land on, and is that peer still
+// delivering events?  Writes one buffered line per accept to
+// SACK_PEERMAP (default /tmp/chunk-lock-smoke/peermap.log), plus a snapshot of
+// every peer's wait/event counters every DBG_PEERMAP_SNAP accepts.  Correlate
+// the client ports against tcpdump's hang list (hangfilter.awk) to test whether
+// the periodic hangs all belong to one peer.
+#define DEBUG_PEER_ASSIGN
 #ifndef OPENSSL_API_COMPAT
 #  define OPENSSL_API_COMPAT 10101
 #endif
@@ -79962,6 +80029,12 @@ SACK_NETWORK_NAMESPACE
 // not sure if this is used anywhere....
       // maximum length of a host's text name...
 #define HOSTNAME_LEN 50
+// epoll/kqueue carry this as their data.ptr to get back to the client; it lives
+// in the PCLIENT so it costs no allocation and stays valid for the client's life.
+struct event_data {
+	PCLIENT pc;
+	int broadcast;
+};
 typedef struct PendingWrite {
 	PCLIENT pc;
 	POINTER buffer;
@@ -79991,6 +80064,11 @@ typedef struct PendingBuffer
  // Next Pending Message to be handled
    struct PendingBuffer *lpNext;
 }PendingBuffer;
+// dwFlags is written by the JS thread and by every network thread, so a plain
+// `dwFlags |= X` / `&= ~X` is a read-modify-write that can silently drop another
+// thread's concurrent bit change.  Always go through these.
+#define SetClientFlags(pc,bits)   LockedOr( (volatile uint32_t*)&(pc)->dwFlags, (uint32_t)(bits) )
+#define ClearClientFlags(pc,bits) LockedAnd( (volatile uint32_t*)&(pc)->dwFlags, (uint32_t)~(uint32_t)(bits) )
 enum NetworkConnectionFlags {
 	CF_UDP               = 0x00000001
 	// no flag... is NOT UDP....
@@ -80101,6 +80179,16 @@ struct peer_thread_info
 		BIT_FIELD bProcessing : 1;
 		BIT_FIELD bBuildingList : 1;
 	} flags;
+#ifdef DEBUG_PEER_ASSIGN
+	// written only by the peer's own thread, read by the snapshot; a torn read
+	// costs one misprinted sample and nothing else.
+   // epoll_wait returns with cnt > 0
+	volatile uint32_t dbgWaits;
+  // events delivered to this peer
+	volatile uint32_t dbgEvents;
+    // sockets assigned to this peer
+	volatile uint32_t dbgAdds;
+#endif
 };
 typedef struct {
   int verbose_mode;
@@ -80117,6 +80205,10 @@ struct ssl_session {
 	LOGICAL firstPacket;
 	LOGICAL noHost;
 	LOGICAL closed;
+	// Graceful-close intent carried across a deferred close.  ssl_CloseSession can
+	// be asked to close while the session is inUse; it defers via deleteInUse and
+	// the read path replays it later, by which time the caller's bLinger is gone.
+	LOGICAL closeLinger;
 	BIO *rbio;
 	BIO *wbio;
 	//EVP_PKEY *privkey;
@@ -80159,8 +80251,61 @@ struct ssl_session {
 	//CRITICALSECTION csWrite;
 };
 #endif
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+#define CLIENT_LOCK_TRACE_DEPTH 32
+// event kinds recorded in the per-client ring
+#define CLTRACE_UNLOCK    0
+#define CLTRACE_LOCK      1
+   // AddNetWork   - request handed toward JS, bInUse=1
+#define CLTRACE_ADDNET    2
+   // ClearNetWork - JS released it
+#define CLTRACE_CLEARNET  3
+// The discriminator for the remaining lost-dispatch hang: EVIN is recorded for
+// EVERY epoll delivery, before any handler decision; EVSKIP when the handler
+// declines a delivered event.  A hung socket whose ring has no EVIN at all means
+// the kernel never reported the edge; EVIN followed by EVSKIP means the event was
+// delivered and dropped - and being edge-triggered, it never comes back.
+   // a = events[n].events mask
+#define CLTRACE_EVIN      4
+   // a = dwFlags at the moment it was declined
+#define CLTRACE_EVSKIP    5
+struct client_lock_trace {
+	CTEXTSTR  file;
+	uint32_t  line;
+	THREAD_ID thread;
+           // LOCK/UNLOCK: resulting dwLocks.  ADDNET/CLEARNET: psvInUse count
+	uint32_t  a;
+          // CLTRACE_*
+	uint8_t   ev;
+     // LOCK/UNLOCK only: 0 = csLockWrite, 1 = csLockRead
+	uint8_t   channel;
+};
+#endif
 struct NetworkClient
 {
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+	// Deliberately placed BEFORE the lock words, i.e. inside the region ClearClient
+	// preserves, so the ring survives recycling and spans lifetimes.  The leaked +1
+	// is carried IN to GetFreeNetworkClient (seen as ch1 ->2 on the very first op of
+	// a fresh lifetime), so the unbalanced acquire is in the PREVIOUS life.
+	struct client_lock_trace lockTrace[CLIENT_LOCK_TRACE_DEPTH];
+	volatile uint32_t lockTraceIdx;
+#endif
+	// These MUST stay the first members.  ClearClient() scrubs a recycled client
+	// with a single MemSet that starts *after* them, so the lock words are never
+	// written by anything except Enter/LeaveCriticalSec.  Previously ClearClient
+	// snapshotted these, memset the whole struct, and restored the snapshot - but
+	// NetworkLockEx takes the client lock with no global lock held (see
+	// LOCK_GLOBAL_WHEN_LOCKING_CLIENT, commented out in network.c), so other event
+	// threads are concurrently updating dwUpdating/dwThreadWaiting/dwLocks the
+	// whole time.  The memset let a spinner acquire a zeroed section, and the
+	// restore then resurrected the previous owner and count on top of it - leaving
+	// clients permanently read-locked by a thread that had long since moved on.
+	// Nothing depends on member order here; the struct is module-local and opaque.
+    // per client lock.
+	CRITICALSECTION csLockRead;
+   // per client lock.
+	CRITICALSECTION csLockWrite;
   //Dest Address
 	SOCKADDR *saClient;
   //Local Address of this port ...
@@ -80226,10 +80371,7 @@ struct NetworkClient
 #if defined( USE_WSA_EVENTS )
 	WSAEVENT event;
 #endif
-    // per client lock.
-	CRITICALSECTION csLockRead;
-   // per client lock.
-	CRITICALSECTION csLockWrite;
+	// csLockRead/csLockWrite moved to the head of the struct - see the note there.
  // Thread which is waiting for a result...
 	PTHREAD pWaiting;
  // current incoming buffer
@@ -80245,24 +80387,40 @@ struct NetworkClient
 	PCLIENT pcServer;
  // listeners opened(was deprecated since most connections to v4 can be seen on v6) with port only have two connections, one IPV4 one IPV6
 	PCLIENT pcOther;
+	// These were `BIT_FIELD x : 1` - and BIT_FIELD is `unsigned int`, so all eight
+	// shared ONE 32-bit storage unit and setting any single bit was a
+	// read-modify-write of the whole word.  These are written from different
+	// threads, so two threads touching different bits could drop one of the writes
+	// outright.  bWriteOnUnlock is the sharp case: it exists precisely so a writer
+	// that could NOT get the lock can ask the lock holder to do the write, so it is
+	// set by one thread while NetworkUnlockEx clears it on another - and a lost set
+	// means a write that simply never happens.
+	// One byte each: independently addressable, so a store to one cannot disturb its
+	// neighbours.  Costs 4 bytes per client.  (Byte granularity is enough here; for
+	// anything needing true atomicity use the Locked* primitives.)
 	volatile struct network_client_flags {
-		BIT_FIELD bAddedToEvents : 1;
-		BIT_FIELD bRemoveFromEvents : 1;
-		BIT_FIELD bSecure : 1;
-		BIT_FIELD bAllowDowngrade : 1;
+		uint8_t bAddedToEvents;
+		uint8_t bRemoveFromEvents;
+		uint8_t bSecure;
+		uint8_t bAllowDowngrade;
  // waiting is a accept() flag to prevent accepting sockets before really setup.
-		BIT_FIELD bWaiting : 1;
+		uint8_t bWaiting;
  // write event failed to get lock, so if the locked holder would please write...
-		BIT_FIELD bWriteOnUnlock : 1;
+		uint8_t bWriteOnUnlock;
  // has work outstanding; wait for close until release
-		BIT_FIELD bInUse : 1;
-		BIT_FIELD bAggregateOutput : 1;
+		uint8_t bInUse;
+		uint8_t bAggregateOutput;
 	} flags;
 	PTHREAD wakeOnUnlock;
 	// count of writes for this client held in the deferred write queue/stall list
 	// (tcpnetwork.c); while nonzero, new writes must also be deferred so writes
 	// stay in the order they were issued.  Cleared with the rest of the client
 	// state when the client is recycled.
+	// Set when a close wanted to recycle this client but a channel was still
+	// locked; the final NetworkUnlockEx completes the recycle.  A plain word, not a
+	// bit in `flags`, so setting it cannot lose a concurrent read-modify-write of
+	// the neighbouring bits.  Cleared by ClearClient as part of the recycle.
+	volatile uint32_t recyclePending;
 	volatile uint32_t nWritesPended;
 	// connection generation; bumps when the client closes, and survives the
 	// client being cleared for reuse.  Application code that holds a PCLIENT
@@ -80277,6 +80435,14 @@ struct NetworkClient
 	// this is set to what the thread that's waiting for this event is.
 	struct peer_thread_info * volatile this_thread;
 	//int tcp_delay_count;
+#ifdef __LINUX__
+	// epoll_ctl(ADD) needs a stable data.ptr carrying (pc,broadcast).  It used to
+	// be allocated fresh on every add and never released - EPOLL_CTL_DEL cannot
+	// hand the pointer back - so every accepted connection leaked one.  Carried
+	// inline with the client instead: no allocation at all, valid for the
+	// client's life.  [0] is the direct socket, [1] the broadcast socket.
+	struct event_data epoll_event_data[2];
+#endif
 #ifndef NO_SSL
 	struct ssl_session *ssl_session;
 #endif
@@ -80404,6 +80570,12 @@ struct peer_thread_info *IsNetworkThread( void );
 PCLIENT AddActive( PCLIENT pClient );
 void RemoveThreadEvent( PCLIENT pc );
 void AddThreadEvent( PCLIENT pc, int broadcast );
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+void sack_dbg_traceClient( PCLIENT pc, int ev, int channel, uint32_t a, CTEXTSTR file, uint32_t line );
+void sack_dbg_dumpClientLockTrace( PCLIENT pc, const char *why );
+#endif
+#ifdef __LINUX__
+#endif
 LOGICAL TryNetworkGlobalLock( DBG_VOIDPASS );
 //-------------
 // TCP Interface
@@ -80426,7 +80598,11 @@ int CPROC IdleProcessNetworkMessages( uintptr_t quick_check );
 char *NetworkExpandFlags( PCLIENT pc );
 //----------------------------
 // ssl_close - redirected removeClient from network..
-void ssl_CloseSession( PCLIENT pc );
+// bLinger is the caller's graceful-close intent, forwarded from RemoveClientExx.
+// Dropping it here is what left TLS responses truncated: the terminal RemoveClient
+// below re-enters RemoveClientExx with bLinger FALSE, which short-circuits the
+// pending-write test and shutdown()s on top of queued ciphertext.
+void ssl_CloseSession( PCLIENT pc, LOGICAL bLinger );
 LOGICAL ssl_IsClosed( PCLIENT pc );
 //---------------------------
 // some utility macros
@@ -80599,7 +80775,7 @@ PCLIENT GrabClientEx( PCLIENT pClient DBG_PASS )
 {
 	if( pClient )
 	{
-		pClient->dwFlags &= ~CF_STATEFLAGS;
+		ClearClientFlags( pClient, CF_STATEFLAGS );
 		if( pClient->dwFlags & CF_AVAILABLE )
 			lprintf( "Grabbed. %p  %08x", pClient, pClient->dwFlags );
 		pClient->LastEvent = timeGetTime();
@@ -80609,11 +80785,54 @@ PCLIENT GrabClientEx( PCLIENT pClient DBG_PASS )
 	return pClient;
 }
 //----------------------------------------------------------------------------
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+// One atomic increment plus a few stores - cheap enough to leave the race intact.
+void sack_dbg_traceClient( PCLIENT pc, int ev, int channel, uint32_t a, CTEXTSTR file, uint32_t line ) {
+	struct client_lock_trace *t;
+	uint32_t i;
+	if( !pc ) return;
+	i = (uint32_t)LockedIncrement( &pc->lockTraceIdx ) - 1;
+	t = pc->lockTrace + ( i % CLIENT_LOCK_TRACE_DEPTH );
+	t->file    = file;
+	t->line    = line;
+	t->thread  = GetThisThreadID();
+	t->a       = a;
+	t->ev      = (uint8_t)ev;
+	t->channel = (uint8_t)( channel ? 1 : 0 );
+}
+// Dump one client's whole lock history, oldest first.  Capped globally so a storm
+// of stuck clients cannot flood the log.
+static uint32_t sack_dbg_dumps;
+void sack_dbg_dumpClientLockTrace( PCLIENT pc, const char *why ) {
+	uint32_t n, total, first;
+	if( !pc ) return;
+	if( sack_dbg_dumps++ > 12 ) return;
+	total = pc->lockTraceIdx;
+	first = ( total > CLIENT_LOCK_TRACE_DEPTH ) ? ( total - CLIENT_LOCK_TRACE_DEPTH ) : 0;
+	fprintf( stderr, "LOCKTRACE %s pc=%p sock=%d flags=%08x ops=%u rd=%u(owner %llx) wr=%u(owner %llx)\n"
+	       , why, (void*)pc, pc->Socket, pc->dwFlags, total
+	       , pc->csLockRead.dwLocks, (unsigned long long)pc->csLockRead.dwThreadID
+	       , pc->csLockWrite.dwLocks, (unsigned long long)pc->csLockWrite.dwThreadID );
+	for( n = first; n < total; n++ ) {
+		struct client_lock_trace *t = pc->lockTrace + ( n % CLIENT_LOCK_TRACE_DEPTH );
+		static const char *evname[] = { "UNLOCK", "LOCK", "ADDNET", "CLEARNET", "EVIN", "EVSKIP" };
+		const char *nm = ( t->ev < 6 ) ? evname[t->ev] : "?";
+		if( t->ev <= CLTRACE_LOCK )
+			fprintf( stderr, "   [%3u] %-8s ch%d ->%u  thr=%llx  %s(%u)\n"
+			       , n, nm, t->channel, t->a, (unsigned long long)t->thread
+			       , t->file ? t->file : "?", t->line );
+		else
+			fprintf( stderr, "   [%3u] %-8s inUseCount=%u  thr=%llx  %s(%u)\n"
+			       , n, nm, t->a, (unsigned long long)t->thread
+			       , t->file ? t->file : "?", t->line );
+	}
+}
+#endif
 static PCLIENT AddAvailable( PCLIENT pClient )
 {
 	if( pClient )
 	{
-		pClient->dwFlags |= CF_AVAILABLE;
+		SetClientFlags( pClient, CF_AVAILABLE );
 		pClient->LastEvent = timeGetTime();
 		PCLIENT lastClient = globalNetworkData.AvailableClients;
 		while( lastClient && lastClient->next ) lastClient = lastClient->next;
@@ -80636,7 +80855,7 @@ PCLIENT AddActive( PCLIENT pClient )
 {
 	if( pClient )
 	{
-		pClient->dwFlags |= CF_ACTIVE;
+		SetClientFlags( pClient, CF_ACTIVE );
 		pClient->LastEvent = timeGetTime();
 		pClient->me = &globalNetworkData.ActiveClients;
 		if( ( pClient->next = globalNetworkData.ActiveClients ) )
@@ -80706,7 +80925,7 @@ static PCLIENT AddClosed( PCLIENT pClient )
 	{
 		// leaving active life; invalidate handles captured against this connection.
 		LockedIncrement( &pClient->serial );
-		pClient->dwFlags |= CF_CLOSED;
+		SetClientFlags( pClient, CF_CLOSED );
 		pClient->LastEvent = timeGetTime();
 		pClient->me = &globalNetworkData.ClosedClients;
 		if( ( pClient->next = globalNetworkData.ClosedClients ) )
@@ -80722,9 +80941,11 @@ static void ClearClient( PCLIENT pc DBG_PASS )
 	PCLIENT next;
 	PCLIENT *me;
 	SOCKADDR *sa_rel;
-	CRITICALSECTION csr;
-	CRITICALSECTION csw;
 	uint32_t serial;
+	// Everything from here to the end of the struct is scrubbed; the two
+	// CRITICALSECTIONs deliberately sit in front of it and are never touched.
+	static const size_t clear_offset = offsetof( struct NetworkClient, csLockWrite )
+	                                 + sizeof( ( (PCLIENT)0 )->csLockWrite );
 	// keep the closing flag until it's really been closed. (getfreeclient will try to nab it)
  /*enum NetworkConnectionFlags*/
 	int  dwFlags = pc->dwFlags & (CF_STATEFLAGS | CF_CLOSING | CF_CONNECT_WAITING | CF_CONNECT_CLOSED);
@@ -80735,8 +80956,6 @@ static void ClearClient( PCLIENT pc DBG_PASS )
 	next = pc->next;
 	// these states are saved to be restored.
 	pbtemp = pc->lpUserData;
-	csr = pc->csLockRead;
-	csw = pc->csLockWrite;
  // generation continues across reuse; only close bumps it
 	serial = pc->serial;
 	lockNetWorkList();
@@ -80756,11 +80975,12 @@ static void ClearClient( PCLIENT pc DBG_PASS )
 		WSACloseEvent( pc->event );
 	}
 #endif
- // clear all information...
-	MemSet( pc, 0, sizeof( CLIENT ) );
+	// clear all information... but start after the two CRITICALSECTIONs at the head
+	// of the struct.  They must never be written here: other threads spin on them in
+	// EnterCriticalSecNoWaitEx with no global lock held, so zeroing and restoring
+	// them resurrects stale owners/counts (clients left permanently read-locked).
+	MemSet( (uint8_t*)pc + clear_offset, 0, sizeof( CLIENT ) - clear_offset );
 	pc->Socket = INVALID_SOCKET;
-	pc->csLockRead = csr;
-	pc->csLockWrite = csw;
 	pc->serial = serial;
 	pc->lpUserData = pbtemp;
 	if( pc->lpUserData )
@@ -80851,11 +81071,24 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS )
 				pc->lpFirstPending = lpNext;
 			}
 		}
+		// DEFERRED RECYCLE.  Never hand a client back to the free pool while either
+		// channel is still locked.  The EPOLLIN handler locks channel 1 for the whole
+		// event and then closes from *inside* the read (a Connection: close response
+		// sets CF_TOCLOSE during FinishPendingRead, which then returns -1 and takes
+		// the "reset connection" branch straight to here) - so recycling here put a
+		// still-locked client into AvailableClients, and GetFreeNetworkClient handed
+		// it straight back out already locked.  That is the leaked +1 on csLockRead.
+		// The final NetworkUnlockEx finishes the recycle once nothing holds it.
+		if( pc->csLockRead.dwLocks || pc->csLockWrite.dwLocks ) {
+			pc->recyclePending = 1;
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
+			return;
+		}
 		ClearClient( pc DBG_RELAY );
 		// this should move from globalNetworkData.close to globalNetworkData.available.
 		AddAvailable( GrabClient( pc ) );
  // it's no longer closing.  (was set during the course of closure)
-		pc->dwFlags &= ~CF_CLOSING;
+		ClearClientFlags( pc, CF_CLOSING );
 		LeaveCriticalSec( &globalNetworkData.csNetwork );
 		//NetworkUnlock( pc );
 	}
@@ -80871,7 +81104,7 @@ void SetNetworkWriteComplete( PCLIENT pClient
 	if( pClient && IsValid( pClient->Socket ) )
 	{
 		pClient->write.WriteComplete = WriteComplete;
-		pClient->dwFlags &= ~CF_CPPWRITE;
+		ClearClientFlags( pClient, CF_CPPWRITE );
 	}
 }
 //----------------------------------------------------------------------------
@@ -80883,7 +81116,7 @@ void SetCPPNetworkWriteComplete( PCLIENT pClient
 	{
 		pClient->write.CPPWriteComplete = WriteComplete;
 		pClient->psvWrite = psv;
-		pClient->dwFlags |= CF_CPPWRITE;
+		SetClientFlags( pClient, CF_CPPWRITE );
 	}
 }
 //----------------------------------------------------------------------------
@@ -80919,7 +81152,7 @@ void SetCPPNetworkCloseCallback( PCLIENT pClient
 	{
 		pClient->close.CPPCloseCallback = CloseCallback;
 		pClient->psvClose = psv;
-		pClient->dwFlags |= CF_CPPCLOSE;
+		SetClientFlags( pClient, CF_CPPCLOSE );
 	}
 }
 //----------------------------------------------------------------------------
@@ -80939,7 +81172,7 @@ void SetNetworkReadComplete( PCLIENT pClient
 	}
 	if( !( pClient->RecvPending.buffer.p ) ) {
  // may be... at least we can fail sooner...
-		pClient->dwFlags |= CF_READREADY;
+		SetClientFlags( pClient, CF_READREADY );
 		if( pClient->read.ReadComplete )
 			pClient->read.ReadComplete( pClient, NULL, 0 );
 	}
@@ -80965,11 +81198,11 @@ void SetCPPNetworkReadComplete( PCLIENT pClient
 	{
 		pClient->read.CPPReadComplete = pReadComplete;
 		pClient->psvRead = psv;
-		pClient->dwFlags |= CF_CPPREAD;
+		SetClientFlags( pClient, CF_CPPREAD );
 	}
 	if( !( pClient->RecvPending.buffer.p ) ) {
  // may be... at least we can fail sooner...
-		pClient->dwFlags |= CF_READREADY;
+		SetClientFlags( pClient, CF_READREADY );
 		if( pClient->read.ReadComplete )
 			pClient->read.CPPReadComplete( pClient->psvRead, NULL, 0 );
 	}
@@ -81390,6 +81623,13 @@ get_client:
 			DebugBreak();
  // clear client is redundant here... but saves the critical section now
 		ClearClient( pClient DBG_SRC );
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+		// Both channels were taken directly above, before ClearClient scrubbed the
+		// ring - so seed the fresh ring with them or the lifetime starts unbalanced
+		// on paper.  Order matches the acquisition order (read then write).
+		sack_dbg_traceClient( pClient, CLTRACE_LOCK, 1, pClient->csLockRead.dwLocks, pFile, nLine );
+		sack_dbg_traceClient( pClient, CLTRACE_LOCK, 0, pClient->csLockWrite.dwLocks, pFile, nLine );
+#endif
 		//Log1( "New network client %p", client );
 	}
 	else
@@ -81555,6 +81795,9 @@ NETWORK_PROC( PCLIENT, NetworkLockEx)( PCLIENT lpClient, int readWrite DBG_PASS 
 #else
 			LeaveCriticalSecEx( readWrite?&lpClient->csLockRead:&lpClient->csLockWrite DBG_RELAY );
 #endif
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+		sack_dbg_traceClient( lpClient, CLTRACE_UNLOCK, readWrite, readWrite ? lpClient->csLockRead.dwLocks : lpClient->csLockWrite.dwLocks, pFile, nLine );
+#endif
 //#ifdef LOG_NETWORK_LOCKING
 			_lprintf( DBG_RELAY )( "Failed lock: %p  %08x %08x inactive, cannot lock.", lpClient, lpClient->dwFlags, CF_ACTIVE );
 //#endif
@@ -81564,6 +81807,9 @@ NETWORK_PROC( PCLIENT, NetworkLockEx)( PCLIENT lpClient, int readWrite DBG_PASS 
 	}
 #ifdef LOG_NETWORK_LOCKING
 	_lprintf( DBG_RELAY )( "Got private lock %p %d", lpClient, readWrite );
+#endif
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+	sack_dbg_traceClient( lpClient, CLTRACE_LOCK, readWrite, readWrite ? lpClient->csLockRead.dwLocks : lpClient->csLockWrite.dwLocks, pFile, nLine );
 #endif
 	return lpClient;
 }
@@ -81595,6 +81841,28 @@ NETWORK_PROC( void, NetworkUnlockEx)( PCLIENT lpClient, int readWrite DBG_PASS )
 #else
 		LeaveCriticalSecEx( readWrite?&lpClient->csLockRead:&lpClient->csLockWrite DBG_RELAY );
 #endif
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+		sack_dbg_traceClient( lpClient, CLTRACE_UNLOCK, readWrite, readWrite ? lpClient->csLockRead.dwLocks : lpClient->csLockWrite.dwLocks, pFile, nLine );
+#endif
+		// Deferred recycle: a close that ran while this client was locked left the
+		// job to whoever drops the last lock.  Doing it here, after the leave, is
+		// what guarantees a client is never sitting in AvailableClients with a
+		// channel still held.  No client lock is held at this point, so taking
+		// csNetwork here cannot invert the established clientLock -> csNetwork order.
+		if( lpClient->recyclePending
+		 && !lpClient->csLockRead.dwLocks && !lpClient->csLockWrite.dwLocks ) {
+			EnterCriticalSec( &globalNetworkData.csNetwork );
+			if( lpClient->recyclePending
+			 && !lpClient->csLockRead.dwLocks && !lpClient->csLockWrite.dwLocks ) {
+				lpClient->recyclePending = 0;
+				ClearClient( lpClient DBG_RELAY );
+				AddAvailable( GrabClient( lpClient ) );
+				ClearClientFlags( lpClient, CF_CLOSING );
+			}
+			LeaveCriticalSec( &globalNetworkData.csNetwork );
+ // back in the pool - nothing below may touch it any more
+			return;
+		}
  // is write and not read
 		if( !readWrite && !inWakeOnUnlock )
 		{
@@ -81704,7 +81972,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 #ifdef LOG_DEBUG_CLOSING
 			lprintf( "GRACEFUL CLOSE WHILE WAITING FOR WRITE TO FINISH... %p", lpClient );
 #endif
-			lpClient->dwFlags |= CF_TOCLOSE;
+			SetClientFlags( lpClient, CF_TOCLOSE );
 			return;
 			// continue on; otherwise the close event gets lost...
 		}
@@ -81741,21 +82009,21 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 		// to this structure before closing and cleaning it.
 		if( !bBlockNotify )
 		{
-			lpClient->dwFlags |= CF_CONNECT_CLOSED;
+			SetClientFlags( lpClient, CF_CONNECT_CLOSED );
 			if( lpClient->pWaiting )
 			{
 				WakeThread( lpClient->pWaiting );
 				while( lpClient->dwFlags & CF_CONNECT_WAITING )
 					Relinquish();
 			}
-			lpClient->dwFlags &= ~CF_CONNECT_CLOSED;
+			ClearClientFlags( lpClient, CF_CONNECT_CLOSED );
  // prevent multiple notifications...
 			if( !(lpClient->dwFlags & CF_CLOSING) )
 			{
 #ifdef LOG_DEBUG_CLOSING
 				lprintf( "Marked closing first, and dispatching callback? %p", lpClient );
 #endif
-				lpClient->dwFlags |= CF_CLOSING;
+				SetClientFlags( lpClient, CF_CLOSING );
 				// invalidate deferred handles BEFORE the close callback tears down
 				// application state; NetworkClientValid() fails from here on, so a
 				// deferred event validated after this cannot find half-torn state.
@@ -81828,7 +82096,10 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 			if( !ssl_IsClosed( lpClient ) ) {
 				// let client notify_close actually close this...
 				//lprintf( "secure client, not closed, just close session... (no shutdown?)");
-				ssl_CloseSession( lpClient );
+				// bLinger MUST go with it: this returns before the pending-write
+				// test below, and ssl_CloseSession's terminal RemoveClient comes
+				// back through here to make that decision.
+				ssl_CloseSession( lpClient, bLinger );
 				return;
 			}
 		}
@@ -81841,9 +82112,9 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 			shutdown( lpClient->Socket, SHUT_WR );
 		} else {
 			//lprintf( "linger and still pending write data..." ); // normal path; noisy under load
-			lpClient->dwFlags |= CF_TOCLOSE;
+			SetClientFlags( lpClient, CF_TOCLOSE );
 		}
-		lpClient->dwFlags |= CF_WANTCLOSE;
+		SetClientFlags( lpClient, CF_WANTCLOSE );
 	} else {
 		int n = 0;
 		if( !(lpClient->dwFlags & CF_ACTIVE )
@@ -81861,15 +82132,31 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 		}
 		else if( n ) {
 			NetworkUnlock( lpClient, 0 );
-			lpClient->dwFlags |= CF_TOCLOSE;
+			SetClientFlags( lpClient, CF_TOCLOSE );
 		}
 		LeaveCriticalSec( &globalNetworkData.csNetwork );
 	}
+}
+PLIST* GetNetWork( PCLIENT lpClient ) {
+	lockNetWorkList();
+	return &lpClient->psvInUse;
+}
+// should we validate that the psv is in the list?  or just clear it?
+void DropNetWork( PCLIENT lpClient ) {
+	unlockNetWorkList();
 }
 void AddNetWork( PCLIENT lpClient, uintptr_t psv ) {
 	lockNetWorkList();
 	AddLink( &lpClient->psvInUse, (POINTER)psv );
 	lpClient->flags.bInUse = 1;
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+	// This is the marker that a request was handed toward JS: on the request path
+	// the only caller is webSockHttpRequest (sack.vfs), which then queues a
+	// WS_EVENT_REQUEST and uv_async_send()s it.  A client found hung with bInUse=1
+	// and no matching CLEARNET got that far and the JS callback never ran.
+	sack_dbg_traceClient( lpClient, CLTRACE_ADDNET, 0
+	                    , (uint32_t)GetLinkCount( lpClient->psvInUse ) DBG_SRC );
+#endif
 	unlockNetWorkList();
 }
 void ClearNetWork( PCLIENT lpClient, uintptr_t psv ) {
@@ -81884,6 +82171,10 @@ void ClearNetWork( PCLIENT lpClient, uintptr_t psv ) {
 			lpClient->flags.bInUse = 0;
 			emptied = TRUE;
 		}
+#ifdef DEBUG_CLIENT_LOCK_TRACE
+		sack_dbg_traceClient( lpClient, CLTRACE_CLEARNET, 0
+		                    , (uint32_t)GetLinkCount( lpClient->psvInUse ) DBG_SRC );
+#endif
 	}
 	unlockNetWorkList();
 	if( !emptied )
@@ -82272,7 +82563,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						}
 						// section will be blank after termination...(correction, we keep the section state now)
  // it's no longer closing.  (was set during the course of closure)
-						pClient->dwFlags &= ~CF_CLOSING;
+						ClearClientFlags( pClient, CF_CLOSING );
 					} else if( !(event_data->pc->dwFlags & (CF_ACTIVE) ) ) {
 						lprintf( "Event on socket no longer active..." );
 						// change to inactive status by the time we got here...
@@ -82329,7 +82620,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							closed = 1;
 						}
 						else if( !event_data->pc->RecvPending.s.bStream )
-							event_data->pc->dwFlags |= CF_READREADY;
+							SetClientFlags( event_data->pc, CF_READREADY );
 					}
 					else
 					{
@@ -82337,7 +82628,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 						if( globalNetworkData.flags.bLogNotices )
 							lprintf( "TCP Set read ready..." );
 #endif
-						event_data->pc->dwFlags |= CF_READREADY;
+						SetClientFlags( event_data->pc, CF_READREADY );
 					}
 					if( locked )
 						LeaveCriticalSec( &event_data->pc->csLockRead );
@@ -82375,8 +82666,8 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 							if( globalNetworkData.flags.bLogNotices )
 								lprintf( "Connected!" );
 #endif
-							event_data->pc->dwFlags |= CF_CONNECTED;
-							event_data->pc->dwFlags &= ~CF_CONNECTING;
+							SetClientFlags( event_data->pc, CF_CONNECTED );
+							ClearClientFlags( event_data->pc, CF_CONNECTING );
 							{
 								PCLIENT pc = event_data->pc;
 #ifdef __LINUX__
@@ -82411,7 +82702,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 #endif
 									WakeThread( event_data->pc->pWaiting );
 								}
-								event_data->pc->dwFlags |= CF_CONNECT_ISSUED;
+								SetClientFlags( event_data->pc, CF_CONNECT_ISSUED );
 								if( event_data->pc->dwFlags & CF_CPPCONNECT ) {
 									if( event_data->pc->connect.CPPThisConnected )
 										event_data->pc->connect.CPPThisConnected( event_data->pc->psvConnect, error );
@@ -82439,7 +82730,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t unu
 										TCPWrite( event_data->pc );
 									}
 								} else {
-									event_data->pc->dwFlags |= CF_CONNECTERROR;
+									SetClientFlags( event_data->pc, CF_CONNECTERROR );
 								}
 							}
 						} else if( event_data->pc->dwFlags & CF_UDP ) {
@@ -82637,7 +82928,7 @@ static void HandleEvent( PCLIENT pClient )
 		lprintf( "How did a NULL client get here?!" );
 		return;
 	}
-	pClient->dwFlags |= CF_PROCESSING;
+	SetClientFlags( pClient, CF_PROCESSING );
 #ifdef LOG_NETWORK_EVENT_THREAD
 	//if( globalNetworkData.flags.bLogNotices )
 	//	lprintf( "Client event on %p", pClient );
@@ -82683,14 +82974,14 @@ static void HandleEvent( PCLIENT pClient )
 							lprintf( "FD_CONNECT on %p", pClient );
 #endif
 						if( !wError )
-							pClient->dwFlags |= CF_CONNECTED;
+							SetClientFlags( pClient, CF_CONNECTED );
 						else
 						{
 #if defined( LOG_NOTICES ) || defined( LOG_WRITE_NOTICES )
 							if( globalNetworkData.flags.bLogNotices )
 								lprintf( "Connect error: %d", wError );
 #endif
-							pClient->dwFlags |= CF_CONNECTERROR;
+							SetClientFlags( pClient, CF_CONNECTERROR );
 						}
 						if( !( pClient->dwFlags & CF_CONNECTERROR ) )
 						{
@@ -82701,7 +82992,7 @@ static void HandleEvent( PCLIENT pClient )
 							// with events, we get a FD_WRITE also... which calls tcpwrite.
 							//TCPWrite( pClient );
 						}
-						pClient->dwFlags &= ~CF_CONNECTING;
+						ClearClientFlags( pClient, CF_CONNECTING );
 						if( pClient->connect.ThisConnected )
 						{
 							if( !wError && !pClient->saSource ) {
@@ -82727,7 +83018,7 @@ static void HandleEvent( PCLIENT pClient )
 								lprintf( "Post connect to application %p  error:%d", pClient, wError );
 #endif
 							// have to allow SSL to clear this... so set it before calling the connect callback.
-							pClient->dwFlags |= CF_CONNECT_ISSUED;
+							SetClientFlags( pClient, CF_CONNECT_ISSUED );
 							if( pClient->dwFlags & CF_CPPCONNECT )
 								pClient->connect.CPPThisConnected( pClient->psvConnect, wError );
 							else
@@ -82784,7 +83075,7 @@ static void HandleEvent( PCLIENT pClient )
 							//lprintf( "FD_READ on %p (finishpendingread)", pClient );
 							if( FinishPendingRead( pClient DBG_SRC ) == 0 )
 							{
-								pClient->dwFlags |= CF_READREADY;
+								SetClientFlags( pClient, CF_READREADY );
 							}
 							if( pClient->dwFlags & CF_TOCLOSE )
 							{
@@ -82818,8 +83109,8 @@ static void HandleEvent( PCLIENT pClient )
 							// never signaled - complete the connect from here so the
 							// socket doesn't sit CF_CONNECTING forever.
 							lprintf( "FD_WRITE is completing a connect that never received FD_CONNECT %p", pClient );
-							pClient->dwFlags |= CF_CONNECTED;
-							pClient->dwFlags &= ~CF_CONNECTING;
+							SetClientFlags( pClient, CF_CONNECTED );
+							ClearClientFlags( pClient, CF_CONNECTING );
 							if( !pClient->saSource ) {
 								int nLen = MAGIC_SOCKADDR_LENGTH;
 								pClient->saSource = AllocAddr();
@@ -82833,7 +83124,7 @@ static void HandleEvent( PCLIENT pClient )
 							}
 							if( pClient->connect.ThisConnected )
 							{
-								pClient->dwFlags |= CF_CONNECT_ISSUED;
+								SetClientFlags( pClient, CF_CONNECT_ISSUED );
 								if( pClient->dwFlags & CF_CPPCONNECT )
 									pClient->connect.CPPThisConnected( pClient->psvConnect, 0 );
 								else
@@ -82859,12 +83150,12 @@ static void HandleEvent( PCLIENT pClient )
 #endif
 							TCPWrite(pClient);
 						} else {
-							pClient->dwFlags |= CF_WRITEREADY;
+							SetClientFlags( pClient, CF_WRITEREADY );
 						}
 						if( !pClient->lpFirstPending ) {
 							if( ( pClient->dwFlags & CF_TOCLOSE ) && !pClient->flags.bInUse )
 							{
-								pClient->dwFlags &= ~CF_TOCLOSE;
+								ClearClientFlags( pClient, CF_TOCLOSE );
 								//lprintf( "Pending read failed - and wants to close." );
 								EnterCriticalSec( &globalNetworkData.csNetwork );
 								// remote shutdown triggered this... and somehow this shouldn't be the same as a graceful close.
@@ -82918,7 +83209,7 @@ static void HandleEvent( PCLIENT pClient )
 						{
 							// application holds work on this socket; mark the close so
 							// ClearNetWork completes it when the work releases.
-							pClient->dwFlags |= CF_TOCLOSE;
+							SetClientFlags( pClient, CF_TOCLOSE );
 							deferred = TRUE;
 						}
 						unlockNetWorkList();
@@ -82930,7 +83221,7 @@ static void HandleEvent( PCLIENT pClient )
 							TerminateClosedClient( pClient );
 							LeaveCriticalSec( &globalNetworkData.csNetwork );
  // it's no longer closing.  (was set during the course of closure)
-							pClient->dwFlags &= ~CF_CLOSING;
+							ClearClientFlags( pClient, CF_CLOSING );
 						}
 					}
 					// section will be blank after termination...(correction, we keep the section state now)
@@ -82959,7 +83250,7 @@ static void HandleEvent( PCLIENT pClient )
 		else
 			lprintf( "Event enum failed... do what? close socket? %p %" _32f, pClient, dwError );
 	}
-	pClient->dwFlags &= ~CF_PROCESSING;
+	ClearClientFlags( pClient, CF_PROCESSING );
 }
 //----------------------------------------------------------------------------
 void RemoveThreadEvent( PCLIENT pc ) {
@@ -83340,6 +83631,32 @@ SACK_NETWORK_NAMESPACE_END
 //*******************8
 #endif
 SACK_NETWORK_NAMESPACE
+#ifdef DEBUG_PEER_ASSIGN
+// ---- peer-assignment map (temporary probe) --------------------------------
+// One buffered line per accepted socket saying which peer thread owns it, plus
+// a periodic snapshot of every peer's epoll counters.  Buffered to a plain file
+// (not stderr, which is unbuffered and would put a write() on the accept path);
+// flushed every DBG_PEERMAP_SNAP records so a kill -9 loses at most that many.
+// also the flush interval - a kill -9 loses at most this many ADD records
+#  define DBG_PEERMAP_SNAP 128
+static FILE *dbg_peermap;
+static volatile uint32_t dbg_peermapOrder;
+static void dbg_peermapOpen( void ) {
+	const char *fn = getenv( "SACK_PEERMAP" );
+	if( !fn ) fn = "/tmp/chunk-lock-smoke/peermap.log";
+	dbg_peermap = fopen( fn, "w" );
+	if( dbg_peermap ) setvbuf( dbg_peermap, NULL, _IOFBF, 1 << 20 );
+}
+// snapshot the whole peer chain; caller must hold csPeerChain.
+static void dbg_peermapSnapshot( uint32_t order ) {
+	struct peer_thread_info *p;
+	int idx = 0;
+	for( p = globalNetworkData.root_thread; p; p = p->child_peer, idx++ )
+		fprintf( dbg_peermap, "PEER at=%u idx=%d peer=%p epfd=%d nEvents=%u adds=%u waits=%u events=%u\n"
+		       , order, idx, (void*)p, p->epoll_fd, p->nEvents, p->dbgAdds, p->dbgWaits, p->dbgEvents );
+	fflush( dbg_peermap );
+}
+#endif
 void RemoveThreadEvent( PCLIENT pc ) {
 	struct peer_thread_info *thread = pc->this_thread;
 	// could be closed (accept, initial read, protocol causes close before ever completing getting scheduled)
@@ -83398,10 +83715,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 		}
 	LeaveCriticalSec( &globalNetworkData.csPeerChain );
 }
-struct event_data {
-	PCLIENT pc;
-	int broadcast;
-};
+// struct event_data now lives in netstruc.h, carried inline by the PCLIENT.
 void AddThreadEvent( PCLIENT pc, int broadcast )
 {
 	struct peer_thread_info *peer = globalNetworkData.root_thread;
@@ -83490,6 +83804,11 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 			else
 				peer = peer->child_peer;
 		}
+#ifdef DEBUG_PEER_ASSIGN
+		if( !dbg_peermap ) dbg_peermapOpen();
+		if( dbg_peermap && !( dbg_peermapOrder % DBG_PEERMAP_SNAP ) )
+			dbg_peermapSnapshot( dbg_peermapOrder );
+#endif
 		LeaveCriticalSec( &globalNetworkData.csPeerChain );
 	} else {
  // add broadcast to the same event as the original.
@@ -83502,7 +83821,8 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 	{
 		int r;
 		struct epoll_event ev;
-		ev.data.ptr = New( struct event_data );
+		// the client carries its own event_data; nothing to allocate or release.
+		ev.data.ptr = &pc->epoll_event_data[broadcast?1:0];
 		((struct event_data*)ev.data.ptr)->pc = pc;
 		((struct event_data*)ev.data.ptr)->broadcast = broadcast;
 		if( pc->dwFlags & CF_LISTEN )
@@ -83526,6 +83846,17 @@ void AddThreadEvent( PCLIENT pc, int broadcast )
 		pc->this_thread = peer;
 		pc->flags.bAddedToEvents = 1;
 	}
+#ifdef DEBUG_PEER_ASSIGN
+	if( dbg_peermap && !broadcast && !( pc->dwFlags & CF_LISTEN ) ) {
+		// sin_port sits at the same offset in sockaddr_in and sockaddr_in6.
+		uint16_t port = pc->saClient ? ntohs( ((struct sockaddr_in*)pc->saClient)->sin_port ) : 0;
+		uint32_t order = LockedIncrement( &dbg_peermapOrder );
+		LockedIncrement( &peer->dbgAdds );
+		fprintf( dbg_peermap, "ADD n=%u port=%u sock=%d pc=%p peer=%p epfd=%d nEvents=%u\n"
+		       , order, port, pc->Socket, (void*)pc, (void*)pc->this_thread
+		       , pc->this_thread->epoll_fd, pc->this_thread->nEvents );
+	}
+#endif
 #ifdef LOG_NETWORK_EVENT_THREAD
 	lprintf( "peer %p now has %d events", peer, peer->nEvents );
 #endif
@@ -83565,6 +83896,12 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 		{
 			int closed;
 			int n;
+#ifdef DEBUG_PEER_ASSIGN
+			// only this peer's own thread writes these; read-then-store keeps
+			// C++20 from warning about a compound assignment on a volatile.
+			thread->dbgWaits = thread->dbgWaits + 1;
+			thread->dbgEvents = thread->dbgEvents + cnt;
+#endif
 			struct event_data *event_data;
 			THREAD_ID prior = 0;
 			PCLIENT next;
@@ -83589,9 +83926,17 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 					//lprintf( "This should sleep forever..." );
 					return 1;
 				}
+#  ifdef DEBUG_CLIENT_LOCK_TRACE
+				// Every delivery for this client, before any handler decision.
+				sack_dbg_traceClient( event_data->pc, CLTRACE_EVIN, 0
+				                    , (uint32_t)events[n].events DBG_SRC );
+#  endif
 				if( events[n].events & EPOLLIN )
 				{
 					int locked;
+#  ifdef DEBUG_LOCK_SPIN_GIVEUP
+					int spins = 0;
+#  endif
 					locked = 1;
 					// ------- Large complicated lock ---------------
 					while( !NetworkLock( event_data->pc, 1 ) ) {
@@ -83600,12 +83945,33 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 							lprintf( "failed lock dwFlags : %8x", event_data->pc->dwFlags );
 #  endif
 							locked = 0;
+#  ifdef DEBUG_CLIENT_LOCK_TRACE
+							// These two bails record nothing otherwise, so a declined
+							// event is indistinguishable from one that never arrived.
+							sack_dbg_traceClient( event_data->pc, CLTRACE_EVSKIP, 0
+							                    , (uint32_t)event_data->pc->dwFlags DBG_SRC );
+#  endif
 							break;
 						}
 						if( event_data->pc->dwFlags & CF_AVAILABLE ) {
 							locked = 0;
+#  ifdef DEBUG_CLIENT_LOCK_TRACE
+							sack_dbg_traceClient( event_data->pc, CLTRACE_EVSKIP, 0
+							                    , (uint32_t)event_data->pc->dwFlags DBG_SRC );
+#  endif
 							break;
 						}
+#  ifdef DEBUG_LOCK_SPIN_GIVEUP
+						// DEBUG PROBE: this spin IS the hang.  Give up rather than
+						// yielding forever (which pegs every core and hides the state)
+						// and dump the client's whole lock history - the unbalanced
+						// acquire for this lifetime is somewhere in it.
+						if( ++spins > 3 ) {
+							sack_dbg_dumpClientLockTrace( event_data->pc, "spin-giveup" );
+							locked = 0;
+							break;
+						}
+#  endif
 						Relinquish();
 					}
 					// ------- End Large complicated lock ---------------
@@ -83642,7 +84008,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 						LeaveCriticalSec( &globalNetworkData.csNetwork );
 						// section will be blank after termination...(correction, we keep the section state now)
  // it's no longer closing.  (was set during the course of closure)
-						pClient->dwFlags &= ~CF_CLOSING;
+						ClearClientFlags( pClient, CF_CLOSING );
 					} else if( !(event_data->pc->dwFlags & (CF_ACTIVE) ) ) {
 						lprintf( "Event on socket no longer active..." );
 						// change to inactive status by the time we got here...
@@ -83680,7 +84046,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 							// EPOLLET delivered the peer hangup (EPOLLRDHUP/EPOLLHUP) but no read
 							// was queued to consume it; the edge is never re-signaled, so the FIN
 							// is lost and the socket strands in CLOSE_WAIT.  Drive the close here.
-							event_data->pc->dwFlags |= CF_TOCLOSE;
+							SetClientFlags( event_data->pc, CF_TOCLOSE );
 							read = ( !event_data->pc->lpFirstPending ) ? (size_t)-1 : 0;
 						}
 						if( ( read == -1 ) && ( event_data->pc->dwFlags & CF_TOCLOSE ) && !event_data->pc->flags.bInUse )
@@ -83790,7 +84156,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 							}
 						}
 						else if( !event_data->pc->RecvPending.s.bStream )
-							event_data->pc->dwFlags |= CF_READREADY;
+							SetClientFlags( event_data->pc, CF_READREADY );
 					}
 					else
 					{
@@ -83798,7 +84164,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 						if( globalNetworkData.flags.bLogNotices )
 							lprintf( "TCP Set read ready..." );
 #endif
-						event_data->pc->dwFlags |= CF_READREADY;
+						SetClientFlags( event_data->pc, CF_READREADY );
 					}
 					if( locked )
 						NetworkUnlock( event_data->pc, 1 );
@@ -83838,8 +84204,8 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 							//if( globalNetworkData.flags.bLogNotices )
 								lprintf( "Connected!" );
 #endif
-							event_data->pc->dwFlags |= CF_CONNECTED;
-							event_data->pc->dwFlags &= ~CF_CONNECTING;
+							SetClientFlags( event_data->pc, CF_CONNECTED );
+							ClearClientFlags( event_data->pc, CF_CONNECTING );
 							{
 #ifdef __LINUX__
 								socklen_t
@@ -83880,10 +84246,10 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 									WakeThread( event_data->pc->pWaiting );
 								}
 								if( error ) {
-									event_data->pc->dwFlags |= CF_CONNECTERROR;
+									SetClientFlags( event_data->pc, CF_CONNECTERROR );
 								}
 								// have to allow SSL to clear this... so set it before calling the connect callback.
-								event_data->pc->dwFlags |= CF_CONNECT_ISSUED;
+								SetClientFlags( event_data->pc, CF_CONNECT_ISSUED );
 								if( event_data->pc->dwFlags & CF_CPPCONNECT ) {
 									if( event_data->pc->connect.CPPThisConnected )
 										event_data->pc->connect.CPPThisConnected( event_data->pc->psvConnect, error );
@@ -83919,12 +84285,12 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 										NetworkUnlock( event_data->pc, 1 );
 									} else {
 										//lprintf( "No data pending on a connecting socket; setting write ready" );
-										pc->dwFlags |= CF_WRITEREADY;
+										SetClientFlags( pc, CF_WRITEREADY );
 									}
 									if( !pc->lpFirstPending ) {
 										if( ( pc->dwFlags & CF_TOCLOSE ) && !pc->flags.bInUse )
 										{
-											pc->dwFlags &= ~CF_TOCLOSE;
+											ClearClientFlags( pc, CF_TOCLOSE );
 											lprintf( "Pending write completed - and wants to close. %s", NetworkExpandFlags( pc ) );
 											EnterCriticalSec( &globalNetworkData.csNetwork );
 											InternalRemoveClientEx( pc, FALSE, TRUE );
@@ -83956,7 +84322,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 									// this is the normal large packet auto write....
 									TCPWrite( pc );
 								}else {
-									pc->dwFlags |= CF_WRITEREADY;
+									SetClientFlags( pc, CF_WRITEREADY );
 								}
 								// the response that deferred a close (peer already sent
 								// FIN, so we owe the close) may have just drained here;
@@ -83970,7 +84336,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 										&& ( pc->dwFlags & CF_TOCLOSE )
 										&& !pc->flags.bInUse )
 								{
-									pc->dwFlags &= ~CF_TOCLOSE;
+									ClearClientFlags( pc, CF_TOCLOSE );
 									//lprintf( "Pending write completed - and wants to close. %s", NetworkExpandFlags( pc ) );
 									EnterCriticalSec( &globalNetworkData.csNetwork );
 									InternalRemoveClientEx( pc, FALSE, TRUE );
@@ -86489,7 +86855,7 @@ void AcceptClient(PCLIENT pListen)
 	pNewClient->psvClose                = pListen->psvClose;
 	pNewClient->write.WriteComplete     = pListen->write.WriteComplete;
 	pNewClient->psvWrite                = pListen->psvWrite;
-	pNewClient->dwFlags                |= CF_CONNECTED | ( pListen->dwFlags & CF_CALLBACKTYPES );
+	SetClientFlags( pNewClient, CF_CONNECTED | ( pListen->dwFlags & CF_CALLBACKTYPES ) );
 	if( IsValid(pNewClient->Socket) )
  // and we get one from the accept...
 	{
@@ -86507,7 +86873,7 @@ void AcceptClient(PCLIENT pListen)
 			//lprintf( "Accepted and notifying..." );
 			if( pListen->connect.ClientConnected )
 			{
-				pNewClient->dwFlags |= CF_CONNECT_ISSUED;
+				SetClientFlags( pNewClient, CF_CONNECT_ISSUED );
 				// SSL layer(if hooked) will clear CONNECT_ISSUED, and track that state itself.
 				if( pListen->dwFlags & CF_CPPCONNECT )
 					pListen->connect.CPPClientConnected( pListen->psvConnect, pNewClient );
@@ -86518,8 +86884,19 @@ void AcceptClient(PCLIENT pListen)
 			//lprintf(" Initial notifications...");
 			if( pNewClient->read.ReadComplete )
 			{
- // may be... at least we can fail sooner...
-				pNewClient->dwFlags |= CF_READREADY;
+				// CF_READREADY is deliberately NOT preset here.  With it set, the
+				// initial callback's doReadExx2 takes its catch-up FinishPendingRead
+				// branch and performs the recv - and the whole dispatch (parse ->
+				// onrequest -> res.end) then runs inline on the LISTENER's thread,
+				// out of the thread that will own this socket.  For a
+				// Connection: close request that also sets CF_TOCLOSE inside that
+				// call, so FinishPendingRead returns -1 and the caller takes the
+				// "reset connection" branch, which recycles the client while the
+				// accept path still holds its locks.
+				// Without it, this callback only arms the recv buffer; the read
+				// happens on the owning peer thread after scheduleSocket registers
+				// the socket.  Nothing is lost if data already arrived - epoll_ctl
+				// (ADD) reports an already-ready socket, so the edge still fires.
 				if( pNewClient->dwFlags & CF_CPPREAD )
   // process read to get data already pending...
 					pNewClient->read.CPPReadComplete( pNewClient->psvRead, NULL, 0 );
@@ -86714,12 +87091,12 @@ PCLIENT CPPOpenTCPListenerAddr_v3d( SOCKADDR *pAddr
 	}
 	// openSocket also schedules it for event handling... so setup what events.
  // make sure this flag is clear!
-	pListen->dwFlags &= ~CF_UDP;
-	pListen->dwFlags |= CF_LISTEN;
+	ClearClientFlags( pListen, CF_UDP );
+	SetClientFlags( pListen, CF_LISTEN );
 	pListen->flags.bWaiting = waitForReady;
 	pListen->connect.CPPClientConnected = NotifyCallback;
 	pListen->psvConnect = psvConnect;
-	pListen->dwFlags |= CF_CPPCONNECT;
+	SetClientFlags( pListen, CF_CPPCONNECT );
 	// this does the bind part of the socket also... (if any)
  /*second parameter just selects link protocol, and stream */
 	openSocket( pListen, pAddr, pAddr, autoSocket );
@@ -86775,8 +87152,8 @@ PCLIENT OpenTCPListenerAddr_v2d( SOCKADDR *pAddr
 {
 	PCLIENT result = CPPOpenTCPListenerAddr_v2d( pAddr, (cppNotifyCallback)NotifyCallback, 0, waitForReady DBG_RELAY );
 	if( result ) {
-		result->dwFlags &= ~CF_CPPCONNECT;
-		if( result->pcOther ) result->pcOther->dwFlags &= ~CF_CPPCONNECT;
+		ClearClientFlags( result, CF_CPPCONNECT );
+		if( result->pcOther ) ClearClientFlags( result->pcOther, CF_CPPCONNECT );
 	}
 	return result;
 }
@@ -86786,8 +87163,8 @@ PCLIENT OpenTCPListenerAddrExx( SOCKADDR *pAddr
 {
 	PCLIENT result = CPPOpenTCPListenerAddr_v2d( pAddr, (cppNotifyCallback)NotifyCallback, 0, FALSE DBG_RELAY );
 	if( result ) {
-		result->dwFlags &= ~CF_CPPCONNECT;
-		if( result->pcOther ) result->pcOther->dwFlags &= ~CF_CPPCONNECT;
+		ClearClientFlags( result, CF_CPPCONNECT );
+		if( result->pcOther ) ClearClientFlags( result->pcOther, CF_CPPCONNECT );
 	}
 	return result;
 }
@@ -86808,8 +87185,8 @@ PCLIENT OpenTCPListenerExx(uint16_t wPort, cNotifyCallback NotifyCallback DBG_PA
 {
 	PCLIENT result = CPPOpenTCPListenerExx( wPort, (cppNotifyCallback)NotifyCallback, 0 DBG_RELAY );
 	if( result ) {
-		result->dwFlags &= ~CF_CPPCONNECT;
-		if( result->pcOther ) result->pcOther->dwFlags &= ~CF_CPPCONNECT;
+		ClearClientFlags( result, CF_CPPCONNECT );
+		if( result->pcOther ) ClearClientFlags( result->pcOther, CF_CPPCONNECT );
 	}
 	return result;
 }
@@ -86824,7 +87201,7 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 		}
 		Relinquish();
 	}
-	pc->dwFlags |= CF_CONNECTING;
+	SetClientFlags( pc, CF_CONNECTING );
 	while( 1 ) {
 		if( (err = connect( pc->Socket, pc->saClient
 		                  , SOCKADDR_LENGTH( pc->saClient ) )) )
@@ -86884,7 +87261,7 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 				// is a union, either is valid to test
 				if( pc->connect.CPPThisConnected ) {
 					//lprintf( "connect callback dispatch... %p", pc->saClient );
-					pc->dwFlags |= CF_CONNECT_ISSUED;
+					SetClientFlags( pc, CF_CONNECT_ISSUED );
 					if( pc->dwFlags & CF_CPPCONNECT )
 						pc->connect.CPPThisConnected( pc->psvConnect, dwError );
 					else
@@ -86908,8 +87285,8 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 		{
 			// if FD_CONNECT isn't selected, then this section is called
 			// otherwise this is mostly dead code in this block.
-			pc->dwFlags &= ~CF_CONNECTING;
-			pc->dwFlags |= CF_CONNECTED;
+			ClearClientFlags( pc, CF_CONNECTING );
+			SetClientFlags( pc, CF_CONNECTED );
 			if( !pc->saSource ) {
 #ifdef __LINUX__
 				socklen_t
@@ -86929,7 +87306,7 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 			}
 			if( pc->connect.CPPThisConnected ) {
 				//lprintf( "connect callback dispatch... %p", pc->saClient );
-				pc->dwFlags |= CF_CONNECT_ISSUED;
+				SetClientFlags( pc, CF_CONNECT_ISSUED );
 				if( pc->dwFlags & CF_CPPCONNECT )
 					pc->connect.CPPThisConnected( pc->psvConnect, 0 );
 				else
@@ -87028,7 +87405,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			pResult->write.CPPWriteComplete    = WriteComplete;
 			pResult->psvWrite                  = psvWrite;
 			if( bCPP )
-				pResult->dwFlags |= ( CF_CALLBACKTYPES );
+				SetClientFlags( pResult, ( CF_CALLBACKTYPES ) );
 			AddActive( pResult );
 			NetworkUnlockEx(pResult, 1 DBG_SRC);
 			NetworkUnlockEx(pResult, 0 DBG_SRC);
@@ -87046,7 +87423,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 					uint64_t Start = timeGetTime64();
 					int bProcessing = 0;
 					// should trigger a rebuild (if it's the root thread)
-					pResult->dwFlags |= CF_CONNECT_WAITING;
+					SetClientFlags( pResult, CF_CONNECT_WAITING );
 					// caller was expecting connect to block....
 					while( !( pResult->dwFlags & (CF_CONNECTED|CF_CONNECTERROR|CF_CONNECT_CLOSED) ) &&
 							( ( timeGetTime64() - Start ) < globalNetworkData.dwConnectTimeout ) )
@@ -87102,7 +87479,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 						EnterCriticalSec( &globalNetworkData.csNetwork );
 						InternalRemoveClientEx( pResult, TRUE, FALSE );
 						LeaveCriticalSec( &globalNetworkData.csNetwork );
-						pResult->dwFlags &= ~CF_CONNECT_WAITING;
+						ClearClientFlags( pResult, CF_CONNECT_WAITING );
 						return pResult = NULL;
 					}
 					{
@@ -87121,7 +87498,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 						}
 					}
 					//lprintf( "Connect did complete... returning to application");
-					pResult->dwFlags &= ~CF_CONNECT_WAITING;
+					ClearClientFlags( pResult, CF_CONNECT_WAITING );
 				}
 #ifdef VERBOSE_DEBUG
 				else
@@ -87326,7 +87703,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 			//lpClient->dwFlags |= CF_READREADY; // read ready is set if FinishPendingRead returns 0; and it's from the core read...
 			if( lpClient->dwFlags & CF_WANTCLOSE ) {
 				// the application didn't queue a buffer to read into, have to force accepting a close.
-				lpClient->dwFlags |= CF_TOCLOSE;
+				SetClientFlags( lpClient, CF_TOCLOSE );
    // return pending finished...
 				return -1;
 			}
@@ -87380,7 +87757,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 				case WSAEWOULDBLOCK:
 					//lprintf( "Pending Receive would block..." );
 					goto dispatch_ReadEvent;
-					lpClient->dwFlags &= ~CF_READREADY;
+					ClearClientFlags( lpClient, CF_READREADY );
 					return (int)lpClient->RecvPending.dwUsed;
 #ifdef __LINUX__
 				case ECONNRESET:
@@ -87405,7 +87782,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 							  lpClient->RecvPending.dwUsed );
 						lprintf("LOG:ERROR FinishPending discovered unhandled error (closing connection) %" _32f "", dwError );
 					}
-					lpClient->dwFlags |= CF_TOCLOSE;
+					SetClientFlags( lpClient, CF_TOCLOSE );
    // return pending finished...
 					return -1;
 				}
@@ -87418,7 +87795,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 				lprintf( "Received (0) %d", nRecv );
 #endif
 				//_lprintf( DBG_RELAY )( "Closing closed socket... Hope there's also an event... ");
-				lpClient->dwFlags |= CF_TOCLOSE;
+				SetClientFlags( lpClient, CF_TOCLOSE );
  // while dwAvail... try read...
 				break;
 				//return -1;
@@ -87439,7 +87816,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 					         + lpClient->RecvPending.dwUsed, nRecv );
 				}
 				if( lpClient->RecvPending.s.bStream )
-					lpClient->dwFlags &= ~CF_READREADY;
+					ClearClientFlags( lpClient, CF_READREADY );
 				lpClient->RecvPending.dwLastRead = nRecv;
 				lpClient->RecvPending.dwAvail -= nRecv;
 				//lprintf( "Receive pending is now %d after %d", lpClient->RecvPending.dwAvail, nRecv );
@@ -87470,7 +87847,7 @@ dispatch_ReadEvent:
 #ifdef LOG_PENDING
 				//lprintf( "Sending completed read to application" );
 #endif
-				lpClient->dwFlags &= ~CF_READPENDING;
+				ClearClientFlags( lpClient, CF_READPENDING );
   // and there's a read complete callback available
 				if( lpClient->read.ReadComplete )
 				{
@@ -87520,7 +87897,7 @@ dispatch_ReadEvent:
 			{
 				// this like never happens... so maybe remove this sort of wake logic
 				//lprintf( "Wake waiting thread... clearing pending read flag." );
-				lpClient->dwFlags &= ~CF_READPENDING;
+				ClearClientFlags( lpClient, CF_READPENDING );
 				if( lpClient->pWaiting )
 					WakeThread( lpClient->pWaiting );
 			}
@@ -87597,14 +87974,14 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		// if the pending finishes it will call the ReadComplete Callback.
 		// otherwise there will be more data to read...
 		//lprintf( "Ok ... buffers set up - now we can handle read events" );
-		lpClient->dwFlags |= CF_READPENDING;
+		SetClientFlags( lpClient, CF_READPENDING );
 #ifdef LOG_PENDING
 		lprintf( "Setup read pending %p %08x", lpClient, lpClient->dwFlags );
 #endif
 		if( bWait )
 		{
 			//lprintf( "setting read waiting so we get awoken... and callback dispatch does not happen." );
-			lpClient->dwFlags |= CF_READWAITING;
+			SetClientFlags( lpClient, CF_READWAITING );
 		}
 		//else
 		//   lprintf( "No read waiting... allow forward going..." );
@@ -87631,7 +88008,7 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		}
 		else
 		{
-			lpClient->dwFlags &= ~CF_READWAITING;
+			ClearClientFlags( lpClient, CF_READWAITING );
 		 }
 	}
 	if( bWait )
@@ -87671,15 +88048,15 @@ size_t doReadExx2(PCLIENT lpClient,POINTER lpBuffer,size_t nBytes, LOGICAL bIsSt
 		}
 		if( !(lpClient->dwFlags & CF_ACTIVE ) )
 		{
-#ifdef REQUIRE_READ_LOCK
+			// The relock above is NOT under REQUIRE_READ_LOCK, so its release must not
+			// be either - REQUIRE_READ_LOCK is defined nowhere in the tree, so every
+			// blocking read used to leak one csLockRead recursion, and the client then
+			// went back to the free pool still held.
 			NetworkUnlockEx( lpClient, 1 DBG_SRC );
-#endif
 			return -1;
 		}
-		 lpClient->dwFlags &= ~CF_READWAITING;
-#ifdef REQUIRE_READ_LOCK
+		 ClearClientFlags( lpClient, CF_READWAITING );
 		NetworkUnlockEx( lpClient, 1 DBG_SRC);
-#endif
 		if( timeout )
 			return 0;
 		else
@@ -87818,8 +88195,8 @@ setsockopt(pc->fd, IPPROTO_TCP, TCP_CORK, &state, sizeof(state));
 #ifdef VERBOSE_DEBUG
 					lprintf( "Pending write...(EBLOCK) %p %zd", pc, pc->lpFirstPending->dwAvail );
 #endif
-					pc->dwFlags &= ~CF_WRITEREADY;
-					pc->dwFlags |= CF_WRITEPENDING;
+					ClearClientFlags( pc, CF_WRITEREADY );
+					SetClientFlags( pc, CF_WRITEPENDING );
 					return TRUE;
 				}
 				if( dwError == EPIPE ) {
@@ -87830,26 +88207,26 @@ setsockopt(pc->fd, IPPROTO_TCP, TCP_CORK, &state, sizeof(state));
 					xlprintf( LOG_ERROR )( "EPIPE on send(); %" _size_f " bytes discarded unsent. %s"
 					                     , pc->lpFirstPending->dwAvail
 					                     , NetworkExpandFlags( pc ) );
-					pc->dwFlags |= CF_TOCLOSE;
+					SetClientFlags( pc, CF_TOCLOSE );
 					return FALSE;
 				}
 				if( dwError == ECONNREFUSED ) {
 					_lprintf(DBG_RELAY)( "ECONNREFUSED on send() to socket...");
-					pc->dwFlags |= CF_TOCLOSE;
+					SetClientFlags( pc, CF_TOCLOSE );
 					return FALSE;
 				}
 #ifdef _WIN32
 				// especially websockets that try to gracefully cloose
 				if( dwError == WSAESHUTDOWN) {
 					if( pc->dwFlags & CF_WANTCLOSE )
-						pc->dwFlags |= CF_TOCLOSE;
+						SetClientFlags( pc, CF_TOCLOSE );
 					else
 						_lprintf(DBG_RELAY)( "WSAESHUTDOWN on send() to socket...");
-					pc->dwFlags |= CF_TOCLOSE;
+					SetClientFlags( pc, CF_TOCLOSE );
 					return FALSE;
 				}
 				if( dwError == WSAECONNABORTED ) {
-					pc->dwFlags |= CF_TOCLOSE;
+					SetClientFlags( pc, CF_TOCLOSE );
 					return FALSE;
 				}
 #endif
@@ -87869,7 +88246,7 @@ setsockopt(pc->fd, IPPROTO_TCP, TCP_CORK, &state, sizeof(state));
 #endif
 					  )
 					{
-						pc->dwFlags |= CF_TOCLOSE;
+						SetClientFlags( pc, CF_TOCLOSE );
 					}
  // get out of here! (say we sent whatever was pending...; don't repend long buffers)
 					return FALSE;
@@ -87878,19 +88255,19 @@ setsockopt(pc->fd, IPPROTO_TCP, TCP_CORK, &state, sizeof(state));
 			} else if (!nSent) {
 				//lprintf( "sent zero bytes - assume it was closed - and HOPE there's an event..." );
 				// this is more likely to show up as an EPIPE
-				pc->dwFlags |= CF_TOCLOSE;
+				SetClientFlags( pc, CF_TOCLOSE );
 				// if this happened - don't return TRUE result which would
 				// result in queuing a pending buffer...
   // no sence processing the rest of this.
 				return FALSE;
 			} else if( pc->lpFirstPending && ( nSent < (int)pc->lpFirstPending->dwAvail ) ) {
-				pc->dwFlags &= ~CF_WRITEREADY;
-				pc->dwFlags |= CF_WRITEPENDING;
+				ClearClientFlags( pc, CF_WRITEREADY );
+				SetClientFlags( pc, CF_WRITEPENDING );
 			}
 #ifdef _WIN32
 			// windows only gives a FD_WRITE when a send gets an ewouldblock...
 			else
-				pc->dwFlags |= CF_WRITEREADY;
+				SetClientFlags( pc, CF_WRITEREADY );
 #endif
 		}
 		else {
@@ -87953,7 +88330,7 @@ setsockopt(pc->fd, IPPROTO_TCP, TCP_CORK, &state, sizeof(state));
 						pc->bWriteComplete = FALSE;
 					}
 					if( !pc->lpFirstPending ) {
-						pc->dwFlags &= ~CF_WRITEPENDING;
+						ClearClientFlags( pc, CF_WRITEPENDING );
 						//lprintf( "nothing left pending.... %p", pc );
 					}
 				}
@@ -87964,7 +88341,7 @@ setsockopt(pc->fd, IPPROTO_TCP, TCP_CORK, &state, sizeof(state));
 					if( !(pc->dwFlags & CF_WRITEPENDING) )
 					{
 						//lprintf( "And set writepending again?  Do a scheduled timer?" );
-						pc->dwFlags |= CF_WRITEPENDING;
+						SetClientFlags( pc, CF_WRITEPENDING );
 					}
 					return TRUE;
 				}
@@ -88139,7 +88516,7 @@ static LOGICAL deliverPendingWrite( struct PendingWrite *pending, PTHREAD thread
 		finishClose = ( !pc->nWritesPended && !pc->lpFirstPending
 		             && ( pc->dwFlags & CF_TOCLOSE ) && !pc->flags.bInUse );
 		if( finishClose )
-			pc->dwFlags &= ~CF_TOCLOSE;
+			ClearClientFlags( pc, CF_TOCLOSE );
 		NetworkUnlockEx( pc, 0|0x10 DBG_SRC );
 		// Deliberately the public graceful close, after the unlock and re-validated
 		// against the serial: it takes its own locks and now sees nothing pending,
@@ -88351,7 +88728,7 @@ LOGICAL doTCPWriteV2( PCLIENT lpClient
 #endif
 			}
  // shouldn't have to do this - this there is a race condition somewhere...
-			lpClient->dwFlags |= CF_WRITEPENDING;
+			SetClientFlags( lpClient, CF_WRITEPENDING );
 			//TCPWriteEx( lpClient DBG_SRC ); // make sure we don't lose a write event during the queuing...
 			NetworkUnlockEx( lpClient, 0 DBG_SRC );
 			return TRUE;
@@ -88394,7 +88771,7 @@ LOGICAL doTCPWriteV2( PCLIENT lpClient
 #ifdef LOG_WRITE_AGGREGATION
 			_lprintf(DBG_RELAY)("Write with aggregate (firstpending forced)... %d %d %d %p", bLongBuffer, nInLen, lpClient->writeTimer, lpClient);
 #endif
-			lpClient->dwFlags |= CF_WRITEPENDING;
+			SetClientFlags( lpClient, CF_WRITEPENDING );
 			//lprintf( "First Write with aggregate... %d %d %d %p", nInLen, lpClient->writeTimer, wasTimer, lpClient );
 			NetworkUnlockEx( lpClient, 0 DBG_SRC );
 			return TRUE;
@@ -88541,7 +88918,7 @@ PCLIENT CPPServeUDPAddrEx( SOCKADDR *pAddr
 #ifdef LOG_SOCKET_CREATION
 	lprintf( "Created UDP %p(%d)", pc, pc->Socket );
 #endif
-	pc->dwFlags |= CF_UDP;
+	SetClientFlags( pc, CF_UDP );
 	if( pAddr? pc->saSource = DuplicateAddress( pAddr ),1:0 )
 	{
 		if (bind(pc->Socket,pc->saSource,SOCKADDR_LENGTH(pc->saSource)))
@@ -88579,7 +88956,7 @@ PCLIENT CPPServeUDPAddrEx( SOCKADDR *pAddr
 	pc->close.CloseCallback = Close;
 	pc->psvClose = psvClose;
 	if( bCPP )
-		pc->dwFlags |= (CF_CPPREAD|CF_CPPCLOSE );
+		SetClientFlags( pc, (CF_CPPREAD|CF_CPPCLOSE ) );
 #ifdef __LINUX__
 	AddThreadEvent( pc, 0 );
 #endif
@@ -88612,7 +88989,7 @@ PCLIENT ServeUDPAddrEx( SOCKADDR *pAddr
 {
 	PCLIENT result = CPPServeUDPAddrEx( pAddr, pReadComplete, 0, Close, 0, FALSE DBG_RELAY );
 	if( result )
-		result->dwFlags &= ~(CF_CPPREAD|CF_CPPCLOSE);
+		ClearClientFlags( result, (CF_CPPREAD|CF_CPPCLOSE) );
 	return result;
 }
 //----------------------------------------------------------------------------
@@ -88747,7 +89124,7 @@ PCLIENT CPPConnectUDPAddrEx( SOCKADDR *sa
 	pc->psvRead = psvRead;
 	pc->close.CloseCallback = Close;
 	pc->psvClose = psvClose;
-	pc->dwFlags |= (CF_CPPREAD|CF_CPPCLOSE );
+	SetClientFlags( pc, (CF_CPPREAD|CF_CPPCLOSE ) );
 	if( pReadComplete )
  // allow server to start a read method...
 		pReadComplete( pc, NULL, 0, NULL );
@@ -88770,7 +89147,7 @@ PCLIENT ConnectUDPAddrEx( SOCKADDR *sa
 {
 	PCLIENT result = CPPConnectUDPAddrEx( sa, saTo, pReadComplete, 0, Close, 0 DBG_RELAY );
 	if( result )
-		result->dwFlags &= ~( CF_CPPREAD|CF_CPPCLOSE );
+		ClearClientFlags( result, ( CF_CPPREAD|CF_CPPCLOSE ) );
 	return result;
 }
 //----------------------------------------------------------------------------
@@ -88802,14 +89179,14 @@ static PCLIENT CPPConnectUDPExx( CTEXTSTR pFromAddr, uint16_t wFromPort
 	pc->psvClose = psvClose;
 	if( bCPP )
 	{
-		pc->dwFlags |= (CF_CPPREAD|CF_CPPCLOSE );
+		SetClientFlags( pc, (CF_CPPREAD|CF_CPPCLOSE ) );
 		if( pReadComplete )
  // allow server to start a read method...
 			pc->read.CPPReadCompleteEx( psvRead, NULL, 0, NULL );
 	}
 	else
 	{
-		pc->dwFlags &= ~( CF_CPPREAD|CF_CPPCLOSE );
+		ClearClientFlags( pc, ( CF_CPPREAD|CF_CPPCLOSE ) );
 		if( pReadComplete )
  // allow server to start a read method...
 			pReadComplete( pc, NULL, 0, NULL );
@@ -88897,7 +89274,7 @@ NETWORK_PROC( int, doUDPRead )( PCLIENT pc, POINTER lpBuffer, int nBytes )
 	pc->RecvPending.dwUsed = 0;
 	pc->RecvPending.buffer.p = lpBuffer;
 	{
-		pc->dwFlags |= CF_READPENDING;
+		SetClientFlags( pc, CF_READPENDING );
 		// we are now able to read, so schedule the socket.
 	}
 #if 0
@@ -88958,7 +89335,7 @@ int FinishUDPRead( PCLIENT pc, int broadcastEvent )
  // NO data returned....
 		case WSAEWOULDBLOCK:
 			//lprintf( "got EWOULDBLOCK(EAGAIN)..." );
-			pc->dwFlags |= CF_READPENDING;
+			SetClientFlags( pc, CF_READPENDING );
 			return TRUE;
 #ifdef _WIN32
 		// this happens on WIN2K/XP - ICMP Port Unreachable (nothing listening there)
@@ -88987,7 +89364,7 @@ int FinishUDPRead( PCLIENT pc, int broadcastEvent )
 		LogBinary( (uint8_t*)pc->RecvPending.buffer.p +
 					 pc->RecvPending.dwUsed, nReturn );
 	}
-	pc->dwFlags &= ~CF_READPENDING;
+	ClearClientFlags( pc, CF_READPENDING );
   // allow further reads...
 	pc->RecvPending.dwAvail = 0;
 	pc->RecvPending.dwUsed += nReturn;
@@ -90225,7 +90602,7 @@ LOGICAL ssl_IsClientSecure( PCLIENT pc ) {
 CTEXTSTR ssl_GetRequestedHostName( PCLIENT pc ) {
 	return NULL;
 }
-void ssl_CloseSession( PCLIENT pc ) {
+void ssl_CloseSession( PCLIENT pc, LOGICAL bLinger ) {
    return;
 }
 SACK_NETWORK_NAMESPACE_END
@@ -90435,10 +90812,12 @@ void ssl_ClosePipeSession( struct ssl_session** ssl_session )
 		//lprintf( "Session already closed" );
 	}
 }
-void ssl_CloseSession( PCLIENT pc ) {
+void ssl_CloseSession( PCLIENT pc, LOGICAL bLinger ) {
 	struct ssl_session *ses = pc->ssl_session;
 	// mark that this should be closed down to the socket.
 	ses->closed = TRUE;
+  // survives the deleteInUse deferral below
+	ses->closeLinger = bLinger;
 	if( ses->inUse ) {
 #ifdef DEBUG_NO_HOST_AND_FALLBACK
 		lprintf( "Setting close session for later" );
@@ -90461,10 +90840,14 @@ void ssl_CloseSession( PCLIENT pc ) {
 #ifdef DEBUG_NO_HOST_AND_FALLBACK
 		lprintf( "RemoveClient (Again?) %s", NetworkExpandFlags( pc ));
 #endif
+		// Forward the caller's linger.  RemoveClient() is the abortive default
+		// (bLinger FALSE), and using it here threw away the graceful intent that
+		// httpObject::end passed in - so this second pass took the !bLinger branch
+		// and shutdown(SHUT_WR)'d while the response ciphertext was still queued.
 		if( pc->dwFlags & CF_CONNECT_ISSUED )
-			RemoveClient( pc );
+			RemoveClientEx( pc, FALSE, bLinger );
 		else
-			RemoveClientEx( pc, TRUE, FALSE );
+			RemoveClientEx( pc, TRUE, bLinger );
 	}
 }
 static int handshake( struct ssl_session** ses ) {
@@ -90651,7 +91034,7 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 						// clients use the same read callback.  They only get the initial read complete
 						// no callbacks to setup.
 						//lprintf( "### Sent connect...");
-						pc->dwFlags |= CF_CONNECT_ISSUED;
+						SetClientFlags( pc, CF_CONNECT_ISSUED );
 						if( pc->pcServer->ssl_session->dwOriginalFlags & CF_CPPCONNECT )
 							pc->pcServer->ssl_session->cpp_user_connected( pc->pcServer->psvConnect, pc );
 						else
@@ -90872,7 +91255,7 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 				LeaveCriticalSec( &ses[0]->csReadWrite );
 				if( ses[0]->deleteInUse ){
 					lprintf( "Pending close... was in-use when closed. (DO CLOSE!)");
-					ssl_CloseSession( pc );
+					ssl_CloseSession( pc, ses[0]->closeLinger );
 				}
 			}
 		}
@@ -91104,7 +91487,7 @@ static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 	struct ssl_session *ses;
 	ses = New( struct ssl_session );
 	MemSet( ses, 0, sizeof( struct ssl_session ) );
-	pcNew->dwFlags &= ~CF_CONNECT_ISSUED;
+	ClearClientFlags( pcNew, CF_CONNECT_ISSUED );
 	ses->ssl = SSL_new( pcServer->ssl_session->ctx );
 	if( !ses->ssl ) {
 		lprintf( "Failed to allcoate a new ssl session" );
@@ -91152,9 +91535,9 @@ static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 	ses->recv_callback = ssl_layer_recver;
 	ses->psvSendRecv = (uintptr_t)pcNew;
 	pcNew->read.ReadComplete = ssl_ReadComplete;
-	pcNew->dwFlags &= ~CF_CPPREAD;
+	ClearClientFlags( pcNew, CF_CPPREAD );
 	pcNew->close.CloseCallback = ssl_CloseCallback;
-	pcNew->dwFlags &= ~CF_CPPCLOSE;
+	ClearClientFlags( pcNew, CF_CPPCLOSE );
 }
 struct ssl_session* ssl_ClientPipeConnected( struct ssl_session* session, uintptr_t psvNew, void (*read)(uintptr_t psv, POINTER, size_t), void ( **write )( struct ssl_session *session, POINTER, size_t )
 				, void ( *connect )( uintptr_t psv, POINTER, size_t ), void (*close)(uintptr_t psv ), void (*netrecv)(uintptr_t psv, POINTER, size_t), void (*netsend)(uintptr_t psv, POINTER, size_t) ) {
@@ -91610,9 +91993,9 @@ LOGICAL ssl_BeginServer_v2( PCLIENT pc, CPOINTER cert, size_t certlen
 			ses_o->cpp_user_connected = pc->pcOther->connect.CPPClientConnected;
 		}
 		pc->connect.ClientConnected = ssl_ClientConnected;
-		pc->dwFlags &= ~CF_CPPCONNECT;
+		ClearClientFlags( pc, CF_CPPCONNECT );
 		if( pc->pcOther ) {
-			pc->pcOther->dwFlags &= ~CF_CPPCONNECT;
+			ClearClientFlags( pc->pcOther, CF_CPPCONNECT );
 			pc->pcOther->connect.ClientConnected = ssl_ClientConnected;
 		}
 		ses->errorCallback = pc->errorCallback;
@@ -91802,7 +92185,7 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 	ses->recv_callback = ssl_layer_recver;
 	ses->psvSendRecv = (uintptr_t)pc;
 	pc->read.ReadComplete = ssl_ReadComplete;
-	pc->dwFlags &= ~CF_CPPREAD;
+	ClearClientFlags( pc, CF_CPPREAD );
 	ses->errorCallback = pc->errorCallback;
 	ses->psvErrorCallback = pc->psvErrorCallback;
 	pc->ssl_session = ses;
@@ -91889,7 +92272,7 @@ void ssl_EndSecure(PCLIENT pc, POINTER buffer, size_t length ) {
 #if defined( DEBUG_SSL_FALLBACK )
 			lprintf( "is ssl_session gone(yes)? %p %p %d %d %p", pc, pc->ssl_session, pc->ssl_session?pc->ssl_session->deleteInUse:-1, pc->ssl_session?pc->ssl_session->inUse:-1, pc->read.CPPReadComplete );
 #endif
-			pc->dwFlags |= CF_CONNECT_ISSUED;
+			SetClientFlags( pc, CF_CONNECT_ISSUED );
 			if( pc->pcServer->ssl_session->dwOriginalFlags & CF_CPPCONNECT )
 				pc->pcServer->ssl_session->cpp_user_connected( pc->pcServer->psvConnect, pc );
 			else
