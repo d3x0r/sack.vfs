@@ -1221,6 +1221,16 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 	//wssObject* myself = (wssObject*)handle->data;
 	//class constructorSet *c = getConstructors( isolate);
 	int handled = 0;
+	// This drain re-enters itself: httpObject::end() calls wssAsyncMsg_() inline when
+	// it finds another already-buffered request (the pipelining path), and that nested
+	// drain runs while an outer iteration sits between setting and clearing
+	// myself->eventMessage.  accept()/reject()/the SSL fallback all read that slot as
+	// "the event being dispatched right now", so a nested drain that left it NULL (or
+	// pointing at one of its own events) would break the outer callback.  Save and
+	// restore around the whole invocation so the slot is a stack, not a single value.
+	// Latent until now only because one-shot Connection: close traffic never buffers a
+	// second request, so the inline call was measured at 0 executions over 64000 requests.
+	struct wssEvent *outerEventMessage = myself->eventMessage;
 	{
 		struct wssEvent *eventMessage;
 		while( ( eventMessage = (struct wssEvent *)DequeLink( &myself->eventQueue ) ) ) {
@@ -1521,6 +1531,7 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 				}
 				DropWssEvent( eventMessage );
 				DeleteLinkQueue( &myself->eventQueue );
+				myself->eventMessage = outerEventMessage;
 				return;
 			}
 
@@ -1545,6 +1556,7 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 		}
 		myself->last_count_handled = handled;
 	}
+	myself->eventMessage = outerEventMessage;
 }
 
 static void wssAsyncMsg_( uv_async_t* handle ) {
