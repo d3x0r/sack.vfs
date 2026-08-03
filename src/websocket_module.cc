@@ -1267,6 +1267,11 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 					eventMessage->done = 1;
 					if( eventMessage->waiter )
 						WakeThread( eventMessage -> waiter );
+					else
+						// waiter is the ownership marker, and WS_EVENT_REQUEST never
+						// sets one; `continue` skips the drop at the bottom of the
+						// loop, so without this the event is leaked from the pool.
+						DropWssEvent( eventMessage );
 					continue;
 				}
 				if( !NetworkClientValid( eventMessage->pc, eventMessage->pcSerial ) ) {
@@ -1276,6 +1281,8 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 					eventMessage->done = 1;
 					if( eventMessage->waiter )
 						WakeThread( eventMessage->waiter );
+					else
+						DropWssEvent( eventMessage );
 					continue;
 				}
 				//lprintf( "Comes in directly as a request; don't even get accept..." );
@@ -2671,6 +2678,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						lprintf("Http State was gone even before sending the request...");
 					}
 					(*pevt).eventType = WS_EVENT_REQUEST;
+					PTHREAD self = MakeThread();
 					//(*pevt).waiter = MakeThread();
 					(*pevt).pc = obj->pc;
 					(*pevt).pcSerial = obj->pcSerial;
@@ -2678,7 +2686,8 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					obj->ssl = obj->pc?ssl_IsClientSecure( obj->pc ):0;
 					EnqueLink(&obj->wss->eventQueue, pevt);
 					//lprintf( "Send Request" );
-					if( (*pevt).waiter == obj->wss->c->thread ) {
+					if( self == obj->wss->c->thread ) {
+						// this flavor is the non-terminal; doesn't dispatch node tick callback...
 						wssAsyncMsg_( &obj->wss->async );
 					} else {
 #ifdef DEBUG_EVENTS
@@ -2811,7 +2820,8 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 
 		struct wssEvent* pevt = GetWssEvent();
 		(*pevt).eventType = WS_EVENT_REQUEST;
-		//(*pevt).waiter = MakeThread();
+		// this doesn't wait, don't set waiter, let the event drop instead.
+		//(*pevt).waiter = NULL; // MakeThread();
 		(*pevt). pc = pc;
 		(*pevt).pcSerial = NetworkClientSerial( pc );
 		(*pevt)._this = wss;
@@ -2819,6 +2829,7 @@ static uintptr_t webSockHttpRequest( PCLIENT pc, uintptr_t psv ) {
 #ifdef DEBUG_EVENTS
 		lprintf( "socket HTTP Request Send %p %p", &wss->async, pc );
 #endif		
+		// this will never happen on the JS thread - no early dispatch.
 		if( wss->ivm_hosted )
 			wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
 		else
