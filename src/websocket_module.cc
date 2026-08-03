@@ -296,6 +296,20 @@ struct socketTransport {
 	const char *protocolResponse;
 };
 
+// Keep-alive costs 2.2x the CPU per request that connection-per-request does, and
+// this is the path keep-alive turns on: after every response httpObject::end runs
+// EndHttp + a ProcessHttp re-parse loop hunting for another buffered request, and on
+// a hit reaches the drain INLINE (a nested drain) rather than posting it.  That
+// branch measured 0 executions under close-mode traffic, so these say whether it is
+// hot now.  Temporary.
+//#define DEBUG_PIPELINE_STATS
+#ifdef DEBUG_PIPELINE_STATS
+static volatile uint32_t dbg_pipeEnd;     // keep-alive completions (re-parse entered)
+static volatile uint32_t dbg_pipeFound;   // re-parse actually found another request
+static volatile uint32_t dbg_pipeInline;  // dispatched via the nested inline drain
+static volatile uint32_t dbg_pipePosted;  // dispatched by posting to the loop
+#endif
+
 static void handlePostedClient__( v8::Isolate *isolate, Local<Context> context, struct socketUnloadStation * myself );
 static void webSockHttpClose( PCLIENT pc, uintptr_t psv );
 static void webSocketWriteComplete( PCLIENT pc, CPOINTER buffer, size_t len );
@@ -2637,6 +2651,15 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			// don't consider if it might have had more requests, because it didn't.
 			if (pHttpState && !include_close ) {
 				int result;
+#ifdef DEBUG_PIPELINE_STATS
+				// keep-alive completions: how often is the re-parse loop entered, how
+				// often does it actually find another buffered request, and when it
+				// does, is the drain reached inline (nested) or posted to the loop?
+				LockedIncrement( &dbg_pipeEnd );
+				if( !( dbg_pipeEnd % 1000 ) )
+					fprintf( stderr, "PIPE end=%u found=%u inline=%u posted=%u\n"
+					       , dbg_pipeEnd, dbg_pipeFound, dbg_pipeInline, dbg_pipePosted );
+#endif
 				//lprintf( "ending http %p on %p, checking for more data", pHttpState, obj->pc );
 				EndHttp(pHttpState);
 				while ((result = ProcessHttp(pHttpState, NULL, 0 )))
@@ -2645,6 +2668,9 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					switch (result)
 					{
 					case HTTP_STATE_RESULT_CONTENT:
+#ifdef DEBUG_PIPELINE_STATS
+						LockedIncrement( &dbg_pipeFound );
+#endif
 
 						struct wssEvent *pevt = GetWssEvent();
 						//lprintf( "A posting request event to JS %p %s", obj->pc, GetText( GetHttpRequest( pHttpState ) ) );
@@ -2673,9 +2699,15 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						EnqueLink(&obj->wss->eventQueue, pevt);
 						//lprintf( "Send Request" );
 						if( self == obj->wss->c->thread ) {
+#ifdef DEBUG_PIPELINE_STATS
+							LockedIncrement( &dbg_pipeInline );
+#endif
 							// this flavor is the non-terminal; doesn't dispatch node tick callback...
 							wssAsyncMsg_( &obj->wss->async );
 						} else {
+#ifdef DEBUG_PIPELINE_STATS
+							LockedIncrement( &dbg_pipePosted );
+#endif
 #ifdef DEBUG_EVENTS
 							lprintf( "socket HTTP Parse Send %p", &obj->wss->async);
 #endif					
