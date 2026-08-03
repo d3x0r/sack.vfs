@@ -690,15 +690,9 @@ static HTTP_REQUEST_EVENT *GetHttpRequestEvent() {
 	return evt;
 }
 
-static void HoldWssEvent( WSS_EVENT *evt ) {
-	evt->uses++;
-}
-
 static void DropWssEvent( WSS_EVENT *evt ) {
 	EnterCriticalSec( &l.csWssEvents );
-	if( !(--evt->uses ) ) {
-		DeleteFromSet( WSS_EVENT, l.wssEvents, evt );
-	}
+	DeleteFromSet( WSS_EVENT, l.wssEvents, evt );
 	//lprintf( "Events outstanding:%d %d", evt->uses, CountUsedInSet( WSS_EVENT, l.wssEvents ) );
 	LeaveCriticalSec( &l.csWssEvents );
 }
