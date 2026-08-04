@@ -258,6 +258,10 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.3.134(in progress)
+   - Took some time to stress test and debug corner cases in networking.
+   - Implemented HTTP 1.1 streaming request API.
+   - Improved performance; enabled TCP no delay on websocket connections; cache alignment and spin lock scheduling improvements on concurrent HTTP requests.
+   - Fixed task manager failure to kill a second time on windows.
 - 1.3.133
    - Added `getRoot` export utility that can find the root package.json.
    - Added program name to task information in task manager.  Program name support is used for process exit signal generation.
