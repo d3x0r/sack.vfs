@@ -10431,6 +10431,57 @@ HTTP_EXPORT HTTPState  HTTPAPI PostHttpQuery( PTEXT site, PTEXT resource, PTEXT 
 HTTP_EXPORT HTTPState  HTTPAPI GetHttpQuery( PTEXT site, PTEXT resource );
 /* results with the http state of the message response; Allows getting other detailed information about the result */
 HTTP_EXPORT HTTPState HTTPAPI GetHttpsQuery( PTEXT site, PTEXT resource, const char *certChain );
+//--------------------------------------------------------------
+// Streaming client connections - several requests over one socket.
+//
+// GetHttpsQueryEx above is one request per connection and blocks its caller
+// until the reply arrives.  These open the connection once and then let
+// requests be issued against it; every result is delivered by callback, so
+// nothing blocks.  Replies are matched to requests strictly in the order they
+// were sent, which is all HTTP/1.1 offers - one slow reply holds up the ones
+// queued behind it.
+//--------------------------------------------------------------
+/* The connection finished connecting (and for TLS, handshaking).  error is 0 on
+   success, otherwise the socket error; the connection is dead in that case and
+   the closed callback follows. */
+typedef void ( CPROC*httpConnectionOpened )( uintptr_t psv, HTTPState connection, int error );
+/* One reply has been parsed.  'request' is the options pointer that was passed
+   to SendHttpConnectionRequest for it.
+   This runs on the network thread, and the connection's parse state is reset
+   for the next reply as soon as it returns - read everything wanted out of it
+   (GetHttpResponseCode, GetHttpHeaderFields, GetHttpContent...) before then. */
+typedef void ( CPROC*httpConnectionResponse )( uintptr_t psv, HTTPState connection, struct HTTPRequestOptions *request );
+/* The socket closed - by the peer, by CloseHttpConnection, or by a failed
+   connect.  Any requests still queued or unanswered are reported to the
+   response callback first with the connection's response code left at 0.
+   The connection is not usable after this; DestroyHttpState it. */
+typedef void ( CPROC*httpConnectionClosed )( uintptr_t psv, HTTPState connection );
+/* Open a connection.  'options' supplies the connection-level settings - ssl,
+   certChain, addrFlags, rejectUnauthorized, hostname - and must stay valid for
+   the life of the connection; per-request settings on it are ignored.
+   Returns immediately, before the connection is up; requests may be queued
+   right away and go out when the opened callback would fire.
+   Returns NULL only if the socket could not be created at all. */
+HTTP_EXPORT HTTPState HTTPAPI OpenHttpConnection( PTEXT address, const char *certChain
+                                                , struct HTTPRequestOptions *options
+                                                , httpConnectionOpened opened
+                                                , httpConnectionResponse response
+                                                , httpConnectionClosed closed
+                                                , uintptr_t psv );
+/* Queue a request.  'options' is the caller's, must stay valid until its
+   response callback, and is handed back there to identify the reply.
+   Returns FALSE if the connection is already closed. */
+HTTP_EXPORT LOGICAL HTTPAPI SendHttpConnectionRequest( HTTPState connection, PTEXT url, struct HTTPRequestOptions *options );
+/* How many requests may be on the wire at once.  1 (the default) writes the
+   next request only when the previous reply has arrived; higher packs that many
+   ahead.  Pipelining deeper than 1 is opt-in on purpose: it is head-of-line
+   blocked, and plenty of servers and proxies handle it badly. */
+HTTP_EXPORT void HTTPAPI SetHttpConnectionPipeline( HTTPState connection, int depth );
+/* Close the connection; the closed callback still fires. */
+HTTP_EXPORT void HTTPAPI CloseHttpConnection( HTTPState connection );
+/* How many requests are queued or awaiting a reply. */
+HTTP_EXPORT int HTTPAPI GetHttpConnectionPending( HTTPState connection );
+//--------------------------------------------------------------
 /* return the numeric response code of a http reply. */
 HTTP_EXPORT int HTTPAPI GetHttpResponseCode( HTTPState pHttpState );
 /* return the text response code of an http reply */

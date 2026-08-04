@@ -540,6 +540,10 @@ struct httpConnEvent {
 	enum httpConnEventType eventType;
 	class httpConnectionObject *_this;
 	int error;
+	// carried on OPENED so the loop thread publishes the connection before it
+	// resolves the promise; the connect runs on another thread and must not be
+	// raced by the first request().
+	HTTPState state;
 	struct httpConnRequest *request;
 	struct httpConnResponse response;
 };
@@ -5028,6 +5032,7 @@ static void CPROC httpConnOpened( uintptr_t psv, HTTPState state, int error ) {
 	httpConnectionObject *conn = (httpConnectionObject*)psv;
 	struct httpConnEvent *evt = httpConnNewEvent( conn, HTTP_CONN_EVENT_OPENED );
 	evt->error = error;
+	evt->state = state;
 	httpConnPost( conn, evt );
 }
 
@@ -5092,6 +5097,9 @@ static void httpConnAsyncMsg__( Isolate *isolate, Local<Context> context, httpCo
 				(void)resolver->Reject( context
 					, Exception::Error( String::NewFromUtf8Literal( isolate, "Connect Error" ) ) );
 			} else {
+				// publish the connection before JS can get its hands on the
+				// object; the connect ran on another thread.
+				if( evt->state ) myself->connection = evt->state;
 				myself->opened = true;
 				(void)resolver->Resolve( context, Local<Object>::New( isolate, myself->_this ) );
 			}
@@ -5163,6 +5171,27 @@ static void httpConnAsyncMsg( uv_async_t *handle ) {
 	HandleScope scope( isolate );
 	Local<Context> context = isolate->GetCurrentContext();
 	httpConnAsyncMsg__( isolate, context, (httpConnectionObject*)handle->data );
+}
+
+// Runs on a sack thread; see the comment at the ThreadTo below for why the
+// connect cannot happen on the loop thread.
+static uintptr_t DoOpenConnection( PTHREAD thread ) {
+	httpConnectionObject *conn = (httpConnectionObject*)GetThreadParam( thread );
+	HTTPState state = OpenHttpConnection( conn->address, conn->ca, &conn->opts
+	                                    , httpConnOpened, httpConnResponse, httpConnClosed
+	                                    , (uintptr_t)conn );
+	if( !state ) {
+		// could not even make the socket; report it the way a failed connect is
+		// reported, so the promise rejects either way.
+		struct httpConnEvent *evt = httpConnNewEvent( conn, HTTP_CONN_EVENT_OPENED );
+		evt->error = -1;
+		httpConnPost( conn, evt );
+		return 0;
+	}
+	conn->connection = state;
+	if( conn->pipeline != 1 )
+		SetHttpConnectionPipeline( state, conn->pipeline );
+	return 0;
 }
 
 void httpConnectionObject::New( const FunctionCallbackInfo<Value>& args ) {
@@ -5272,18 +5301,14 @@ void httpConnectionObject::openStream( const FunctionCallbackInfo<Value>& args, 
 	// the "host:port" address text already does.
 	conn->opts.hostname = ( conn->port == ( conn->ssl ? 443 : 80 ) ) ? conn->hostname : NULL;
 
-	conn->connection = OpenHttpConnection( conn->address, conn->ca, &conn->opts
-	                                     , httpConnOpened, httpConnResponse, httpConnClosed
-	                                     , (uintptr_t)conn );
-	if( !conn->connection ) {
-		(void)resolver->Reject( context
-			, Exception::Error( String::NewFromUtf8Literal( isolate, "Connect Error" ) ) );
-		conn->openResolver.Reset();
-		conn->_this.Reset();
-		return;
-	}
-	if( conn->pipeline != 1 )
-		SetHttpConnectionPipeline( conn->connection, conn->pipeline );
+	// Connecting has to happen off the loop thread.  scheduleSocket() blocks when
+	// it is called from an application thread - it spins until the root network
+	// thread adopts the socket - so connecting inline livelocks the loop thread
+	// against the root thread's close sweep whenever a connection is opened while
+	// another one is still tearing down ("Lost client in schedule list ...
+	// (Requeuing)" forever).  The one-shot client has always done its connect on
+	// a sack thread for the same reason.
+	ThreadTo( DoOpenConnection, (uintptr_t)conn );
 }
 
 void httpConnectionObject::stream( const FunctionCallbackInfo<Value>& args ) {
