@@ -189,7 +189,17 @@ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
 #    define getenv(name)       OSALOT_GetEnvironmentVariable(name)
 #    define setenv(name,val)   SetEnvironmentVariable(name,val)
 #  endif
-#  define Relinquish()       Sleep(0)
+// Spin-wait hint issued before yielding.  Relinquish() is only ever reached
+// after an acquire has already failed, so this costs nothing on the fast path.
+// It buys three things: PAUSE prevents the memory-order-violation pipeline
+// flush that a naive spin takes when the watched line finally changes (i.e.
+// exactly at hand-off, when you want to be fastest); it frees issue slots for
+// an SMT sibling, which matters when a spinner and a real worker share a
+// physical core; and it lets Intel Thread Director recognise a spin-wait, so
+// hybrid parts stop scheduling spinners onto P-cores against threads doing
+// real work.  YieldProcessor() resolves to _mm_pause on x86 and __yield on ARM64.
+#  define SpinHint()         YieldProcessor()
+#  define Relinquish()       do { SpinHint(); Sleep(0); } while( 0 )
 //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
 //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
 #  ifdef __cplusplus_cli
@@ -236,7 +246,17 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 #  endif
 // moved into timers - please linnk vs timers to get Sleep...
 //#define Sleep(n) (usleep((n)*1000))
-#  define Relinquish() sched_yield()
+// See the SpinHint note in the _WIN32 branch above.  No portable intrinsic
+// here, so pick per architecture; the fallback is a no-op, which just restores
+// the previous behaviour rather than breaking an unlisted target.
+#  if defined( __i386__ ) || defined( __x86_64__ )
+#    define SpinHint() __builtin_ia32_pause()
+#  elif defined( __aarch64__ ) || defined( __arm__ )
+#    define SpinHint() __asm__ __volatile__( "yield" ::: "memory" )
+#  else
+#    define SpinHint() ((void)0)
+#  endif
+#  define Relinquish() do { SpinHint(); sched_yield(); } while( 0 )
 #  define GetLastError() (int32_t)errno
 /* return with a THREAD_ID that is a unique, universally
    identifier for the thread for inter process communication. */
@@ -64753,6 +64773,72 @@ void SendHttpMessage ( struct HttpState *pHttpState, PCLIENT pc, PTEXT body )
 	SendTCP( pc, GetText( message ), GetTextSize( message ));
 }
 //---------- CLIENT --------------------------------------------
+// Write the request already formatted into state->pvtOut, plus any content, and
+// consume the vartext.  There are two moments this can happen and they used to be
+// two copies of this code: plain sockets send inline right after NetworkConnectTCP,
+// while TLS has to wait for the handshake and sends from HttpReader's initial-read
+// callback (which is why pvtOut has to outlive the plain-path send).  Both call this
+// now, which is also what lets a second request go out on a connection already up.
+// The content paths differ deliberately: SendTCPLong hands the buffer to the network
+// layer (writeComplete fires when it drains) while ssl_Send copies, so the TLS path
+// has to signal writeComplete itself.
+// httpOpenSocket wires up all four socket callbacks, and they are all defined
+// further down this file, so they need declaring here.
+static void CPROC HttpReader( uintptr_t psv, POINTER buffer, size_t size );
+static void CPROC HttpReaderClose( uintptr_t psv );
+static void httpConnected( uintptr_t psv, int error );
+static void writeComplete( uintptr_t psv, CPOINTER buffer, size_t length );
+// Create the socket for an HTTP conversation and attach the state to it.  The
+// connect is deliberately deferred (OPEN_TCP_FLAG_DELAY_CONNECT) so the caller can
+// format the first request - and for TLS begin the session - before the handshake
+// starts; HttpReader's initial-read callback is what sends it on the TLS path.
+// Returns NULL if the socket could not be created; the caller still owns state.
+static PCLIENT httpOpenSocket( PTEXT address, struct HttpState *state, struct HTTPRequestOptions *options ) {
+	PCLIENT pc;
+	SOCKADDR *addr = CreateSockAddressV2( GetText( address ), options->ssl?443:80, options->addrFlags );
+ // clear any previous error.
+	options->connectError = 0;
+	pc = CPPOpenTCPClientAddrExxx( addr, HttpReader, (uintptr_t)state, HttpReaderClose, (uintptr_t)state
+			, writeComplete, (uintptr_t)state, httpConnected, (uintptr_t)state, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
+	SetTCPNoDelay( pc, TRUE );
+	state->request_socket = pc;
+	ReleaseAddress( addr );
+	if( pc ) {
+		state->last_read_tick = timeGetTime();
+		state->waiter = MakeThread();
+		SetNetworkLong( pc, 0, (uintptr_t)state );
+		state->ssl = options->ssl;
+	}
+	return pc;
+}
+static LOGICAL httpSendRequest( struct HttpState *state, struct HTTPRequestOptions *options ) {
+	PCLIENT pc = state->request_socket;
+	PTEXT send;
+	if( !pc || !state->pvtOut ) return FALSE;
+  // consumes the accumulated text
+	send = VarTextGet( state->pvtOut );
+	if( !send ) return FALSE;
+	if( l.flags.bLogReceived ) {
+		lprintf( "Sending %s...", options ? options->method : "request" );
+		LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
+	}
+	if( state->ssl ) {
+		ssl_Send( pc, GetText( send ), GetTextSize( send ) );
+		if( options && options->content && options->contentLen ) {
+			ssl_Send( pc, options->content, options->contentLen );
+			if( options->writeComplete ) {
+				options->writeComplete( options->userData );
+				options->writeComplete = NULL;
+			}
+		}
+	} else {
+		SendTCP( pc, GetText( send ), GetTextSize( send ) );
+		if( options && options->content && options->contentLen )
+			SendTCPLong( pc, options->content, options->contentLen );
+	}
+	LineRelease( send );
+	return TRUE;
+}
 static void CPROC HttpReader( uintptr_t psv, POINTER buffer, size_t size )
 {
 	struct HttpState *state = (struct HttpState *)psv;
@@ -64763,24 +64849,10 @@ static void CPROC HttpReader( uintptr_t psv, POINTER buffer, size_t size )
 #ifndef NO_SSL
 		if( state && state->ssl )
 		{
-			PTEXT send = VarTextGet( state->pvtOut );
-			if( l.flags.bLogReceived )
-			{
-				lprintf( "Sending Request..." );
-				LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
-			}
 			// had to wait for handshake, so NULL event
 			// on secure has already had time to build the send
 			// but had to wait until now to do that.
-			ssl_Send( pc, GetText( send ), GetTextSize( send ) );
-			if( state->options && state->options->content && state->options->contentLen ) {
-				ssl_Send( pc, state->options->content, state->options->contentLen );
-				if( state->options->writeComplete ) {
-					state->options->writeComplete( state->options->userData );
-					state->options->writeComplete = NULL;
-				}
-			}
-			LineRelease( send );
+			httpSendRequest( state, state->options );
 		}
 		else
 #endif
@@ -65039,6 +65111,62 @@ static void writeComplete( uintptr_t psv, CPOINTER buffer, size_t length ) {
 	if( data && data->options && data->options->writeComplete )
 		data->options->writeComplete( data->options->userData );
 }
+// Format one request into state->pvtOut: request line, Host, the caller's headers
+// (noting Connection/User-Agent/Content-Length as they go by so the defaults below
+// do not duplicate them), then the defaults and the terminating blank line.
+// This is the only part of issuing a request that is not connection state, which is
+// what makes it reusable for sending several requests on one connection.
+static void httpBuildRequest( struct HttpState *state, PTEXT address, PTEXT url
+                            , struct HTTPRequestOptions *options ) {
+	char* header;
+	LOGICAL skipLength = FALSE;
+	INDEX idx;
+	LOGICAL hadUserAgent = FALSE;
+	LOGICAL hadConnection = FALSE;
+	const char* resource = GetText( url );
+	if( !resource ) resource = "/";
+	if( !state->pvtOut ) state->pvtOut = VarTextCreate();
+	vtprintf( state->pvtOut, "%s %s HTTP/%s\r\n", options->method, resource, options->httpVersion?options->httpVersion:"1.1" );
+	// Host must carry a nonstandard port; the caller decides that by setting
+	// options->hostname (NULL falls back to the "host:port" address text).
+	{
+		const char* targetHost = options->hostname ? options->hostname : GetText( address );
+		vtprintf( state->pvtOut, "Host:%s\r\n", targetHost );
+	}
+	LIST_FORALL( options->headers, idx, char*, header ) {
+		if( !hadConnection && ( StrCaseCmpEx( header, "connection", 10 ) == 0 ) ) {
+			hadConnection = TRUE;
+			int spaces = 0;
+			while( header[11+spaces] == ' ' || header[11+spaces] == ':' ) spaces++;
+			if( StrCaseCmpEx( header+11+spaces, "keep-alive", 9 ) == 0 ) {
+				state->flags.keep_alive = 1;
+			} else if( StrCaseCmpEx( header+11+spaces, "close", 5 ) == 0 ) {
+				state->flags.close = 1;
+			}
+		}
+		if( !hadUserAgent && ( StrCaseCmpEx( header, "user-agent", 10 ) == 0 ) ) hadUserAgent = TRUE;
+		if( !skipLength   && ( StrCaseCmpEx( header, "Content-Length", 15 ) == 0 ) ) {
+			skipLength = TRUE;
+ // force content length to get hidden; should be ':' to be valid
+			if( header[15] == '~' )
+				continue;
+		}
+		vtprintf( state->pvtOut, "%s\r\n", header );
+	}
+	if( !hadConnection ) {
+		if( !options->httpVersion || strcmp( options->httpVersion, "1.1" ) == 0 || strcmp( options->httpVersion, "2.0" ) == 0) {
+			vtprintf( state->pvtOut, "Connection: Keep-Alive\r\n" );
+			state->flags.keep_alive = 1;
+		}
+	}
+	if( !skipLength ) {
+		vtprintf( state->pvtOut, "Content-Length:%d\r\n", options->contentLen);
+	}
+	if( !hadUserAgent )
+		vtprintf( state->pvtOut, "User-Agent:%s\r\n", options->agent?options->agent:"SACK/1.3" );
+ // send blank header
+	vtprintf( state->pvtOut, "\r\n" );
+}
 HTTPState GetHttpsQueryEx( PTEXT address, PTEXT url, const char* certChain, struct HTTPRequestOptions* options )
 {
 	static struct HTTPRequestOptions defaultOpts = {
@@ -65073,86 +65201,14 @@ HTTPState GetHttpsQueryEx( PTEXT address, PTEXT url, const char* certChain, stru
 	for( retries = 0; retries < options->retries; retries++ )
 	{
 		PCLIENT pc;
-		SOCKADDR *addr = CreateSockAddressV2( GetText( address ), options->ssl?443:80, options->addrFlags );
-		//struct pendingConnect *connect = New( struct pendingConnect );
 		struct HttpState *state = CreateHttpState(NULL);
 		state->options = options;
 		state->closed = FALSE;
-		//connect->pc = NULL;
-		//connect->state = state;
-		//lprintf( "adding pending3: %p", connect );
-		//AddLink( &l.pendingConnects, connect );
-		//lprintf( "added pending3" );
-		//DumpAddr( "Http Address:", addr );
- // clear any previous error.
-		options->connectError = 0;
-		pc = CPPOpenTCPClientAddrExxx( addr, HttpReader, (uintptr_t)state, HttpReaderClose, (uintptr_t)state
-				, writeComplete, (uintptr_t)state, httpConnected, (uintptr_t)state, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
-		SetTCPNoDelay( pc, TRUE );
-		state->request_socket = pc;
-		//connect->pc = pc;
-		//lprintf( "setting pending3: %p", connect->pc );
-		ReleaseAddress( addr );
+		pc = httpOpenSocket( address, state, options );
 		if( pc )
 		{
-			char* header;
-			LOGICAL skipLength = FALSE;
-			INDEX idx;
-			LOGICAL hadUserAgent = FALSE;
-			LOGICAL hadConnection = FALSE;
-			const char* resource = GetText( url );
-			if( !resource ) resource = "/";
-			state->last_read_tick = timeGetTime();
-			state->waiter = MakeThread();
-			SetNetworkLong( pc, 0, (uintptr_t)state );
-			//SetNetworkConn
-			state->ssl = options->ssl;
 			state->pvtOut = VarTextCreate();
-			// 1.0 expects close after request - this is a one shot synchronous process so...
-			vtprintf( state->pvtOut, "%s %s HTTP/%s\r\n", options->method, resource, options->httpVersion?options->httpVersion:"1.1" );
-			// 1.1 would need this sort of header....
-			// Define your host/authority string safely (including port if non-standard)
-			const char* targetHost = options->hostname ? options->hostname : GetText(address);
-			// Note: Ensure targetHost includes ":port" if it's something like "mysite.com:8080"
-			{
-				// --- HTTP/1.1 HEADERS ---
-				// Format line: GET /path HTTP/1.1
-				//vtprintf(state->pvtOut, "%s %s HTTP/1.1\r\n", options->method, resource);
-				vtprintf(state->pvtOut, "Host:%s\r\n", targetHost);
-			}
-			LIST_FORALL( options->headers, idx, char*, header ) {
-				if( !hadConnection && ( StrCaseCmpEx( header, "connection", 10 ) == 0 ) ) {
-					hadConnection = TRUE;
-					int spaces = 0;
-					while( header[11+spaces] == ' ' || header[11+spaces] == ':' ) spaces++;
-					if( StrCaseCmpEx( header+11+spaces, "keep-alive", 9 ) == 0 ) {
-						state->flags.keep_alive = 1;
-					} else if( StrCaseCmpEx( header+11+spaces, "close", 5 ) == 0 ) {
-						state->flags.close = 1;
-					}
-				}
-				if( !hadUserAgent && ( StrCaseCmpEx( header, "user-agent", 10 ) == 0 ) ) hadUserAgent = TRUE;
-				if( !skipLength   && ( StrCaseCmpEx( header, "Content-Length", 15 ) == 0 ) ) {
-					skipLength = TRUE;
- // force content length to get hidden; should be ':' to be valid
-					if( header[15] == '~' )
-						continue;
-				}
-				vtprintf( state->pvtOut, "%s\r\n", header );
-			}
-			if( !hadConnection ) {
-				if( !options->httpVersion || strcmp( options->httpVersion, "1.1" ) == 0 || strcmp( options->httpVersion, "2.0" ) == 0) {
-					vtprintf( state->pvtOut, "Connection: Keep-Alive\r\n" );
-					state->flags.keep_alive = 1;
-				}
-			}
-			if( !skipLength ) {
-				vtprintf( state->pvtOut, "Content-Length:%d\r\n", options->contentLen);
-			}
-			if( !hadUserAgent )
-				vtprintf( state->pvtOut, "User-Agent:%s\r\n", options->agent?options->agent:"SACK/1.3" );
- // send blank header
-			vtprintf( state->pvtOut, "\r\n" );
+			httpBuildRequest( state, address, url, options );
 #ifndef NO_SSL
 			if( options->ssl ) {
 				if( ssl_BeginClientSession( pc, NULL, 0, NULL, 0, options->certChain?options->certChain:certChain, certChain
@@ -65171,21 +65227,14 @@ HTTPState GetHttpsQueryEx( PTEXT address, PTEXT url, const char* certChain, stru
 #endif
 			if( pc ) {
 				state->waiter = MakeThread();
-				PTEXT send = VarTextPeek( state->pvtOut );
 				if( NetworkConnectTCP( pc ) < 0 ) {
 					DestroyHttpState( state );
 					return NULL;
 				}
-				if( l.flags.bLogReceived )
-				{
-					lprintf( "Sending %s...", options->method );
-					LogBinary( (uint8_t*)GetText( send ), GetTextSize( send ) );
-				}
-				SendTCP( pc, GetText( send ), GetTextSize( send ) );
-				if( options->content && options->contentLen )
-					SendTCPLong( pc, options->content, options->contentLen );
-				// if it was SSL enabled, then SSL will do the destroy later, it
-            // still needs the vartext to send.
+				// Plain sockets can send as soon as connect returns.  The TLS branch
+				// above deliberately does not: pvtOut is left for HttpReader to send
+				// once the handshake completes.
+				httpSendRequest( state, options );
 				VarTextDestroy( &state->pvtOut );
 			}
 			// response timeout budget starts now; time spent connecting and
@@ -79968,7 +80017,7 @@ void vesl_dispose_message( PDATALIST *msg_data )
 // every peer's wait/event counters every DBG_PEERMAP_SNAP accepts.  Correlate
 // the client ports against tcpdump's hang list (hangfilter.awk) to test whether
 // the periodic hangs all belong to one peer.
-#define DEBUG_PEER_ASSIGN
+//#define DEBUG_PEER_ASSIGN
 #ifndef OPENSSL_API_COMPAT
 #  define OPENSSL_API_COMPAT 10101
 #endif
@@ -80281,6 +80330,29 @@ struct client_lock_trace {
 	uint8_t   channel;
 };
 #endif
+// Cache-line separation for the per-client locks.  csLockRead and csLockWrite are
+// 24-byte CRITICALSECTIONs and were adjacent, so both locks AND saClient/saSource
+// shared one 64-byte line - every atomic RMW on either channel invalidated the
+// line for any core merely READING the address pointers on the data path.
+// PMU counters on the http-ws server (xperf -Pmc, see test-harness/hotpath) put
+// the peer threads at IPC ~0.39 with ~18 L3 references per 1000 instructions and
+// a 94% L3 hit rate: heavy coherence traffic, almost no DRAM traffic, which is
+// the false-sharing signature rather than a memory-bound one.
+//
+// Aligning the MEMBERS does three jobs at once: each lock lands on its own line,
+// the struct's own alignment becomes 64, and sizeof(CLIENT) is rounded to a
+// multiple of 64 so the slab's array stride keeps every client aligned.  The one
+// thing the compiler cannot do is make the heap block itself aligned - AddClients
+// must use HeapAllocateAligned or the declared alignment is a lie the optimizer
+// is entitled to believe.
+#define SACK_CACHE_LINE 64
+#ifdef __cplusplus
+#  define SACK_ALIGN(n) alignas(n)
+#  define SACK_STATIC_ASSERT(c,m) static_assert(c,m)
+#else
+#  define SACK_ALIGN(n) _Alignas(n)
+#  define SACK_STATIC_ASSERT(c,m) _Static_assert(c,m)
+#endif
 struct NetworkClient
 {
 #ifdef DEBUG_CLIENT_LOCK_TRACE
@@ -80302,12 +80374,17 @@ struct NetworkClient
 	// restore then resurrected the previous owner and count on top of it - leaving
 	// clients permanently read-locked by a thread that had long since moved on.
 	// Nothing depends on member order here; the struct is module-local and opaque.
+	// One cache line each; see the SACK_CACHE_LINE note above.  With
+	// DEBUG_CLIENT_LOCK_TRACE on, the ring ahead of these still leaves them line
+	// aligned - alignas pads to reach it - so the probe and the fix coexist.
     // per client lock.
-	CRITICALSECTION csLockRead;
+	SACK_ALIGN( SACK_CACHE_LINE ) CRITICALSECTION csLockRead;
    // per client lock.
-	CRITICALSECTION csLockWrite;
+	SACK_ALIGN( SACK_CACHE_LINE ) CRITICALSECTION csLockWrite;
+	// Also aligned, so csLockWrite owns its line outright instead of sharing the
+	// back half of it with two pointers that every network operation reads.
   //Dest Address
-	SOCKADDR *saClient;
+	SACK_ALIGN( SACK_CACHE_LINE ) SOCKADDR *saClient;
   //Local Address of this port ...
 	SOCKADDR *saSource;
  // use this for UDP recvfrom
@@ -80834,18 +80911,15 @@ static PCLIENT AddAvailable( PCLIENT pClient )
 	{
 		SetClientFlags( pClient, CF_AVAILABLE );
 		pClient->LastEvent = timeGetTime();
-		PCLIENT lastClient = globalNetworkData.AvailableClients;
-		while( lastClient && lastClient->next ) lastClient = lastClient->next;
-		if( lastClient ) {
-			lastClient->next = pClient;
-			pClient->me = &lastClient->next;
-			pClient->next = NULL;
-		} else {
-			pClient->me = &globalNetworkData.AvailableClients;
-			if( ( pClient->next = globalNetworkData.AvailableClients ) )
-				globalNetworkData.AvailableClients->me = &pClient->next;
-			globalNetworkData.AvailableClients = pClient;
-		}
+		// Head insert, same as AddActive.  This used to walk to the tail so the pool
+		// behaved LRU - that was a probe to expose ClearClient leakage by preventing
+		// immediate reuse, not intended behaviour, and it is O(available) on every
+		// recycle while holding csNetwork.  Worse at the slab pre-fill (AddClients
+		// calls this 256 times in a row), which made pool growth O(n^2).
+		pClient->me = &globalNetworkData.AvailableClients;
+		if( ( pClient->next = globalNetworkData.AvailableClients ) )
+			globalNetworkData.AvailableClients->me = &pClient->next;
+		globalNetworkData.AvailableClients = pClient;
 	}
 	return pClient;
 }
@@ -81456,6 +81530,13 @@ LOGICAL NetworkAlive( void )
 	return !globalNetworkData.flags.bThreadExit;
 }
 //----------------------------------------------------------------------------
+// The slab packs clients back to back at sizeof(CLIENT) stride, so aligning
+// client[0] only helps if the stride is a whole number of cache lines - otherwise
+// every client after the first drifts and its lock words share a line with the
+// previous client's tail.  The alignas in netstruc.h guarantees this; assert it
+// so a later struct edit cannot silently undo the fix.
+SACK_STATIC_ASSERT( ( sizeof( CLIENT ) % SACK_CACHE_LINE ) == 0
+                  , "sizeof(CLIENT) must be a multiple of SACK_CACHE_LINE or the slab stride breaks lock alignment" );
 static void AddClients( void ) {
 	PCLIENT_SLAB pClientSlab;
 	// protect all structures.
@@ -81463,7 +81544,20 @@ static void AddClients( void ) {
 	{
 		size_t n;
 		//Log1( "Creating %d Client Resources", MAX_NETCLIENTS );
-		pClientSlab = NewPlus( CLIENT_SLAB, (MAX_NETCLIENTS - 1 )* sizeof( CLIENT ) );
+		// Must be HeapAllocateAligned, not NewPlus: struct NetworkClient declares
+		// SACK_CACHE_LINE alignment for its lock words, and only the allocator can
+		// honour that for a heap block.  The compiler's part (client[] at a 64
+		// multiple, sizeof(CLIENT) a 64 multiple so the stride holds) comes from the
+		// alignas in netstruc.h.  NewPlus is HeapAllocate(0,...) and does not zero,
+		// and every CLIENT_SLAB field is initialised below, so this is a like-for-like
+		// swap apart from the alignment.
+		pClientSlab = (PCLIENT_SLAB)HeapAllocateAligned( 0
+		                                               , sizeof( CLIENT_SLAB ) + (MAX_NETCLIENTS - 1 ) * sizeof( CLIENT )
+		                                               , SACK_CACHE_LINE );
+		if( ( (uintptr_t)pClientSlab->client ) & ( SACK_CACHE_LINE - 1 ) )
+			lprintf( "WARNING: client slab is not cache-line aligned (%p); the false-sharing"
+			         " separation of csLockRead/csLockWrite is NOT in effect."
+			       , pClientSlab->client );
 		pClientSlab->pUserData = NewArray( uintptr_t, MAX_NETCLIENTS * globalNetworkData.nUserData );
  // can't clear the lpUserData Address!!!
 		MemSet( pClientSlab->client, 0, (MAX_NETCLIENTS) * sizeof( CLIENT ) );

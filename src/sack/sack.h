@@ -180,7 +180,17 @@ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
 #    define getenv(name)       OSALOT_GetEnvironmentVariable(name)
 #    define setenv(name,val)   SetEnvironmentVariable(name,val)
 #  endif
-#  define Relinquish()       Sleep(0)
+// Spin-wait hint issued before yielding.  Relinquish() is only ever reached
+// after an acquire has already failed, so this costs nothing on the fast path.
+// It buys three things: PAUSE prevents the memory-order-violation pipeline
+// flush that a naive spin takes when the watched line finally changes (i.e.
+// exactly at hand-off, when you want to be fastest); it frees issue slots for
+// an SMT sibling, which matters when a spinner and a real worker share a
+// physical core; and it lets Intel Thread Director recognise a spin-wait, so
+// hybrid parts stop scheduling spinners onto P-cores against threads doing
+// real work.  YieldProcessor() resolves to _mm_pause on x86 and __yield on ARM64.
+#  define SpinHint()         YieldProcessor()
+#  define Relinquish()       do { SpinHint(); Sleep(0); } while( 0 )
 //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
 //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
 #  ifdef __cplusplus_cli
@@ -227,7 +237,17 @@ extern __sighandler_t bsd_signal(int, __sighandler_t);
 #  endif
 // moved into timers - please linnk vs timers to get Sleep...
 //#define Sleep(n) (usleep((n)*1000))
-#  define Relinquish() sched_yield()
+// See the SpinHint note in the _WIN32 branch above.  No portable intrinsic
+// here, so pick per architecture; the fallback is a no-op, which just restores
+// the previous behaviour rather than breaking an unlisted target.
+#  if defined( __i386__ ) || defined( __x86_64__ )
+#    define SpinHint() __builtin_ia32_pause()
+#  elif defined( __aarch64__ ) || defined( __arm__ )
+#    define SpinHint() __asm__ __volatile__( "yield" ::: "memory" )
+#  else
+#    define SpinHint() ((void)0)
+#  endif
+#  define Relinquish() do { SpinHint(); sched_yield(); } while( 0 )
 #  define GetLastError() (int32_t)errno
 /* return with a THREAD_ID that is a unique, universally
    identifier for the thread for inter process communication. */
