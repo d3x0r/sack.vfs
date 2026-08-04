@@ -2248,11 +2248,7 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		//lprintf( "Server Websocket Instance(accepted) closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
-		// code 0 = peer sent no body, therefore no status code (see the Close
-		// handling in html5.websocket.common.c).  The web API spells that 1005
-		// "No Status Rcvd"; it is API-only and must never go on the wire, which is
-		// fine here because the reply echoes the received body verbatim.
-		(*pevt).code = code ? code : 1005;
+		(*pevt).code = code;
 		(*pevt).buf = StrDup(reason);
 		(*pevt).buflen = StrLen( reason );
 		wssi->pc = NULL;
@@ -3866,8 +3862,7 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
-	// See webSockServerClosed: 0 = no status code present, reported as 1005.
-	(*pevt).code = code ? code : 1005;
+	(*pevt).code = code;
 	(*pevt).buf = StrDup(reason);
 	(*pevt).buflen = StrLen( reason );
 #ifdef DEBUG_EVENTS
