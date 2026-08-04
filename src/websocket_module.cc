@@ -2248,7 +2248,11 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 		//lprintf( "Server Websocket Instance(accepted) closed; post to javascript %p  %p", pc, wssi );
 		(*pevt).eventType = WS_EVENT_CLOSE;
 		(*pevt)._this = wssi;
-		(*pevt).code = code;
+		// code 0 = peer sent no body, therefore no status code (see the Close
+		// handling in html5.websocket.common.c).  The web API spells that 1005
+		// "No Status Rcvd"; it is API-only and must never go on the wire, which is
+		// fine here because the reply echoes the received body verbatim.
+		(*pevt).code = code ? code : 1005;
 		(*pevt).buf = StrDup(reason);
 		(*pevt).buflen = StrLen( reason );
 		wssi->pc = NULL;
@@ -3862,7 +3866,8 @@ static void webSockClientClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	struct wscEvent *pevt = GetWscEvent();
 	(*pevt).eventType = WS_EVENT_CLOSE;
 	(*pevt)._this = wsc;
-	(*pevt).code = code;
+	// See webSockServerClosed: 0 = no status code present, reported as 1005.
+	(*pevt).code = code ? code : 1005;
 	(*pevt).buf = StrDup(reason);
 	(*pevt).buflen = StrLen( reason );
 #ifdef DEBUG_EVENTS
@@ -4371,6 +4376,15 @@ void wscObject::close( const FunctionCallbackInfo<Value>& args ) {
 					}
 					if( obj->pc ) {
 						WebSocketClose( obj->pc, code, *reason);
+					}
+				}
+				else {
+					// Was missing: with a valid code but no reason, close() fell
+					// through here and never called WebSocketClose at all -- a
+					// silent no-op, the socket simply stayed open.  wssiObject::close
+					// has this branch; the client one did not.
+					if( obj->pc ) {
+						WebSocketClose( obj->pc, code, NULL );
 					}
 				}
 			}
