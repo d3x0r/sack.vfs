@@ -253,6 +253,7 @@ class constructorSet {
 	Persistent<Function> wssiConstructor;
 	Persistent<FunctionTemplate> wssiTpl;
 	Persistent<Function> httpReqConstructor;
+	Persistent<Function> httpConnConstructor;
 	Persistent<Function> httpConstructor;
 
 	Persistent<Function> tlsConstructor;

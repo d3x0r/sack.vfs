@@ -153,6 +153,7 @@ struct optionStrings {
 	Eternal<String>* pipeString;
 	Eternal<String>* preferV4String;
 	Eternal<String>* preferV6String;
+	Eternal<String>* pipelineString;
 };
 
 static PLIST strings;
@@ -428,7 +429,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->agentString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "agent" ) );
 		check->preferV4String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "preferV4" ) );
 		check->preferV6String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "preferV6" ) );
-		
+		check->pipelineString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pipeline" ) );
+
 	}
 	return check;
 }
@@ -503,6 +505,108 @@ public:
 	PLINKQUEUE eventQueue;
 
 	~httpRequestObject();
+};
+
+
+//---------- streaming HTTP connection ---------------------------
+// sack.HTTP.stream(options) -> Promise<connection>, connection.request(options)
+// -> Promise<result>.  Unlike httpRequestObject (one thread per request, blocked
+// in GetHttpsQueryEx) this owns a connection and nothing blocks: every result
+// arrives as a callback on the network thread and is posted to the loop.
+
+enum httpConnEventType {
+	HTTP_CONN_EVENT_OPENED,
+	HTTP_CONN_EVENT_RESPONSE,
+	HTTP_CONN_EVENT_CLOSED,
+};
+
+struct httpConnHeader {
+	char *name;
+	char *value;
+};
+
+// The response callback runs on the network thread and the parse state is
+// recycled as soon as it returns, so everything JS could want is copied out
+// there and travels in the event.
+struct httpConnResponse {
+	int statusCode;
+	char *statusText;
+	uint8_t *content;
+	size_t contentLen;
+	PLIST headers; // struct httpConnHeader*
+};
+
+struct httpConnEvent {
+	enum httpConnEventType eventType;
+	class httpConnectionObject *_this;
+	int error;
+	struct httpConnRequest *request;
+	struct httpConnResponse response;
+};
+
+// One outstanding request.  'opts' is handed to sack and must outlive the
+// request, so it is embedded rather than pointed at.
+struct httpConnRequest {
+	struct HTTPRequestOptions opts;
+	class httpConnectionObject *conn;
+	Persistent<Promise::Resolver> resolver;
+	PTEXT url;
+	char *method;
+	char *path;
+	char *content;
+	char *agent;
+	char *httpVersion;
+	PLIST headers; // char*, "name:value"
+};
+
+static void httpConnAsyncMsg__( Isolate *isolate, Local<Context> context, class httpConnectionObject *myself );
+struct connAsyncTask : SackTask {
+	class httpConnectionObject *myself;
+	connAsyncTask( class httpConnectionObject *myself )
+	    : myself( myself ) {}
+	void Run2( Isolate *isolate, Local<Context> context ) {
+		httpConnAsyncMsg__( isolate, context, this->myself );
+	}
+};
+
+class httpConnectionObject : public node::ObjectWrap {
+public:
+	class constructorSet *c;
+	bool ivm_hosted = false;
+	Persistent<Object> _this;
+
+	HTTPState connection = NULL;
+	// connection-level options; sack keeps the pointer for the connection's life
+	struct HTTPRequestOptions opts;
+
+	char *hostname = NULL;
+	int port = 0;
+	bool ssl = false;
+	char *ca = NULL;
+	bool rejectUnauthorized = true;
+	bool preferV4 = false;
+	bool preferV6 = false;
+	int pipeline = 1;
+	PTEXT address = NULL;
+
+	bool opened = false;
+	bool closed = false;
+	int outstanding = 0;
+
+	Persistent<Promise::Resolver> openResolver;
+
+	uv_async_t async;
+	PLINKQUEUE eventQueue = NULL;
+
+	httpConnectionObject();
+	~httpConnectionObject();
+
+	static void New( const v8::FunctionCallbackInfo<Value>& args );
+	static void stream( const v8::FunctionCallbackInfo<Value>& args );
+	static void streams( const v8::FunctionCallbackInfo<Value>& args );
+	static void openStream( const v8::FunctionCallbackInfo<Value>& args, bool secure );
+	static void request( const v8::FunctionCallbackInfo<Value>& args );
+	static void close( const v8::FunctionCallbackInfo<Value>& args );
 };
 
 
@@ -1973,13 +2077,24 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		httpRequestTemplate->ReadOnlyPrototype();
 		c->httpReqConstructor.Reset( isolate, httpRequestTemplate->GetFunction(context).ToLocalChecked() );
 
+		Local<FunctionTemplate> httpConnTemplate;
+		httpConnTemplate = FunctionTemplate::New( isolate, httpConnectionObject::New );
+		httpConnTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.core.HTTP[S].stream" ) );
+		httpConnTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
+		NODE_SET_PROTOTYPE_METHOD( httpConnTemplate, "request", httpConnectionObject::request );
+		NODE_SET_PROTOTYPE_METHOD( httpConnTemplate, "close", httpConnectionObject::close );
+		httpConnTemplate->ReadOnlyPrototype();
+		c->httpConnConstructor.Reset( isolate, httpConnTemplate->GetFunction( context ).ToLocalChecked() );
+
 		Local<Object> oHttps = Object::New( isolate );
 		SET_READONLY( exports, "HTTPS", oHttps );
 		SET_READONLY_METHOD( oHttps, "get", httpRequestObject::gets );
+		SET_READONLY_METHOD( oHttps, "stream", httpConnectionObject::streams );
 
 		Local<Object> oHttp = Object::New( isolate );
 		SET_READONLY( exports, "HTTP", oHttp );
 		SET_READONLY_METHOD( oHttp, "get", httpRequestObject::get );
+		SET_READONLY_METHOD( oHttp, "stream", httpConnectionObject::stream );
 
 		// this is not exposed as a class that javascript can create.
 		//SET_READONLY( o, "R", wscTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked() );
@@ -4842,6 +4957,446 @@ void httpRequestObject::get( const FunctionCallbackInfo<Value>& args ) {
 }
 void httpRequestObject::gets( const FunctionCallbackInfo<Value>& args ) {
 	getRequest( args, true );
+}
+
+
+//---------- streaming HTTP connection ---------------------------
+
+httpConnectionObject::httpConnectionObject() {
+	// same lazy network start every other network object here does; without it
+	// the first sack socket in a process comes up on an uninitialized layer.
+	if( !l.netInit ) {
+		l.netInit = 1;
+		NetworkWait( NULL, 256, 2 );  // 1GB memory
+	}
+	MemSet( &opts, 0, sizeof( opts ) );
+}
+
+httpConnectionObject::~httpConnectionObject() {
+}
+
+static void httpConnReleaseRequest( struct httpConnRequest *req ) {
+	char *header;
+	INDEX idx;
+	if( !req ) return;
+	LIST_FORALL( req->headers, idx, char*, header )
+		Release( header );
+	DeleteList( &req->headers );
+	LineRelease( req->url );
+	Deallocate( char*, req->method );
+	Deallocate( char*, req->path );
+	Deallocate( char*, req->content );
+	Deallocate( char*, req->agent );
+	Deallocate( char*, req->httpVersion );
+	req->resolver.Reset();
+	Deallocate( struct httpConnRequest*, req );
+}
+
+static void httpConnReleaseEvent( struct httpConnEvent *evt ) {
+	struct httpConnHeader *h;
+	INDEX idx;
+	LIST_FORALL( evt->response.headers, idx, struct httpConnHeader*, h ) {
+		Deallocate( char*, h->name );
+		Deallocate( char*, h->value );
+		Deallocate( struct httpConnHeader*, h );
+	}
+	DeleteList( &evt->response.headers );
+	Deallocate( char*, evt->response.statusText );
+	Deallocate( uint8_t*, evt->response.content );
+	Deallocate( struct httpConnEvent*, evt );
+}
+
+static void httpConnPost( httpConnectionObject *conn, struct httpConnEvent *evt ) {
+	EnqueLink( &conn->eventQueue, evt );
+	if( conn->ivm_hosted )
+		conn->c->ivm_post( conn->c->ivm_holder, std::make_unique<connAsyncTask>( conn ) );
+	else
+		uv_async_send( &conn->async );
+}
+
+static struct httpConnEvent *httpConnNewEvent( httpConnectionObject *conn, enum httpConnEventType type ) {
+	struct httpConnEvent *evt = NewPlus( struct httpConnEvent, 0 );
+	MemSet( evt, 0, sizeof( *evt ) );
+	evt->eventType = type;
+	evt->_this = conn;
+	return evt;
+}
+
+// --- network thread ---
+
+static void CPROC httpConnOpened( uintptr_t psv, HTTPState state, int error ) {
+	httpConnectionObject *conn = (httpConnectionObject*)psv;
+	struct httpConnEvent *evt = httpConnNewEvent( conn, HTTP_CONN_EVENT_OPENED );
+	evt->error = error;
+	httpConnPost( conn, evt );
+}
+
+static void CPROC httpConnResponse( uintptr_t psv, HTTPState state, struct HTTPRequestOptions *options ) {
+	httpConnectionObject *conn = (httpConnectionObject*)psv;
+	struct httpConnEvent *evt = httpConnNewEvent( conn, HTTP_CONN_EVENT_RESPONSE );
+	PTEXT content;
+	PLIST fields;
+	struct HttpField *field;
+	INDEX idx;
+	const char *statusText;
+
+	evt->request = options ? (struct httpConnRequest*)options->userData : NULL;
+
+	// everything below has to be copied now - the parse state is reset for the
+	// next reply the moment this returns.  statusCode 0 means the connection
+	// died before this request was answered.
+	evt->response.statusCode = GetHttpResponseCode( state );
+	statusText = GetHttpResponseStatus( state );
+	if( statusText ) evt->response.statusText = StrDup( statusText );
+
+	content = GetHttpContent( state );
+	if( content && GetTextSize( content ) ) {
+		evt->response.contentLen = GetTextSize( content );
+		evt->response.content = NewArray( uint8_t, evt->response.contentLen );
+		MemCpy( evt->response.content, GetText( content ), evt->response.contentLen );
+	}
+
+	fields = GetHttpHeaderFields( state );
+	LIST_FORALL( fields, idx, struct HttpField*, field ) {
+		struct httpConnHeader *h = NewPlus( struct httpConnHeader, 0 );
+		h->name = StrDup( GetText( field->name ) );
+		h->value = StrDup( GetText( field->value ) );
+		AddLink( &evt->response.headers, h );
+	}
+
+	httpConnPost( conn, evt );
+}
+
+static void CPROC httpConnClosed( uintptr_t psv, HTTPState state ) {
+	httpConnectionObject *conn = (httpConnectionObject*)psv;
+	httpConnPost( conn, httpConnNewEvent( conn, HTTP_CONN_EVENT_CLOSED ) );
+}
+
+// --- loop thread ---
+
+static void uv_closed_httpConnection( uv_handle_t *handle ) {
+	httpConnectionObject *myself = (httpConnectionObject*)handle->data;
+	myself->_this.Reset();
+	// the object is node-owned (ObjectWrap); dropping the strong reference lets
+	// it be collected once JS is done with it.
+}
+
+static void httpConnAsyncMsg__( Isolate *isolate, Local<Context> context, httpConnectionObject *myself ) {
+	struct httpConnEvent *evt;
+	while( ( evt = (struct httpConnEvent*)DequeLink( &myself->eventQueue ) ) ) {
+		switch( evt->eventType ) {
+		case HTTP_CONN_EVENT_OPENED: {
+			Local<Promise::Resolver> resolver = Local<Promise::Resolver>::New( isolate, myself->openResolver );
+			if( resolver.IsEmpty() ) break;
+			if( evt->error ) {
+				(void)resolver->Reject( context
+					, Exception::Error( String::NewFromUtf8Literal( isolate, "Connect Error" ) ) );
+			} else {
+				myself->opened = true;
+				(void)resolver->Resolve( context, Local<Object>::New( isolate, myself->_this ) );
+			}
+			myself->openResolver.Reset();
+			break;
+		}
+		case HTTP_CONN_EVENT_RESPONSE: {
+			struct httpConnRequest *req = evt->request;
+			Local<Promise::Resolver> resolver;
+			if( !req ) break;
+			myself->outstanding--;
+			resolver = Local<Promise::Resolver>::New( isolate, req->resolver );
+			if( !evt->response.statusCode ) {
+				// no reply will ever come; the connection went away underneath it.
+				(void)resolver->Reject( context
+					, Exception::Error( String::NewFromUtf8Literal( isolate, "Connection closed before response" ) ) );
+			} else {
+				Local<Object> result = Object::New( isolate );
+				Local<Array> arr = Array::New( isolate );
+				struct httpConnHeader *h;
+				INDEX idx;
+
+				if( evt->response.content ) {
+					SET( result, "content"
+						, String::NewFromUtf8( isolate, (const char*)evt->response.content
+							, NewStringType::kNormal, (int)evt->response.contentLen ).ToLocalChecked() );
+					// hand the copy we already made to V8 rather than copying again
+					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( evt->response.content
+						, evt->response.contentLen, releaseBufferBackingStore, NULL );
+					SET( result, "bytes", ArrayBuffer::New( isolate, bs ) );
+					evt->response.content = NULL; // owned by the backing store now
+				}
+				SET( result, "statusCode", Integer::New( isolate, evt->response.statusCode ) );
+				SET( result, "status", String::NewFromUtf8( isolate
+					, evt->response.statusText ? evt->response.statusText : "NO RESPONSE"
+					, NewStringType::kNormal ).ToLocalChecked() );
+				LIST_FORALL( evt->response.headers, idx, struct httpConnHeader*, h ) {
+					(void)arr->Set( context
+						, String::NewFromUtf8( isolate, h->name, NewStringType::kNormal ).ToLocalChecked()
+						, String::NewFromUtf8( isolate, h->value, NewStringType::kNormal ).ToLocalChecked() );
+				}
+				SET( result, "headers", arr );
+				(void)resolver->Resolve( context, result );
+			}
+			httpConnReleaseRequest( req );
+			break;
+		}
+		case HTTP_CONN_EVENT_CLOSED: {
+			// every outstanding request has already been reported above this in
+			// the queue, so there is nothing left to settle.
+			myself->closed = true;
+			myself->opened = false;
+			if( myself->connection ) {
+				DestroyHttpState( myself->connection );
+				myself->connection = NULL;
+			}
+			DeleteLinkQueue( &myself->eventQueue );
+			httpConnReleaseEvent( evt );
+			uv_close( (uv_handle_t*)&myself->async, uv_closed_httpConnection );
+			return; // eventQueue is gone; nothing more to drain
+		}
+		}
+		httpConnReleaseEvent( evt );
+	}
+}
+
+static void httpConnAsyncMsg( uv_async_t *handle ) {
+	Isolate *isolate = Isolate::GetCurrent();
+	HandleScope scope( isolate );
+	Local<Context> context = isolate->GetCurrentContext();
+	httpConnAsyncMsg__( isolate, context, (httpConnectionObject*)handle->data );
+}
+
+void httpConnectionObject::New( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	if( args.IsConstructCall() ) {
+		httpConnectionObject *conn = new httpConnectionObject();
+		Local<Object> _this = args.This();
+		conn->Wrap( _this );
+		conn->c = getConstructors( isolate );
+		if( conn->c->ivm_post )
+			conn->ivm_hosted = true;
+		else
+			uv_async_init( conn->c->loop, &conn->async, httpConnAsyncMsg );
+		conn->async.data = conn;
+		args.GetReturnValue().Set( _this );
+	} else {
+		class constructorSet *c = getConstructors( isolate );
+		Local<Function> cons = Local<Function>::New( isolate, c->httpConnConstructor );
+		args.GetReturnValue().Set( cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
+	}
+}
+
+void httpConnectionObject::openStream( const FunctionCallbackInfo<Value>& args, bool secure ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	optionStrings *strings = getStrings( isolate );
+	Local<String> optName;
+	Local<Promise::Resolver> resolver = Promise::Resolver::New( context ).ToLocalChecked();
+
+	args.GetReturnValue().Set( resolver->GetPromise() );
+
+	if( args.Length() < 1 || !args[0]->IsObject() ) {
+		(void)resolver->Reject( context
+			, Exception::TypeError( String::NewFromUtf8Literal( isolate, "stream requires an options object" ) ) );
+		return;
+	}
+
+	class constructorSet *c = getConstructors( isolate );
+	Local<Function> cons = Local<Function>::New( isolate, c->httpConnConstructor );
+	Local<Object> jsConn = cons->NewInstance( context, 0, NULL ).ToLocalChecked();
+	httpConnectionObject *conn = ObjectWrap::Unwrap<httpConnectionObject>( jsConn );
+
+	// held strong for the life of the connection - the socket has a pointer to
+	// this object and JS may have dropped its own reference.
+	conn->_this.Reset( isolate, jsConn );
+	conn->openResolver.Reset( isolate, resolver );
+	conn->ssl = secure;
+	conn->port = secure ? 443 : 80;
+
+	Local<Object> options = args[0].As<Object>();
+	if( options->Has( context, optName = strings->hostnameString->Get( isolate ) ).ToChecked() ) {
+		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+		conn->hostname = StrDup( *value );
+	}
+	if( options->Has( context, optName = strings->portString->Get( isolate ) ).ToChecked() )
+		conn->port = GETV( options, optName )->Int32Value( context ).FromMaybe( 0 );
+	if( secure && options->Has( context, optName = strings->caString->Get( isolate ) ).ToChecked() ) {
+		if( GETV( options, optName )->IsString() ) {
+			String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+			conn->ca = StrDup( *value );
+		}
+	}
+	if( options->Has( context, optName = strings->rejectUnauthorizedString->Get( isolate ) ).ToChecked() )
+		conn->rejectUnauthorized = GETV( options, optName )->ToBoolean( isolate )->Value();
+	if( options->Has( context, optName = strings->preferV4String->Get( isolate ) ).ToChecked() )
+		conn->preferV4 = GETV( options, optName )->ToBoolean( isolate )->Value();
+	if( options->Has( context, optName = strings->preferV6String->Get( isolate ) ).ToChecked() )
+		conn->preferV6 = GETV( options, optName )->ToBoolean( isolate )->Value();
+	if( options->Has( context, optName = strings->pipelineString->Get( isolate ) ).ToChecked() ) {
+		int depth = GETV( options, optName )->Int32Value( context ).FromMaybe( 1 );
+		conn->pipeline = depth > 0 ? depth : 1;
+	}
+
+	if( !conn->hostname ) {
+		(void)resolver->Reject( context
+			, Exception::TypeError( String::NewFromUtf8Literal( isolate, "stream requires a hostname" ) ) );
+		conn->openResolver.Reset();
+		conn->_this.Reset();
+		return;
+	}
+
+	// hostname may arrive bare or with an embedded port ("host:port"/"[v6]:port");
+	// split it once so the address is not doubled and Host:/SNI share one host.
+	{
+		char *scan = conn->hostname;
+		if( scan[0] == '[' ) { while( *scan && *scan != ']' ) scan++; }
+		char *colon = strrchr( scan, ':' );
+		if( colon ) {
+			if( colon[1] ) conn->port = atoi( colon + 1 );
+			*colon = 0;
+		}
+	}
+	{
+		PVARTEXT pvtAddress = VarTextCreate();
+		vtprintf( pvtAddress, "%s:%d", conn->hostname, conn->port );
+		conn->address = VarTextGet( pvtAddress );
+		VarTextDestroy( &pvtAddress );
+	}
+
+	conn->opts.addrFlags = (enum NetworkAddressFlags)( ( conn->preferV4 ? (int)NETWORK_ADDRESS_FLAG_PREFER_V4 : 0 )
+	                                                 | ( conn->preferV6 ? (int)NETWORK_ADDRESS_FLAG_PREFER_V6 : 0 ) );
+	conn->opts.address = conn->address;
+	conn->opts.ssl = conn->ssl;
+	conn->opts.certChain = conn->ca;
+	conn->opts.rejectUnauthorized = conn->rejectUnauthorized;
+	// a default port is implied in Host:; anything else has to carry it, which
+	// the "host:port" address text already does.
+	conn->opts.hostname = ( conn->port == ( conn->ssl ? 443 : 80 ) ) ? conn->hostname : NULL;
+
+	conn->connection = OpenHttpConnection( conn->address, conn->ca, &conn->opts
+	                                     , httpConnOpened, httpConnResponse, httpConnClosed
+	                                     , (uintptr_t)conn );
+	if( !conn->connection ) {
+		(void)resolver->Reject( context
+			, Exception::Error( String::NewFromUtf8Literal( isolate, "Connect Error" ) ) );
+		conn->openResolver.Reset();
+		conn->_this.Reset();
+		return;
+	}
+	if( conn->pipeline != 1 )
+		SetHttpConnectionPipeline( conn->connection, conn->pipeline );
+}
+
+void httpConnectionObject::stream( const FunctionCallbackInfo<Value>& args ) {
+	openStream( args, false );
+}
+void httpConnectionObject::streams( const FunctionCallbackInfo<Value>& args ) {
+	openStream( args, true );
+}
+
+void httpConnectionObject::request( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	httpConnectionObject *conn = ObjectWrap::Unwrap<httpConnectionObject>( args.This() );
+	optionStrings *strings = getStrings( isolate );
+	Local<String> optName;
+	Local<Promise::Resolver> resolver = Promise::Resolver::New( context ).ToLocalChecked();
+
+	args.GetReturnValue().Set( resolver->GetPromise() );
+
+	if( conn->closed || !conn->connection ) {
+		(void)resolver->Reject( context
+			, Exception::Error( String::NewFromUtf8Literal( isolate, "Connection is closed" ) ) );
+		return;
+	}
+
+	struct httpConnRequest *req = NewPlus( struct httpConnRequest, 0 );
+	MemSet( req, 0, sizeof( *req ) );
+	req->conn = conn;
+	req->resolver.Reset( isolate, resolver );
+
+	if( args.Length() > 0 && args[0]->IsObject() ) {
+		Local<Object> options = args[0].As<Object>();
+		if( options->Has( context, optName = strings->pathString->Get( isolate ) ).ToChecked() ) {
+			String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+			req->path = StrDup( *value );
+		}
+		if( options->Has( context, optName = strings->methodString->Get( isolate ) ).ToChecked() ) {
+			String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+			req->method = StrDup( *value );
+		}
+		if( options->Has( context, optName = strings->versionString->Get( isolate ) ).ToChecked() ) {
+			String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+			req->httpVersion = StrDup( *value );
+		}
+		if( options->Has( context, optName = strings->agentString->Get( isolate ) ).ToChecked() ) {
+			String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+			req->agent = StrDup( *value );
+		}
+		if( options->Has( context, optName = strings->headerString->Get( isolate ) ).ToChecked() ) {
+			Local<Object> headers = GETV( options, optName ).As<Object>();
+			Local<Array> props = headers->GetPropertyNames( context ).ToLocalChecked();
+			for( uint32_t p = 0; p < props->Length(); p++ ) {
+				Local<Value> name = props->Get( context, p ).ToLocalChecked();
+				Local<Value> value = headers->Get( context, name ).ToLocalChecked();
+				String::Utf8Value localName( isolate, name );
+				TEXTCHAR *field = NULL;
+				if( value->IsString() ) {
+					String::Utf8Value localValue( isolate, value );
+					const size_t len = localName.length() + localValue.length() + 2;
+					field = NewArray( TEXTCHAR, len );
+					snprintf( field, len, "%s:%s", *localName, *localValue );
+				} else if( value->IsUndefined() ) {
+					const size_t len = localName.length() + 2;
+					field = NewArray( TEXTCHAR, len );
+					snprintf( field, len, "%s~", *localName );
+				}
+				if( field )
+					AddLink( &req->headers, field );
+			}
+		}
+		if( options->Has( context, optName = strings->contentString->Get( isolate ) ).ToChecked() ) {
+			Local<Value> content = GETV( options, optName );
+			if( content->IsArrayBuffer() ) {
+				Local<ArrayBuffer> ab = content.As<ArrayBuffer>();
+				// copied, not borrowed: the request outlives this call and JS may
+				// detach or collect the buffer before it reaches the wire.
+				size_t len = ab->GetBackingStore()->ByteLength();
+				req->content = NewArray( char, len );
+				MemCpy( req->content, ab->GetBackingStore()->Data(), len );
+				req->opts.contentLen = len;
+			} else {
+				String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );
+				req->content = StrDup( *value );
+				req->opts.contentLen = value.length();
+			}
+		}
+	}
+
+	req->url = SegCreateFromText( req->path ? req->path : "/" );
+	req->opts.url = req->url;
+	req->opts.address = conn->address;
+	req->opts.method = req->method ? req->method : "GET";
+	req->opts.headers = req->headers;
+	req->opts.httpVersion = req->httpVersion;
+	req->opts.agent = req->agent;
+	req->opts.content = req->content;
+	req->opts.ssl = conn->ssl;
+	req->opts.hostname = conn->opts.hostname;
+	req->opts.userData = (uintptr_t)req;
+
+	conn->outstanding++;
+	if( !SendHttpConnectionRequest( conn->connection, req->url, &req->opts ) ) {
+		conn->outstanding--;
+		(void)resolver->Reject( context
+			, Exception::Error( String::NewFromUtf8Literal( isolate, "Connection is closed" ) ) );
+		httpConnReleaseRequest( req );
+	}
+}
+
+void httpConnectionObject::close( const FunctionCallbackInfo<Value>& args ) {
+	httpConnectionObject *conn = ObjectWrap::Unwrap<httpConnectionObject>( args.This() );
+	if( conn->connection && !conn->closed )
+		CloseHttpConnection( conn->connection );
 }
 
 
