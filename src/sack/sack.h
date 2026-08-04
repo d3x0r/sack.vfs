@@ -7682,6 +7682,13 @@ enum SackNetworkErrorIdentifier {
 	// buffer without bound.  Reported so an application can react (rate limit, ban,
 	// firewall rule, ...) rather than just seeing a closed connection.
 	SACK_NETWORK_ERROR_WS_MESSAGE_TOO_BIG,
+	// a websocket peer sent a control frame (close/ping/pong) whose length field
+	// exceeds the RFC 6455 5.5 limit of 125 -- i.e. it used the 126/127 extended
+	// length encoding, which control frames may never do.  The frame cannot be
+	// parsed and a stream protocol cannot be resynchronised mid-frame, so the
+	// connection is dropped; reported so an application can react rather than
+	// just seeing a connection vanish.
+	SACK_NETWORK_ERROR_WS_BAD_CONTROL_FRAME,
 };
 /* Upper bound on a single (possibly fragmented) inbound websocket message.  The
    frame length is attacker-controlled - a 64-bit length frame can claim up to

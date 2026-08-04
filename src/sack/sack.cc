@@ -53826,6 +53826,13 @@ enum SackNetworkErrorIdentifier {
 	// buffer without bound.  Reported so an application can react (rate limit, ban,
 	// firewall rule, ...) rather than just seeing a closed connection.
 	SACK_NETWORK_ERROR_WS_MESSAGE_TOO_BIG,
+	// a websocket peer sent a control frame (close/ping/pong) whose length field
+	// exceeds the RFC 6455 5.5 limit of 125 -- i.e. it used the 126/127 extended
+	// length encoding, which control frames may never do.  The frame cannot be
+	// parsed and a stream protocol cannot be resynchronised mid-frame, so the
+	// connection is dropped; reported so an application can react rather than
+	// just seeing a connection vanish.
+	SACK_NETWORK_ERROR_WS_BAD_CONTROL_FRAME,
 };
 /* Upper bound on a single (possibly fragmented) inbound websocket message.  The
    frame length is attacker-controlled - a 64-bit length frame can claim up to
@@ -68177,10 +68184,31 @@ void ProcessWebSockProtocol( WebSocketInputState websock, const uint8_t* msg, si
 			{
 				if( websock->frame_length > 125 )
 				{
-					lprintf( "Bad length of control packet: %" _size_f, length );
-					// RemoveClient( websock->pc );
+					// 126/127 in the 7-bit field are the extended-length markers, which a
+					// control frame may never use, so this frame is unparseable.  Dropping
+					// the bytes and hoping the next packet resynchronises cannot work on a
+					// stream protocol -- there is no frame boundary to find.  Report the
+					// error and drop the connection instead.
+					lprintf( "Bad control packet: length field %" _size_f " exceeds the 125 byte limit"
+					         " (buffer held %" _size_f " bytes); dropping connection"
+					       , (size_t)websock->frame_length, (size_t)length );
+					// psv_open, NOT psv_on: the error callback is registered as "this gets
+					// psv returned from open" (websocket_module.cc ~2997), same as on_close
+					// which passes psv_open at the bottom of this function.  Passing psv_on
+					// yields a bogus object whose eventQueue pointer lands in unrelated
+					// memory; EnqueLinkEx then spins on a lock word that never reads zero and
+					// the peer thread wedges forever holding the client read lock, taking
+					// every other socket it owns deaf with it.
+					if( websock->on_error )
+						websock->on_error( websock->pc, websock->psv_open
+						                 , SACK_NETWORK_ERROR_WS_BAD_CONTROL_FRAME );
+					else if( websock->pc )
+						TriggerNetworkErrorCallback( websock->pc, SACK_NETWORK_ERROR_WS_BAD_CONTROL_FRAME );
 					ResetInputState( websock );
-					// drop the rest of the data, maybe the beginning of the next packet will make us happy
+					if( websock->pc )
+						RemoveClient( websock->pc );
+					else if( websock->do_close )
+						websock->do_close( websock->psvCloser );
 					return;
 				}
 			}
@@ -68276,8 +68304,11 @@ void ProcessWebSockProtocol( WebSocketInputState websock, const uint8_t* msg, si
 					lprintf( "websocket message of %" _size_f " bytes exceeds the %" _size_f " byte limit; refusing"
 					       , (size_t)( websock->fragment_collection_length + websock->frame_length )
 					       , (size_t)WEBSOCKET_MAX_MESSAGE_SIZE );
+					// psv_open, not psv_on -- see the note at the control-frame check above.
+					// This site had the same defect and would wedge a peer thread instead of
+					// closing the socket if the size limit were ever hit.
 					if( websock->on_error )
-						websock->on_error( websock->pc, websock->psv_on
+						websock->on_error( websock->pc, websock->psv_open
 						                 , SACK_NETWORK_ERROR_WS_MESSAGE_TOO_BIG );
 					else if( websock->pc )
 						TriggerNetworkErrorCallback( websock->pc, SACK_NETWORK_ERROR_WS_MESSAGE_TOO_BIG );
@@ -68405,16 +68436,43 @@ void ProcessWebSockProtocol( WebSocketInputState websock, const uint8_t* msg, si
 							//buf[websock->frame_length - 2] = 0;
 							code = ((int)websock->fragment_collection[0] << 8) + websock->fragment_collection[1];
 						}
-						else if( websock->frame_length ) {
+						else if( websock->frame_length == 2 ) {
+							// exactly the 2-byte status code and no reason -- the ordinary
+							// close( code ) case.  This MUST decode the code; it shares the
+							// branch with frame_length==1 only by accident of `else if( len )`.
 							code = ((int)websock->fragment_collection[0] << 8) + websock->fragment_collection[1];
 							buf[0] = 0;
 						}
+						else if( websock->frame_length ) {
+							// frame_length == 1: a body that cannot carry the 2-byte status
+							// code, so the frame is malformed.  Reading fragment_collection[1]
+							// here was a 1-byte overread synthesising a code out of 1.5 bytes.
+							// Report "no code" instead.  (RFC 6455 7.4.1 would treat this as a
+							// protocol error, 1002 -- available if strictness is ever wanted.)
+							code = 0;
+							buf[0] = 0;
+						}
 						else {
-							code = 1000;
+							// No body at all means no status code: 5.5.1 puts the code INSIDE
+							// the body, so absent body == absent code.  0 is the internal
+							// "none" sentinel; the JS binding maps it to 1005 "No Status Rcvd".
+							// Reporting 1000 here was a fabrication -- it told the local
+							// handler "normal closure, explicitly stated" while the echo on the
+							// wire correctly said nothing at all.  Two stories, one close.
+							code = 0;
 							buf[0] = 0;
 						}
 						websock->close_code = code;
-						websock->close_reason = DupCStrLen( buf, websock->frame_length - 2 );
+						// frame_length is size_t: a Close frame with an EMPTY payload gives
+						// 0 - 2 = SIZE_MAX-1 here (and 1 - 2 = SIZE_MAX), which either
+						// allocates absurdly or overflows length+1 to a tiny block and then
+						// copies enormously.  The corruption surfaces at the NEXT allocation
+						// -- the StrDup(reason) inside the on_close handler below.
+						// An empty Close body is legal (RFC 6455 5.5.1: the frame MAY have a
+						// body), and is what WebSocket.close() with no code sends, so any
+						// conformant peer can trigger it with one packet.  Browsers always
+						// send a 2-byte code, which is why this was never seen in production.
+						websock->close_reason = DupCStrLen( buf, websock->frame_length > 2 ? websock->frame_length - 2 : 0 );
 						websock->on_close( (PCLIENT)websock->psvSender, websock->psv_open, code, buf );
 						websock->on_close = NULL;
 					}
