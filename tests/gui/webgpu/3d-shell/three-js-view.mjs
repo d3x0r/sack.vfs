@@ -182,11 +182,12 @@ let controlForm = null;
 
 export class Viewer extends Events {
 	controlNatural = null;
+	tick = null;
 	constructor( tick ) {
 		super()
 		const context= ctx;
 		const renderer = r;
-
+		this.tick = tick;
 		init(context, renderer, device, this).then( ()=>{
 			console.log( '------------' );
 			animCall( performance.now() );
@@ -342,7 +343,7 @@ function animate( cb, tick ) {
 	var delta = clock.getDelta();
 
 	Viewer.on( "update", clock );
-        console.log( "tick update controls:", tick, delta );
+   console.log( "tick update controls:", tick, delta );
 	this.controlNatural.update( delta )
 	render();
 

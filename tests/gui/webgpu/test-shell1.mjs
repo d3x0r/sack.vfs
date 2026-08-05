@@ -4,6 +4,7 @@ import {lnQuat} from "./3d-shell/lnQuatSq.mjs"
 
 const viewer = new Viewer( tickScene );
 
+viewer.on( "update", tickScene );
 // first object added is also the camera ... gets controls attached to it.
 const	myMotion = Viewer.addModelToScene2( new THREE.Object3D() );
 	myMotion.dipole = new lnQuat( 0, 0, 0, 1 ).update();
@@ -11,7 +12,7 @@ const	myMotion = Viewer.addModelToScene2( new THREE.Object3D() );
 	myMotion.position.set( 3, 0, 0 );
 
 
-        const geometry = new THREE.BoxGeometry(1, 1, 1); // Width, Height, Depth
+        const geometry = new THREE.BoxGeometry(100, 100, 100); // Width, Height, Depth
         const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: false }); 
         const cube = new THREE.Mesh(geometry, material);
         
@@ -19,6 +20,7 @@ const	myMotion = Viewer.addModelToScene2( new THREE.Object3D() );
         Viewer.addModelToScene2(cube);
 
 function tickScene( tick ) {
+		console.log( "ticked? render?" );
 	            cube.rotation.x += 0.01;
             cube.rotation.y += 0.01;
 	// this should update objects.

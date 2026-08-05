@@ -48,13 +48,15 @@ export function NaturalCamera( object, domElement ) {
 
 	this.enabled = false;
 
-
+	let mode = 0;
 
 	// internals
 	this.moveSpeed = 10 * 12 * 0.0254;
 	this.fastMove = false;
 	const scope = this;
 	
+        const renderer = domElement;
+        
 	// 2d scaled screen point - prior position
 	this.rotateStart = new THREE.Vector2();
 	// 2d scaled screen point - current
@@ -238,7 +240,7 @@ export function NaturalCamera( object, domElement ) {
 					mode = 0;
 					break;
 				case 0: // is unlocked, want lock.
-					if( renderer.domElement ) {
+					if( renderer && renderer.domElement ) {
 						renderer.domElement.requestPointerLock(); 
 					}
 					mode = 1;
@@ -365,7 +367,7 @@ export function NaturalCamera( object, domElement ) {
 			if( keyEvent )
 				keyEvent( event, false );
 			break;
-		case scope.keys.SHIFT:
+		case keys.SHIFT:
 			if( self.fastMove ) {
 				self.fastMove = false;
 				scope.motion.speed.multiplyScalar( 1/10 );
