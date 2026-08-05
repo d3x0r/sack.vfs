@@ -89,6 +89,8 @@ if( certChain )
 	if( !process.env.SSL_HOST ) {
 		process.env.SSL_HOST = sack.TLS.hosts( certChain ).join("~");
 		console.log( "Host not specified, using certificate hosts:", process.env.SSL_HOST );
+	} else {
+		console.log( "host not checked?" );
 	}
 //console.log( "certChain loaded?", sack.TLS.hosts( certChain ) );
 const certKey = read( getCertKey() );
@@ -137,16 +139,23 @@ function logRequests() {
 }
 
 
-
-
 //exports.getRequestHandler = getRequestHandler;
 export function getRequestHandler( serverOpts ) {
 	serverOpts = serverOpts || {};
-	const resourcePath = serverOpts.resourcePath || ".";
-	const commonPath = serverOpts?.commonPath || ".";
-	const npm_path = serverOpts.npmPath || ".";
-
+	const resourcePath = serverOpts.resourcePath || process.env.RESOURCE_PATH || ".";
+	const commonPath = serverOpts?.commonPath || process.env.COMMON_PATH || ".";
+	const npm_path = serverOpts.npmPath || process.env.NPM_PATH || ".";
+	//console.log( "basic handler:", resourcePath, npm_path );
 	return function( req, res ) {
+
+		if( typeof req.url === "undefined" ) {
+			console.log( "Bad request:", req );
+			return false;
+		}
+		if( typeof req.url === "null" ){
+			console.log( "Bad request:", req );
+			return false;
+		}
 		/*
 			this is the request remote address if required....
 		const ip = ( req.headers && req.headers['x-forwarded-for'] ) ||
@@ -200,10 +209,12 @@ export function getRequestHandler( serverOpts ) {
 						res.end( fc );
 					}
 	   
-					if( requests.length !== 0 )
-						clearTimeout( reqTimeout );
-					reqTimeout = setTimeout( logRequests, 500 );
-					requests.push( req.url + "("+filePath+")" );
+					if( this.logRequests ) {
+						if( requests.length !== 0 )
+							clearTimeout( reqTimeout );
+						reqTimeout = setTimeout( logRequests, 500 );
+						requests.push( req.url + "("+filePath+")" );
+					}
 				} else {
 					console.log( 'file exists, but reading it returned nothing?', filePath, fc );
 					return false;
@@ -216,15 +227,19 @@ export function getRequestHandler( serverOpts ) {
 			const foundModule = findModule( unescape(req.url), req, res );
 			if( foundModule ) {
 				if( "object" === typeof  foundModule ) {
-				const headers = { 'Content-Type': foundModule.contentType, 'Access-Control-Allow-Origin' : req.connection.headers.Origin };
-				if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
-				res.writeHead(200, headers );
-				res.end( foundModule.content );
-
-				if( requests.length !== 0 )
-					clearTimeout( reqTimeout );
-				reqTimeout = setTimeout( logRequests, 500 );
-				requests.push( req.url );
+					const headers = { 'Content-Type': foundModule.contentType
+							, 'Access-Control-Allow-Origin' : req.connection.headers.Origin
+							, "Permissions-Policy": "identity-credentials-get" };
+					if( contentEncoding ) headers['Content-Encoding']=contentEncoding;
+					res.writeHead(200, headers );
+					res.end( foundModule.content );
+				   
+					if( this.logRequests ) {
+						if( requests.length !== 0 )
+							clearTimeout( reqTimeout );
+						reqTimeout = setTimeout( logRequests, 500 );
+						requests.push( req.url );
+					}
 				}
 				return true;
 			}
@@ -304,6 +319,7 @@ class Server extends Events {
 	resourcePath = ".";
 	npmPath = ".";
 	app = null;
+	logRequests = true; // default mode was true, but now can disable it.
 	constructor( server, serverOpts, reqHandler ) {
 		super();
 		this.reqHandler = reqHandler;
@@ -334,10 +350,12 @@ class Server extends Events {
 				}
 			}
 			if( !this.reqHandler( req,res ) ) {
-				if( requests.length !== 0 )
-					clearTimeout( reqTimeout );
-				reqTimeout = setTimeout( logRequests, 100 );
-				requests.push( "Failed request: " + req.url + " as " + lastFilePath );
+				if( this.logRequests ) {
+					if( requests.length !== 0 )
+						clearTimeout( reqTimeout );
+					reqTimeout = setTimeout( logRequests, 100 );
+					requests.push( "Failed request: " + req.url + " as " + lastFilePath );
+				}
 				res.writeHead( 404, {'Access-Control-Allow-Origin' : req.connection.headers.Origin } );
 				res.end( "<HTML><HEAD><title>404</title></HEAD><BODY>404<br>"+req.url+"</BODY></HTML>");
 			}
@@ -355,7 +373,6 @@ export function openServer( opts, cbAccept, cbConnect )
 	let handlers = [];
 	const serverOpts = opts || {};
 	if( !("port" in serverOpts )) serverOpts.port = Number(process.env.PORT)||(process.argv.length > 2?Number(process.argv[2]):0) || 8080;
-	if( !("resourcePath" in serverOpts ) ) serverOpts.resourcePath = "."
 	if( certChain ) 
 	{
 		if( !serverOpts.hosts ) serverOpts.hosts = [];
@@ -377,6 +394,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	server.onrequest = srvr.handleEvent.bind( srvr );
 
 	server.on( "lowError",function (error, address, buffer) {
+        	console.log( "Low error:", error, address );
 		if( error !== 1 && error != 6 ) 
 			if( error === 7 ) {
 				console.log( "Requested host not found:", address.remoteAddress, "requested:", buffer );
@@ -384,8 +402,12 @@ export function openServer( opts, cbAccept, cbConnect )
 			}
 			else console.log( "Low Error with:", error, address, buffer  );
 			//if( buffer )
-		//	buffer = new TextDecoder().decode( buffer );
-		server.disableSSL(); // resume with non SSL
+		//buffer = new TextDecoder().decode( buffer );
+		if( error === 6 ) {
+			console.log( "Received unsupported HTTP command (not GET,PUT,POST)")
+		}
+		else if( error === 1 )
+			server.disableSSL(); // resume with non SSL
 	} );
 
 	server.onaccept = function ( ws ) {

@@ -77,9 +77,9 @@ public:
 private:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void getPorts( Local<Name> property, const PropertyCallbackInfo<Value>& info );
-	static void getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args );
+	//static void getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args );
 	static void getRTS( const v8::FunctionCallbackInfo<Value>& args );
-	static void setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args );
+	//static void setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args );
 	static void setRTS( const v8::FunctionCallbackInfo<Value>& args );
 	static void onRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeCom( const v8::FunctionCallbackInfo<Value>& args );
@@ -158,32 +158,12 @@ void ComObject::Init( Local<Object> exports ) {
 		NODE_SET_PROTOTYPE_METHOD( comTemplate, "close", closeCom );
 	   NODE_SET_PROTOTYPE_METHOD( comTemplate, "reset", resetCom );
 
-#if ( NODE_MAJOR_VERSION >= 22 )
-		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" )
-			, ComObject::getRTS2
-			, ComObject::setRTS2
-			, Local<Value>()
-			, PropertyAttribute::None // readonly blocks setter from happening.
-			, SideEffectType::kHasNoSideEffect
-			, SideEffectType::kHasSideEffect
-		);
-#elif ( NODE_MAJOR_VERSION >= 18 )
-		comTemplate->PrototypeTemplate()->SetNativeDataProperty( String::NewFromUtf8Literal( isolate, "rts" )
-			, ComObject::getRTS2
-			, ComObject::setRTS2
-			, Local<Value>()
-			, PropertyAttribute::ReadOnly
-			, AccessControl::DEFAULT
-			, SideEffectType::kHasNoSideEffect
-			, SideEffectType::kHasSideEffect
-		);
-#else
-		
+	   // SetNativeDataProperty is not an accessor...
 		comTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "rts" )
-			, FunctionTemplate::New( isolate, ComObject::getRTS2 )
-			, FunctionTemplate::New( isolate, ComObject::setRTS2 )
+			, FunctionTemplate::New( isolate, ComObject::getRTS )
+			, FunctionTemplate::New( isolate, ComObject::setRTS )
 		);
-#endif
+
 		Local<Function> ComFunc = comTemplate->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
 		/*
 		ComFunc->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "ports" )
@@ -238,37 +218,31 @@ void ComObject::Init( Local<Object> exports ) {
 }
 
 
-void ComObject::getRTS2( Local<Name> property, const PropertyCallbackInfo<Value>& args ) {
-	//Isolate* isolate = args.GetIsolate();
-	ComObject* obj = ObjectWrap::Unwrap<ComObject>( THIS( args ) );
-	if( obj )
-		args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
-
-}
-
-
 void ComObject::getRTS( const FunctionCallbackInfo<Value>& args ) {
-	//Isolate* isolate = args.GetIsolate();
-	ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
+	Local<Object> self = args.This();
+	if (self->InternalFieldCount() == 0) {
+		//lprintf("not a com object itself (safe catch)");
+		args.GetReturnValue().Set(Undefined(args.GetIsolate()));
+		return;
+	}
+	ComObject* obj = ObjectWrap::Unwrap<ComObject>(self);
 	if( obj )
 		args.GetReturnValue().Set( Boolean::New( args.GetIsolate(), (int)obj->rts ) );
 
 }
-
-void ComObject::setRTS2( Local<Name> property, Local<Value> value, const PropertyCallbackInfo<void>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	ComObject* obj = ObjectWrap::Unwrap<ComObject>( THIS( args ) );
-	if( obj )
-		SetCommRTS( obj->handle, obj->rts = value.As<Boolean>()->BooleanValue( isolate ) );
-}
-
 
 void ComObject::setRTS( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
+	Local<Object> self = args.This();
+	if (self->InternalFieldCount() == 0) {
+		//lprintf("not a com object itself (safe catch)");
+		args.GetReturnValue().Set(Undefined(isolate));
+		return;
+	}
 	if( args.Length() > 0 ) {
 		ComObject* obj = ObjectWrap::Unwrap<ComObject>( args.This() );
 		if( obj )
-			SetCommRTS( obj->handle, obj->rts = args[0].As<Boolean>()->BooleanValue( isolate ) );
+			SetCommRTS( obj->handle, obj->rts = args[0]->BooleanValue( isolate ) );
 	}
 }
 
@@ -314,7 +288,6 @@ static void asyncmsg__( Isolate *isolate, Local<Context> context, ComObject * my
 
 				Local<Value> argv[] = { ui };
 				Local<Function> cb = Local<Function>::New(isolate, myself->readCallback[0]);
-				//lprintf( "callback ... %p", myself );
 				// using obj->jsThis  fails. here...
 				{
 					MaybeLocal<Value> result = cb->Call(isolate->GetCurrentContext(), isolate->GetCurrentContext()->Global(), 1, argv);
@@ -421,7 +394,6 @@ void ComObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 
 static void CPROC dispatchRead( uintptr_t psv, int nCommId, POINTER buffer, int len ) {
 	struct com_interface_msgbuf *msgbuf = NewPlus( struct com_interface_msgbuf, len );
-	//lprintf( "got read: %p %d", buffer, len );
 	msgbuf->op = MSG_OP_DATA;
 	MemCpy( msgbuf->buf, buffer, len );
 	msgbuf->buflen = len;

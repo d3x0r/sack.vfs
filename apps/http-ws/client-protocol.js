@@ -2,6 +2,24 @@
 import {Events} from "../events/events.mjs"
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 
+// Heartbeat ops - ordinary data messages, not websocket control frames, because
+// a browser cannot see control-frame ping/pong at all.  The server drives; this
+// side answers, and separately watches for the ping it was promised - that
+// watchdog is what lets a browser notice a server that has gone away without
+// closing the socket.  Must match the values in server-protocol.mjs.
+// Sent as a bare string, not JSOX - skips the parser for heartbeat traffic.
+// NOTE 🏓 is U+1F3D3, above the BMP, so it is a surrogate PAIR: "🏓".length === 2
+// and data[0] is only the high surrogate.  ⚪ is U+26AA and IS in the BMP, so it
+// is a single code unit - that asymmetry makes an index test look half-working.
+// Compare code points, and use [...data] when indexing by character.
+const PING = "🏓"; // server -> client
+const PONG = "⚪"; // client -> server
+const PING_CP = PING.codePointAt( 0 );
+const PONG_CP = PONG.codePointAt( 0 );
+// the server biases the cadence into the astral planes so it can never be a lone
+// surrogate on the wire (which would come back as U+FFFD); undo that here
+const HB_BIAS = 0x10000;
+
 
 export class Protocol extends Events {
 	static debug = false;
@@ -54,6 +72,7 @@ export class Protocol extends Events {
 
 	static onclose( evt ){
 		const Protocol = Object.getPrototypeOf( this ).constructor;
+		Protocol.clearHeartbeat( this );
 		Protocol.debug && console.log( "close?", this, evt );
 		const event = this.on( "close", [evt.code, evt.reason] );
 		Protocol.ws = null;
@@ -63,10 +82,47 @@ export class Protocol extends Events {
 
 	static onmessage( evt ) {
 		Protocol.debug && console.log( "got:", this, evt );
+		const cp = evt.data.codePointAt( 0 );
+		if( cp === PING_CP ) {
+			// answer, then re-arm; the cadence comes from the server so this side
+			// needs no configuration of its own.  Not dispatched to the app.
+			this.send( PONG );
+			// spread to index by character - the ping and both payload values are
+			// surrogate pairs, so data[1]/data[2] would land mid-pair.  Only done
+			// here, where the string is three characters.
+			const parts = [...evt.data];
+			Protocol.armHeartbeat( this, parts[1].codePointAt(0) - HB_BIAS
+			                           , parts[2].codePointAt(0) - HB_BIAS );
+			return;
+		}
+		if( cp === PONG_CP ) return; // server answering our ping; nothing to do
+
 		const msg = JSOX.parse( evt.data );
 		if( !this.on( msg.op, msg ) ){
 			Protocol.debug && console.log( "Unhandled message:", msg );
 		}
+	}
+
+	/**
+	 * (Re)start the watchdog that expects the next server ping.  Only ever armed by
+	 * receiving a ping, so a server that doesn't send them never trips this and
+	 * older servers keep working unchanged.
+	 */
+	static armHeartbeat( this_, interval, timeout ) {
+		Protocol.clearHeartbeat( this_ );
+		const budget = ( interval || 25000 ) + ( timeout || 20000 );
+		this_.hbTimer = setTimeout( ()=>{
+			this_.hbTimer = null;
+			Protocol.debug && console.log( "server missed its heartbeat; closing" );
+			// close rather than pretend we are connected - onclose then runs the
+			// existing reconnect path.
+			const ws = this_.ready ? Object.getPrototypeOf( this_ ).constructor.ws : null;
+			if( ws ) ws.close( 1001, "no heartbeat from server" );
+		}, budget );
+	}
+
+	static clearHeartbeat( this_ ) {
+		if( this_.hbTimer ) { clearTimeout( this_.hbTimer ); this_.hbTimer = null; }
 	}
 
 	send( msg ) {

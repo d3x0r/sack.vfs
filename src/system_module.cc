@@ -178,45 +178,13 @@ static void dumpMemory( const v8::FunctionCallbackInfo<Value>& args ) {
 }
 
 CRITICALSECTION cs;
-volatile int xx[32];
+//volatile int xx[32];
 
 
 namespace sack {
 	namespace timers {
 		LOGICAL LeaveCriticalSecNoWakeEx( PCRITICALSECTION pcs DBG_PASS );
 	}
-}
-static volatile int stopThread = 0;
-static uintptr_t  ThreadWrapper2( PTHREAD pThread ){
-	int id = (int)GetThreadParam( pThread );
-	while( !stopThread ) {
-		POINTER p = Allocate( 100 );
-		xx[(int)id]++;
-		/*
-		if( EnterCriticalSecNoWaitEx( &cs, NULL DBG_SRC ) > 0 ) {
-			LeaveCriticalSecNoWakeEx( &cs DBG_SRC );
-		} else Relinquish();
-		*/
-		Deallocate( POINTER, p );
-	}
-	xx[id] = -xx[id];
-	return 0;
-}
-#define TEST_THREADS 22
-static void testCritSec( const v8::FunctionCallbackInfo<Value>& args ) {
-	int n;
-	InitializeCriticalSec( &cs );
-	for( n = 0; n < TEST_THREADS; n++ )
-	{
-		ThreadTo( ThreadWrapper2, n );
-	}
-	Sleep( 5000 );
-	stopThread = 1;
-	for( n = 0; n < TEST_THREADS; n++ )
-		if( xx[n] > 0 ) 
-			n = -1;
-	for( n = 0; n < TEST_THREADS; n++ )
-		printf( "%d = %d\n", n, -xx[n] );
 }
 
 #ifdef _WIN32
@@ -555,7 +523,6 @@ void SystemInit( Isolate* isolate, Local<Object> exports )
   SET_READONLY_METHOD( systemInterface, "dumpRegisteredNames", dumpNames );
   SET_READONLY_METHOD( systemInterface, "reboot", reboot );
   SET_READONLY_METHOD( systemInterface, "dumpMemory", dumpMemory );
-  SET_READONLY_METHOD( systemInterface, "testCritSec", testCritSec );
   // used for name of event 'enableExitSignal'
   // and to somehow distinguish between 'node' and 'node'
   //NODE_SET_METHOD( systemInterface, "setProgramName", setProgramName );

@@ -421,7 +421,7 @@ void setupNotifications( void ) {
 
 static void wifi_asyncmsg__( Isolate *isolate, Local<Context> context, struct eventState * myself ) {
 	struct wifi_event_message *msg;
-	while( msg = (struct wifi_event_message *)DequeLink( &myself->eventQueue ) ) {
+	while( ( msg = (struct wifi_event_message *)DequeLink( &myself->eventQueue ) ) ) {
 		Local<Object> event = Object::New( isolate );
 		struct device *pDev;
 

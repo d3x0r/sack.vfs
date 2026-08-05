@@ -31,6 +31,9 @@ struct optionStrings {
 	Eternal<String>* detachedString;
 	Eternal<String>* noInheritStdio;
 	Eternal<String>* programName;
+	Eternal<String>* minimizedString;
+	Eternal<String>* maximizedString;
+
 #if _WIN32
 	Eternal<String>* adminString;
 	Eternal<String>* moveToString;
@@ -130,6 +133,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->hiddenString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "hidden" ) );
 		check->noKillString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noKill" ) );
 		check->noWaitString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noWait" ) );
+		check->minimizedString = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "minimized"));
+		check->maximizedString = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "maximized"));
 		check->detachedString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "detached" ) );
 		check->noInheritStdio =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "noInheritStdio" ) );
 		check->programName = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "programName"));
@@ -186,11 +191,11 @@ TaskObject::~TaskObject() {
 	struct taskObjectOutputItem* outmsg;
 	if( programName )
 		Deallocate( char*, programName );
-	while( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output ) ) {
+	while( ( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output ) ) ) {
 		Deallocate( struct taskObjectOutputItem*, outmsg );
 	}
 
-	while( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output2 ) )
+	while( ( outmsg = (struct taskObjectOutputItem*)DequeLink( &this->output2 ) ) )
 		Deallocate( struct taskObjectOutputItem*, outmsg );
 	for( int i = 0; i < nArg; i++ ) {
 		if( argArray[i] )
@@ -639,6 +644,8 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			bool input = false;
 			bool input2 = false;
 			bool hidden = false;
+			bool minimized = false;
+			bool maximized = false;
 			bool firstArgIsArg = true;
 			bool newGroup = false;
 			bool newConsole = false;
@@ -677,6 +684,16 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( opts->Has( context, optName = strings->hiddenString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					hidden = GETV( opts, optName )->TOBOOL( isolate );
+				}
+			}
+			if (opts->Has(context, optName = strings->minimizedString->Get(isolate)).ToChecked()) {
+				if (GETV(opts, optName)->IsBoolean()) {
+					minimized = GETV(opts, optName)->TOBOOL(isolate);
+				}
+			}
+			if (opts->Has(context, optName = strings->maximizedString->Get(isolate)).ToChecked()) {
+				if (GETV(opts, optName)->IsBoolean()) {
+					maximized = GETV(opts, optName)->TOBOOL(isolate);
 				}
 			}
 			if( opts->Has( context, optName = strings->noKillString->Get( isolate ) ).ToChecked() ) {
@@ -875,12 +892,13 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, newTask->argArray
 				, ( firstArgIsArg? LPP_OPTION_FIRST_ARG_IS_ARG:0 )
 				| ( hidden?0:LPP_OPTION_DO_NOT_HIDE)
+				| (minimized ? 0 : LPP_OPTION_MINIMIZED)
+				| (maximized ? 0 : LPP_OPTION_MAXIMIZED)
 				| (newGroup? LPP_OPTION_NEW_GROUP : 0)
 				| (newConsole ? LPP_OPTION_NEW_CONSOLE : 0)
 				| (suspend? LPP_OPTION_SUSPEND : 0)
 				| ( useBreak? LPP_OPTION_USE_CONTROL_BREAK :0 )
 				| ( noWindow ? LPP_OPTION_NO_WINDOW : 0 )
-				| ( hidden ? 0 : LPP_OPTION_DO_NOT_HIDE )
 				| ( useSignal ? LPP_OPTION_USE_SIGNAL:0 )
 				| ( detach ? LPP_OPTION_DETACH : 0 )
 				| ( asAdmin ? LPP_OPTION_ELEVATE : 0 )
@@ -1950,16 +1968,17 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 				DWORD dwError = GetLastError();
 				lprintf( "Failed to attachConsole %d %d %d", a, dwError, id );
 			}
-			if( code == 0 )
+			if( code == 0 ) {
 				if( !GenerateConsoleCtrlEvent( CTRL_C_EVENT, id ) ) {
 					DWORD error = GetLastError();
 					lprintf( "Failed to send CTRL_C_EVENT %d %d", id, error );
 				}// else lprintf( "Success sending ctrl C?" );
-			else
+			} else {
 				if( !GenerateConsoleCtrlEvent( CTRL_BREAK_EVENT, id ) ) {
 					DWORD error = GetLastError();
 					lprintf( "Failed to send CTRL_BREAK_EVENT %d %d", id, error );
 				}// else lprintf( "Success sending ctrl break?" );
+			}
 		}
 	}
 #else

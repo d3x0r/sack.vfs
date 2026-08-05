@@ -221,7 +221,7 @@ static void _throwError( struct info_params *params, const char *message ) {
 	int err;
 	VarTextAddData( pvt, message, VARTEXT_ADD_DATA_NULTERM );
 	VarTextAddData( pvt, "\n", 1 );
-	while( err = ERR_get_error() ) {
+	while( ( err = ERR_get_error() ) ) {
 		ERR_error_string_n( err, buf, 256 );
 		//lprintf( "...%s", buf );
 		VarTextAddData( pvt, buf, VARTEXT_ADD_DATA_NULTERM );
@@ -1168,7 +1168,7 @@ static void SignReq( struct info_params *params )
 			// copy request extensions to signed output.
 			STACK_OF( X509_EXTENSION ) *reqExts = X509_REQ_get_extensions( req );
 			X509_EXTENSION *reqExt;
-			while( reqExt = sk_X509_EXTENSION_pop(reqExts) )
+			while( ( reqExt = sk_X509_EXTENSION_pop(reqExts) ) )
 				X509_add_ext( cert, reqExt, -1 );
 		}
 		{

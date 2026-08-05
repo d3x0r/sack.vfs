@@ -175,11 +175,12 @@ endif()
 option(LIBSSH2_DISABLE_INSTALL "Disable installation targets" OFF)
 if(NOT LIBSSH2_DISABLE_INSTALL)
   include(GNUInstallDirs)
-  install(
-    FILES
-      COPYING NEWS README RELEASE-NOTES
-      docs/AUTHORS docs/BINDINGS.md docs/HACKING.md
-    DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+#  install(
+#    FILES
+#      COPYING NEWS README RELEASE-NOTES
+#      docs/AUTHORS docs/BINDINGS.md docs/HACKING.md
+#    DESTINATION ${CMAKE_INSTALL_DOCDIR})
 endif()
 
 include(PickyWarnings)
@@ -522,7 +523,7 @@ if(CRYPTO_BACKEND STREQUAL "WinCNG" OR NOT CRYPTO_BACKEND)
 endif()
 
 # default fallback
-if( NOT CRYPTO_BACKEND )
+if( NOT CRYPTO_BACKEND OR CRYPTO_BACKEND STREQUAL "LibreSSL" )
     set(CRYPTO_BACKEND "LibreSSL")
     set(CRYPTO_BACKEND_DEFINE "LIBSSH2_OPENSSL")
     set(CRYPTO_BACKEND_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../libressl/4.1.0/include)

@@ -11,6 +11,12 @@ export const config = {
 
 let pendingDepends = [];
 
+// lines of output retained per task; a long lived service would otherwise grow
+// #log without bound.  Override per task with `maxLogLines` in the task config.
+const DEFAULT_MAX_LOG_LINES = 5000;
+// trim in chunks - splicing the front on every line is O(n) per line.
+const LOG_TRIM_SLACK = 1024;
+
 export class Task {
 	started = new Date(0);
 	starting = false;
@@ -24,6 +30,7 @@ export class Task {
 
 	#autoEndBatch = false;
 	#log = [];
+	#logBase = 0; // lines discarded off the front of #log; `at` stays absolute
 	#task = null; // task definition
 	#run = null;  // running service instance handle
 	#exitCode = null; // set before clearing #run
@@ -110,13 +117,22 @@ export class Task {
 
 	clickWindow() {
 		let x, y;
-		if( "display" in this.#task.moveTo || "monitor" in this.#task.moveTo) {					
+		if( "connector" in this.#task.moveTo || "display" in this.#task.moveTo || "monitor" in this.#task.moveTo) {
 			const displays = sack.Task.getDisplays();
 			let dev;
+			// click on the connector, display or monitor the task is supposed to be at
+			// otherwise use the expected position of the window to find where to click.
 			for( let device of displays.device ) {
-				if( device.display === this.#task.moveTo.display ) dev = device;
+				if( device.connector === this.#task.moveTo.connector ) {
+					dev = device;
+				}
+				else if( device.display === this.#task.moveTo.display ) {
+					dev = device;
+				}
+				// fixup monitor links, join records.
 				for( let monitor of displays.monitor ) {
 					if( monitor.display === device.display ) {
+						device.monitorName = device.monitor;
 						device.monitor = monitor;
 						monitor.device = device;
 						break;
@@ -186,18 +202,23 @@ export class Task {
 	}
 
 	get log() {
+		const total = this.#logBase + this.#log.length;
 		if( this.#log.length > 20 )
-			return { at:this.#log.length-20, log:this.#log.slice( this.#log.length - 20, this.#log.length ) };
-		else return { at:0, log: this.#log };
+			return { at:total-20, log:this.#log.slice( this.#log.length - 20 ) };
+		else return { at:this.#logBase, log: this.#log.slice() };
 	}
 
+	// `from` is an absolute line index - the oldest line the client holds.
+	// Returns the 20 lines before it, clamped to what is still retained.
+	// `at:0` tells the client to stop asking; `truncated` says why.
 	getLog( from ) {
 		//console.log( "reading log from:", from, from - 20, from  );
-		if( from > 20 )
-			return { at:from-20, log:this.#log.slice( from - 20, from  ) };
-		else {
-			return { at:0, log:this.#log.slice( 0, from ) };
-		}
+		const start = Math.max( from - 20, this.#logBase );
+		const end   = Math.max( from, this.#logBase );
+		const atFloor = start <= this.#logBase && this.#logBase > 0;
+		return { at: atFloor?0:start
+		       , truncated: atFloor
+		       , log: this.#log.slice( start - this.#logBase, end - this.#logBase ) };
 	}
 
 	set ws( val) {
@@ -232,6 +253,12 @@ export class Task {
 			console.log( "Already started:", this.#task.name );
 			return;
 		}
+		// these track the state of a single run instance; a new #run gets a
+		// clean slate, otherwise a forced kill in one run leaves #killed set
+		// and timeoutTaskStop() will never escalate to kill() again.
+		this.#killed = false;
+		this.stopping = false;
+		this.failed = false;
 		if( this.#task.work && !disk.isDir( this.#task.work ) ){
 			console.log( "Task not available (working path doesn't exist", this.#task.work );
 			this.running = false;
@@ -274,6 +301,9 @@ export class Task {
 		  env,
 		  input: log,
 		  errorInput: log2,
+		hidden: this.#task.hidden,
+		minimized: this.#task.minimized,
+		maximized: this.#task.maximized,
 			newGroup: this.#task.newGroup,
 			noKill: this.#task.noKill,
 			noWait: this.#task.noWait,
@@ -347,9 +377,12 @@ export class Task {
 			}
 			*/
 			let exitCode = this_.#run?this_.#run.exitCode:this_.#exitCode;
-			console.log( "Task ended:", this_.name, this_.ended, exitCode, exitCode.toString(16) );
+			// exitCode can be null/undefined; a throw here would skip clearing
+			// #run and the status broadcast below.
+			console.log( "Task ended:", this_.name, this_.ended, exitCode
+			           , (exitCode??0).toString(16) );
 			this_.#ranOnce = true;
-			this_.#exitCode = this_.#run.exitCode;
+			this_.#exitCode = exitCode;
 			this_.#run = null;
 			for( let dep of this_.#dependants ) {
 				dep.stop();
@@ -386,10 +419,16 @@ export class Task {
 		}
 	}
 
-	#send( buffer ) {	
+	#send( buffer ) {
 		this.#log.push( buffer );
+		const maxLog = this.#task.maxLogLines || DEFAULT_MAX_LOG_LINES;
+		if( this.#log.length > maxLog + LOG_TRIM_SLACK ) {
+			const drop = this.#log.length - maxLog;
+			this.#log.splice( 0, drop );
+			this.#logBase += drop;
+		}
 		if( !this.#ws.length )
-			return;	
+			return;
 		const msg = { op:"log", system:local.id, id:this.id, log: buffer };
 		const msg_ = JSOX.stringify( msg ) ;
 		//console.log( "msg to send:", msg_ );
@@ -495,8 +534,6 @@ export function terminateTasks() {
 	} );
 }
 
-let zwaits = null;
-
 export function closeAllTasks( ws ) {
 	const local = config.local;
 	const waits = [];
@@ -505,7 +542,8 @@ export function closeAllTasks( ws ) {
 		if( task.noKill ) return;
 		if (task.running){
 			task.restart = false;
-			waits.push( task.stop() );
+			task.stop()
+			waits.push( timeoutTaskStop( task ) );
 		} } );
 
 	return Promise.all( waits ).then( (waits)=>{
@@ -556,7 +594,6 @@ function timeoutTaskStop( task ) {
 			task.stopTimer = setTimeout( ()=>tick(resolve, reject), 300 );
 		} else {
 			resolve( true );
-			//console.log( "Trigger resolve for stopped task:", task.name, zwaits );
 		}
 	}
 	return new Promise( tick );

@@ -390,7 +390,7 @@ void asyncmsg__( v8::Isolate *isolate, Local<Context> context, KeyHidObject cons
 
 	{
 		struct msgbuf *msg;
-		while( msg = (struct msgbuf *)DequeLink( (PLINKQUEUE*)&myself->keyEvents ) ) {
+		while( ( msg = (struct msgbuf *)DequeLink( (PLINKQUEUE*)&myself->keyEvents ) ) ) {
 			if( msg->close ) {
 				uv_close( (uv_handle_t*)&myself->keyAsync, uv_key_closed );
 				break;
@@ -564,9 +564,9 @@ static PLINKQUEUE plsKeys     = NULL;
 static uintptr_t KeySendThread( PTHREAD thread ) {
 	while( TRUE ) {
 		struct sendParam *param;
-		while( param = (struct sendParam *)DequeLink( &plsKeys ) ) {
+		while( ( param = (struct sendParam *)DequeLink( &plsKeys ) ) ) {
 			struct sendParam *pend;
-			while( pend = (struct sendParam *)DequeLink( &plsKeys ) ) {
+			while( ( pend = (struct sendParam *)DequeLink( &plsKeys ) ) ) {
 				INDEX idx;
 				PINPUT pInput;
 				DATA_FORALL( pend->pdlInputs, idx, PINPUT, pInput ) { AddDataItem( &param->pdlInputs, pInput ); }
@@ -703,7 +703,7 @@ void mouse_asyncmsg__( v8::Isolate *isolate, Local<Context> context, MouseObject
 	//INDEX idx;
 	{
 		struct mouse_msgbuf *msg;
-        while( msg = (struct mouse_msgbuf *)DequeLink( &myself->mouseEvents ) ) {
+        while( ( msg = (struct mouse_msgbuf *)DequeLink( &myself->mouseEvents ) ) ) {
             if( msg->close ) {
 				uv_close( (uv_handle_t*)&myself->async, uv_closed );
 				DeleteLinkQueue( &myself->mouseEvents );

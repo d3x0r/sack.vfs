@@ -406,7 +406,14 @@ void decodeFlags( int flags ) {
 
 void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool isolated ) {
 	static int runOnce = 1;
-	Isolate* isolate = context->GetIsolate();// Isolate::GetCurrent();
+	Isolate* isolate = 
+#if V8_MAJOR_VERSION >= 14
+		// context lost GetIsolate();  
+		Isolate::GetCurrent();
+#else
+		context->GetIsolate();
+#endif
+
 #ifdef _WIN32
 	{
 		// default input/output to not inherit in child processes.
@@ -886,11 +893,12 @@ static void fileBufToString( const v8::FunctionCallbackInfo<Value>& args ) {
 		while( index < len ) {
 			rune = GetUtfCharIndexed( input, &index, len );
 			//lprintf( "rune:%d at %d of %d   to %d", rune, (int)index, (int)len, (int)out_index );
-			if( rune != RUNE_AFTER_END )
+			if( rune != RUNE_AFTER_END ) {
 				if( rune != BADUTF8 )
 					out_index += ConvertToUTF8( output+out_index, rune );
 				else
 					out_index += ConvertToUTF8( output+out_index, 0xFFFD );
+			}
 			//lprintf( "new index:%d", (int)out_index );
 		}
 		//LogBinary( output, out_index );
@@ -1469,7 +1477,7 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 			else {
 				PVARTEXT pvtOut = VarTextCreate();
 				TEXTRUNE c;
-				while( c = GetUtfChar( &buf ) )
+				while( ( c = GetUtfChar( &buf ) ) )
 					VarTextAddRuneEx( pvtOut, c, TRUE DBG_SRC );
 				PTEXT out = VarTextPeek( pvtOut );
 

@@ -67,8 +67,8 @@ int GetProcessParent( int pid ) {
 }
 
 
-PLIST GetProcessCommandLines( const char* process, int pid ) {
-	PLIST results = NULL;
+PNVLIST GetProcessCommandLines( const char* process, int pid ) {
+	PNVLIST results = NULL;
 	HANDLE hToken;
 	//BOOL bOpenToken = 
 	OpenProcessToken( GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken );

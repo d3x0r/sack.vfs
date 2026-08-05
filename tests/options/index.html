@@ -1,0 +1,15 @@
+
+
+<script type="module">
+import {Protocol} from "../../apps/http-ws/protocol.mjs"
+
+const protocol = new Protocol( location.host, "internal-options" );
+
+protocol.on( "open", (ws)=>{
+	ws.send( {op:"get", id:null } );
+} );
+
+
+
+
+</script>

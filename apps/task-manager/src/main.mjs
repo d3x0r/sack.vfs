@@ -228,9 +228,8 @@ function handleTaskInfo( ws, msg, msg_ ) {
 function connectToCore() {
 	console.log( "Connecting upstream...");
 	const ws = sack.WebSocket.Client( "ws://"+(config.upstreamServer|| "localhost:8089"), "task-proxy");
-	//console.log( "ws?", ws );
 	ws.onopen = ()=>{
-		console.log( "Sending initial tasks" );
+		//console.log( "Sending initial tasks", local.tasks );
 		ws.send( JSOX.stringify( {op:"extern.tasks", tasks:local.tasks
 		      , system:config.hostname || os.hostname()
 		      , id : local.id
@@ -350,11 +349,20 @@ function connect( ws ) {
 	//console.log( "Connect ws:", ws.headers );
 	const connection = new Connection( ws );
 	const protocol = ws.headers["Sec-WebSocket-Protocol"];
-	if( protocol === "task-proxy" )
-		ws.onmessage = handleProxyMessage;
-	else if( protocol === "tasks" ) { // client UI
+	if( protocol === "task-proxy" ) {
+		//console.log( "Remote system connection..." );
+		// handleMessage() guards itself; this one did not, so a throw mid-case
+		// skipped the upstream/downstream forwarding at the end of the case.
+		ws.onmessage = (msg_)=>{
+			try {
+				handleProxyMessage( msg_ );
+			} catch( err ) {
+				console.log( "Error handling proxy message:", err );
+			}
+		};
+	} else if( protocol === "tasks" ) { // client UI
 		ws.onmessage = (msg)=>handleMessage(ws,msg);
-		console.log( "Adding connection...");
+		console.log( "Adding task info connection...");
 		local.connections.push( connection );
 		sendTasks();
 	} else {
@@ -452,36 +460,29 @@ function connect( ws ) {
 				//console.log( "Got external tasks...", msg );
 				//console.log( "looking at systems:", local.systems );
 				//console.log( "Connection system?", connection.system );
-				if( connection.system ){
-					if( connection.system.id === msg.id ){
-						console.log( "This shouldn't happen.. we should have already been connected to this system...")
-						system = connection.system;
-					}else {
-						for( n = 0; n < connection.systems.length; n++ ) {
-							const testSystem = connection.systems[n];
-							if( testSystem.id === msg.id ){
-								connection.system = testSystem;  // this really shouldn't happen...
-								console.log( "Found existing system to replace tasks. (this probably shouldn't happen with IDs)" );
-								system = testSystem;
-								system.connection =  connection;						
-								system.tasks = msg.tasks;
-								break;
-							}
-						}
+				// local.systems indexes every known system at any depth, so it is
+				// the authoritative lookup by id - the old per-connection scans
+				// missed reconnects and read a `connection.systems` that Connection
+				// has never had.
+				for( n = 0; n < local.systems.length; n++ ) {
+					const testSystem = local.systems[n];
+					if( testSystem.id === msg.id ){
+						system = testSystem;
+						break;
 					}
-				} else
-					for( n = 0; n < local.systems.length; n++ ) {
-						const testSystem = local.systems[n];
-						if( testSystem.id === msg.id ){
-							system = testSystem;
-							console.log( "Found existing system to replace tasks." );
-							system.connection =  connection;						
-							system.tasks = msg.tasks;
-							break;
-						}
-					}
+				}
+				if( system ){
+					// re-report: a reconnect, or the peer's task list changed.
+					// Refresh in place so the id keeps resolving to one object.
+					//console.log( "Found existing system to replace tasks." );
+					system.connection = connection;
+					system.tasks = msg.tasks;
+					// the create path below sets this; reconnects need it too or
+					// later addTask/updateTask deref a null connection.system.
+					if( !connection.system ) connection.system = system;
+				}
 				if( !system ){
-					console.log( "Make a new system" );
+					//console.log( "Make a new system", msg.tasks );
 					// this is the connection that the system can be reached on...
 					system = new System( connection, msg.id, msg.port, msg.system, msg.tasks);
 					// if this already heard tasks, this is probably a chlid system of the remote

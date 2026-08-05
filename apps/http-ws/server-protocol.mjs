@@ -5,6 +5,38 @@ import {Events} from "../events/events.mjs";
 const JSOX = sack.JSOX;
 const debug_ = false;
 
+// Heartbeat ops.  These are ordinary data messages, NOT websocket ping/pong
+// control frames: a browser's WebSocket API gives script no access to control
+// frames at all (the user agent answers pings itself, with no event and no way
+// to send one), so a control-frame ping can never tell a browser client that the
+// server has gone away.  Driven from the server, socket.io style - the client
+// never has to originate liveness traffic, it just notices the absence of a ping
+// it was promised.  Must match the values in client-protocol.js.
+// Sent as a bare string rather than a JSOX object - it would decode to a string
+// anyway, and this skips the parser entirely for heartbeat traffic.
+// NOTE 🏓 is U+1F3D3, ABOVE the BMP, so it is a surrogate PAIR in a JS string:
+// "🏓".length === 2 and msg[0] is only the high surrogate.  Test with startsWith
+// (or compare code points), never msg[0] === PING.  ⚪ is U+26AA and IS in the
+// BMP, so it is one code unit - the asymmetry is why an index test appears to
+// half-work.
+const PING = "🏓"; // server -> client (the serve)
+const PONG = "⚪"; // client -> server (the ball comes back)
+const DEFAULT_PING_INTERVAL = 25000; // how often the server serves
+const DEFAULT_PING_TIMEOUT = 20000;  // extra grace before declaring the peer gone
+// Cadence rides along as code points.  Biased into the astral planes so the value
+// can never land in the surrogate block (U+D800-U+DFFF): a lone surrogate is not
+// valid UTF-8 and comes back as U+FFFD, which would silently mangle any interval
+// between 55296 and 57343 ms.  Biasing also keeps every payload character a
+// surrogate pair, so decoding by code point is uniform.
+const HB_BIAS = 0x10000;
+const hbEncode = ( ms )=>String.fromCodePoint( ms + HB_BIAS );
+// Compare first code point rather than msg[0] (surrogate pairs) and rather than
+// spreading every message - [...msg] is O(length) and would allocate an element
+// per character of a 200KB body just to look at its first one.  Spread only
+// inside the heartbeat branch, where the string is three characters.
+const PING_CP = PING.codePointAt( 0 );
+const PONG_CP = PONG.codePointAt( 0 );
+
 function loopBack( that, to ) {
 
 	return function f( ws ) {
@@ -59,6 +91,30 @@ export class Protocol extends Events {
 		ws.onmessage = handleMessage;
 		ws.onclose = handleClose;
 
+		// heartbeat; pingInterval:0 (or false) disables it entirely.
+		const pingInterval = ( "pingInterval" in this.#opts )
+			? this.#opts.pingInterval : DEFAULT_PING_INTERVAL;
+		const pingTimeout = ( "pingTimeout" in this.#opts )
+			? this.#opts.pingTimeout : DEFAULT_PING_TIMEOUT;
+		let heartbeat = null;
+		if( pingInterval > 0 ) {
+			myWS.lastPong = Date.now();
+			heartbeat = setInterval( ()=>{
+				if( ( Date.now() - myWS.lastPong ) > ( pingInterval + pingTimeout ) ) {
+					debug_ && console.log( "peer missed the heartbeat; closing" );
+					clearInterval( heartbeat );
+					heartbeat = null;
+					try { ws.close( 1001, "no response to heartbeat" ); } catch( err ) { }
+					return;
+				}
+				// tell the client the cadence so it can arm its own watchdog without
+				// being configured separately
+				try { myWS.send( PING + hbEncode( pingInterval ) + hbEncode( pingTimeout ) ); }
+				catch( err ) { }
+			}, pingInterval );
+			if( heartbeat.unref ) heartbeat.unref(); // don't hold the process open
+		}
+
 		const parser = sack.JSOX.begin( 
 			(object)=>Protocol.#dispatchMessage(this_, myWS,object) );
 
@@ -69,11 +125,19 @@ export class Protocol extends Events {
 		}
 
 		function handleClose( code, reason ) {
+			if( heartbeat ) { clearInterval( heartbeat ); heartbeat = null; }
 			this_.on( "close", [myWS,code,reason] );
 			myWS.on("close", [code.reason]);
 		}
 
 		function handleMessage( msg ) {
+			// must be myWS, not ws: the heartbeat interval above tests myWS.lastPong,
+			// and since these return before parser.write() the message never reaches
+			// #dispatchMessage - stamping the raw socket instead would leave
+			// myWS.lastPong frozen and close every client at interval+timeout.
+			const cp = msg.codePointAt( 0 );
+			if( cp === PONG_CP ){ myWS.lastPong = Date.now(); return; }
+			if( cp === PING_CP ){ myWS.lastPong = Date.now(); myWS.send( PONG ); return; }
 			const result = this_.on( "message", [ws,msg])
 			//console.log( "handle message:", result, msg );
 			if( !result || ! result.reduce( (acc,val)=>acc|=!!val, false ) ) {
@@ -85,8 +149,10 @@ export class Protocol extends Events {
 		}
 	}
 	static #dispatchMessage(protocol, ws, msg ) {
+		// heartbeats are intercepted in handleMessage before the parser ever sees
+		// them, so nothing heartbeat-shaped reaches here; msg is a parsed object.
 		debug_ && console.log( "invoking handler for:", msg.op, msg )
-		protocol.on( msg.op, [ws, msg] ); 
+		protocol.on( msg.op, [ws, msg] );
 	}
 	addFileHandler( ) {
 		//console.log( "Adding websocket handler for 'get'" );

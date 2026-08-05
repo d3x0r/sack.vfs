@@ -15,11 +15,11 @@ SPDX-PackageDownloadLocation = "https://libssh2.org/"
 [[annotations]]
 path = [
   ".github/ISSUE_TEMPLATE/bug_report.md",
+  ".github/pull_request_template.md",
   "NEWS",
   "README",
   "RELEASE-NOTES",
   "docs/AUTHORS",
-  "docs/HACKING-CRYPTO",
   "os400/README400",
   "tests/key_*",
   "tests/openssh_server/authorized_keys",

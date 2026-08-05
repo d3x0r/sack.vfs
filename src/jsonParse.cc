@@ -5,7 +5,7 @@
 
 //#define JSON_USE_TIMING
 
-static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
+static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct json_value_container *val, struct reviver_data *revive );
 
 #ifdef JSON_USE_TIMING
@@ -459,7 +459,7 @@ static inline Local<Value> makeValue( struct json_value_container *val, struct r
 	return result;
 }
 
-static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
+static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_data *revive ) {
 	Isolate* isolate = revive->isolate;
 	Local<Context> context = revive->context;
 	Local<Value> thisVal;
@@ -533,7 +533,7 @@ static void buildObject( PDATALIST msg_data, Local<Object> o, struct reviver_dat
 	}
 }
 
-Local<Value> convertMessageToJS( PDATALIST msg, struct reviver_data *revive ) {
+Local<Value> convertMessageToJS( PNVDATALIST msg, struct reviver_data *revive ) {
 	Local<Object> o;
 	//Local<Value> v;// = Object::New( revive->isolate );
 

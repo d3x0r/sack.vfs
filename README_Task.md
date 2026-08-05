@@ -88,7 +88,9 @@ to interact with the process.
 | errorInput| callback(buffer) | A callback, which if specified, redirects stderr to this callback function; otherwise stderr is not captured. |
 | end | callback() | This callback will be triggered when the task exits. |
 | impersonate | bool | (Needs work;updated compatibility... this is for a service to launch a task as a user which is now impossible(?)) |
-| hidden | bool | set windows UI flags such that the next process is created with a hidden window.  Default: false |
+| hidden | bool | set windows UI flags such that the next process is created with a hidden window. (pre-empts minimized and maximized) Default: false |
+| minimized | bool | set windows UI flags such that the next process is created with a minimized window.  Default: false |
+| maximized | bool | set windows UI flags such that the next process is created with a maximized window.  Default: false |
 | newGroup | bool | (Windows)create task as a new task group instead of a child of this group.  Default: false|
 | newConsole | bool | (Windows)create a new console for the new task; instead of ineriting the existing console, default false |
 | suspend | bool | create task suspended.  Default: false |
@@ -125,13 +127,13 @@ Move options are applied after styles are set.
 Styles defined for the window of a task are applied first, and then any move options specified (otherwise the border of
 the window may disappear, and the client area of the window would result smaller than the position information specified).
 
-| Move options | Type | Description |
+| Style options | Type | Description |
 |----|----|-----|
 | timeout | number | specifies milliseconds to wait for window to exist.  If no task window is found, status is `false`.  Default is 500.|
 | window | number | Specifies bits to set in window style.  If -1 or undefined, option is ignored.|
 | windowEx | number | Specifies bits to set in window Ex style.  If -1 or undefined, option is ignored.|
 | class | number | Specifies bits to set in window's class style.  If -1 or undefined, option is ignored.|
-| cb | function | callback function which receives 0-7 parameter indicating the result of the move operation.  `0` results if the display number is invalid, or if the timeout occurs before finding the window. |
+| cb | function | ? |
 
 
 ### Style Values
