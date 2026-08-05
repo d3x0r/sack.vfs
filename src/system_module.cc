@@ -507,7 +507,6 @@ static int exitEvent( uintptr_t psv ) {
 }
 
 void exitAsyncMsg_( Isolate *isolate, Local<Context> context, constructorSet * c ) {
-	lprintf("dispatching...");
 	if( !c->exitCallback.IsEmpty() ) {
 		c->exitCallback.Get( c->isolate )->Call( context, Null( c->isolate ), 0, NULL );
 	}

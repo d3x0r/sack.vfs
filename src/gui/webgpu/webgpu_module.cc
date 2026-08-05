@@ -4,6 +4,8 @@
 // Proves out: Dawn linkage, V8 wrapper registration via constructorSet,
 // async dispatch via uv_check + wgpuInstanceProcessEvents.
 
+#define DEBUG_TEXTURE_CREATION
+
 #include "webgpu_module.h"
 #include "webgpu_bindings.h"
 #include "canvas_context.h"
@@ -163,6 +165,16 @@ static void DawnPumpCb( uv_check_t* check ) {
 	DawnPump* p = (DawnPump*)check->data;
 	if( p && p->instance )
 		wgpuInstanceProcessEvents( p->instance );
+
+	v8::Isolate* isolate = v8::Isolate::GetCurrent();
+	HandleScope scope(isolate);
+	{
+		class constructorSet* c = getConstructors(isolate);
+		if (!c->ThreadObject_idleProc.IsEmpty()) {
+			Local<Function>cb = Local<Function>::New(isolate, c->ThreadObject_idleProc);
+			cb->Call(isolate->GetCurrentContext(), Null(isolate), 0, NULL);
+		}
+	}
 }
 
 // Request/reply uv loop ref. Each Dawn async call refs the pump before
@@ -1271,6 +1283,11 @@ static void GPUTexture_createView( const FunctionCallbackInfo<Value>& args ) {
 		? args[0].As<Object>() : Object::New( isolate );
 	wgpu_read_GPUTextureViewDescriptor r( isolate, context, opts );
 	WGPUTextureView v = wgpuTextureCreateView( self->handle_, &r.desc );
+#ifdef DEBUG_TEXTURE_CREATION
+	lprintf( "createTextureView: tex=%p → view=%p fmt=%d dim=%d aspect=%d baseMip=%u mips=%u",
+    	(void*)self->handle_, (void*)v, (int)r.desc.format, (int)r.desc.dimension, (int)r.desc.aspect,
+    	r.desc.baseMipLevel, r.desc.mipLevelCount );
+#endif		
 
 	Local<Function> ctor = getConstructors( isolate )
 		->GPUTextureView_constructor.Get( isolate );
@@ -1588,6 +1605,12 @@ void GPUDevice_createTexture( const FunctionCallbackInfo<Value>& args ) {
 	}
 
 	WGPUTexture tex = wgpuDeviceCreateTexture( self->handle_, &reader.desc );
+#ifdef DEBUG_TEXTURE_CREATION
+	lprintf( "createTexture: tex=%p fmt=%d dim=%d w=%u h=%u depth=%u mips=%u usage=0x%x",
+	    (void*)tex, (int)reader.desc.format, (int)reader.desc.dimension,
+	    reader.desc.size.width, reader.desc.size.height, reader.desc.size.depthOrArrayLayers,
+	    reader.desc.mipLevelCount, (unsigned)reader.desc.usage );
+#endif		
 	WGPU_RETURN_NEW( GPUTexture, tex );
 }
 
@@ -1776,6 +1799,16 @@ void GPUDevice_createBindGroup( const FunctionCallbackInfo<Value>& args ) {
 	desc.entryCount = n;
 	desc.entries = entries;
 
+#ifdef DEBUG_TEXTURE_CREATION
+	lprintf( "createBindGroup: layout=%p entryCount=%zu",
+	    (void*)desc.layout, desc.entryCount );
+	for ( size_t i = 0; i < desc.entryCount; i++ ) {
+		lprintf( "  entry[%zu]: binding=%u sampler=%p view=%p buffer=%p",
+			i, desc.entries[i].binding, (void*)desc.entries[i].sampler,
+			(void*)desc.entries[i].textureView, (void*)desc.entries[i].buffer );
+	}
+#endif
+
 	WGPUBindGroup bg = wgpuDeviceCreateBindGroup( self->handle_, &desc );
 	if( entries ) delete[] entries;
 
@@ -1853,6 +1886,24 @@ void GPUDevice_createRenderPipeline( const FunctionCallbackInfo<Value>& args ) {
 	wgpu_read_GPURenderPipelineDescriptor reader( isolate, context, opts );
 	GPUDevice_patchLayout( isolate, context, opts, &reader.desc.layout );
 
+#ifdef DEBUG_TEXTURE_CREATION
+	// --- vertex layout dump (debug) ---
+	{
+		const WGPUVertexState& vs = reader.desc.vertex;
+		lprintf( "createRenderPipeline: vertex.bufferCount=%zu", vs.bufferCount );
+		for ( size_t b = 0; b < vs.bufferCount; b++ ) {
+			const WGPUVertexBufferLayout& bl = vs.buffers[b];
+			lprintf( "  buffer[%zu]: stride=%llu step=%d attrCount=%zu",
+			    b, (unsigned long long)bl.arrayStride, (int)bl.stepMode, bl.attributeCount );
+			for ( size_t a = 0; a < bl.attributeCount; a++ ) {
+				const WGPUVertexAttribute& at = bl.attributes[a];
+				lprintf( "    attr[%zu]: loc=%u fmt=%d offset=%llu",
+				    a, at.shaderLocation, (int)at.format,
+				    (unsigned long long)at.offset );
+			}
+		}
+	}
+#endif
 	WGPURenderPipeline p = wgpuDeviceCreateRenderPipeline( self->handle_, &reader.desc );
 	WGPU_RETURN_NEW( GPURenderPipeline, p );
 }
@@ -1991,7 +2042,10 @@ void GPUBuffer_getMappedRange( const FunctionCallbackInfo<Value>& args ) {
 	Local<Private> key = Private::ForApi( isolate,
 		String::NewFromUtf8Literal( isolate, "__lastMappedAB" ) );
 	(void)getFCIHolder( args )->SetPrivate( context, key, ab );
-
+#ifdef DEBUG_TEXTURE_CREATION
+	lprintf( "getMappedRange: buf=%p ofs=%llu len=%zu ptr=%p",
+	    (void*)self->handle_, (unsigned long long)offset, byteLen, ptr );
+#endif
 	args.GetReturnValue().Set( ab );
 }
 
@@ -2003,12 +2057,26 @@ void GPUBuffer_unmap( const FunctionCallbackInfo<Value>& args ) {
 	Local<Private> key = Private::ForApi( isolate,
 		String::NewFromUtf8Literal( isolate, "__lastMappedAB" ) );
 	Local<Value> abVal;
+#ifdef DEBUG_TEXTURE_CREATION
+	uint8_t firstBytes[ 8 ] = { 0 };
+	size_t abLen = 0;
+#endif
 	if( getFCIHolder( args )->GetPrivate( context, key ).ToLocal( &abVal )
 	    && abVal->IsArrayBuffer() ) {
 		Local<ArrayBuffer> ab = abVal.As<ArrayBuffer>();
+#ifdef DEBUG_TEXTURE_CREATION
+		abLen = ab->ByteLength();
+		if ( abLen >= 8 ) memcpy( firstBytes, ab->Data(), 8 );
+#endif		
 		if( ab->IsDetachable() ) (void)ab->Detach( Local<Value>() );
 		(void)getFCIHolder( args )->DeletePrivate( context, key );
 	}
+#ifdef DEBUG_TEXTURE_CREATION
+	lprintf( "unmap: buf=%p mappedLen=%zu firstBytes=[%02x %02x %02x %02x %02x %02x %02x %02x]",
+	    (void*)self->handle_, abLen,
+	    firstBytes[0], firstBytes[1], firstBytes[2], firstBytes[3],
+	    firstBytes[4], firstBytes[5], firstBytes[6], firstBytes[7] );
+#endif		
 	wgpuBufferUnmap( self->handle_ );
 }
 
@@ -2117,6 +2185,11 @@ void GPUQueue_writeTexture( const FunctionCallbackInfo<Value>& args ) {
 	const uint8_t* src = (const uint8_t*)basePtr + srcOff;
 	wgpuQueueWriteTexture( self->handle_, &dest, src, baseSize - srcOff,
 		&layout, &writeSize );
+#ifdef DEBUG_TEXTURE_CREATION
+	lprintf("writeTexture: tex=%p src=%p size=%zu w=%u h=%u bpr=%u",
+		dest.texture, src, baseSize - srcOff,
+		writeSize.width, writeSize.height, layout.bytesPerRow);
+#endif
 }
 
 
@@ -2187,6 +2260,25 @@ void GPUQueue_writeBuffer( const FunctionCallbackInfo<Value>& args ) {
 	uint64_t sizeBytes = sizeUnits * elemSize;
 
 	const uint8_t* src = (const uint8_t*)basePtr + srcOffset + dataOffsetBytes;
+	// Dump first/last bytes so we can confirm content for small vertex attributes
+	// like in_Flags (unorm8x4: byte 0 = useTex 255/0, byte 1 = flat 255/0, byte 2 = decal 255/0).
+#ifdef DEBUG_TEXTURE_CREATION	
+	if ( sizeBytes > 0 && sizeBytes <= 64 ) {
+		lprintf( "writeBuffer: buf=%p ofs=%llu size=%llu bytes=[%02x %02x %02x %02x %02x %02x %02x %02x ...]",
+		    (void*)dest->handle_,
+		    (unsigned long long)bufferOffset, (unsigned long long)sizeBytes,
+		    src[0], src[1], src[2], src[3],
+		    src[4], src[5], src[6], src[7] );
+	} else if ( sizeBytes > 64 ) {
+		lprintf( "writeBuffer: buf=%p ofs=%llu size=%llu first=[%02x %02x %02x %02x %02x %02x %02x %02x] mid=[%02x %02x %02x %02x] last=[%02x %02x %02x %02x]",
+		    (void*)dest->handle_,
+		    (unsigned long long)bufferOffset, (unsigned long long)sizeBytes,
+		    src[0], src[1], src[2], src[3],
+		    src[4], src[5], src[6], src[7],
+		    src[sizeBytes/2 + 0], src[sizeBytes/2 + 1], src[sizeBytes/2 + 2], src[sizeBytes/2 + 3],
+		    src[sizeBytes - 4], src[sizeBytes - 3], src[sizeBytes - 2], src[sizeBytes - 1] );
+	}
+#endif
 	wgpuQueueWriteBuffer( self->handle_, dest->handle_, bufferOffset, src, (size_t)sizeBytes );
 }
 

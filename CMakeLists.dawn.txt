@@ -22,7 +22,7 @@ endif()
 
 if(WIN32)
     set( USE_CONFIGURATION "$<CONFIG>" )
-    set( USE_BINDIR "<BINARY_DIR>_tmp/$<CONFIG$<ANGLE_R>" )
+    set( USE_BINDIR "<BINARY_DIR>_tmp/$<CONFIG>" )
     #set( USE_BINDIR "<BINARY_DIR>_tmp/\${CMAKE_INSTALL_CONFIG_NAME}" )
 else()
     set( USE_CONFIGURATION "${CMAKE_BUILD_TYPE}" )

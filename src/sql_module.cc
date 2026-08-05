@@ -239,7 +239,7 @@ void SqlObjectInit( Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "close", SqlObject::closeDb );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "transaction", SqlObject::transact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", SqlObject::commit );
-	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "commit", SqlObject::rollback );
+	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "rollback", SqlObject::rollback );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "autoTransact", SqlObject::autoTransact );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "procedure", SqlObject::userProcedure );
 	NODE_SET_PROTOTYPE_METHOD( sqlTemplate, "function", SqlObject::userFunction );
@@ -1230,6 +1230,7 @@ SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Lo
 	state = NewArray( struct sql_object_state, 1 );
 	state->pending = 0;
 	state->sql = this;
+	state->ivm_hosted = FALSE;
 	memset( &state->async, 0, sizeof( state->async ) );
 	state->messages = NULL;
 	state->userFunctions = NULL;
@@ -1561,7 +1562,7 @@ void OptionTreeObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& a
 
 void OptionTreeObject::readOptionNode( v8::Local<v8::Name> field,
                               const PropertyCallbackInfo<v8::Value>& info ) {
-	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( THIS(info) );
+	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.This() );
 	char *buffer;
 	size_t buflen;
 	int res = (int)GetOptionStringValueEx( oto->odbc, oto->node, &buffer, &buflen DBG_SRC );
@@ -1574,7 +1575,7 @@ void OptionTreeObject::writeOptionNode( v8::Local<v8::Name> field,
                               v8::Local<v8::Value> val,
                               const PropertyCallbackInfo<void>&info ) {
 	String::Utf8Value tmp( USE_ISOLATE( info.GetIsolate() ) val );
-	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( THIS(info) );
+	OptionTreeObject* oto = node::ObjectWrap::Unwrap<OptionTreeObject>( info.Holder() );
 	SetOptionStringValueEx( oto->odbc, oto->node, *tmp );
 }
 
@@ -1828,7 +1829,6 @@ void sqlUserAsyncMsgEx_( Isolate *isolate , Local<Context> context, struct sql_o
 				// probably results in a Resolve();
 				buildQueryResult( msg->params ); // this is in charge of releasing any data... 
 			}
-			LineRelease( msg->params->statement );
 
 			// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
 			//lprintf( "Releasing message..." );
