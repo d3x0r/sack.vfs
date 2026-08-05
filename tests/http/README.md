@@ -14,8 +14,10 @@ Anything that touches `sack.vfs` needs the import hook:
 node --import sack.vfs/import tests/http/testHttpStream.mjs
 ```
 
-**Three files are deliberately plain node** — `wirepeer.mjs`, `rawpipe.mjs`
-and `exittest.mjs` — and must be run *without* `--import sack.vfs/import`:
+**Five files are deliberately plain node** — `wirepeer.mjs`, `rawpipe.mjs`,
+`splitpeer.mjs`, `reqpeer.mjs` and `exittest.mjs` — and must be run *without*
+`--import sack.vfs/import` (`splitfuzz.mjs` and `reqline.mjs` spawn their own
+peers):
 
 ```
 node tests/http/rawpipe.mjs
@@ -53,6 +55,11 @@ loop or from a script without reading the output.
 | `wireclient.mjs` | 8097 | yes | The sack streaming client half; `DEPTH`, `COUNT`. Together with `wirepeer.mjs` this separates "did the client put it on the wire" from "did the server parse it". |
 | `rawpipe.mjs` | 8080 | yes | **Plain node.** Writes `COUNT` pipelined requests in one socket write and counts the replies. No sack client anywhere, so it isolates server-side pipelining. This is the repro for the `GatherHttpData` bug where a request swallowed the requests behind it as its own body — 4 in one write used to get 1 reply. |
 | `sackserver.mjs` | 8081 | — | Bare `sack.WebSocket.Server` that logs each request it serves; the server half for `rawpipe.mjs`. |
+| `splitfuzz.mjs` | 8021 | yes | Read-boundary regression for the header scanner. Walks the split point through every offset of a canned response (`splitcases.mjs`) and asserts each one parses the same as the unsplit response. Takes a case name or `all`. Guards the resume bug: a read ending exactly after the status line's CRLF used to re-scan that CRLF, parse the status line as an *empty* line and hand back "No Content" with no status code — which is what sqlite.org's 503 does — and a read ending after the last header's CRLF used to count the leftover bytes into the body. The server side has the same shape: a request split after its request line got no reply at all. |
+| `splitpeer.mjs` | 8021 | — | **Plain node.** The server half of `splitfuzz.mjs`; answers `GET /<case>/<cut>` with that canned response written as two segments broken at `<cut>`. |
+| `splitcases.mjs` | — | — | The canned responses, shared by the two above. No sack import, so the plain-node half can read it. |
+| `reqline.mjs` | 8022 | yes | The only test that asserts what we **send**. `reqpeer.mjs` echoes each request's own header block back as the body, so the request line, the leading-slash fix, header spacing, `agent`, and caller-supplied headers are all checked against the real bytes. Guards two things found against sqlite.org: a path without a leading slash used to go out verbatim (althttpd shuns the source IP 300s per such request, and each retry counts again), and headers written `Name:value` used to lose the `Host:` on any parser that tokenizes the line on whitespace — a 404 "Missing HOST: parameter". |
+| `reqpeer.mjs` | 8022 | — | **Plain node.** The echo peer for `reqline.mjs`. |
 | `wstest.mjs` | 8067 | yes | Websocket upgrade regression. The 101 response is the case the request/response content-state fix in `GatherHttpData` deliberately left alone, so this guards it: `N` echoed messages (default 50) plus a plain HTTP request on the same server. |
 
 ## One-shot client (`sack.HTTP.get()` / `sack.HTTPS.get()`)
@@ -81,7 +88,12 @@ TLS ones need `SSL_PATH` pointing at a directory holding `fullchain.pem` and
 `testHttpStream.mjs` first (broadest, fastest), then `streamsoak.mjs` for
 volume, `wstest.mjs` for the upgrade path, `exittest.mjs` for process lifetime,
 and `rawpipe.mjs` for server-side pipelining. `testHttpStreamDocs.mjs` whenever
-`README_HTTP.md` changes.
+`README_HTTP.md` changes, and `splitfuzz.mjs` whenever the header scanner in
+`http.c` changes — everything else feeds it whole headers in one read, so it is
+the only one that exercises the parser's resume path. `reqline.mjs` whenever
+`httpBuildRequest` or the header formatting in `websocket_module.cc` changes;
+every other test here parses replies, so nothing else would notice a malformed
+request going out.
 
 ## Not a test
 

@@ -1,0 +1,53 @@
+import os from "os";
+	const interfaces = os.networkInterfaces();
+	const addresses = [];
+addresses.push( { family:"ipv4", address:"0.0.0.0", netmask:"0.0.0.0", broadcast:"255.255.255.255" } );
+	for (var k in interfaces) {
+		for (var k2 in interfaces[k]) {
+			var address = interfaces[k][k2];
+			calculateBroadcast(address);
+			addresses.push(address);
+			//console.log( "pushed an address from networkInterfaces..." );
+		}
+	}
+
+function calculateBroadcast(addr) {
+	if (addr.family == "IPv4") {
+		var mask = [];
+		var addrNum = [];
+		var stub = [255, 255, 255, 255];
+		var addrPart = [];
+		var addrPartNot = [];
+
+		var d = addr.netmask.split('.');
+		mask[0] = Number(d[0])
+		mask[1] = Number(d[1])
+		mask[2] = Number(d[2])
+		mask[3] = Number(d[3])
+
+		var d = addr.address.split('.');
+		addrNum[0] = Number(d[0])
+		addrNum[1] = Number(d[1])
+		addrNum[2] = Number(d[2])
+		addrNum[3] = Number(d[3])
+
+		addrPart[0] = addrNum[0] & mask[0];
+		addrPart[1] = addrNum[1] & mask[1];
+		addrPart[2] = addrNum[2] & mask[2];
+		addrPart[3] = addrNum[3] & mask[3];
+
+		stub[0] &= ~mask[0];
+		stub[1] &= ~mask[1];
+		stub[2] &= ~mask[2];
+		stub[3] &= ~mask[3];
+
+		addrPart[0] |= stub[0];
+		addrPart[1] |= stub[1];
+		addrPart[2] |= stub[2];
+		addrPart[3] |= stub[3];
+
+		addr.broadcast = `${addrPart[0]}.${addrPart[1]}.${addrPart[2]}.${addrPart[3]}`;
+	}
+}
+
+export {addresses};

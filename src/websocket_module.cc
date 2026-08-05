@@ -2583,7 +2583,10 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 					//lprintf( "Found content-length header, will not add one." );
 				}
 				String::Utf8Value keyval( USE_ISOLATE( isolate ) val );
-				vtprintf( obj->pvtResult, "%s:%s\r\n", *keyname, *keyval );
+				// space after the colon: optional per RFC 9110, but parsers that
+				// tokenize the line on whitespace (althttpd, among others) only
+				// recognize the field when it is there.
+				vtprintf( obj->pvtResult, "%s: %s\r\n", *keyname, *keyval );
 			}
 		}
 	}
@@ -2639,7 +2642,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			if( args[0]->IsString() ) {
 				String::Utf8Value body( USE_ISOLATE( isolate ) args[0] );
 				if( !obj->found_content_length )
-					vtprintf( obj->pvtResult, "content-length:%d\r\n", body.length() );
+					vtprintf( obj->pvtResult, "Content-Length: %d\r\n", body.length() );
 				vtprintf( obj->pvtResult, "\r\n" );
 				vtprintf( obj->pvtResult, "%*.*s", body.length(), body.length(), *body );
 			}
@@ -2647,7 +2650,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				Local<Uint8Array> body = args[0].As<Uint8Array>();
 				Local<ArrayBuffer> bodybuf = body->Buffer();
 				if( !obj->found_content_length )
-					vtprintf( obj->pvtResult, "content-length:%d\r\n", body->ByteLength() );
+					vtprintf( obj->pvtResult, "Content-Length: %d\r\n", body->ByteLength() );
 				vtprintf( obj->pvtResult, "\r\n" );
 #if ( NODE_MAJOR_VERSION >= 14 )
 				content = (char*)bodybuf->GetBackingStore()->Data();
@@ -2669,7 +2672,7 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			else if( args[0]->IsArrayBuffer() ) {
 				Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
 				if( !obj->found_content_length )
-					vtprintf( obj->pvtResult, "content-length:%d\r\n", ab->ByteLength() );
+					vtprintf( obj->pvtResult, "Content-Length: %d\r\n", ab->ByteLength() );
 				vtprintf( obj->pvtResult, "\r\n" );
 #if ( NODE_MAJOR_VERSION >= 14 )
 				content = (char*)ab->GetBackingStore()->Data();
@@ -4666,10 +4669,14 @@ static void 	readHeaders( Isolate *isolate, Local<Context> context, httpRequestO
 		TEXTCHAR* field = NULL;
 		if( value->IsString() ) {
 			String::Utf8Value localValue( isolate, value );
-			const size_t len = localName.length() + localValue.length() + 2;
+			// name + ": " + value + NUL
+			const size_t len = localName.length() + localValue.length() + 3;
 			field = NewArray( TEXTCHAR, len );
 			// HTTP header requirements dictate NO control characters are meant to be sent.
-			snprintf( field, len, "%s:%s", *localName, *localValue );
+			// The space after the colon is what whitespace-tokenizing parsers need
+			// to see the field at all; httpBuildRequest tolerates either spelling
+			// when it scans these for Connection/Content-Length/User-Agent.
+			snprintf( field, len, "%s: %s", *localName, *localValue );
 		} else if( value->IsUndefined() ) {
 			const size_t len = localName.length()+2;
 			field = NewArray( TEXTCHAR, len );
@@ -5367,9 +5374,10 @@ void httpConnectionObject::request( const FunctionCallbackInfo<Value>& args ) {
 				TEXTCHAR *field = NULL;
 				if( value->IsString() ) {
 					String::Utf8Value localValue( isolate, value );
-					const size_t len = localName.length() + localValue.length() + 2;
+					// name + ": " + value + NUL
+					const size_t len = localName.length() + localValue.length() + 3;
 					field = NewArray( TEXTCHAR, len );
-					snprintf( field, len, "%s:%s", *localName, *localValue );
+					snprintf( field, len, "%s: %s", *localName, *localValue );
 				} else if( value->IsUndefined() ) {
 					const size_t len = localName.length() + 2;
 					field = NewArray( TEXTCHAR, len );
