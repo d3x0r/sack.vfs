@@ -1,6 +1,6 @@
 
-import {sack} from "sack-gui"
-import {Events} from "sack-gui/Events2"
+import {sack} from "@d3x0r/sack-gui"
+import {Events} from "@d3x0r/sack-gui/Events2"
 import {NaturalCamera} from "./NaturalCamera.mjs"
 import * as THREE from "three/webgpu"
 import {Motion} from "./personalFill.mjs"
@@ -13,7 +13,7 @@ const movers2 = []
 let myMover = null;
 let animCall = null;
 
-const r = new threeSackRenderer();
+const r = document.createElement( "canvas" );//new threeSackRenderer();
 
 r.addEventListener( "wheel", (evt)=>{
 //	evt.preventDefault = ()=>{evt.used = true};

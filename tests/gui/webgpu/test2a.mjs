@@ -1,7 +1,7 @@
 
 // Now JS-callable end-to-end for the colored triangle:
 
-import {sack} from "sack-gui"
+import {sack} from "@d3x0r/sack-gui"
 
 const disk = sack.Volume();
 

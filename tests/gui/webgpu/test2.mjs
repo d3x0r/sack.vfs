@@ -1,11 +1,11 @@
 
 // Now JS-callable end-to-end for the colored triangle:
 
-import {sack} from "sack-gui"
+import {sack} from "@d3x0r/sack-gui"
 
 const displayMonitor = sack.Task.getDisplays().device.find( d=>d.primary );
 console.log( displayMonitor );
-const r = sack.Renderer('hello', displayMonitor.width/2 - 800/2, displayMonitor.height/2 - 600/2, 800, 600, sack.Task.style.windowEx.WS_EX_NOREDIRECTIONBITMAP );
+const r = sack.Renderer('hello', displayMonitor.width/2 - 800/2, displayMonitor.height/2 - 600/2, 800, 600, null, sack.Task.style.windowEx.WS_EX_NOREDIRECTIONBITMAP );
 
 r.show();
 
