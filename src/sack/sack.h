@@ -13657,15 +13657,12 @@ namespace fs {
 }
 #endif
 #ifdef __cplusplus
-/* Object storage system, uses a optimized hash map to index unique identifiers and data associated with them.
-Timeline exists, Multi-versioning support possible using the same file and different timestamps with associated data.
-*/
+/* Object storage system, uses a optimized hash map to index unique identifiers and data associated with them. */
 namespace objStore {
 #endif
 	struct sack_vfs_os_volume;
 	struct sack_vfs_os_file;
 	struct sack_vfs_os_find_info;
-	struct sack_vfs_os_time_cursor;
 	/* thse should probably be moved to sack_vfs_os.h being file system specific extensions. */
 	enum sack_object_store_file_system_file_ioctl_ops {
   // psvInstance should be a file handle pass (char*, size_t length )
@@ -13813,10 +13810,10 @@ namespace objStore {
 #define sack_vfs_os_ioctl_patch_sealed_object( vol, objId,objIdLen, obj,objlen, seal,seallen, result, resultlen ) sack_fs_ioctl( vol, SOSFSSIO_PATCH_OBJECT, FALSE, FALSE, objId, objIdLen, authId, authIdLen, obj, objlen, seal, seallen, result, resultlen )
 #define sack_vfs_os_ioctl_create_index( file, indexName ) sack_vfs_os_file_ioctl( file, SOSFSFIO_CREATE_INDEX, indexName )
 #define sack_vfs_os_ioctl_get_times( file, timeArray,tzArray,timeCount ) sack_vfs_os_file_ioctl( file, SOSFSFIO_GET_TIMES, timeArray,tzArray,timeCount )
-// get the last write timeline index of a file
+// get the last write time of a file
 //     sack_vfs_os_ioctl_get_time( file )
 #define sack_vfs_os_ioctl_get_time( file ) sack_vfs_os_file_ioctl( file, SOSFSFIO_GET_TIME )
-#define sack_vfs_os_ioctl_set_time( file, timestamp,tz )            sack_vfs_os_file_ioctl( file, SOSFSFIO_SETTIME, timestamp,tz )
+#define sack_vfs_os_ioctl_set_time( file, timestamp,tz )            sack_vfs_os_file_ioctl( file, SOSFSFIO_SET_TIME, timestamp,tz )
 // open a volume at the specified pathname.
 // if the volume does not exist, will create it.
 // if the volume does exist, a quick validity check is made on it, and then the result is opened
@@ -13905,8 +13902,6 @@ SACK_VFS_PROC size_t sack_vfs_os_find_get_size( struct sack_vfs_os_find_info *in
 SACK_VFS_PROC LOGICAL sack_vfs_os_get_times( struct sack_vfs_os_file* file, uint64_t** timeArray, int8_t**tzArray, size_t* timeCount );
 // set last time for object in storage. (overwrites current tick used to update on write)
 SACK_VFS_PROC LOGICAL sack_vfs_os_set_time( struct sack_vfs_os_file* file, uint64_t time, int8_t tz );
-SACK_VFS_PROC struct sack_vfs_os_time_cursor* sack_vfs_os_get_time_cursor( struct sack_vfs_os_volume* vol );
-SACK_VFS_PROC LOGICAL sack_vfs_os_read_time_cursor( struct sack_vfs_os_time_cursor* cursor, int step, uint64_t time_, uint64_t* entry, const char** filename, uint64_t* result_timestamp, int8_t* result_tz, const char** buffer, size_t* size );
 // force disabling any further writes to the volue; for unit-testing journal recovery.
 SACK_VFS_PROC LOGICAL sack_vfs_os_halt( struct sack_vfs_os_volume* volume );
 // generate a report about the internal structure of the volue...
