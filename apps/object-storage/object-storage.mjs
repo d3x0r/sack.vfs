@@ -424,7 +424,9 @@ class ObjectStorage {
 						console.trace( "0) Container has no ID or is nUll", container );
 					}
 					_debug_output && console.trace( "WRite:", container.id, storage );
-					this_.storage.writeRaw( { id:container.id, version:true }, storage );
+					if( this_.versioned )
+						console.log( "ObjectStorage versioning was removed; updating current object:", container.id );
+					this_.storage.writeRaw( { id:container.id }, storage );
 					return res?res( container.id ):null;
 				} else {
 					throw new Error( "record is signed, cannot put" );
@@ -450,12 +452,9 @@ class ObjectStorage {
 				}
 				_debug_output && console.trace( "Write(root set):", opts, storage );
 				if( this_.versioned ) {				
-					const id = opts.id.split( '.' );
-					//console.log( "Storing with an ID already?", obj, opts );
-					const newVersion = this_.storage.writeRaw( {id:id[0]}, storage );
-					opts.id = id[0] + '.' + newVersion;
-				} else 
-					this_.storage.writeRaw( opts, storage );
+					console.log( "ObjectStorage versioning was removed; updating current object:", opts.id );
+				}
+				this_.storage.writeRaw( opts, storage );
 				res && res( opts.id );
 			} else if( !opts || !opts.id ) {
 				// need a new ID for an object (not string)
