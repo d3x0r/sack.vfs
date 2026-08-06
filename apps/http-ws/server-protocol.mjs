@@ -102,7 +102,7 @@ export class Protocol extends Events {
 		}
 
 		function handleClose( code, reason ) {
-			if( heartbeat ) { clearInterval( heartbeat ); heartbeat = null; }
+			myWS.timeout = false;
 			this_.on( "close", [myWS,code,reason] );
 			myWS.on("close", [code,reason]);
 		}
