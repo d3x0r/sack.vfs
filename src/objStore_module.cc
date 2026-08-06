@@ -43,6 +43,7 @@ public:
 	static void openObject( const v8::FunctionCallbackInfo<Value>& args );
 
 	static void getTimeline( const v8::FunctionCallbackInfo<Value>& args );
+	static void readRemovedTimeline( const v8::FunctionCallbackInfo<Value>& args );
 	static void haltVolume( const v8::FunctionCallbackInfo<Value>& args );
 	
 	// utility to remove the key so it can be diagnosed.
@@ -51,7 +52,6 @@ public:
 	static void fileReadJSOX( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileGetTimes( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileSetTime( const v8::FunctionCallbackInfo<Value>& args );
-	static void getTimelineCursor( const v8::FunctionCallbackInfo<Value>& args );
 	static void fileRead( const v8::FunctionCallbackInfo<Value>& args );
 	static void flush( const v8::FunctionCallbackInfo<Value>& args );
 
@@ -67,20 +67,6 @@ public:
 	}
 
 	~ObjectStorageObject();
-};
-
-class TimelineCursorObject : public node::ObjectWrap {
-public:
-	class ObjectStorageObject* oso;
-	struct sack_vfs_os_time_cursor* cursor;
-public:
-	TimelineCursorObject( class ObjectStorageObject* vol ) {
-		this->oso = vol;
-		cursor = sack_vfs_os_get_time_cursor( this->oso->vol );
-	}
-	static void New( const v8::FunctionCallbackInfo<Value>& args );
-	static void read( const v8::FunctionCallbackInfo<Value>& args );
-
 };
 
 Local<Object> WrapObjectStorage( Isolate* isolate, class ObjectStorageObject* oso ) {
@@ -452,14 +438,6 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 	//	l.loop = uv_default_loop();
 	Local<Context> context = isolate->GetCurrentContext();
 
-	Local<FunctionTemplate> clsTemplate_timelineCursor;
-	clsTemplate_timelineCursor = FunctionTemplate::New( isolate, TimelineCursorObject::New );
-	clsTemplate_timelineCursor->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ObjectStorage.TimelineCursor" ) );
-	clsTemplate_timelineCursor->InstanceTemplate()->SetInternalFieldCount( 1 ); // 1 required for wrap
-
-	NODE_SET_PROTOTYPE_METHOD( clsTemplate_timelineCursor, "get", TimelineCursorObject::read );
-
-
 	Local<FunctionTemplate> clsTemplate;
 	clsTemplate = FunctionTemplate::New( isolate, New );
 	clsTemplate->SetClassName( String::NewFromUtf8Literal( isolate, "sack.ObjectStorage" ) );
@@ -473,7 +451,6 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 		, FunctionTemplate::New( isolate, ObjectStorageObject::getTimeline )
 		, Local<FunctionTemplate>()
 	);
-	//NODE_SET_PROTOTYPE_METHOD( clsTemplate, "timeline", ObjectStorageObject::getTimelineCursor );
 
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "halt", ObjectStorageObject::haltVolume );
 	NODE_SET_PROTOTYPE_METHOD( clsTemplate, "readRaw", ObjectStorageObject::fileRead );
@@ -489,9 +466,7 @@ void ObjectStorageObject::Init( Isolate *isolate, Local<Object> exports ) {
 
 	class constructorSet* c = getConstructors( isolate );
 	Local<Function> objectStoreFunc = clsTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
-	Local<Function> timelineCursorFunc = clsTemplate_timelineCursor->GetFunction( isolate->GetCurrentContext() ).ToLocalChecked();
 	c->ObjectStorageObject_constructor.Reset( isolate, objectStoreFunc );
-	c->TimelineCursorObject_constructor.Reset( isolate, timelineCursorFunc );
 
 	{
 		Local<Object> threadObject = Object::New( isolate );
@@ -759,146 +734,6 @@ void ObjectStorageObject::getObject( const v8::FunctionCallbackInfo<Value>& args
 
 }
 
-void TimelineCursorObject::read( const v8::FunctionCallbackInfo<Value>& args ) {
-	Isolate* isolate = args.GetIsolate();
-	Local<Context> context = isolate->GetCurrentContext();
-	struct optionStrings* strings = getStrings( isolate );
-	Local<String> optName;
-	Local<Object> options = args[0].As<Object>();// ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
-
-	int32_t limit = GETV( options, optName = strings->limitString->Get( isolate ) )->Int32Value(context).ToChecked();
-	bool doRead = GETV( options, optName = strings->readString->Get( isolate ) )->BooleanValue(isolate);
-	Local<Value> from;
-	optName = strings->fromString->Get( isolate );
-	if( !(options->Has( context, optName ).ToChecked()) ) {
-		from.Clear();
-	}else
-		from = GETV( options, optName ).As<Value>();
-	TimelineCursorObject* tlc = ObjectWrap::Unwrap<TimelineCursorObject>( getFCIHolder(args) );
-	Local<Array> arr = Array::New( isolate, 0 );
-	const char* buffer;
-	size_t length;
-	uint64_t time;
-	uint64_t entry;
-	int8_t tz;
-	const char* filename;
-	LOGICAL result;
-	int got = 0;
-	class constructorSet* c = getConstructors( isolate );
-	do {
-		if( got == 0 ) {
-			if( !from.IsEmpty() ) {
-				if( from->IsDate() ) {
-					Local<Date> fd = from.As<Date>();
-					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
-				} else if( from->IsNumber() ) {
-					Local<Number> fd = from.As<Number>();
-					result = sack_vfs_os_read_time_cursor( tlc->cursor, 1, (int)fd->Value(), &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
-				} else if( from->InstanceOf( context, c->dateNsCons.Get( isolate ) ).ToChecked() ) {
-					Local<Date> fd = from.As<Date>();
-					//Local<Value> ns = fd->Get( context, String::NewFromUtf8Literal( isolate, "ns" ) ).ToLocalChecked();
-
-					result = sack_vfs_os_read_time_cursor( tlc->cursor, 0, (uint64_t)( fd->ValueOf() * 1000.0 ) * 1000, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
-
-				} else {
-					lprintf( "Unhandled from argument..." );
-					result = FALSE;
-				}
-			} else {
-				result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
-			}
-		} else {
-			result = sack_vfs_os_read_time_cursor( tlc->cursor, 2, 0, &entry, &filename, &time, &tz, doRead ? &buffer : NULL, &length );
-		}
-		if( result ) {
-
-			SACK_TIME st;
-			// time is stored as UTC so all times are universal and have no bias between them.
-			// though decoding a timestamp with a timezone requires the local time to be used along with the timezone code
-			// so this has to adjust the value before decoding to parts and building a resulting string.
-			uint64_t timeValue = ((time / 1000000 + ( tz * 900000LL ) ) << 8) | (tz&0xFF);
-			ConvertTickToTime( timeValue, &st );
-			char buf[64];
-			int tz;
-			int negTz = 0;
-			if( st.zhr < 0 ) {
-				tz = -st.zhr;
-				negTz = 1;
-			} else
-				tz = st.zhr;
-
-			snprintf( buf, 64, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz ? '-' : '+', tz, st.zmn );
-			Local<Value> args[2] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked(), Number::New( isolate, (double)(time%1000000) ) };
-			Local<Value> newDate;
-			if( time % 1000000 )
-				newDate = Local<Function>::New( isolate, c->dateNsCons )->NewInstance( isolate->GetCurrentContext(), 2, args ).ToLocalChecked();
-			else
-				newDate = Local<Function>::New( isolate, c->dateCons )->NewInstance( isolate->GetCurrentContext(), 1, args ).ToLocalChecked();
-			Local<Object> obj = Object::New( isolate );
-			obj->Set( context, String::NewFromUtf8Literal( isolate, "time" ), newDate );
-			obj->Set( context, String::NewFromUtf8Literal( isolate, "entry" ), Number::New( isolate, (double)entry ) );
-
-			obj->Set( context, String::NewFromUtf8Literal( isolate, "id" ), String::NewFromUtf8( isolate, filename, NewStringType::kNormal ).ToLocalChecked() );
-			obj->Set( context, String::NewFromUtf8Literal( isolate, "length" ), Number::New( isolate, (double)length ) );
-			if( doRead ) {
-				Local<ArrayBuffer> ab;
-				POINTER newBuf = NewArray( uint8_t, length );
-				MemCpy( newBuf, buffer, length );
-#if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)newBuf, length, releaseBufferBackingStore, NULL );
-				ab = ArrayBuffer::New( isolate, bs );
-#else
-				ab =
-					ArrayBuffer::New( isolate
-						, (void*)newBuf
-						, length );
-
-				PARRAY_BUFFER_HOLDER holder = GetHolder();
-				holder->o.Reset( isolate, ab );
-				holder->o.SetWeak<ARRAY_BUFFER_HOLDER>( holder, releaseBuffer, WeakCallbackType::kParameter );
-				holder->buffer = newBuf;
-#endif
-				obj->Set( context, String::NewFromUtf8Literal( isolate, "data" ), ab );
-
-			}
-			arr->Set( isolate->GetCurrentContext(), got, obj );
-			Deallocate( const char*, filename );
-		} else break;
-		got++;
-	} while( got < limit );
-	args.GetReturnValue().Set( arr );
-
-}
-
-void TimelineCursorObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
-
-	Isolate* isolate = args.GetIsolate();
-	if( args.IsConstructCall() ) {
-		// Invoked as constructor: `new MyObject(...)`
-		Local<Object> storage = args[0].As<Object>();
-		ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( storage );
-		TimelineCursorObject* obj = new TimelineCursorObject( vol );
-
-		obj->Wrap( args.This() );
-		args.GetReturnValue().Set( args.This() );
-
-	} else {
-		int argc = args.Length();
-		Local<Value>* argv = new Local<Value>[argc];
-		for( int n = 0; n < argc; n++ )
-			argv[n] = args[n];
-
-		class constructorSet* c = getConstructors( isolate );
-		Local<Function> cons = Local<Function>::New( isolate, c->ObjectStorageObject_constructor );
-		MaybeLocal<Object> mo = cons->NewInstance( isolate->GetCurrentContext(), argc, argv );
-		if( !mo.IsEmpty() )
-			args.GetReturnValue().Set( mo.ToLocalChecked() );
-		delete[] argv;
-
-	}
-}
-
-
 void ObjectStorageObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	if( args.IsConstructCall() ) {
@@ -1104,13 +939,13 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 		}
 		if(1)
 		if( opts->Has( ctx, name = strings->timeString->Get( isolate ) ).ToChecked() ) {
-			useTime = opts->Get( ctx, name ).ToLocalChecked().As<Date>();
+			Local<Value> timeVal = opts->Get( ctx, name ).ToLocalChecked();
+			useTime = timeVal.As<Date>();
 			Local<Value> offset = useTime->Get( ctx, strings->getTimezoneOffsetString->Get( isolate ) ).ToLocalChecked().As<Function>()->Call( ctx, useTime, 0, NULL ).ToLocalChecked();
 			int64_t intVal = offset.As<Number>()->IntegerValue(ctx).ToChecked();
-			double dateVal = useTime->ValueOf();
-			//dateVal -= intVal * 900;
+			double dateVal = timeVal->NumberValue(ctx).FromMaybe( 0 );
 			tzToUse = (int)-intVal;
-			dateValToUse = ( ((uint64_t)( dateVal )<<8)| ( (tzToUse/15)&0xFF) );
+			dateValToUse = (uint64_t)dateVal;
 			//lprintf( " COnverted time val: %g, %d", dateVal, (int)intVal );
 		}
 	}
@@ -1146,9 +981,9 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 	}
 
 	if( vol->volNative ) {
-		struct objStore::sack_vfs_os_file *file = version
-			?(struct objStore::sack_vfs_os_file *)sack_vfs_os_system_ioctl( vol->vol, SOSFSSIO_NEW_VERSION, (*fName) )
-			:objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		if( version )
+			lprintf( "Object storage version writes were removed; writing current object for %s", *fName );
+		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		// is  binary thing... or is a string buffer... or...
 
 		if( file ) {
@@ -1164,12 +999,21 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 			objStore::sack_vfs_os_write( file, *data, data.length() );
 			// compare lengthWritten with data.length() ?
 
-			if( dateValToUse )
-				objStore::sack_vfs_os_set_time( file, dateValToUse, tzToUse );
-			uint64_t lastTime = sack_vfs_os_ioctl_get_time( file );
-			Local<Number> lastTimeNum = Number::New( isolate, (double)lastTime );
 			objStore::sack_vfs_os_close( file );
 			sack_vfs_os_polish_volume( vol->vol );
+			if( dateValToUse ) {
+				file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+				if( file ) {
+					objStore::sack_vfs_os_set_time( file, dateValToUse, tzToUse );
+					objStore::sack_vfs_os_close( file );
+					sack_vfs_os_polish_volume( vol->vol );
+				}
+			}
+			file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+			uint64_t lastTime = file?sack_vfs_os_ioctl_get_time( file ):0;
+			if( file )
+				objStore::sack_vfs_os_close( file );
+			Local<Number> lastTimeNum = Number::New( isolate, (double)lastTime );
 			args.GetReturnValue().Set( lastTimeNum );
 
 			//sack_vfs_os_flush_volume( vol->vol, FALSE );
@@ -1289,21 +1133,22 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 	}
 }
 
-void ObjectStorageObject::getTimeline( const FunctionCallbackInfo<Value>& args ) {
+void ObjectStorageObject::readRemovedTimeline( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	//ObjectStorageObject* obj = ObjectWrap::Unwrap<ObjectStorageObject>( args.This() );
-	class constructorSet* c = getConstructors( isolate );
-	Local<Value> tl_args[] = { args.This() };
-	Local<Value> timeline = c->TimelineCursorObject_constructor.Get( isolate )->CallAsConstructor( isolate->GetCurrentContext(), 1, tl_args ).ToLocalChecked();
-
-
-	args.GetReturnValue().Set( timeline );
+	lprintf( "Object storage timeline support was removed." );
+	args.GetReturnValue().Set( Array::New( isolate, 0 ) );
 }
 
-
-void ObjectStorageObject::getTimelineCursor( const v8::FunctionCallbackInfo<Value>& args ) {
-	//Isolate* isolate = args.GetIsolate();
-	
+void ObjectStorageObject::getTimeline( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	Local<Object> timeline = Object::New( isolate );
+	lprintf( "Object storage timeline support was removed." );
+	timeline->Set( context
+		, String::NewFromUtf8Literal( isolate, "get" )
+		, Function::New( context, ObjectStorageObject::readRemovedTimeline ).ToLocalChecked()
+	);
+	args.GetReturnValue().Set( timeline );
 }
 
 void ObjectStorageObject::haltVolume( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1327,15 +1172,17 @@ void ObjectStorageObject::fileSetTime( const v8::FunctionCallbackInfo<Value>& ar
 	int tzToUse = 0;
 	struct optionStrings* strings = getStrings( isolate );
 
-	useTime = args[1].As<Date>();
+	Local<Value> timeVal = args[1];
+	useTime = timeVal.As<Date>();
 	if( !useTime.IsEmpty() ) {
 		Local<Value> offset = useTime->Get( isolate->GetCurrentContext(), strings->getTimezoneOffsetString->Get( isolate ) ).ToLocalChecked().As<Function>()->Call( isolate->GetCurrentContext(), useTime, 0, NULL ).ToLocalChecked();
 		int64_t intVal = offset.As<Number>()->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
-		double dateVal = useTime->ValueOf();
-		//dateVal -= intVal * 900;
+		double dateVal = timeVal->NumberValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		tzToUse = (int)-intVal;
-		dateValToUse = (uint64_t)(dateVal * 1000000);
+		dateValToUse = (uint64_t)dateVal;
 
+		if( !objStore::sack_vfs_os_exists( vol->vol, ( *fName ) ) )
+			return;
 		struct objStore::sack_vfs_os_file* file = objStore::sack_vfs_os_openfile( vol->vol, ( *fName ) );
 		objStore::sack_vfs_os_set_time( file, dateValToUse, tzToUse );
 		objStore::sack_vfs_os_close( file );
@@ -1353,9 +1200,9 @@ Local<Array> makeTimes( Isolate* isolate, uint64_t* timeArray, int8_t* tzArray, 
 		// time is stored as UTC so all times are universal and have no bias between them.
 		// though decoding a timestamp with a timezone requires the local time to be used along with the timezone code
 		// so this has to adjust the value before decoding to parts and building a resulting string.
-		timeArray[n] += ( use_tz * 900000LL ) * 1000000;
+		timeArray[n] += use_tz * 15 * 60 * 1000;
 		
-		ConvertTickToTime( ( (timeArray[n]/1000000)<<8)| (use_tz&0xFF), &st );
+		ConvertTickToTime( ( timeArray[n] << 8 ) | (use_tz&0xFF), &st );
 		//Local<Script> script;
 		char buf[64];
 		int tz;
@@ -1367,8 +1214,8 @@ Local<Array> makeTimes( Isolate* isolate, uint64_t* timeArray, int8_t* tzArray, 
 			tz = st.zhr;
 
 		snprintf( buf, 64, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz ? '-' : '+', tz, st.zmn );
-		Local<Value> args[2] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked(), Number::New( isolate, (double)(timeArray[n] % 1000000) ) };
-		Local<Value> newDate = Local<Function>::New( isolate, c->dateNsCons )->NewInstance( isolate->GetCurrentContext(), 2, args ).ToLocalChecked();
+		Local<Value> args[1] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked() };
+		Local<Value> newDate = Local<Function>::New( isolate, c->dateCons )->NewInstance( isolate->GetCurrentContext(), 1, args ).ToLocalChecked();
 		arr->Set( isolate->GetCurrentContext(), n, newDate );
 	}
 	return arr;
@@ -1463,11 +1310,10 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			return;
 		}
 
+		if( version )
+			lprintf( "Object storage version reads were removed; reading current object for %s", *fName );
 		//lprintf( "OPEN FILE:%s", *fName );
-		struct objStore::sack_vfs_os_file *file = 
-			version
-				?(struct objStore::sack_vfs_os_file*)objStore::sack_vfs_os_system_ioctl( vol->vol, SOSFSSIO_OPEN_VERSION, (*fName), version )
-				:objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
+		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {
 			char *buf = NewArray( char, 4096 );
 			size_t len = objStore::sack_vfs_os_size( file );
@@ -1478,12 +1324,8 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 			uint64_t *timeArray;
 			int8_t* tzArray;
 			Local<Array> arr;
-			if( version )
-				arr = Array::New(isolate,0);
-			else {
-				objStore::sack_vfs_os_get_times( file, &timeArray, &tzArray, &timeCount );
-				arr = makeTimes( isolate, timeArray, tzArray, timeCount );
-			}
+			objStore::sack_vfs_os_get_times( file, &timeArray, &tzArray, &timeCount );
+			arr = makeTimes( isolate, timeArray, tzArray, timeCount );
 
 
 			// CAN open directories; and they have 7ffffffff sizes.
