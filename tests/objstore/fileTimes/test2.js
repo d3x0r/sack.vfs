@@ -2,8 +2,9 @@
 
 const sack = require( "../../.." );
 //sack.Volume().unlink( "container.vfs" );
+const {ObjectStorage} = require( "sack.vfs/object-storage" );
 
-const store = sack.ObjectStorage(  "storage.os" );
+const store = new ObjectStorage(  "storage.os" );
 
 const d = new Date( "2022-02-07T06:03:30.877-08:00");
 

@@ -20,12 +20,9 @@ console.log( "Store:", store );
 
 
 store.get(  { //`${orgRoot}.${serviceRoot}`, 
-		id : `${orgRoot}.${serviceRoot}.${dbRoot}`,
-
-		sealant : null,
-		readKey : null, } ) .then((node)=>{
+		id : `${orgRoot}.${serviceRoot}.${dbRoot}` } ) .then((node)=>{
 			// this is the managmeent container of node.  
-			console.log( "Recovered root somehow:", node );
+			console.log( "Recovered root somehow:", `${orgRoot}.${serviceRoot}.${dbRoot}`, node );
 			root = node;
 		})
 		.catch( ()=>{

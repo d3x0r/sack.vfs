@@ -5,8 +5,8 @@ const sack = require( "../.." );
 
 const vfs = sack.Volume( "cmount", "container.vfs" );
 //console.log( "sack:", sack );
-
-const store = new sack.ObjectStorage( vfs, "storage.os" );
+const {ObjectStorage} = require( "sack.vfs/object-storage" );
+const store = new ObjectStorage( vfs, "storage.os" );
 
 // consts...
 const storage = {
