@@ -294,6 +294,24 @@ class ObjectStorage {
 			this.delete( container);
 		}
 	}
+	getTimes( opts ) {
+		const id = ( "string" === typeof opts ) ? opts : opts?.id;
+		if( !id ) return [];
+		return this.storage.getTimes( id );
+	}
+	getTime( opts ) {
+		const times = this.getTimes( opts );
+		return times.length ? times[0] : null;
+	}
+	setTime( opts, time = new Date() ) {
+		const id = ( "string" === typeof opts ) ? opts : opts?.id;
+		if( !id ) return false;
+		this.storage.setTime( id, time );
+		return true;
+	}
+	get timeline() {
+		return this.storage.timeline;
+	}
 	addEncoders(encoderList) {
 		const this_ = this;
 		encoderList.forEach( f=>{
@@ -376,7 +394,9 @@ class ObjectStorage {
 				console.log( "SAVING A STRING OBJECT" );
 				// this isn't cached on this side.
 				// we don't know the real object.
-				this_.storage.writeRaw( opts.id, obj );
+				this_.storage.writeRaw( opts, obj );
+				if( opts.time )
+					this_.storage.setTime( opts.id, opts.time );
 				return res?res( opts.id ):null;
 			}
 			var container = this_.stored.get( obj );
@@ -455,6 +475,8 @@ class ObjectStorage {
 					console.log( "ObjectStorage versioning was removed; updating current object:", opts.id );
 				}
 				this_.storage.writeRaw( opts, storage );
+				if( opts.time )
+					this_.storage.setTime( opts.id, opts.time );
 				res && res( opts.id );
 			} else if( !opts || !opts.id ) {
 				// need a new ID for an object (not string)
@@ -503,6 +525,8 @@ class ObjectStorage {
 				_debug_output && console.log( "Output container to storage... ", container, container.storage, container.id );
 				try {
 					this_.storage.writeRaw( opts, storage );
+					if( opts.time )
+						this_.storage.setTime( container.id, opts.time );
 					if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
 					this_.cached.set( container.id, container.data );
 					//console.log( "2CACHE IS SET HERE ------------------------- ", obj)
