@@ -48,6 +48,7 @@ export class Protocol extends Events {
 	protocol = null;
 	server = null;
 	#opts = null;
+	get opts() { return this.#opts }
 	#keepAlive = false;
 	static #WS = null;
 	/** 
@@ -204,22 +205,17 @@ export class WS extends Events{
 		} else
 			this.ws.send( JSOX.stringify({ op:cmd, [cmd]:data }) );
 	}
-	set keepAlive( val ) {
-		this.#protocol.keepAlive = val;
-	}
-	get keepAlive( val ) {
-		return this.#protocol.keepAlive;
-	}
+
 
 	set keepAlive( val ) {
 		this.#keepAlive = val;
 		// begin/clear timer loop
 		if( val ) {
 			// heartbeat; pingInterval:0 (or false) disables it entirely.
-			const pingInterval = ( "pingInterval" in this.#opts )
-				? this.#opts.pingInterval : DEFAULT_PING_INTERVAL;
-			const pingTimeout = ( "pingTimeout" in this.#opts )
-				? this.#opts.pingTimeout : DEFAULT_PING_TIMEOUT;
+			const pingInterval = ( "pingInterval" in this.#protocol.opts )
+				? this.#protocol.opts.pingInterval : DEFAULT_PING_INTERVAL;
+			const pingTimeout = ( "pingTimeout" in this.#protocol.opts )
+				? this.#protocol.opts.pingTimeout : DEFAULT_PING_TIMEOUT;
 			if( this.#keepAlive )
 				if( pingInterval > 0 ) {
 					myWS.lastPong = Date.now();
@@ -242,7 +238,7 @@ export class WS extends Events{
 			if( this.#heartbeat ) { clearInterval( this.#heartbeat ); this.#heartbeat = null; }
 		}
 	}
-	get keepAlive( val ) {
+	get keepAlive( ) {
 		return this.#keepAlive;
 	}
 
