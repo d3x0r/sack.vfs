@@ -103,15 +103,6 @@ endif( NOT WIN32 )
 #ADD_DEFINITIONS( -fsanitize=address )
 ADD_DEFINITIONS( -DNO_OPEN_MACRO )
 
-if( ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
-   ADD_DEFINITIONS( -D_REL_DEBUG )
-	set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDebugDLL")
-endif()
-
-if( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]"
-   OR ${CMAKE_BUILD_TYPE} MATCHES "[rR][eE][lL][wW][iI].*" )
-   ADD_DEFINITIONS( -D_DEBUG )
-endif()
 
 if( WIN32 )
 	set( SACK_BASE M:/sack )
@@ -630,3 +621,14 @@ if( __ANDROID__ )
 	target_link_libraries( ${PROJECT} log )
 endif( __ANDROID__ )
 
+
+
+target_compile_definitions(${PROJECT} PRIVATE
+    $<$<CONFIG:RelWithDebInfo>:_DEBUG_INFO>
+    $<$<CONFIG:Debug>:_DEBUG>
+)
+
+set_target_properties(${PROJECT} PROPERTIES
+    MSVC_RUNTIME_LIBRARY  "$<IF:$<CONFIG:Debug>,MultiThreadedDebugDLL,MultiThreadedDLL>"
+#   $<OR:$<CONFIG:RelWithDebInfo>, >
+)
