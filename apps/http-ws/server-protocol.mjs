@@ -48,6 +48,7 @@ export class Protocol extends Events {
 	protocol = null;
 	server = null;
 	#opts = null;
+	#keepAlive = false;
 	static #WS = null;
 	/** 
 	 * @param {object} opts - options for the protocol
@@ -84,40 +85,15 @@ export class Protocol extends Events {
 	}
 
 	#connect(ws) {
-		const myWS = Protocol.#WS?new Protocol.#WS(ws) : new WS( ws );
+		const myWS = Protocol.#WS?new Protocol.#WS(ws, this) : new WS( ws, this );
 		const this_ = this;
 		//console.log( "--------------- NEW CONNECTION ------------------" );
 		const results = this.on( "connect", [ws, myWS] );
 		ws.onmessage = handleMessage;
 		ws.onclose = handleClose;
 
-		// heartbeat; pingInterval:0 (or false) disables it entirely.
-		const pingInterval = ( "pingInterval" in this.#opts )
-			? this.#opts.pingInterval : DEFAULT_PING_INTERVAL;
-		const pingTimeout = ( "pingTimeout" in this.#opts )
-			? this.#opts.pingTimeout : DEFAULT_PING_TIMEOUT;
-		let heartbeat = null;
-		if( pingInterval > 0 ) {
-			myWS.lastPong = Date.now();
-			heartbeat = setInterval( ()=>{
-				if( ( Date.now() - myWS.lastPong ) > ( pingInterval + pingTimeout ) ) {
-					debug_ && console.log( "peer missed the heartbeat; closing" );
-					clearInterval( heartbeat );
-					heartbeat = null;
-					try { ws.close( 1001, "no response to heartbeat" ); } catch( err ) { }
-					return;
-				}
-				// tell the client the cadence so it can arm its own watchdog without
-				// being configured separately
-				try { myWS.send( PING + hbEncode( pingInterval ) + hbEncode( pingTimeout ) ); }
-				catch( err ) { }
-			}, pingInterval );
-			if( heartbeat.unref ) heartbeat.unref(); // don't hold the process open
-		}
-
 		const parser = sack.JSOX.begin( 
 			(object)=>Protocol.#dispatchMessage(this_, myWS,object) );
-
 
 		if( results && results.length ) {
 			// assume the on-connect provdies its own open/close handlers
@@ -127,7 +103,7 @@ export class Protocol extends Events {
 		function handleClose( code, reason ) {
 			if( heartbeat ) { clearInterval( heartbeat ); heartbeat = null; }
 			this_.on( "close", [myWS,code,reason] );
-			myWS.on("close", [code.reason]);
+			myWS.on("close", [code,reason]);
 		}
 
 		function handleMessage( msg ) {
@@ -135,9 +111,12 @@ export class Protocol extends Events {
 			// and since these return before parser.write() the message never reaches
 			// #dispatchMessage - stamping the raw socket instead would leave
 			// myWS.lastPong frozen and close every client at interval+timeout.
-			const cp = msg.codePointAt( 0 );
-			if( cp === PONG_CP ){ myWS.lastPong = Date.now(); return; }
-			if( cp === PING_CP ){ myWS.lastPong = Date.now(); myWS.send( PONG ); return; }
+			if( myWS.keepAlive ) {
+				myWS.lastPong = Date.now(); 
+				const cp = msg.codePointAt( 0 );
+				if( cp === PONG_CP ){ return; }
+				if( cp === PING_CP ){ myWS.send( PONG ); return; }
+			}
 			const result = this_.on( "message", [ws,msg])
 			//console.log( "handle message:", result, msg );
 			if( !result || ! result.reduce( (acc,val)=>acc|=!!val, false ) ) {
@@ -195,9 +174,13 @@ export class Protocol extends Events {
 
 export class WS extends Events{
 	ws = null;
-	constructor(ws){
+	#protocol = null; 
+	#keepAlive = false;
+	#heartbeat = 0;
+	constructor(ws,protocol){
 		super();
 		this.ws = ws;
+		this.#protocol = protocol;
 	}
 	/**
 	 * send a message - with automatic JSOX encoding if the message is an object.
@@ -221,6 +204,48 @@ export class WS extends Events{
 		} else
 			this.ws.send( JSOX.stringify({ op:cmd, [cmd]:data }) );
 	}
+	set keepAlive( val ) {
+		this.#protocol.keepAlive = val;
+	}
+	get keepAlive( val ) {
+		return this.#protocol.keepAlive;
+	}
+
+	set keepAlive( val ) {
+		this.#keepAlive = val;
+		// begin/clear timer loop
+		if( val ) {
+			// heartbeat; pingInterval:0 (or false) disables it entirely.
+			const pingInterval = ( "pingInterval" in this.#opts )
+				? this.#opts.pingInterval : DEFAULT_PING_INTERVAL;
+			const pingTimeout = ( "pingTimeout" in this.#opts )
+				? this.#opts.pingTimeout : DEFAULT_PING_TIMEOUT;
+			if( this.#keepAlive )
+				if( pingInterval > 0 ) {
+					myWS.lastPong = Date.now();
+					this.#heartbeat = setInterval( ()=>{
+						if( ( Date.now() - myWS.lastPong ) > ( pingInterval + pingTimeout ) ) {
+							debug_ && console.log( "peer missed the heartbeat; closing" );
+							clearInterval( this.#heartbeat );
+							this.#heartbeat = null;
+							try { ws.close( 1001, "no response to heartbeat" ); } catch( err ) { }
+							return;
+						}
+						// tell the client the cadence so it can arm its own watchdog without
+						// being configured separately
+						try { myWS.send( PING + hbEncode( pingInterval ) + hbEncode( pingTimeout ) ); }
+						catch( err ) { }
+					}, pingInterval );
+					if( this.#heartbeat.unref ) this.#heartbeat.unref(); // don't hold the process open
+				}
+		} else {
+			if( this.#heartbeat ) { clearInterval( this.#heartbeat ); this.#heartbeat = null; }
+		}
+	}
+	get keepAlive( val ) {
+		return this.#keepAlive;
+	}
+
 }
 
 //export const protocol = new Protocol();
