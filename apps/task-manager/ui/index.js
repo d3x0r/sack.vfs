@@ -413,3 +413,4 @@ function insertBackLog( log, msg ) {
 		}
 }
 
+new Display();
