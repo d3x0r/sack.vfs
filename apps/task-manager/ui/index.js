@@ -1,13 +1,20 @@
 
 import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
-import {Popup,popups} from "/node_modules/@d3x0r/popups/popups.mjs"
 import {config as protocolConfig, protocol, MySystem} from "./protocol.js"
+
+import {Popup,popups} from "/node_modules/@d3x0r/popups2/popups.js"
+import "/node_modules/@d3x0r/popups2/controls/button.js"
+import {PagedFrame} from "/node_modules/@d3x0r/popups2/controls/paged-frame.js"
+import {DataGrid} from "/node_modules/@d3x0r/popups2/controls/data-grid.js"
+import {Checkbox} from "/node_modules/@d3x0r/popups2/controls/checkbox.js"
+
+import {TaskConfiguration} from "./taskConfiguration.js"
 
 // <link rel="stylesheet" href="../styles.css">
 const style = document.createElement( "link" );
 style.rel = "stylesheet";
 //style.href = "/node_modules/@d3x0r/popups/styles.css";
-style.href = "/node_modules/@d3x0r/popups/dark-styles.css";
+style.href = "/node_modules/@d3x0r/popups2/dark-styles.css";
 document.head.insertBefore( style, document.head.childNodes[0] || null );
 
 
@@ -16,7 +23,6 @@ import {local} from "./local.js"
 import {TaskInfoEditor} from "./taskInfoForm.js"
 
 protocolConfig.local = local;
-//protocolConfig.addTaskLog = addTaskLog;
 protocol.on( "insertBackLog", insertBackLog );
 protocol.on( "addTaskList", AddTaskList )
 protocol.on( "addSystem", AddSystem );
@@ -25,9 +31,21 @@ protocol.on( "addTaskLog", addTaskLog );
 protocol.on( "deleteTask", deleteTask );
 protocol.on( "extern.task", addNewSystem );
 protocol.on( "deleteSystem", deleteSystem );
-
+protocol.on( "login", showForm );
 protocol.connect();
-		
+
+function showForm() {
+	if( !local.display )
+		local.display = new Display();
+	else
+		local.display.show();
+
+	if( local.pendingShowTasks.length ) {
+		local.pendingShowTasks.forEach( task => {
+			AddTaskList(local.firstPage, task.object, task.field ); 
+		} );
+	}
+}		
 
 class Display extends Popup {
 	constructor() {
@@ -39,7 +57,7 @@ class Display extends Popup {
 				new TaskInfoEditor( null, null );
 			}, {suffix:"add-task"} );
 		
-		local.pageFrame = new popups.PagedFrame( this, {suffix:"-system"} );
+		local.pageFrame = new PagedFrame( this, {suffix:"-system"} );
 		local.pageFrame.on( "activate", (page)=>{ local.activePage = page; } );
 		local.firstPage = local.pageFrame.addPage( "Master");
 		local.pageFrame.activate( local.firstPage );
@@ -118,6 +136,11 @@ function addTask( id, task ) {
 // so the datagrid takes its data from "local.tasks" which is an array of tasks.
 // each task has a name, running, started, ended, and id.
 function AddTaskList(display, object, field) {
+	if( !display ) display = local.firstPage;
+	if( !display ) {
+		local.pendingShowTasks.push( { object, field } );
+		return;
+	}
 	const editing = {
 
 	}
@@ -140,11 +163,11 @@ function AddTaskList(display, object, field) {
 				} else
              	return delTime( new Date( Date.now() - row.ended.getTime() ) );
 		    } } }
-		, { name:"Display", className: "-display", type:{suffix:" blue", click:(gridRow)=>showTaskAdmin(object,gridRow.rowData/*task*/), text: "CONFIG ✎"} }
-		, { name:"Show Log", className: "-log", type:{suffix:" blue", click:(gridRow)=>showLogClick(object,gridRow.rowData/*task*/), text: "LOG 🗎"} }
-		, { name:"Stop"    , className: "-stop", type:{suffix:" red", click(gridRow){protocol.stopTask(object,gridRow.rowData)}, text: "STOP ▢"} }
-		, { name:"Start"   , className: "-start", type:{suffix:" green", click(gridRow){protocol.startTask(object,gridRow.rowData)}, text: "PLAY ▷"} }
-		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click(gridRow){protocol.restartTask(object,gridRow.rowData)}, text: "RESTART ↻"} }
+		, { name:"Display", className: "-display", type:{suffix:" plum", click:(gridRow)=>showTaskAdmin(object,gridRow.rowData/*task*/), text: "✎"} }
+		, { name:"Show Log", className: "-log", type:{suffix:" blue", click:(gridRow)=>showLogClick(object,gridRow.rowData/*task*/), text: "🗎"} }
+		, { name:"Stop"    , className: "-stop", type:{suffix:" red", click(gridRow){protocol.stopTask(object,gridRow.rowData)}, text: "▢"} }
+		, { name:"Start"   , className: "-start", type:{suffix:" green", click(gridRow){protocol.startTask(object,gridRow.rowData)}, text: "▷"} }
+		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click(gridRow){protocol.restartTask(object,gridRow.rowData)}, text: "↻"} }
 		//, { name:"Edit"    , className: "edit", type:{click:protocol.editTask.bind( protocol,object), text: "Edit ✎"} }
 	];
 	if( local.login )
@@ -158,10 +181,10 @@ function AddTaskList(display, object, field) {
 			const editor = new TaskInfoEditor( task.id, taskInfo.task );
 			editor.on( "close", ()=>{ delete editing[task.id] } );
 
-    }, text: "Edit ✎"} } );
+    }, text: "✎"} } );
 
 
-	const dataGrid = new popups.DataGrid( display, object, field, {//suffix:'-browse'
+	const dataGrid = new DataGrid( display, object, field, {//suffix:'-browse'
 		edit:false,
       columns } );
 
@@ -248,7 +271,35 @@ function AddSystem( system ) {
 }
 
 function showTaskAdmin( object, task ) {
-	window.open( "adminTaskControl.html?key="+task.id, "_blank", { width: 640, height: 480 } );
+	const config = new TaskConfiguration( local.display, task );
+}
+
+function formatLogTimestamp( time ) {
+	const date = time instanceof Date ? time : new Date( time );
+	if( Number.isNaN( date.getTime() ) )
+		return "";
+	return date.getFullYear().toString().padStart( 4, "0" ) + "-"
+		+ (date.getMonth()+1).toString().padStart( 2, "0" ) + "-"
+		+ date.getDate().toString().padStart( 2, "0" ) + " "
+		+ date.getHours().toString().padStart( 2, "0" ) + ":"
+		+ date.getMinutes().toString().padStart( 2, "0" ) + ":"
+		+ date.getSeconds().toString().padStart( 2, "0" ) + "."
+		+ date.getMilliseconds().toString().padStart( 3, "0" );
+}
+
+function getLogLineText( line, showTime ) {
+	const isLogObject = line && typeof line === "object";
+	const text = isLogObject && "line" in line ? line.line : line;
+	if( showTime && line && line.time ) {
+		const timestamp = formatLogTimestamp( line.time );
+		if( timestamp )
+			return "[" + timestamp + "] " + text;
+	}
+	return text;
+}
+
+function renderLogLine( span, line, showTime ) {
+	span.textContent = getLogLineText( line, showTime );
 }
 
 function addTaskLog( task, log ) {
@@ -256,8 +307,10 @@ function addTaskLog( task, log ) {
 
 	const opts = {
 		follow: true, 
+		showTime: false,
 	}
 	const follow = popups.makeCheckbox( logFrame,  opts, "follow", "Follow Log" );
+	const showTime = popups.makeCheckbox( logFrame, opts, "showTime", "Show Time Stamps" );
 	// add() chases the tail when following; backlog inserts have to opt out of
 	// that or every inserted line snaps the view to the bottom.
 	const state = { suspendFollow:false };
@@ -268,6 +321,10 @@ function addTaskLog( task, log ) {
 	logFrame.appendChild( logList );
 	logList.appendChild( logEnd );
 	logEnd.textContent = "-Load More-";
+	showTime.on( "change", ()=>{
+		for( const lineEl of logList.querySelectorAll( ".outputSpan" ) )
+			renderLogLine( lineEl, lineEl.logLine, showTime.value );
+	} );
 
 	const loadObserver = new IntersectionObserver((entries) => {
    		if(entries[0].isIntersecting){
@@ -300,7 +357,8 @@ function addTaskLog( task, log ) {
 	function add( line, after ) {
 		const newspan = document.createElement( "div" );
 		newspan.className = "outputSpan";
-		newspan.textContent = line.line;
+		newspan.logLine = line;
+		renderLogLine( newspan, line, showTime.value );
 		if( after ) 
 			logList.insertBefore( newspan, logEnd );
 		else
@@ -355,4 +413,3 @@ function insertBackLog( log, msg ) {
 		}
 }
 
-local.display = new Display();

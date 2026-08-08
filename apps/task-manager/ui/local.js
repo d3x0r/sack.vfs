@@ -6,6 +6,8 @@ export const local = {
 	taskData : null,
 	display : null,
 	statusDisplay : null,
+	fillStatusDisplay : false,
+	pendingShowTasks : [],
 	statusTimer: 0,
 	systems: [],
 	refresh : null,

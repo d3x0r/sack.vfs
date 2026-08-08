@@ -1,4 +1,10 @@
-import {Popup,popups} from "/node_modules/@d3x0r/popups/popups.mjs"
+import {Popup,popups} from "/node_modules/@d3x0r/popups2/popups.js"
+import {PagedFrame} from "/node_modules/@d3x0r/popups2/controls/paged-frame.js"
+import {TextInput} from "/node_modules/@d3x0r/popups2/controls/text-input.js"
+import {Button} from "/node_modules/@d3x0r/popups2/controls/button.js"
+import {DataGrid} from "/node_modules/@d3x0r/popups2/controls/data-grid.js"
+import {Checkbox} from "/node_modules/@d3x0r/popups2/controls/checkbox.js"
+import {createSimpleForm} from "/node_modules/@d3x0r/popups2/forms/simple-form.js"
 import {local} from "./local.js"
 import {config as protocolConfig, protocol} from "./protocol.js"
 
@@ -46,7 +52,7 @@ export class TaskInfoEditor extends Popup {
 
 		this.appendChild( flexFrame );
 
-		this.pageFrame =new popups.PagedFrame( flexFrame );
+		this.pageFrame =new PagedFrame( flexFrame );
 		const page1 = this.pageFrame.addPage( "General" );
 		page1.tooltip = "General settings for the task";
 		const page2 = this.pageFrame.addPage( "Options" );
@@ -80,7 +86,7 @@ export class TaskInfoEditor extends Popup {
 		})
 
 		if( task_) {
-			this.create = popups.makeButton( buttonFrame, "Save", ()=>{
+			this.create = new Button( buttonFrame, "Save", ()=>{
 				processForm(false);
 						this.on( "close", true );
 				this.remove();
@@ -88,8 +94,8 @@ export class TaskInfoEditor extends Popup {
 			this.create.tooltip = "Update this current task with the new settings";
 		}
 
-		this.saveAs = popups.makeButton( buttonFrame, "Save As", ()=>{
-			const form = popups.simpleForm( "Save As", "Name", task.name, (name)=>{
+		this.saveAs = new Button( buttonFrame, "Save As", ()=>{
+			const form = createSimpleForm( "Save As", "Name", task.name, (name)=>{
 				task.name = name;
 				processForm(true);
 				this.on( "close", true );
@@ -108,11 +114,11 @@ export class TaskInfoEditor extends Popup {
 		page1.appendChild( this.group1 );
 		//this.name = popups.makeTextField( this.group1, task, "name", "Name" );
 		//this.name.tooltip = "Name of the task";
-		this.bin = popups.makeTextInput( this.group1, task, "bin", 'Program');
+		this.bin = new TextInput( this.group1, task, "bin", 'Program');
 		this.bin.tooltip = "Program to run for this task";
-		this.altbin = popups.makeTextInput( this.group1, task, "altbin", 'Alternate Program');
+		this.altbin = new TextInput( this.group1, task, "altbin", 'Alternate Program');
 		this.altbin.tooltip = "Alternate Program to run for this task (if bin fails to run)";
-		this.work = popups.makeTextInput( this.group1, task, "work", "Start In Path" );
+		this.work = new TextInput( this.group1, task, "work", "Start In Path" );
 		this.work.tooltip = "This is the directory this task starts in.";
 
 		this.groupContainer = document.createElement( "div" );
@@ -124,30 +130,32 @@ export class TaskInfoEditor extends Popup {
 		this.groupContainer.appendChild( this.groupOpts );
 		page2.appendChild( this.groupContainer );
 		let c;
-		c = popups.makeCheckbox( this.groupOpts, task, "noAutoRun", "No Auto Run" );
+		c = new Checkbox( this.groupOpts, task, "noAutoRun", "No Auto Run" );
 		c.tooltip = "Do not automatically run this task when the service manager starts";
-		c = popups.makeCheckbox( this.groupOpts, task, "restart", "Restart" );
+		c = new Checkbox( this.groupOpts, task, "restart", "Restart" );
 		c.tooltip = "Automatically restart this task if it stops";
-		c = popups.makeCheckbox( this.groupOpts, task, "noKill", "No Auto Kill" );
+		c = new Checkbox( this.groupOpts, task, "noKill", "No Auto Kill" );
 		c.tooltip = "Do not automatically kill this task when the service manager stops";
-		c = popups.makeCheckbox( this.groupOpts, task, "useSignal", "Use Signal" );
+		c = new Checkbox( this.groupOpts, task, "useSignal", "Use Signal" );
 		c.tooltip = "Use a signal to stop this task";
-		c = popups.makeCheckbox( this.groupOpts, task, "newGroup", "New Group" );
+		c = new Checkbox( this.groupOpts, task, "newGroup", "New Group" );
 		c.tooltip = "Run this task in a new process group";
-		c = popups.makeCheckbox( this.groupOpts, task, "newConsole", "New Console" );
+		c = new Checkbox( this.groupOpts, task, "newConsole", "New Console" );
 		c.tooltip = "Run this task in a new console";
-		c = popups.makeCheckbox( this.groupOpts, task, "useBreak", "Use Break (WIN32)" );
+		c = new Checkbox( this.groupOpts, task, "useBreak", "Use Break (WIN32)" );
 		c.tooltip = "Use a break signal to stop this task";
-		c = popups.makeCheckbox( this.groupOpts, task, "noInheritStdio", "No Inherit Standard IO" );
+		c = new Checkbox( this.groupOpts, task, "noInheritStdio", "No Inherit Standard IO" );
 		c.tooltip = "Do not inherit standard IO (stdin,stdout,stderr, handles 0,1,2,...";
-		c = popups.makeTextInput( this.groupOpts, task, "style", "Style", false, false, true, "" );
+		c = new TextInput( this.groupOpts, task, "style", "Style", false, false, true, "" );
 		c.tooltip = "Style of the window (WIN32)"
+		c = new TextInput( this.groupOpts, task, "programName", "Program Name", false, false, false, "" );
+		c.tooltip = "Program name used for 'use signal'"
 		
 		const moveOpts = document.createElement( "div" );
 		moveOpts.className = "task-config-move-opts"
 		this.groupContainer.appendChild( moveOpts );
 		taskOpts.moveToEnable = !!task.moveTo;
-		const checkMove = popups.makeCheckbox( moveOpts, taskOpts, "moveToEnable", "Enable Move" );
+		const checkMove = new Checkbox( moveOpts, taskOpts, "moveToEnable", "Enable Move" );
 		checkMove.tooltip = "Enable moving the window to a specific location";
 		const moveSubOpts = document.createElement( "div" );
 
@@ -162,25 +170,25 @@ export class TaskInfoEditor extends Popup {
 					moveSubOpts.style.display = "";
 				}else 	moveSubOpts.style.display = "none";
 			})		
-		c = popups.makeTextInput( moveSubOpts, task.moveTo, "timeout", "Timeout", false, false, true );
+		c = new TextInput( moveSubOpts, task.moveTo, "timeout", "Timeout", false, false, true );
 		c.tooltip = "Timeout for moving the window (some windows are stubborn)";
-		c = popups.makeTextInput( moveSubOpts, task.moveTo, "display", "Display", false, false, true );
+		c = new TextInput( moveSubOpts, task.moveTo, "display", "Display", false, false, true );
 		c.tooltip = "Display to move the window to; 0 to ignore (0 for primary display? disable to ignore?)";
-		c = popups.makeTextInput( moveSubOpts, task.moveTo, "monitor", "Monitor", false, false, true );
+		c = new TextInput( moveSubOpts, task.moveTo, "monitor", "Monitor", false, false, true );
 		c.tooltip = "Monitor to move the window to; 0 to ignore";
 		const moveOptsXY = document.createElement( "div" );
 		moveOptsXY.className = "task-config-move-opts-xy"
 		moveSubOpts.appendChild( moveOptsXY );
-		c = popups.makeTextInput( moveOptsXY, task.moveTo, "x", "X", false, false, true );
+		c = new TextInput( moveOptsXY, task.moveTo, "x", "X", false, false, true );
 		c.tooltip = "X position to move the window to";
-		c = popups.makeTextInput( moveOptsXY, task.moveTo, "y", "Y", false, false, true );
+		c = new TextInput( moveOptsXY, task.moveTo, "y", "Y", false, false, true );
 		c.tooltip = "Y position to move the window to";
 		const moveOptsWH = document.createElement( "div" );
 		moveOptsWH.className = "task-config-move-opts-wh"
 		moveSubOpts.appendChild( moveOptsWH );
-		c = popups.makeTextInput( moveOptsWH, task.moveTo, "width", "Width", false, false, true );
+		c = new TextInput( moveOptsWH, task.moveTo, "width", "Width", false, false, true );
 		c.tooltip = "Width to move the window to";
-		c = popups.makeTextInput( moveOptsWH, task.moveTo, "height", "Height", false, false, true );
+		c = new TextInput( moveOptsWH, task.moveTo, "height", "Height", false, false, true );
 		c.tooltip = "Height to move the window to";
 		
 
@@ -189,7 +197,7 @@ export class TaskInfoEditor extends Popup {
 		page3.appendChild( this.group2 );
 		if( task.args)
 			this.argVal = task.args.map( (val,key)=>({arg:val}) )
-		this.args = new popups.DataGrid( this.group2, this, "argVal", { noSort: true,
+		this.args = new DataGrid( this.group2, this, "argVal", { noSort: true,
 			columns: [
 				{field:"arg", name:"Arguments", className: "argument-field", type:{edit:true} },
 				{name: "", className: "-arg-up", type :{ suffix:" blue", text:"▲", click:(gridRow)=>{
@@ -220,7 +228,7 @@ export class TaskInfoEditor extends Popup {
 		if( task.env )
 			this.envKeys = Object.entries( task.env ).map( ent=>({key:ent[0],val:ent[1]}) );
 
-		this.env = new popups.DataGrid( this.group3, this, "envKeys", { noSort: true,
+		this.env = new DataGrid( this.group3, this, "envKeys", { noSort: true,
 			columns: [
 				{field:"key", name:"Key", className: "env-key", type:{edit:true} },
 				{field:"val", name:"Value", className: "env-value", type:{edit:true} },
@@ -242,11 +250,11 @@ export class TaskInfoEditor extends Popup {
 
 		const footer = document.createElement( "div" );
 		footer.className = "task-config-footer";
-		const prevButton = popups.makeButton( footer, "Prev", ()=>{
+		const prevButton = new Button( footer, "Prev", ()=>{
 			--this.page;
 			showPage();
 		}, { suffix: "-prev" } )
-		const nextButton = popups.makeButton( footer, "Next", ()=>{
+		const nextButton = new Button( footer, "Next", ()=>{
 			++this.page;
 			showPage();
 		}, { suffix: "-next" } )
