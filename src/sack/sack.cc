@@ -73094,7 +73094,7 @@ enum jsox_parse_object_context_modes {
 /*
 #define JSOX_RESET_VAL()  {	  val.value_type = JSOX_VALUE_UNSET;	 val.contains = NULL;	              val._contains = NULL;	             val.name = NULL;	                  val.string = NULL;	                val.className = NULL;	             negative = FALSE; }
 */
-#define JSOX_RESET_STATE_VAL()  {	  state->val.value_type = JSOX_VALUE_UNSET;	 state->val.contains = NULL;	              state->val._contains = NULL;	             state->val.name = NULL;	                  state->val.string = NULL;	                state->val.className = NULL;	             state->completedString = FALSE;	          state->negative = FALSE; }
+#define JSOX_RESET_STATE_VAL()  {	  state->val.value_type = JSOX_VALUE_UNSET;	 state->val.contains = NULL;	              state->val._contains = NULL;	             state->val.name = NULL;	                  state->val.string = NULL;	                state->val.className = NULL;	             state->completedString = FALSE;	          state->signPending = FALSE;	              state->negative = FALSE; }
 struct jsox_input_buffer {
       // prior input buffer
 	char const * buf;
@@ -73180,6 +73180,10 @@ struct jsox_parse_state {
 	enum jsox_word_char_states word;
 	LOGICAL status;
 	LOGICAL negative;
+	// A '+' or '-' has been consumed and its number has not started yet.  The sign
+	// belongs to the literal, so nothing may come between them -- "+ 8" is a sign
+	// with no number followed by a second value, which is an expression, not JSOX.
+	LOGICAL signPending;
 	LOGICAL literalString;
 	PLINKSTACK *context_stack;
 	PLIST classes;
@@ -74501,6 +74505,11 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 #if defined( DEBUG_PARSING ) && defined( DEBUG_CHARACTER_PARSING )
 			lprintf( "parse character %c %d %d %d %d", c<32?'.':c, state->word, state->parse_context, state->val.value_type, state->word );
 #endif
+			// A sign only reaches the next character; whatever that is either starts
+			// the number it belongs to or ends its claim on one.  Captured and cleared
+			// here so exactly one character sees it.
+			const LOGICAL sawSignPending = state->signPending;
+			state->signPending = FALSE;
 			state->col++;
 			newN = input->pos - input->buf;
 			if( newN > input->size ) {
@@ -74509,6 +74518,18 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				break;
 			}
 			state->n = newN;
+			// A sign binds to the literal it precedes, so the very next character has to
+			// begin one: a digit, a '.', or the 'I'/'N' of Infinity/NaN.  Anything else
+			// leaves the sign with no number -- "+ 8" is a second value ("1 + 3" is an
+			// expression, not JSOX), and "+_0" quietly dropped the sign and produced the
+			// string "_0" ('_' is a digit separator, but it cannot start the number).
+			if( sawSignPending
+			 && !( ( c >= '0' && c <= '9' ) || c == '.' || c == 'I' || c == 'N' ) ) {
+				state->status = FALSE;
+				if( !state->pvtError ) state->pvtError = VarTextCreate();
+				vtprintf( state->pvtError, "extra data after token; sign is not followed by a number at %" _size_f "  %" _size_f ":%" _size_f, state->n, state->line, state->col );
+				break;
+			}
 			if( state->comment ) {
 				if( state->comment == 1 ) {
 					if( c == '*' ) { state->comment = 3; continue; }
@@ -75293,7 +75314,20 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					//
 					//----------------------------------------------------------
 				case '-':
-					state->negative = !state->negative;
+					if( state->word == JSOX_WORD_POS_RESET ) {
+						state->negative = !state->negative;
+						state->signPending = TRUE;
+					}
+					else recoverIdent( state, output, c );
+					break;
+				case '+':
+					// A leading '+' is a sign, not the first character of the number --
+					// falling into the number gatherer below meant "+ 8" collected just
+					// "+" and converted to 0, losing the value.  Consumed and ignored at
+					// value start, exactly as JSOX's own parser does; anywhere else it
+					// is part of an identifier.
+					if( state->word != JSOX_WORD_POS_RESET ) recoverIdent( state, output, c );
+					else state->signPending = TRUE;
 					break;
 				default:
 					if( state->word == JSOX_WORD_POS_RESET && ( (c >= '0' && c <= '9') || (c == '+') || (c == '.') ) )
@@ -75339,7 +75373,18 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 									state->exponent_digit = TRUE;
 							}
 							// to be implemented
-							else if( c == ':' || c == '-' || c == 'T' || c == 'Z' || c == '+' ) {
+							// '-' and '+' belong to a date here only where ISO-8601 puts
+							// them: the two separators in YYYY-MM-DD, or a zone offset once
+							// ':'/'T'/'Z' has established this is a date.  Taking them
+							// unconditionally swallowed them everywhere and made the
+							// exponent handling below unreachable -- "123+44" silently
+							// became 12344, and "1e+5" only worked by falling in here.
+							else if( c == ':' || c == 'T' || c == 'Z'
+							      || ( ( c == '-' || c == '+' )
+							         && ( state->numberFromDate
+							            || ( c == '-'
+							               && ( ( output->pos - state->val.string ) == 4
+							                  || ( output->pos - state->val.string ) == 7 ) ) ) ) ) {
 								/* toISOString()
 								var today = new Date('05 October 2011 14:48 UTC');
 								console.log(today.toISOString());

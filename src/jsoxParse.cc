@@ -616,8 +616,15 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				{
 					struct jsox_value_container *pathVal;
 					INDEX idx;
-					LOGICAL off_stack = FALSE; // the root object is technically on-stack... 
+					LOGICAL off_stack = FALSE; // the root object is technically on-stack...
 					Local<Object> refObj = revive->rootObject;
+					// What the path has landed on so far.  The walk descends through
+					// containers, so every element but the last has to be one; the last
+					// may be any value at all -- ref["a"] where a is 1 is a reference to
+					// 1, not a malformed path.  Chasing 'elements' to the end and then
+					// expecting to step into something is what faulted here.
+					Local<Value> refValue = revive->rootObject;
+					const INDEX pathCount = val->contains->Cnt;
 					//lprintf( "Ref Object is the root object...");
 					DATA_FORALL( val->contains, idx, struct jsox_value_container *, pathVal ) {
 						if( revive->failed ) return Undefined( revive->isolate );
@@ -642,13 +649,16 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									//MaybeLocal<Object> maybeRefObj = arraymember->ToObject( revive->isolate->GetCurrentContext() );
 									{
 
-										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
-										if( !member ) {
-											lprintf( "Stack is %lu at %lu get %lu", revive->reviveStack->Top, idx, revive->reviveStack->Top - idx - 1 );
-										}
+										// same guard as the string-path case below: no stack, or an
+										// index past its top, means "not on the stack" rather than
+										// a fault.
+										struct reviveStackMember* member = ( revive->reviveStack && idx < revive->reviveStack->Top )
+											? (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 )
+											: NULL;
 										if( member && member->index == (uint32_t)pathVal->result_n ) {
 											LogObject( member->object );
 											if( member->object->IsObject() ) {
+												refValue = member->object;
 												refObj = member->object.As<Object>();
 												off_stack = FALSE;
 												//lprintf( "Saving replacement, maybe we can re-apply a fixup?" );
@@ -668,7 +678,15 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								} else {
 									LogObject( arraymember );
 									off_stack = TRUE;
-									refObj = arraymember.As<Object>();
+									refValue = arraymember;
+									if( arraymember->IsObject() )
+										refObj = arraymember.As<Object>();
+									else if( ( idx + 1 ) < pathCount ) {
+										revive->isolate->ThrowException( Exception::TypeError(
+											String::NewFromUtf8( revive->isolate, TranslateText( "Expected an object reference but path lookup failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+										revive->failed = TRUE;
+										return Undefined( revive->isolate );
+									}
 								}
 							}
 						}
@@ -690,8 +708,14 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								//lprintf( "path is:%s", pathVal->string);
 								{
 									// if it's in the stack, prefer that value which is more current.
-									struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
-									if( !off_stack && idx < revive->reviveStack->Top ) {
+									// reviveStack is NULL until something is pushed onto it, and
+									// Top - idx - 1 underflows when idx reaches it -- either one
+									// used to fault here rather than simply meaning "not on the
+									// stack", which is what a reference to a plain value is.
+									struct reviveStackMember* member = ( revive->reviveStack && idx < revive->reviveStack->Top )
+										? (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 )
+										: NULL;
+									if( !off_stack && member ) {
 #ifdef DEBUG_REFERENCE_FOLLOW
 										lprintf( "Looking at reviveStack...  %d %d  %.*s %p", off_stack
 											, member->nameLen
@@ -724,7 +748,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 											}
 										}
 									}
-									if( idx >= revive->reviveStack->Top || (off_stack) /*|| ( member->object != refObj )*/ ) {
+									// no stack at all means nothing is open above us, which is the
+									// same situation as having walked past its top.
+									if( !revive->reviveStack || idx >= revive->reviveStack->Top || (off_stack) /*|| ( member->object != refObj )*/ ) {
 										if( refObj->Has( revive->context, pathval ).ToChecked() ) {
 #ifdef DEBUG_REFERENCE_FOLLOW
 											lprintf ( "object already has path, use that." );
@@ -742,6 +768,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								}
 							}
 							LogObject( val_temp );
+							refValue = val_temp;
 							if( val_temp->IsObject() ) {
 								refObj = val_temp.As<Object>();
 #ifdef DEBUG_REFERENCE_FOLLOW
@@ -758,7 +785,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									}
 								}
 #endif
-							}  else {
+							}  else if( ( idx + 1 ) < pathCount ) {
+								// only a fault when there is more path to walk; landing on a
+								// plain value at the end is the whole point of the reference.
 								revive->isolate->ThrowException( Exception::TypeError(
 									String::NewFromUtf8( revive->isolate, TranslateText( "Expected an object reference but path lookup failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 //#ifdef DEBUG_REVIVAL_CALLBACKS
@@ -766,13 +795,11 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 //#endif
 								revive->failed = TRUE;
 								return Undefined( revive->isolate );
-
-								//return val_temp;
 							}
 						}
 						//lprintf( "%d %s", pathVal->value_type, pathVal->string );
 					}
-					result = refObj;
+					result = refValue;
 				}
 				break;
 			default:
@@ -1559,6 +1586,13 @@ static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviv
 		// pending exception was lost on the way out -- a bad reference inside a revived
 		// type silently dropped the whole property instead of failing.  Catch it here,
 		// at the one exit, and forward it exactly once.
+		// MEASURED 2026-08-09: a pending exception is NOT delivered to JS when this
+		// callback returns normally after GetReturnValue().Set() -- a TryCatch here
+		// reports HasCaught() at both this frame and the outermost one, yet with no
+		// TryCatch at all the throw never reaches JS and the half-built value is
+		// returned as if it succeeded.  So the exception has to be observed and
+		// re-thrown explicitly; ambient propagation cannot be relied on.  The same
+		// applies to any native entry that lets a JS callback throw.
 		v8::TryCatch tc( revive->isolate );
 		value = convertMessageToJS2( parsed, revive );
 		jsox_dispose_message( &parsed );
