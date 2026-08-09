@@ -592,11 +592,11 @@ public:
 	~TLSObject();
 };
 
-struct reviveMemberReplacement {
-	Local<Value> object;
-	Local<Value> fieldName;
-};
-
+// Members carried a `pdlSubsts` list of slots that had captured this object, applied
+// after its revive returned a replacement.  It is gone: it wrote into the enclosing
+// member's list rather than its own (the member was popped before the pass ran), and
+// deferred references now repoint those slots from the finished document instead --
+// see resolveDeferredRefs() in jsoxParse.cc.
 struct reviveStackMember {
 	LOGICAL isArray;
 	int index;
@@ -604,22 +604,6 @@ struct reviveStackMember {
 	Local<Value> object;
 	char* name;
 	size_t nameLen;
-	PDATALIST pdlSubsts;
-	reviveStackMember() {
-		pdlSubsts = CreateDataList( sizeof( struct reviveMemberReplacement ) );
-
-	}
-	~reviveStackMember() {
-		{
-			INDEX idx;
-			struct reviveMemberReplacement* rep;
-			DATA_FORALL( pdlSubsts, idx, struct reviveMemberReplacement*, rep ) {
-				rep->fieldName.Clear();
-				rep->object.Clear();
-			}
-		}
-		DeleteDataList( &pdlSubsts );
-	}
 };
 
 // A reference whose target could not be stored when it was read, because the target

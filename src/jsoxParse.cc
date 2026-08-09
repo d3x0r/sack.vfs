@@ -712,11 +712,6 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 												refValue = member->object;
 												refObj = member->object.As<Object>();
 												off_stack = FALSE;
-												//lprintf( "Saving replacement, maybe we can re-apply a fixup?" );
-												struct reviveMemberReplacement rep;
-												rep.object = revive->refObject;
-												rep.fieldName = revive->fieldName;
-												AddDataItem( &member->pdlSubsts, &rep );
 											} else
 												lprintf( "Unexpected value from member..." );
 
@@ -777,12 +772,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 											&& ( StrCmpEx( pathVal->string, member->name, pathVal->stringLen ) == 0 )
 											) {
 											val_temp = member->object;
-											//lprintf( "Saving replacement(2), maybe we can re-apply a fixup?" );
-											struct reviveMemberReplacement rep;
 											off_stack = FALSE;
-											rep.object = revive->refObject;
-											rep.fieldName = revive->fieldName;
-											AddDataItem( &member->pdlSubsts, &rep );
 										} else {
 											if( refObj->Has( revive->context, pathval ).ToChecked() ) {
 												off_stack = TRUE; // probably was offstack too
@@ -968,31 +958,38 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 					lprintf( "method4 constructor passresing associatiated string?");
 #endif
 					if( val->value_type == JSOX_VALUE_STRING ) {
-						Local<Value> args[] = { result };
-						MaybeLocal<Object> mo = protoCon.As<Function>()->NewInstance( revive->context, 1, args );
-						Local<Value> resultTmp;
-						if( !mo.IsEmpty() ) {
-							resultTmp = mo.ToLocalChecked();
-							LogObject( resultTmp );
-
-							if( !cb.IsEmpty() && cb->IsFunction() ) {
+						// A tagged string hands the reviver the string itself as `this` --
+						// the same contract as `Tag{...}` and `Tag[...]`, where `this` is the
+						// payload that was gathered and the reviver returns the revived value.
+						//
+						// This used to construct protoCon( string ) first and call the reviver
+						// on *that*, which preserved the payload only when the constructor
+						// happened to consume it.  `regex` survives that way -- its protoCon
+						// is RegExp and `new RegExp("abc")` keeps the source -- but a plain
+						// registered class ignores the argument, so the reviver was handed an
+						// empty instance and the string was gone.  The no-constructor branch
+						// below always passed the string, so the two disagreed depending on
+						// whether a protoCon happened to be registered.
+						if( !cb.IsEmpty() && cb->IsFunction() ) {
 #ifdef DEBUG_REVIVAL_CALLBACKS
-								lprintf( "method4a?");
+							lprintf( "method4a?");
 #endif
-								MaybeLocal<Value> mv = cb->Call( revive->context, resultTmp, 0, NULL );
-								if( !mv.IsEmpty() )
-									result = mv.ToLocalChecked();
-								else
-									result = resultTmp;
-							} else {
-								lprintf( "created container reference... resulting without reviver" );
-								result = resultTmp;
-							}
+							MaybeLocal<Value> mv = cb->Call( revive->context, result, 0, NULL );
+							if( !mv.IsEmpty() )
+								result = mv.ToLocalChecked();
 							LogObject( result );
 						}
-						else
-						{
-							lprintf( "Threw an exception in constrcutor" );
+						else {
+							// no reviver -- the constructor is the only thing that can turn the
+							// string into the type, so build from it as before
+							Local<Value> args[] = { result };
+							MaybeLocal<Object> mo = protoCon.As<Function>()->NewInstance( revive->context, 1, args );
+							if( !mo.IsEmpty() ) {
+								result = mo.ToLocalChecked();
+								LogObject( result );
+							}
+							else
+								lprintf( "Threw an exception in constrcutor" );
 						}
 					}
 				}
@@ -1414,27 +1411,17 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 					MaybeLocal<Value> r = finalCb->Call( revive->context, sub_v, 0, NULL );
 					if( !r.IsEmpty() ) {
 						sub_v = r.ToLocalChecked();
-						{
-							// This handles replacing values that were used when this was the old value
-#ifdef DEBUG_REVIVAL_CALLBACKS
-							lprintf( "Finall got the resolved value, let's check the stack?" );
-#endif
-							if( revive->reviveStack->Top )
-							{
-								struct reviveStackMember* member = (struct reviveStackMember*)PeekLink( &revive->reviveStack );
-								if( member->pdlSubsts->Cnt ) {
-									INDEX idx;
-									struct reviveMemberReplacement* rep;
-									DATA_FORALL( member->pdlSubsts, idx, struct reviveMemberReplacement*, rep ) {
-										Local<Object> o = rep->object.As<Object>();
-										o->Set( revive->context, rep->fieldName, sub_v );
-#ifdef DEBUG_REVIVAL_CALLBACKS
-										lprintf( "!!!!! REPLACED STUFF HERE(3)!" );
-#endif
-									}
-								}
-							}
-						}
+						// There was a `pdlSubsts` pass here that repointed slots which had
+						// captured this object before its revive replaced it.  It is gone for
+						// two reasons.  It targeted the wrong list -- this object's own stack
+						// member was popped and deleted just above, so PeekLink returned the
+						// *enclosing* member and wrote this object's value into slots that had
+						// captured the enclosing one.  `{outer:A{a:ref["outer"],b:B{...},c:3}}`
+						// came out with `outer.a` holding the B.  And it is now redundant: a
+						// reference that lands on a still-open object defers, and
+						// resolveDeferredRefs() repoints it from the finished document, where
+						// every identity is final.  Keeping a second, earlier mechanism that
+						// writes a different answer into the same slot could only race it.
 					} else {
 //#ifdef DEBUG_REVIVAL_CALLBACKS
 						lprintf( "Callback threw an exception" );

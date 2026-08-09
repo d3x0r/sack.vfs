@@ -485,4 +485,125 @@ describe( 'Added in 1.2.126 - class tags and cyclic references', function () {
 		expect( JSOX.parse( '[0o123]' )[0] ).to.equal( 83 );
 	} );
 
+	it( 'does not let a completing sibling overwrite a slot that referenced the parent', function () {
+		// sack carried a per-stack-member list of slots that had captured that member,
+		// replayed after its revive returned a replacement. It read the wrong list: the
+		// object's own member was popped and deleted before the pass ran, so PeekLink
+		// returned the ENCLOSING member and wrote the just-revived nested object into
+		// slots that had captured the enclosing one. Here `a` referenced `outer`, then
+		// sibling `b` finished reviving and landed in `a` -- `outer.a` came out holding
+		// the B. Deferred references repoint those slots from the finished document
+		// instead, so that earlier mechanism is gone.
+		const r = parseAB( '{outer:A{a:ref["outer"],b:B{b:2,c:0},c:3}}' );
+		expect( r.outer ).to.be.an.instanceof( A );
+		expect( r.outer.a ).to.equal( r.outer );
+		expect( r.outer.b ).to.be.an.instanceof( B );
+		expect( r.outer.c ).to.equal( 3 );
+
+		// same shape with the nested object read before the reference
+		const r2 = parseAB( '{outer:A{a:B{b:2,c:0},b:ref["outer"],c:3}}' );
+		expect( r2.outer.b ).to.equal( r2.outer );
+		expect( r2.outer.a ).to.be.an.instanceof( B );
+	} );
+
+	// ---- H: two values with no separator -------------------------------------
+
+	it( 'rejects adjacent values inside a container', function () {
+		// These all parsed, silently and wrongly, in both implementations: the second
+		// value overwrote the first rather than erroring. `[8 8]` dropped one, `[1,2 3]`
+		// REPLACED the 2 with the 3, and `[true false]` produced the string "false".
+		// number-number is not a valid construct and is not going to become one.
+		JSOX.reset();
+		expect( () => JSOX.parse( '[8 8]' ) ).to.throw();
+		expect( () => JSOX.parse( '{a:8 8}' ) ).to.throw();
+		expect( () => JSOX.parse( '[1,2 3]' ) ).to.throw();
+		expect( () => JSOX.parse( '{a:1,b:2 3}' ) ).to.throw();
+		expect( () => JSOX.parse( '[1 2 3]' ) ).to.throw();
+		expect( () => JSOX.parse( '{a:1 2}' ) ).to.throw();
+		expect( () => JSOX.parse( '[1.5 2.5]' ) ).to.throw();
+		expect( () => JSOX.parse( '[0x10 0x20]' ) ).to.throw();
+	} );
+
+	it( 'rejects a number touching a container', function () {
+		// the other direction: a number can neither name a class nor carry one, so it
+		// can never sit against a `{` or `[` the way a class tag does
+		JSOX.reset();
+		expect( () => JSOX.parse( '[8 {}]' ) ).to.throw();
+		expect( () => JSOX.parse( '[8 []]' ) ).to.throw();
+		expect( () => JSOX.parse( '[{} 8]' ) ).to.throw();
+		expect( () => JSOX.parse( '[[] 8]' ) ).to.throw();
+	} );
+
+	it( 'still accepts separated values and class tags', function () {
+		// the neighbours that must keep working -- the guard keys on a *number* being
+		// involved precisely so class tags are untouched
+		JSOX.reset();
+		expect( JSOX.parse( '[8,8]' ) ).to.deep.equal( [ 8, 8 ] );
+		expect( JSOX.parse( '[1,2,3]' ) ).to.deep.equal( [ 1, 2, 3 ] );
+		expect( JSOX.parse( '[-1,+2,.5]' ) ).to.deep.equal( [ -1, 2, 0.5 ] );
+		expect( JSOX.parse( '[[1],[2]]' ) ).to.deep.equal( [ [ 1 ], [ 2 ] ] );
+		expect( JSOX.parse( '[{a:1},{b:2}]' ) ).to.deep.equal( [ { a : 1 }, { b : 2 } ] );
+		expect( JSOX.parse( '[Tag{a:1}]' ) ).to.deep.equal( [ { a : 1 } ] );
+		expect( JSOX.parse( '[Tag[1,2]]' ) ).to.deep.equal( [ [ 1, 2 ] ] );
+	} );
+
+	it( 'keeps a sequence of values legal at the root', function () {
+		// the root is a stream: `8 8` there is two whole messages, not a run-on, and
+		// parse() returns the first. Only a container forbids the adjacency.
+		JSOX.reset();
+		expect( JSOX.parse( '8 8' ) ).to.equal( 8 );
+		expect( JSOX.parse( '{a:1} {b:2}' ) ).to.deep.equal( { a : 1 } );
+
+		const seen = [];
+		const p = JSOX.begin( o => { seen.push( o ); } );
+		p.write( '8 8 ' );                       // trailing space terminates the second
+		expect( seen ).to.deep.equal( [ 8, 8 ] );
+	} );
+
+	// ---- I: class-tagged strings ---------------------------------------------
+
+	it( 'hands a tagged string to its reviver as `this`', function () {
+		// `Tag"..."` is a real form -- RegExp and Symbol emit it -- and its contract
+		// matches the container tags: `this` is the payload that was gathered, and the
+		// reviver returns the revived value.
+		//
+		// It used to construct protoCon( string ) first and call the reviver on THAT,
+		// which only preserved the payload when the constructor happened to consume it.
+		// `regex` survived (new RegExp("abc") keeps the source); a plain class ignored
+		// the argument, so the reviver got an empty instance and the string was gone.
+		JSOX.reset();
+		class T {}
+		let out, seen;
+		const p = JSOX.begin( o => { out = o; } );
+		p.fromJSOX( "T", T, function ( field, val ) {
+			if( field ) return val;
+			seen = String( this );
+			return { got : String( this ) };
+		} );
+		p.write( 'T"hello"' );
+		expect( seen ).to.equal( "hello" );
+		expect( out ).to.deep.equal( { got : "hello" } );
+	} );
+
+	it( 'round-trips a RegExp through the tagged-string form', function () {
+		// the built-in that depends on this path; `JSOX.stringify(/ab+c/)` is `regex'ab+c'`
+		JSOX.reset();
+		const text = JSOX.stringify( /ab+c/ );
+		expect( text ).to.contain( "regex" );
+		const back = JSOX.parse( text );
+		expect( back ).to.be.an.instanceof( RegExp );
+		expect( back.source ).to.equal( "ab+c" );
+
+		expect( JSOX.parse( "regex'abc'" ).source ).to.equal( "abc" );
+		expect( JSOX.parse( JSOX.stringify( { a : /xy/, b : 1 } ) ).a.source ).to.equal( "xy" );
+	} );
+
+	it( 'still constructs from the string when no reviver is registered', function () {
+		// a type registered with a constructor but no reviver has nothing else that
+		// could turn the text into the type, so that path must keep constructing
+		JSOX.reset();
+		expect( JSOX.parse( JSOX.stringify( new Map( [ [ "a", 1 ] ] ) ) ) )
+			.to.deep.equal( new Map( [ [ "a", 1 ] ] ) );
+	} );
+
 } );

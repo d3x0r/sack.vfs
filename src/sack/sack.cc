@@ -74271,6 +74271,25 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 	}
 	return 0;
 }
+// Two values with nothing between them.  The only legal adjacency is a class tag --
+// `Tag{...}`, `Tag[...]`, `Tag"..."` -- where the leading part is an identifier or quoted
+// string.  A number can be neither: it cannot name a class, and it cannot carry one.  So a
+// number touching another value, on either side, is always a syntax error.
+//
+// Without this the second value simply overwrote the first, which is silent and wrong in
+// both directions: `[1,2 3]` parsed as [1,3] (the 2 replaced), `[8 8]` as [8] (the second
+// dropped), and `[true false]` as the *string* "false".
+//
+// The root is exempt: there is no container there, whitespace separates whole messages,
+// and `8 8` is legitimately two of them.
+static LOGICAL twoValuesNoSeparator( struct jsox_parse_state *state ) {
+	if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) return FALSE;
+	if( !state->pvtError ) state->pvtError = VarTextCreate();
+	vtprintf( state->pvtError, "fault while parsing; two values with no separator between them at %" _size_f "  %" _size_f ":%" _size_f
+	        , state->n, state->line, state->col );
+	state->status = FALSE;
+	return TRUE;
+}
 static void pushValue( struct jsox_parse_state *state, PDATALIST *pdl, struct jsox_value_container *val, int line ) {
 #define pushValue(a,b,c) pushValue(a,b,c,__LINE__)
 #ifdef DEBUG_PARSING
@@ -74621,9 +74640,14 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				if( !state->comment ) state->comment = 1;
 				break;
 			case '{':
+				// `Tag{...}` is legal; `8{...}` is not -- a number cannot name a class
+				if( state->val.value_type == JSOX_VALUE_NUMBER )
+					if( twoValuesNoSeparator( state ) ) break;
 				openObject( state, output, c );
 				break;
 			case '[':
+				if( state->val.value_type == JSOX_VALUE_NUMBER )
+					if( twoValuesNoSeparator( state ) ) break;
   // gather any preceeding string.
 				recoverIdent(state,output,c);
 				//openArray( state, output, c );
@@ -75174,6 +75198,15 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					// but gatherString now just gathers all strings
 				case '"':
 				case '\'':
+					// a preceding STRING is promoted to a class name just below -- that is
+					// the `Tag"..."` form -- but a preceding number can only be a run-on
+					if( state->val.value_type == JSOX_VALUE_NUMBER )
+						if( twoValuesNoSeparator( state ) ) break;
+					// Promote a preceding word or string to a class name: this is the
+					// `Tag"..."` form, which the built-in RegExp and Symbol emitters use
+					// (`regex'abc'`, `sym"name"`).  See the note in the handoff -- a tagged
+					// string DOES revive through the global fromProtoTypes path; it is only
+					// the parser-local fromJSOX() registration that loses the payload.
 					if( state->word == JSOX_WORD_POS_FIELD
 						|| ( state->val.value_type == JSOX_VALUE_STRING
 							 && !state->val.className ) ) {
@@ -75379,6 +75412,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						// keep it set to determine what sort of value is ready.
 					beginNumber:
 						if( !state->gatheringNumber ) {
+							// a number can never be class-tagged, so anything already held
+							// here means two values ran together
+							if( state->val.value_type != JSOX_VALUE_UNSET )
+								if( twoValuesNoSeparator( state ) ) break;
 							state->numberFromBigInt = FALSE;
 							state->numberFromDate = FALSE;
 							state->exponent = FALSE;
