@@ -622,6 +622,25 @@ struct reviveStackMember {
 	}
 };
 
+// A reference whose target could not be stored when it was read, because the target
+// was a container still being built.  Such a container's identity is not settled until
+// its revive returns -- which may hand back something entirely different from the
+// accumulator the values were collected into -- so the slot gets `placeholder` now and
+// the real value in a second pass, once the document is complete.  `path` is the
+// document-rooted reference path, borrowed from the parse tree (which outlives the
+// conversion); `owner` is the accumulator the reference was read under, needed because
+// a custom reviver may have stored the placeholder somewhere the walk from the root
+// cannot see.
+struct deferredRef {
+	PDATALIST path;
+	Local<Object> placeholder;
+	Local<Value> owner;
+	Local<Value> resolved;
+	// 0 = not resolved yet, 1 = being resolved (a second visit is a reference cycle
+	// through other references, which cannot terminate), 2 = resolved.
+	int state;
+};
+
 struct reviver_data {
 	//Persistent<Function> dateCons;
 	Local<Function> fieldCb;
@@ -645,9 +664,27 @@ struct reviver_data {
 	// or the handler already threw, since that exception is the one to surface.
 	LOGICAL needsThrow;
 	PLINKSTACK reviveStack;
+	// References that landed on a still-open container; resolved by resolveDeferredRefs()
+	// once the root's final identity is known.  NULL until one is deferred.
+	PDATALIST pdlDeferred;
+
+	// Every caller declares this on the stack and fills in the fields it cares about,
+	// so the members the destructor touches have to start empty here rather than at
+	// each site -- jsonParse.cc shares this struct and never mentions them.
+	reviver_data() : failed( FALSE ), needsThrow( FALSE ), reviveStack( NULL ), pdlDeferred( NULL ) {}
 
 	~reviver_data() {
 		DeleteLinkStack( &this->reviveStack );
+		if( this->pdlDeferred ) {
+			INDEX idx;
+			struct deferredRef* d;
+			DATA_FORALL( this->pdlDeferred, idx, struct deferredRef*, d ) {
+				d->placeholder.Clear();
+				d->owner.Clear();
+				d->resolved.Clear();
+			}
+			DeleteDataList( &this->pdlDeferred );
+		}
 	}
 };
 

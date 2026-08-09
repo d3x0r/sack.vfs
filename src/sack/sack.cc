@@ -59392,7 +59392,13 @@ uint8_t *DecodeBase64Ex( const char* buf, size_t length, size_t *outsize, const 
 			(*outsize) = (((length + 3) / 4) * 3) - 2;
 		else if( length % 4 == 3 )
 			(*outsize) = (((length + 3) / 4) * 3) - 1;
-		else if( buf[length - 1] == '=' ) {
+		// An empty input has length % 4 == 0, so without this it falls through to the
+		// padding check and reads buf[-1] -- and buf is NULL when there was no payload
+		// at all, which is a hard crash rather than a stray byte.  Decoding nothing
+		// yields nothing: the else below computes ((0+3)/4)*3 == 0 correctly.
+		// (length % 4 == 0 and length > 0 implies length >= 4, so buf[length-2] below
+		// is in bounds once zero is excluded.)
+		else if( length && buf[length - 1] == '=' ) {
 			if( buf[length - 2] == '=' ) {
 				(*outsize) = (((length + 3) / 4) * 3) - 2;
 			}
@@ -74278,7 +74284,22 @@ static void pushValue( struct jsox_parse_state *state, PDATALIST *pdl, struct js
 		//lprintf( "Setting value type as JSOX_VALUD_TYPED_ARRAY+%d",val->value_type - JSOX_VALUE_TYPED_ARRAY );
 		if( (val->value_type - JSOX_VALUE_TYPED_ARRAY) >= 0 && (val->value_type - JSOX_VALUE_TYPED_ARRAY) < 12 ) {
 			struct jsox_value_container *innerVal = (struct jsox_value_container *)GetDataItem( &val->contains, 0 );
-			val->string = (char*)DecodeBase64Ex( innerVal->string, innerVal->stringLen, &val->stringLen, NULL );
+			// A base64 payload is a string token.  A loose (unquoted) string cannot start
+			// with a digit -- that lexes as a number -- so the stringifier quotes every
+			// payload that does.  Decoding a number's decimal text invents bytes, and a
+			// leading zero (a real base64 digit) is already lost by the time it gets here,
+			// so refuse it rather than hand back something that cannot round-trip.
+			if( innerVal && innerVal->value_type == JSOX_VALUE_NUMBER ) {
+				if( !state->pvtError ) state->pvtError = VarTextCreate();
+				vtprintf( state->pvtError, "Invalid base64 payload; a payload starting with a digit must be quoted at %" _size_f " %" _size_f ":%" _size_f, state->n, state->line, state->col );
+				state->status = FALSE;
+				return;
+			}
+			// `ab[]` carries no payload at all -- an empty buffer, not a decode.  Passing
+			// the NULL through is safe now that DecodeBase64Ex guards a zero length.
+			val->string = (char*)DecodeBase64Ex( innerVal ? innerVal->string : NULL
+			                                   , innerVal ? innerVal->stringLen : 0
+			                                   , &val->stringLen, NULL );
 		}
 	}
 	AddDataItem( pdl, val );
@@ -75604,6 +75625,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 		}
 		state->completed = FALSE;
 	}
+	// That pushValue is the top-level value's, and it runs after the status check above,
+	// so anything it rejects had no way to be reported -- the caller got retval 1 and the
+	// half-built value as though it had parsed.  A nested value pushes earlier in the loop
+	// and so was caught; only the outermost one could slip through.
+	if( !state->status )
+		return -1;
 	return retval;
 }
 PNVDATALIST jsox_parse_get_data( struct jsox_parse_state *state ) {
