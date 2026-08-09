@@ -1,72 +1,9 @@
 "use strict";
 
-class DateNS extends Date {
-	ns=0;
-	constructor(a,b ) {
-		if( !a ) super();
-		else super(a);
-		this.ns = b || 0;
-	}
-	toString() {
-		return toISONS( this );
-	}
-	toISOString() {
-		return toISONS( this );
-	}
-}
-
-function toISO(this_) {
-	if( this_.getTime()=== -62167219200000) 
-	{
-		return "0000-01-01T00:00:00.000Z";
-	}
-	const yr = this_.getFullYear();
-	const tzo = -this_.getTimezoneOffset(),
-		dif = tzo >= 0 ? '+' : '-',
-		pad = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 10 ? '0' : '') + norm;
-		},
-		pad3 = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-		};
-	return (( yr < 0 )? '-'+Math.abs(yr).toString().padStart( 6, '0' ):yr.toString().padStart( 4, "0" )) +
-		'-' + pad(this_.getMonth() + 1) +
-		'-' + pad(this_.getDate()) +
-		'T' + pad(this_.getHours()) +
-		':' + pad(this_.getMinutes()) +
-		':' + pad(this_.getSeconds()) +
-		'.' + pad3(this_.getMilliseconds()) +
-		dif + pad(tzo / 60) +
-		':' + pad(tzo % 60.0);
-}
-
-function toISONS(this_) {
-	var tzo = -this_.getTimezoneOffset(),
-		dif = tzo >= 0 ? '+' : '-',
-		pad = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 10 ? '0' : '') + norm;
-		},
-		pad3 = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-		},
-		pad6 = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 100000 ? '0' : '') + (norm < 10000 ? '0' : '') + (norm < 1000 ? '0' : '') + (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-		};
-	return this_.getFullYear() +
-		'-' + pad(this_.getMonth() + 1) +
-		'-' + pad(this_.getDate()) +
-		'T' + pad(this_.getHours()) +
-		':' + pad(this_.getMinutes()) +
-		':' + pad(this_.getSeconds()) +
-		'.' + pad3(this_.getMilliseconds()) + pad6(this_.ns) +
-		dif + pad(tzo / 60) +
-		':' + pad(tzo % 60);
-}
+// DateNS lives in the loader (sack.DateNS) so there is one definition of it; see
+// sack-datens.cjs.
+const sackDateNS = require( "./sack-datens.cjs" );
+const { DateNS, toISO, toISONS } = sackDateNS;
 
 module.exports = function(sack) {
 

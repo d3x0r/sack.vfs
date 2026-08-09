@@ -125,6 +125,10 @@ if( !sack ) {
 
 module.exports=exports=sack;
 
+// Provide DateNS before anything that might revive one.  Object storage hands back
+// file times as DateNS, and that must not depend on the JSOX layer having run.
+sack.DateNS = require( "./sack-datens.cjs" ).DateNS;
+
 require( "./sack-jsox.cjs" )(sack);
 
 //const r = ( require( "./object-storage.mjs" ).default )( sack );

@@ -636,7 +636,14 @@ struct reviver_data {
 	Local<Function> reviver;
 	Local<Object> rootObject;
 	class JSOXObject *parser;
+	// A JS callback threw, or the module handler raised an error itself.  Either way
+	// stop: unwind, and do not invoke another callback -- calling into JS with an
+	// exception already pending is the double-throw case.
 	LOGICAL failed;
+	// Set when the failure was detected without an exception being raised, so the one
+	// exit point knows it still owes JS an error.  Left FALSE when a callback threw
+	// or the handler already threw, since that exception is the one to surface.
+	LOGICAL needsThrow;
 	PLINKSTACK reviveStack;
 
 	~reviver_data() {

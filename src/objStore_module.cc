@@ -96,6 +96,7 @@ struct optionStrings {
 	Eternal<String>* limitString;
 	Eternal<String>* fromString;
 	Eternal<String>* getTimezoneOffsetString;
+	Eternal<String>* nsString;
 };
 
 
@@ -210,8 +211,32 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		DEFSTRING( read );
 		DEFSTRING( opts );
 		DEFSTRING( getTimezoneOffset );
+		DEFSTRING( ns );
 	}
 	return check;
+}
+
+// Stored times are nanoseconds since the UNIX epoch, UTC.  A JS Date carries only
+// milliseconds (as a double); a DateNS adds `ns`, the sub-millisecond remainder in
+// nanoseconds (0 - 999999).  The two halves are recombined here rather than read as
+// one Number: a double is exact only to 2^53 ns, about 104 days.
+static uint64_t nsTickFromDate( Isolate* isolate, Local<Value> timeVal ) {
+	Local<Context> ctx = isolate->GetCurrentContext();
+	double ms = timeVal->NumberValue( ctx ).FromMaybe( 0 );
+	// rejects NaN (an Invalid Date) and anything before 1970, which the unsigned
+	// storage cannot represent anyway.
+	if( !( ms >= 0 ) ) return 0;
+	uint64_t tick = (uint64_t)ms * 1000000ULL;
+	Local<Object> dateObj;
+	if( timeVal->IsObject() && timeVal->ToObject( ctx ).ToLocal( &dateObj ) ) {
+		struct optionStrings* strings = getStrings( isolate );
+		Local<Value> ns;
+		if( dateObj->Get( ctx, strings->nsString->Get( isolate ) ).ToLocal( &ns ) && ns->IsNumber() ) {
+			double nsVal = ns->NumberValue( ctx ).FromMaybe( 0 );
+			if( nsVal >= 0 && nsVal < 1000000 ) tick += (uint64_t)nsVal;
+		}
+	}
+	return tick;
 }
 
 #if 0
@@ -941,12 +966,8 @@ void ObjectStorageObject::fileWrite( const v8::FunctionCallbackInfo<Value>& args
 		if( opts->Has( ctx, name = strings->timeString->Get( isolate ) ).ToChecked() ) {
 			Local<Value> timeVal = opts->Get( ctx, name ).ToLocalChecked();
 			useTime = timeVal.As<Date>();
-			Local<Value> offset = useTime->Get( ctx, strings->getTimezoneOffsetString->Get( isolate ) ).ToLocalChecked().As<Function>()->Call( ctx, useTime, 0, NULL ).ToLocalChecked();
-			int64_t intVal = offset.As<Number>()->IntegerValue(ctx).ToChecked();
-			double dateVal = timeVal->NumberValue(ctx).FromMaybe( 0 );
-			tzToUse = (int)-intVal;
-			dateValToUse = (uint64_t)dateVal;
-			//lprintf( " COnverted time val: %g, %d", dateVal, (int)intVal );
+			dateValToUse = nsTickFromDate( isolate, timeVal );
+			tzToUse = 0; // stored times are UTC
 		}
 	}
 
@@ -1167,26 +1188,17 @@ void ObjectStorageObject::fileSetTime( const v8::FunctionCallbackInfo<Value>& ar
 	ObjectStorageObject* vol = ObjectWrap::Unwrap<ObjectStorageObject>( getFCIHolder(args) );
 	String::Utf8Value fName( isolate, args[0] );
 
-	Local<Date> useTime;
-	uint64_t dateValToUse = 0;
-	int tzToUse = 0;
-	struct optionStrings* strings = getStrings( isolate );
-
 	Local<Value> timeVal = args[1];
-	useTime = timeVal.As<Date>();
-	if( !useTime.IsEmpty() ) {
-		Local<Value> offset = useTime->Get( isolate->GetCurrentContext(), strings->getTimezoneOffsetString->Get( isolate ) ).ToLocalChecked().As<Function>()->Call( isolate->GetCurrentContext(), useTime, 0, NULL ).ToLocalChecked();
-		int64_t intVal = offset.As<Number>()->IntegerValue( isolate->GetCurrentContext() ).ToChecked();
-		double dateVal = timeVal->NumberValue( isolate->GetCurrentContext() ).FromMaybe( 0 );
-		tzToUse = (int)-intVal;
-		dateValToUse = (uint64_t)dateVal;
+	if( timeVal->IsDate() ) {
+		// a DateNS is a Date subclass, so this covers both; the sub-millisecond half
+		// comes along only when the caller had one to give.
+		uint64_t dateValToUse = nsTickFromDate( isolate, timeVal );
 
 		if( !objStore::sack_vfs_os_exists( vol->vol, ( *fName ) ) )
 			return;
 		struct objStore::sack_vfs_os_file* file = objStore::sack_vfs_os_openfile( vol->vol, ( *fName ) );
-		objStore::sack_vfs_os_set_time( file, dateValToUse, tzToUse );
+		objStore::sack_vfs_os_set_time( file, dateValToUse, 0 );
 		objStore::sack_vfs_os_close( file );
-		//lprintf( " COnverted time val: %g, %d", dateVal, (int)intVal );
 	}
 
 }
@@ -1194,29 +1206,25 @@ void ObjectStorageObject::fileSetTime( const v8::FunctionCallbackInfo<Value>& ar
 Local<Array> makeTimes( Isolate* isolate, uint64_t* timeArray, int8_t* tzArray, size_t timeCount ) {
 	Local<Array> arr = Array::New( isolate, (int)timeCount );
 	class constructorSet* c = getConstructors( isolate );
-	for( int n = 0; n < timeCount; n++ ) {
-		SACK_TIME st;
-		int8_t use_tz = ( (int8_t)tzArray[n] );
-		// time is stored as UTC so all times are universal and have no bias between them.
-		// though decoding a timestamp with a timezone requires the local time to be used along with the timezone code
-		// so this has to adjust the value before decoding to parts and building a resulting string.
-		timeArray[n] += use_tz * 15 * 60 * 1000;
-		
-		ConvertTickToTime( ( timeArray[n] << 8 ) | (use_tz&0xFF), &st );
-		//Local<Script> script;
-		char buf[64];
-		int tz;
-		int negTz = 0;
-		if( st.zhr < 0 ) {
-			tz = -st.zhr;
-			negTz = 1;
-		} else
-			tz = st.zhr;
+	Local<Context> ctx = isolate->GetCurrentContext();
+	(void)tzArray; // stored times are UTC; rendering in a local zone is the UI's job.
+	for( size_t n = 0; n < timeCount; n++ ) {
+		// times are nanoseconds since the epoch.  Date takes the millisecond half
+		// straight as a number, so there is no calendar decode here and no ISO string
+		// for V8 to turn around and re-parse; DateNS carries the remainder.  The whole
+		// tick must never go through a double -- that is exact only to 2^53 ns, about
+		// 104 days -- which is why the two halves stay separate.
+		double ms = (double)( timeArray[n] / 1000000ULL );
+		uint32_t nsRem = (uint32_t)( timeArray[n] % 1000000ULL );
 
-		snprintf( buf, 64, "%04d-%02d-%02dT%02d:%02d:%02d.%03d%c%02d:%02d", st.yr, st.mo, st.dy, st.hr, st.mn, st.sc, st.ms, negTz ? '-' : '+', tz, st.zmn );
-		Local<Value> args[1] = { String::NewFromUtf8( isolate, buf, NewStringType::kNormal ).ToLocalChecked() };
-		Local<Value> newDate = Local<Function>::New( isolate, c->dateCons )->NewInstance( isolate->GetCurrentContext(), 1, args ).ToLocalChecked();
-		arr->Set( isolate->GetCurrentContext(), n, newDate );
+		Local<Value> args[2] = { Number::New( isolate, ms )
+		                       , Number::New( isolate, nsRem ) };
+		// dateNsCons is handed over from JS by setFromPrototypeMap; fall back rather
+		// than fault if the JSOX layer has not registered it yet.
+		Local<Value> newDate = ( nsRem && !c->dateNsCons.IsEmpty() )
+			? Local<Function>::New( isolate, c->dateNsCons )->NewInstance( ctx, 2, args ).ToLocalChecked()
+			: Local<Function>::New( isolate, c->dateCons )->NewInstance( ctx, 1, args ).ToLocalChecked();
+		arr->Set( ctx, n, newDate );
 	}
 	return arr;
 }

@@ -213,6 +213,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( val ) {
 			struct reviver_data r;
 			r.failed = FALSE;
+	r.needsThrow = FALSE;
 			if( !parser->reviver.IsEmpty() ) {
 				r.revive = TRUE;
 				r.reviver = parser->reviver.Get( isolate );
@@ -1552,10 +1553,26 @@ static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviv
 	Local<Value> value;
 
 	revive->parser->currentReviver = revive;
-	value = convertMessageToJS2( parsed, revive );
-	//logTick(4);
-
-	jsox_dispose_message( &parsed );
+	{
+		// Revival raises errors by throwing and setting `failed`, then unwinding.  The
+		// unwind used to hand the half-built value back as if nothing happened, and the
+		// pending exception was lost on the way out -- a bad reference inside a revived
+		// type silently dropped the whole property instead of failing.  Catch it here,
+		// at the one exit, and forward it exactly once.
+		v8::TryCatch tc( revive->isolate );
+		value = convertMessageToJS2( parsed, revive );
+		jsox_dispose_message( &parsed );
+		if( tc.HasCaught() ) {
+			tc.ReThrow();
+			return Undefined( revive->isolate );
+		}
+		// failed without anything raised: the handler still owes JS an error.
+		if( revive->failed && revive->needsThrow ) {
+			revive->isolate->ThrowException( Exception::Error(
+				String::NewFromUtf8( revive->isolate, TranslateText( "Revival failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			return Undefined( revive->isolate );
+		}
+	}
 	//logTick(5);
 	//lprintf( "RETURN REAL VALUE? %d %d", value.IsEmpty(), value.IsEmpty()?0:value->IsObject() );
 	return value;
@@ -1567,6 +1584,7 @@ void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
 	r.isolate = Isolate::GetCurrent();
 	r.reviveStack = NULL;
 	r.failed = FALSE;
+	r.needsThrow = FALSE;
 	if( args.Length() == 0 ) {
 		r.isolate->ThrowException( Exception::TypeError(
 			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1631,6 +1649,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	r.isolate = Isolate::GetCurrent();
 	r.reviveStack = NULL;
 	r.failed = FALSE;
+	r.needsThrow = FALSE;
 	if( args.Length() == 0 ) {
 		r.isolate->ThrowException( Exception::TypeError(
 			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
