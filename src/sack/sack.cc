@@ -74300,6 +74300,26 @@ static void pushValue( struct jsox_parse_state *state, PDATALIST *pdl, struct js
 			val->string = (char*)DecodeBase64Ex( innerVal ? innerVal->string : NULL
 			                                   , innerVal ? innerVal->stringLen : 0
 			                                   , &val->stringLen, NULL );
+			{
+				// The payload has to decode to a whole number of elements.  Anything that
+				// emitted an f32 emitted a multiple of 4, so a remainder means the data is
+				// damaged.  Truncating instead -- a 6-byte payload became a 1-element
+				// Float32Array and the other 2 bytes were dropped without a word -- turns
+				// malformed input into plausible-looking data, which is the worst of the
+				// available outcomes.  ("ab" is index 0 and has no element size.)
+				static const size_t elementSize[12] = { 1,1,1,1, 2,2, 4,4, 8,8, 4,8 };
+				size_t per = elementSize[val->value_type - JSOX_VALUE_TYPED_ARRAY];
+				if( per > 1 && ( val->stringLen % per ) ) {
+					if( !state->pvtError ) state->pvtError = VarTextCreate();
+					vtprintf( state->pvtError, "bad encoding for typed array data; %" _size_f " bytes is not a multiple of %" _size_f " at %" _size_f " %" _size_f ":%" _size_f
+					        , val->stringLen, per, state->n, state->line, state->col );
+					Release( val->string );
+					val->string = NULL;
+					val->stringLen = 0;
+					state->status = FALSE;
+					return;
+				}
+			}
 		}
 	}
 	AddDataItem( pdl, val );
@@ -75389,6 +75409,18 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 								continue;
 							if( c >= '0' && c <= '9' )
 							{
+								// A digit still has to be legal in the radix that was written.
+								// IntCreateFromTextRef stops at the first one that is not, so
+								// `0b12` quietly became 1 instead of an error.  (The prefix was
+								// stored lower-cased at index 1, so this only tests one case.)
+								if( state->fromHex
+								 && ( ( state->val.string[1] == 'b' && c > '1' )
+								   || ( state->val.string[1] == 'o' && c > '7' ) ) ) {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, "fault while parsing number; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+									break;
+								}
 								(*output->pos++) = c;
 								if( state->exponent )
 									state->exponent_digit = TRUE;
@@ -75414,6 +75446,18 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 								(*output->pos++) = c;
 								if( c != '+' && c != '-' )
 									state->numberFromDate = TRUE;
+							}
+							else if( state->fromHex && state->val.string[1] == 'x'
+							       && ( ( c >= 'a' && c <= 'f' ) || ( c >= 'A' && c <= 'F' ) ) ) {
+								// Hex digits have to be taken before both the prefix branch just
+								// below and the exponent branch after it: 'b' and 'o' introduce a
+								// radix only at position 1, and 'e'/'E' mark an exponent in
+								// decimal but are ordinary digits in hex.  Without this every hex
+								// literal containing a letter faulted -- 0x10 parsed, 0xff did
+								// not -- and 0xe fell into the exponent branch instead.
+								// IntCreateFromTextRef already decodes a-f/A-F, so only the lexer
+								// was ever missing them.
+								(*output->pos++) = c;
 							}
 							else if( ( c == 'x' || c == 'b' || c =='o' || c == 'X' || c == 'B' || c == 'O')
 							       && ( output->pos - state->val.string) == 1
