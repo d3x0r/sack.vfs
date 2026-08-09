@@ -7334,9 +7334,11 @@ DeclareThreadLocal struct timespec global_static_time_ts;
 #define timeGetTime() (uint32_t)(timeGetTime64())
 #endif
 #define tickToTimeSpec(ts,tick) (((ts).tv_sec = (tick) / 1000ULL),((ts).tv_nsec=((tick)%1000ULL)*1000000ULL))
-#define tickToFileTime(ft,tick) ((((ft).highPart).tv_sec = ((tick*10000)+EPOCH_DIFF_MS)>>32 ),(((ft).lowPart)=((tick*10000)+EPOCH_DIFF_MS) & 0XFFFFFFFF ))
+// FILETIME counts 100ns units since 1601, so the epoch shift has to be applied in the
+// source unit and the whole thing scaled after -- not added to an already-scaled value.
+#define tickToFileTime(ft,tick) ((((ft).highPart) = ((((tick)+EPOCH_DIFF_MS)*10000ULL)>>32 )),(((ft).lowPart)=(((tick)+EPOCH_DIFF_MS)*10000ULL) & 0XFFFFFFFF ))
 #define tickNsToTimeSpec(ts,tick) (((ts).tv_sec = (tick) / 1000000000ULL),((ts).tv_nsec=(tick)%1000000000ULL))
-#define tickNsToFileTime(ft,tick) ((((ft).highPart).tv_sec = ((tick)+EPOCH_DIFF_NS)>>32 ),(((ft).lowPart)=((tick)+EPOCH_DIFF_NS) & 0XFFFFFFFF ))
+#define tickNsToFileTime(ft,tick) ((((ft).highPart) = ((((tick)+EPOCH_DIFF_NS)/100ULL)>>32 )),(((ft).lowPart)=((((tick)+EPOCH_DIFF_NS)/100ULL)) & 0XFFFFFFFF ))
 //  these are rude defines overloading otherwise very practical types
 // but - they have to be dispatched after all standard headers.
 #ifndef FINAL_TYPES
@@ -12013,8 +12015,9 @@ PREFIX_PACKED struct directory_entry
   // how big the file is
 	VFS_DISK_DATATYPE filesize;
 #ifdef VIRTUAL_OBJECT_STORE
-  // UTC update/create time in milliseconds
+  // UTC update/create time in nanoseconds; no timezone is
 	uint64_t update_time;
+	                       // stored, conversion to local time is the UI's business.
 #endif
 } PACKED;
 #  ifdef _MSC_VER
@@ -14335,8 +14338,9 @@ PREFIX_PACKED struct directory_entry
   // how big the file is
 	VFS_DISK_DATATYPE filesize;
 #ifdef VIRTUAL_OBJECT_STORE
-  // UTC update/create time in milliseconds
+  // UTC update/create time in nanoseconds; no timezone is
 	uint64_t update_time;
+	                       // stored, conversion to local time is the UI's business.
 #endif
 } PACKED;
 #  ifdef _MSC_VER
@@ -16570,8 +16574,9 @@ PREFIX_PACKED struct directory_entry
   // how big the file is
 	VFS_DISK_DATATYPE filesize;
 #ifdef VIRTUAL_OBJECT_STORE
-  // UTC update/create time in milliseconds
+  // UTC update/create time in nanoseconds; no timezone is
 	uint64_t update_time;
+	                       // stored, conversion to local time is the UI's business.
 #endif
 } PACKED;
 #  ifdef _MSC_VER
@@ -17033,11 +17038,17 @@ static int8_t _os_GetPackedTimeZone( void ) {
 static uint64_t _os_PackLocalTime( uint64_t unix_msec, int8_t tz ) {
 	return ( unix_msec << 8 ) | (uint8_t)tz;
 }
+// entry->update_time is nanoseconds since the UNIX epoch, UTC.  There is only one
+// 'now'; rendering it in a local zone is the presentation layer's business, so no
+// timezone is stored alongside it.
 static uint64_t _os_GetCurrentTime( void ) {
-	return timeGetTime64ns() / 1000000;
+	return timeGetTime64ns();
 }
-static uint64_t _os_GetLocalTime( uint64_t utc_msec ) {
-	return _os_PackLocalTime( utc_msec, _os_GetPackedTimeZone() );
+// the legacy packed view (56 bits of milliseconds, 8 of timezone) that the generic
+// filesystem info interface and SOSFSFIO_GET_TIME still hand out.  Sub-millisecond
+// precision is only reachable through sack_vfs_os_get_times().
+static uint64_t _os_GetLocalTime( uint64_t utc_nsec ) {
+	return _os_PackLocalTime( utc_nsec / 1000000, _os_GetPackedTimeZone() );
 }
 //static void _os_UpdateFileBlocks( struct sack_vfs_os_file* file );
 static struct sack_vfs_os_file* _os_createFile( struct sack_vfs_os_volume* vol, BLOCKINDEX first_block, int blockSize );
@@ -20603,11 +20614,14 @@ LOGICAL sack_vfs_os_get_times( struct sack_vfs_os_file* file, uint64_t** timeArr
 	timeArray[0][0] = file->entry->update_time;
 	if( tzArray ) {
 		tzArray[0] = NewArray( int8_t, 1 );
-		tzArray[0][0] = _os_GetPackedTimeZone();
+		// stored times are UTC nanoseconds; this used to report the *reading* machine's
+		// zone, which said nothing about the writer.  Zero is the only honest answer.
+		tzArray[0][0] = 0;
 	}
 	if( timeCount ) timeCount[0] = 1;
 	return TRUE;
 }
+// timeVal is nanoseconds since the UNIX epoch, UTC; tz is vestigial and ignored.
 LOGICAL sack_vfs_os_set_time( struct sack_vfs_os_file* file, uint64_t timeVal, int8_t tz ) {
 	(void)tz;
 	file->entry->update_time = timeVal;
@@ -22126,6 +22140,15 @@ int GetTimeZone( void ){
 		return sign * (((seconds / 60 / 60) * 100) + ((seconds / 60) % 60));
 	}
 }
+// The timezone is split so that zhr carries the sign and zmn is always a magnitude
+// (0-59); consumers must normalize before combining them -- see ConvertTimeToTick(),
+// and scrollable_chat_list.c AbsoluteSeconds() for what happens if you don't.
+//
+// Consequence: a negative offset of less than an hour cannot be represented, because
+// the sign has nowhere to live once zhr rounds to 0 -- -00:30 stores as zhr 0/zmn 30
+// and reads back as +00:30.  Unreachable with any zone in current use (the last was
+// Liberia's -00:44:30, dropped in 1972).  Giving zmn the sign too would fix that and
+// the AbsoluteSeconds() case both, at the cost of every consumer that prints it.
 void ConvertTickToTime( int64_t tick, PSACK_TIME st ) {
 	int8_t tz = (int8_t)tick;
 	int sign = (tz < 0) ? -1 : 1;
@@ -74405,6 +74428,27 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					state->status = FALSE;
 					return -1;
 				}
+				// A bare word that is a prefix of a keyword -- 'fal', 'tru', 'nul',
+				// 'Na', 'In', 'undefine' ... -- reaches the end of input still
+				// mid-match, with no following character to trigger the usual
+				// recovery, so it never becomes the string it plainly is.  Recover it
+				// here exactly as a delimiter would have; JSOX's own parser gained
+				// the same step in 1.2.123.
+				if( state->val.value_type == JSOX_VALUE_UNSET
+				 && state->word != JSOX_WORD_POS_RESET ) {
+					// the buffer that carried the input was already retired when it was
+					// consumed (nothing was pending in it), so take a fresh one for the
+					// recovered text to live in; val.string will point into it.  The
+					// longest partial keyword is 8 characters ("undefine", "-Infinit").
+					output = (struct jsox_output_buffer*)GetFromSet( JSOX_PARSE_BUFFER, &state->parseBuffers );
+					output->pos = output->buf = NewArray( char, 16 );
+					output->size = 16;
+/*' '*/
+ // space is not appended
+					recoverIdent( state, output, 32 );
+					output->pos[0] = 0;
+					PushLink( state->outBuffers, output );
+				}
 				if( state->val.value_type || state->word != JSOX_WORD_POS_RESET ) {
 					state->completed = 1;
 				}
@@ -74817,6 +74861,13 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					// empty comma , field,field... woudlbe ,,,, '
 				}
 				else if( state->parse_context == JSOX_CONTEXT_IN_ARRAY ) {
+					// A partial keyword ended by this comma -- [fal,1] -- is a string,
+					// the same as it is in a field value below.  It has to be recovered
+					// before the EMPTY default claims the slot, or the word is dropped
+					// and the element silently becomes an elided one instead.
+					if( state->word > JSOX_WORD_POS_END
+					 && state->word < JSOX_WORD_POS_FIELD )
+						recoverIdent( state, output, c );
 					if( state->val.value_type == JSOX_VALUE_UNSET )
  // in an array, elements after a comma should init as undefined...
 						state->val.value_type = JSOX_VALUE_EMPTY;

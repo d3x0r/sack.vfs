@@ -7325,9 +7325,11 @@ DeclareThreadLocal struct timespec global_static_time_ts;
 #define timeGetTime() (uint32_t)(timeGetTime64())
 #endif
 #define tickToTimeSpec(ts,tick) (((ts).tv_sec = (tick) / 1000ULL),((ts).tv_nsec=((tick)%1000ULL)*1000000ULL))
-#define tickToFileTime(ft,tick) ((((ft).highPart).tv_sec = ((tick*10000)+EPOCH_DIFF_MS)>>32 ),(((ft).lowPart)=((tick*10000)+EPOCH_DIFF_MS) & 0XFFFFFFFF ))
+// FILETIME counts 100ns units since 1601, so the epoch shift has to be applied in the
+// source unit and the whole thing scaled after -- not added to an already-scaled value.
+#define tickToFileTime(ft,tick) ((((ft).highPart) = ((((tick)+EPOCH_DIFF_MS)*10000ULL)>>32 )),(((ft).lowPart)=(((tick)+EPOCH_DIFF_MS)*10000ULL) & 0XFFFFFFFF ))
 #define tickNsToTimeSpec(ts,tick) (((ts).tv_sec = (tick) / 1000000000ULL),((ts).tv_nsec=(tick)%1000000000ULL))
-#define tickNsToFileTime(ft,tick) ((((ft).highPart).tv_sec = ((tick)+EPOCH_DIFF_NS)>>32 ),(((ft).lowPart)=((tick)+EPOCH_DIFF_NS) & 0XFFFFFFFF ))
+#define tickNsToFileTime(ft,tick) ((((ft).highPart) = ((((tick)+EPOCH_DIFF_NS)/100ULL)>>32 )),(((ft).lowPart)=((((tick)+EPOCH_DIFF_NS)/100ULL)) & 0XFFFFFFFF ))
 //  these are rude defines overloading otherwise very practical types
 // but - they have to be dispatched after all standard headers.
 #ifndef FINAL_TYPES
