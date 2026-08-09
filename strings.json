@@ -2,9 +2,11 @@
 	"DEFAULT":{
 		"1":" issuer:"
 		,"2":" subject:"
+		,"30":"At least 3 arguments must be specified for a mouse event (x, y, buttons)."
 		,"3":"Bad Number Conversion"
 		,"4":"Column name overlaps table alias"
 		,"5":"Expected an object reference buf path lookup failed"
+		,"31":"Expected an object reference but path lookup failed"
 		,"6":"Failed to open file"
 		,"7":"Missing required option 'cert'."
 		,"8":"Missing required option 'country'."
@@ -29,6 +31,5 @@
 		,"27":"validate: certificate signature failed:"
 		,"28":"validate: failed; unhandled error:"
 		,"29":"validate: unable to get issuer cert locally."
-		,"30":"At least 3 arguments must be specified for a mouse event (x, y, buttons)."
 	}
 }
