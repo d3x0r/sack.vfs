@@ -56,8 +56,13 @@ endif()
         	-DDAWN_BUILD_SAMPLES=OFF    # Disables example binaries (GLFW apps, sample code)
 	        -DTINT_ENABLE_INSTALL=OFF   # Disables installing the Tint shader translator (not needed for runtime)
         	-DDAWN_ENABLE_VULKAN=ON        # Force compiles the Vulkan backend layer
-	        -DDAWN_ENABLE_D3D11=OFF        # Disables Direct3D 11 fallback
-        	-DDAWN_ENABLE_D3D12=OFF        # Disables Direct3D 12 fallback
+	        -DDAWN_ENABLE_D3D11=ON         # Direct3D 11 backend
+        	-DDAWN_ENABLE_D3D12=ON         # Direct3D 12 backend — the XR interop path
+	        # Dawn defaults this to ${DAWN_ENABLE_D3D12}, but option() honours an
+	        # existing cache entry, so a tree first configured with D3D12 OFF keeps
+	        # the HLSL writer OFF forever and the D3D12 backend fails to build.
+	        # Pass it explicitly so a clean build (or another machine) works.
+	        -DTINT_BUILD_HLSL_WRITER=ON
 	        -DDAWN_ENABLE_METAL=OFF        # Disables Metal fallback (if compiling on Apple hardware)
         	-DDAWN_ENABLE_DESKTOP_GL=OFF   # Disables standard desktop OpenGL compatibility lines
 	        -DDAWN_ENABLE_OPENGLES=OFF     # Disables mobile embedded OpenGLES targets
