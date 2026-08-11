@@ -73936,9 +73936,60 @@ static LOGICAL openArray( struct jsox_parse_state *state, struct jsox_output_buf
 // restore warning...
 #  pragma warning( default: 6001 )
 #endif
+// The only legal adjacency between two values is a class tag -- `Tag{...}`, `Tag[...]` or
+// `Tag"..."` -- where the tag is an identifier or a quoted string, and the thing carrying it
+// is a container or a string.  Any other held value (a keyword, a number, a closed
+// container) can neither name a class nor carry one.  JSOX_VALUE_EMPTY is the `[,,]`
+// placeholder, not a value being held.
+static LOGICAL valueCanTagOrBeTagged( enum jsox_value_types value_type ) {
+	return value_type == JSOX_VALUE_UNSET
+	    || value_type == JSOX_VALUE_STRING
+	    || value_type == JSOX_VALUE_EMPTY;
+}
+static LOGICAL twoValuesNoSeparator( struct jsox_parse_state *state );
+// A sign takes the token out of lazy-string territory: once a `-` is accepted the only
+// things it can still become are a number, Infinity or NaN -- the sign-binding check in the
+// character loop already refuses anything else directly after it.  So a signed token that
+// reaches recoverIdent, to be spelled back out as text, is the same fault as `-123x` and
+// reports it the same way.  It cannot be a string even in principle: a leading '-' does not
+// start an identifier.
+//
+// sack used to build one anyway, and inconsistently -- `[-Infinit]` kept the sign
+// ("-Infinit") because the INFINITY word states emit it, while `[-Na]` and `[-N]` silently
+// dropped it because the NAN ones do not.
+static LOGICAL signedTokenCannotBeText( struct jsox_parse_state *state, int cInt ) {
+	if( !state->pvtError ) state->pvtError = VarTextCreate();
+	vtprintf( state->pvtError, "fault while parsing number; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f
+	        , cInt, state->n, state->line, state->col );
+	state->status = FALSE;
+	return TRUE;
+}
+// Characters that end a value without beginning another one; everything else arriving where
+// a value is already complete starts a second value.
+static LOGICAL isValueTerminator( int cInt ) {
+	return cInt == ' ' || cInt == '\t' || cInt == '\r' || cInt == '\n'
+/*nbsp*/
+	    || cInt == 160 || cInt == 0xFEFF || cInt == 0x2028 || cInt == 0x2029
+	    || cInt == ',' || cInt == '}' || cInt == ']' || cInt == ':';
+}
 int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* output, int cInt ) {
 	if( state->word == JSOX_WORD_POS_FIELD && cInt == ':' ) return 0;
+	// A keyword completed and whitespace stepped `word` back to reset, so this character
+	// begins a second value -- and a keyword can neither be a class tag nor take one.
+	// Without this the value below simply replaced the one already held, silently:
+	// `[true false]` came out as the *string* "false", `[8 true]` as ["8\0true"], and
+	// `[{} true]` as ["true"].  `word != RESET` is left alone: there the token is still
+	// being collected, which is how `[truefalse]` recovers as one identifier.
+	if( state->word == JSOX_WORD_POS_RESET
+	   && !valueCanTagOrBeTagged( state->val.value_type )
+	   && cInt >= 0 && !isValueTerminator( cInt ) ) {
+		if( twoValuesNoSeparator( state ) ) return 0;
+	}
 	if( state->word != JSOX_WORD_POS_RESET ) {
+		// a sign is still pending, so this is a partial `-Infinity`/`-NaN` -- see above
+		if( state->negative ) {
+			if( signedTokenCannotBeText( state, cInt ) ) return 0;
+		}
 		if( !state->val.string ) {
 #ifdef DEBUG_PARSINGs
 			lprintf( "Updating string postion?" );
@@ -73946,6 +73997,14 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 			state->val.string = output->pos;
 		}
 		if( state->word == JSOX_WORD_POS_END ) {
+			// same rule one step later: the sign has been folded into the value type, so
+			// these are a completed *signed* token being continued -- `[-Infinityx]`.  A
+			// terminator instead means the value simply ended, which is `[-Infinity]`.
+			if( ( state->val.value_type == JSOX_VALUE_NEG_INFINITY
+			   || state->val.value_type == JSOX_VALUE_NEG_NAN )
+			  && cInt >= 0 && !isValueTerminator( cInt ) ) {
+				if( signedTokenCannotBeText( state, cInt ) ) return 0;
+			}
 			switch( state->val.value_type ) {
 			default:
 				lprintf( "FAULT: UNEXPECTED VALUE TYPE RECOVERING IDENT:%d", state->val.value_type );
@@ -74273,8 +74332,9 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 }
 // Two values with nothing between them.  The only legal adjacency is a class tag --
 // `Tag{...}`, `Tag[...]`, `Tag"..."` -- where the leading part is an identifier or quoted
-// string.  A number can be neither: it cannot name a class, and it cannot carry one.  So a
-// number touching another value, on either side, is always a syntax error.
+// string.  A number or a keyword can be neither: neither can name a class, and neither can
+// carry one.  So one of those touching another value, on either side, is always a syntax
+// error.  See valueCanTagOrBeTagged() above.
 //
 // Without this the second value simply overwrote the first, which is silent and wrong in
 // both directions: `[1,2 3]` parsed as [1,3] (the 2 replaced), `[8 8]` as [8] (the second
@@ -74568,7 +74628,17 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 			// A sign only reaches the next character; whatever that is either starts
 			// the number it belongs to or ends its claim on one.  Captured and cleared
 			// here so exactly one character sees it.
-			const LOGICAL sawSignPending = state->signPending;
+			//
+			// Declared and assigned separately, deliberately: `goto continueNumber`
+			// above jumps from outside this loop into the middle of its body, and C++
+			// forbids a jump that bypasses an *initialization* -- gcc rejects the whole
+			// translation unit ("crosses initialization of sawSignPending"), MSVC only
+			// warns.  A bare declaration is nothing to bypass.  (It cannot be const for
+			// the same reason: a const needs its initializer.)  The goto path skips the
+			// one read below along with the assignment, and every ordinary iteration
+			// assigns before reading.
+			LOGICAL sawSignPending;
+			sawSignPending = state->signPending;
 			state->signPending = FALSE;
 			state->col++;
 			newN = input->pos - input->buf;
@@ -74640,13 +74710,14 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				if( !state->comment ) state->comment = 1;
 				break;
 			case '{':
-				// `Tag{...}` is legal; `8{...}` is not -- a number cannot name a class
-				if( state->val.value_type == JSOX_VALUE_NUMBER )
+				// `Tag{...}` is legal; `8{...}` and `true{...}` are not -- neither a number
+				// nor a keyword can name a class
+				if( !valueCanTagOrBeTagged( state->val.value_type ) )
 					if( twoValuesNoSeparator( state ) ) break;
 				openObject( state, output, c );
 				break;
 			case '[':
-				if( state->val.value_type == JSOX_VALUE_NUMBER )
+				if( !valueCanTagOrBeTagged( state->val.value_type ) )
 					if( twoValuesNoSeparator( state ) ) break;
   // gather any preceeding string.
 				recoverIdent(state,output,c);
@@ -74658,6 +74729,17 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				{
 					// 0 length strings are OK.
 					if( state->objectContext == JSOX_OBJECT_CONTEXT_CLASS_FIELD ) {
+						// A class body is all-named or all-positional; mixing has no reading, since the
+						// loose values would have to go somewhere -- first? last? into whatever slots are
+						// unclaimed?  `au{name,age:2}` collected `name` as a field name and then met a
+						// value, so it fails rather than silently dropping the fields collected so far.
+						if( GetLinkCount( state->current_class->fields ) != 0 ) {
+							state->status = FALSE;
+							if( !state->pvtError ) state->pvtError = VarTextCreate();
+// fault
+							vtprintf( state->pvtError, "class body mixes named and positional values; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+							break;
+						}
 						if( GetLinkCount( state->current_class->fields ) == 0 ) {
 							DeleteLink( &state->classes, state->current_class );
 							DeleteFromSet( JSOX_CLASS, &state->classPool, state->current_class );
@@ -74667,6 +74749,16 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						// need to establish whether this is a tag definition state
 						// or tagged-revival revival, or just a prototyped object that's not a tag-revival.
 						//lprintf( "This would be a default value for the object... if I ignore this..." );
+					}
+					else if( state->objectContext == JSOX_OBJECT_CONTEXT_CLASS_VALUE
+					     && state->current_class_item > 0 ) {
+						// the same rule from the other side: a field naming itself after a positional
+						// value has already claimed a slot
+						state->status = FALSE;
+						if( !state->pvtError ) state->pvtError = VarTextCreate();
+// fault
+						vtprintf( state->pvtError, "class body mixes named and positional values; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+						break;
 					}
 					state->word = JSOX_WORD_POS_RESET;
 					state->val.name = state->val.string;
@@ -74725,7 +74817,29 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 								if( state->val.value_type != JSOX_VALUE_UNSET ) {
 									if( state->current_class->fields ) {
 										if( !state->val.name ) {
+											// a loose value claiming a slot after a field named itself -- see the colon
+											// handler; more values pushed than slots claimed means a name came first
+											if( state->elements[0]->Cnt > state->current_class_item ) {
+												state->status = FALSE;
+												if( !state->pvtError ) state->pvtError = VarTextCreate();
+// fault
+												vtprintf( state->pvtError, "class body mixes named and positional values; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+												break;
+											}
 											struct jsox_class_field* field = ( struct jsox_class_field* )GetLink( &state->current_class->fields, state->current_class_item++ );
+											// A positional instance is matched to its definition by index, so a
+											// body carrying more values than the class has fields walks off the
+											// end of the list -- GetLink returns NULL, and this used to
+											// dereference it.  `author{name} author{1,2}` in a stream was a
+											// hard crash; the nested form already reported the error, because
+											// it reaches the no-fields branch below instead.
+											if( !field ) {
+												if( !state->pvtError ) state->pvtError = VarTextCreate();
+												vtprintf( state->pvtError, "class field has no matching field definitions; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f
+													, c, state->n, state->line, state->col );
+												state->status = FALSE;
+												break;
+											}
 											state->val.name = field->name;
 											state->val.nameLen = field->nameLen;
 										}
@@ -74783,8 +74897,17 @@ int jsox_parse_add_data( struct jsox_parse_state *state
  // this will restore as IN_ARRAY or OBJECT_FIELD
 							state->parse_context = old_context->context;
 							// lose current class in the pop; have; have to report completed status before popping.
+							//
+							// `!current_class` was standing in for "this is not a class definition",
+							// but current_class is equally set while *instantiating* a defined class,
+							// so a class-tagged record at the root never completed as its own
+							// message: `author{a} author{1} author{2}` in one buffer delivered only
+							// {a:2}, and `author{a} author{1} 8` delivered only the 8.  emitObject is
+							// already exactly the question being asked -- it is cleared only in the
+							// class-definition branch above, which is the one close that produces no
+							// value.
 							if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
-								if( !state->current_class )
+								if( emitObject )
 									state->completed = TRUE;
 							}
 							state->elements = old_context->elements;
@@ -74898,14 +75021,36 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						if( state->val.value_type != JSOX_VALUE_UNSET ) {
 							// revive class value, get name from class definition
 							if( state->current_class && state->current_class->fields ) {
+								// a loose value claiming a slot after a field named itself -- see the colon
+								// handler; more values pushed than slots claimed means a name came first
+								if( state->elements[0]->Cnt > state->current_class_item ) {
+									state->status = FALSE;
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+// fault
+									vtprintf( state->pvtError, "class body mixes named and positional values; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+									break;
+								}
 								struct jsox_class_field *field = (struct jsox_class_field *)GetLink( &state->current_class->fields, state->current_class_item++ );
+								// same overflow as the object-close path above: one value past the
+								// end of the definition and GetLink hands back NULL
+								if( !field ) {
+									if( !state->pvtError ) state->pvtError = VarTextCreate();
+									vtprintf( state->pvtError, "class field has no matching field definitions; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f
+										, c, state->n, state->line, state->col );
+									state->status = FALSE;
+									break;
+								}
 								state->val.name = field->name;
 								state->val.nameLen = field->nameLen;
 							}
 							else if( !state->val.name ) {
 								if( !state->pvtError ) state->pvtError = VarTextCreate();
+								// `state->parse_context` was being passed as an extra argument ahead of
+								// the format's own: '%c' printed the context as a character and every
+								// position after it shifted by one, so the reported offset was the
+								// character code and the column was dropped.
 // fault
-								vtprintf( state->pvtError, "class field has no matching field definitions; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, state->parse_context, c, state->n, state->line, state->col );
+								vtprintf( state->pvtError, "class field has no matching field definitions; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
 								state->status = FALSE;
 								break;
 							}
@@ -74995,9 +75140,24 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				}
 				break;
 			default:
-				if( state->val.value_type == JSOX_VALUE_STRING && !state->completedString ) {
+				// A quoted string sets completedString, so it used to skip this block entirely and
+				// fall through to the generic collector, which appended onto the finished buffer --
+				// `["a" b]` came out as "a\0b", the tag's NUL terminator inside the value. Once
+				// whitespace has ended it, a following token is a payload here just the same.
+				if( state->val.value_type == JSOX_VALUE_STRING
+				   && ( !state->completedString
+				   || state->word == JSOX_WORD_POS_AFTER_FIELD
+				   || state->word == JSOX_WORD_POS_RESET ) ) {
 					// already faulted to a string?
 					if( c == '\'' || c == '\"' || c == '`' ) {
+						// at most two strings adjacent -- see the promote below
+						if( state->val.className ) {
+							state->status = FALSE;
+							if( !state->pvtError ) state->pvtError = VarTextCreate();
+// fault
+							vtprintf( state->pvtError, "too many strings in a row; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+							break;
+						}
 #ifdef DEBUG_CLASS_STATES
 						lprintf( "Setting classname for string here... %d %.*s", state->val.stringLen, state->val.stringLen, state->val.string );
 #endif
@@ -75015,31 +75175,41 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						state->word = JSOX_WORD_POS_AFTER_FIELD;
 						break;
 					}
-					if( state->word == JSOX_WORD_POS_AFTER_FIELD ) {
-						if( state->val.className ) {
+					if( state->word == JSOX_WORD_POS_AFTER_FIELD
+					   || ( state->completedString && state->word == JSOX_WORD_POS_RESET ) ) {
+						if( state->parse_context == JSOX_CONTEXT_OBJECT_FIELD
+						   && state->objectContext != JSOX_OBJECT_CONTEXT_CLASS_VALUE ) {
+							// gathering a field name, where two tokens are simply a fault
 							state->status = FALSE;
 							if( !state->pvtError ) state->pvtError = VarTextCreate();
 // fault
 							vtprintf( state->pvtError, "unquoted spaces between stings; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
 							break;
 						}
-						else {
-							if( !state->current_class ) {
-								state->status = FALSE;
-								if( !state->pvtError ) state->pvtError = VarTextCreate();
+						// A new token starts here, and the string already held becomes its class tag.
+						// At most two may be adjacent -- the tag and its payload -- so a third is a
+						// run-on, reported the same way as the quoted form below.
+						if( state->val.className ) {
+							state->status = FALSE;
+							if( !state->pvtError ) state->pvtError = VarTextCreate();
 // fault
-								vtprintf( state->pvtError, "? This is like doublestring revival; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
-								break;
-							}
-							lprintf( "THIS IS WRONG!" );
-							lprintf( "STRING-STRING?" );
-							state->val.className = state->val.string;
-							state->val.classNameLen = state->val.stringLen;
-							state->val.string = NULL;
-							state->val.stringLen = 0;
-							state->word = JSOX_WORD_POS_RESET;
+							vtprintf( state->pvtError, "too many strings in a row; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
 							break;
 						}
+						// `tag payload`, both unquoted.  This used to be refused outright unless a class
+						// was already being parsed ("? This is like doublestring revival"), even though
+						// the same form with either half quoted was accepted -- and the promote path that
+						// did exist dropped the character that triggered it, so the payload lost its first
+						// letter.  An unregistered tag degrades to its payload, so `[a b]` is ["b"].
+   // terminate the tag before the payload starts
+						( *output->pos++ ) = 0;
+						state->val.className = state->val.string;
+						state->val.classNameLen = state->val.stringLen;
+						state->val.string = output->pos;
+						state->val.stringLen = 0;
+						state->word = JSOX_WORD_POS_END;
+						state->completedString = FALSE;
+						// falls through to collect this character as the payload's first
 					}
 					if( c < 128 ) ( *output->pos++ ) = c;
 					else output->pos += ConvertToUTF8( output->pos, c );
@@ -75064,6 +75234,16 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						// but gatherString now just gathers all strings
 					case '"':
 					case '\'':
+						if( state->val.value_type == JSOX_VALUE_STRING && state->val.className ) {
+							state->status = FALSE;
+							if( !state->pvtError ) state->pvtError = VarTextCreate();
+// fault
+							vtprintf( state->pvtError, "too many strings in a row; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+							break;
+						}
+						// At most two strings may be adjacent -- a class tag and its payload. With a tag
+						// already held this used to skip the promotion below and simply replace the
+						// payload, so a third string silently won: `["a" "b" "c"]` was ["c"].
 						if( state->val.value_type == JSOX_VALUE_STRING && state->val.className ) {
 							state->status = FALSE;
 							if( !state->pvtError ) state->pvtError = VarTextCreate();
@@ -75199,14 +75379,25 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				case '"':
 				case '\'':
 					// a preceding STRING is promoted to a class name just below -- that is
-					// the `Tag"..."` form -- but a preceding number can only be a run-on
-					if( state->val.value_type == JSOX_VALUE_NUMBER )
+					// the `Tag"..."` form -- but a preceding number or keyword can only be
+					// a run-on
+					if( !valueCanTagOrBeTagged( state->val.value_type ) )
 						if( twoValuesNoSeparator( state ) ) break;
 					// Promote a preceding word or string to a class name: this is the
 					// `Tag"..."` form, which the built-in RegExp and Symbol emitters use
 					// (`regex'abc'`, `sym"name"`).  See the note in the handoff -- a tagged
 					// string DOES revive through the global fromProtoTypes path; it is only
 					// the parser-local fromJSOX() registration that loses the payload.
+					// At most two strings may be adjacent -- a class tag and its payload.  With a tag
+					// already held, the promotion below is skipped and the new string simply replaced
+					// the payload, so a third silently won: `["a" "b" "c"]` was ["c"].
+					if( state->val.value_type == JSOX_VALUE_STRING && state->val.className ) {
+						state->status = FALSE;
+						if( !state->pvtError ) state->pvtError = VarTextCreate();
+// fault
+						vtprintf( state->pvtError, "too many strings in a row; fault while parsing; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
+						break;
+					}
 					if( state->word == JSOX_WORD_POS_FIELD
 						|| ( state->val.value_type == JSOX_VALUE_STRING
 							 && !state->val.className ) ) {
@@ -75378,11 +75569,11 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					break;
 				case 'N':
 					if( state->val.value_type == JSOX_VALUE_UNSET && state->word == JSOX_WORD_POS_RESET ) state->word = JSOX_WORD_POS_NAN_1;
-					else if( state->val.value_type == JSOX_VALUE_UNSET && state->word == JSOX_WORD_POS_NAN_2 ) { state->val.value_type = state->negative ? JSOX_VALUE_NEG_NAN : JSOX_VALUE_NAN; state->word = JSOX_WORD_POS_END; }
+					else if( state->val.value_type == JSOX_VALUE_UNSET && state->word == JSOX_WORD_POS_NAN_2 ) { state->val.value_type = state->negative ? JSOX_VALUE_NEG_NAN : JSOX_VALUE_NAN; state->negative = FALSE; state->word = JSOX_WORD_POS_END; }
 					else recoverIdent( state, output, c );
 					break;
 				case 'y':
-					if( state->val.value_type == JSOX_VALUE_UNSET && state->word == JSOX_WORD_POS_INFINITY_7 ) { state->val.value_type = state->negative ? JSOX_VALUE_NEG_INFINITY : JSOX_VALUE_INFINITY; state->word = JSOX_WORD_POS_END; }
+					if( state->val.value_type == JSOX_VALUE_UNSET && state->word == JSOX_WORD_POS_INFINITY_7 ) { state->val.value_type = state->negative ? JSOX_VALUE_NEG_INFINITY : JSOX_VALUE_INFINITY; state->negative = FALSE; state->word = JSOX_WORD_POS_END; }
 					else recoverIdent( state, output, c );
 					break;
 					//
