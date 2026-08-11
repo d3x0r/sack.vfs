@@ -4,7 +4,14 @@
 // Proves out: Dawn linkage, V8 wrapper registration via constructorSet,
 // async dispatch via uv_check + wgpuInstanceProcessEvents.
 
-#define DEBUG_TEXTURE_CREATION
+// Per-call tracing for texture/view/buffer creation and writeBuffer — invaluable during
+// bring-up, but three.js hits these every frame, so leave it off for normal runs. Define it
+// (here or on the compiler command line) to re-enable the whole family; the individual sites
+// are all guarded by this one symbol.
+//#define DEBUG_TEXTURE_CREATION
+
+#include <vector>
+#include <string.h>
 
 #include "webgpu_module.h"
 #include "webgpu_bindings.h"
@@ -234,6 +241,29 @@ void GPU::requestAdapter( const FunctionCallbackInfo<Value>& args ) {
 	Local<Object> optsObj = ( args.Length() >= 1 && args[ 0 ]->IsObject() )
 		? args[ 0 ].As<Object>() : Object::New( isolate );
 	wgpu_read_GPURequestAdapterOptions optsReader( isolate, context, optsObj );
+
+	// backendType is a Dawn extension to WGPURequestAdapterOptions, not part of
+	// the WebGPU IDL, so the generator's reader doesn't emit it. Applied here by
+	// hand so a generator re-run can't drop it. Without this, Dawn's own ranking
+	// picks D3D12 > Vulkan > D3D11 among whatever backends were compiled in.
+	{
+		Local<Value> btv;
+		if( optsObj->Get( context, String::NewFromUtf8Literal( isolate, "backendType" ) )
+          .ToLocal( &btv ) && btv->IsString() ) {
+			String::Utf8Value s( isolate, btv );
+			const char* b = *s;
+			WGPUBackendType bt =
+              !strcmp( b, "d3d12"    ) ? WGPUBackendType_D3D12
+            : !strcmp( b, "d3d11"    ) ? WGPUBackendType_D3D11
+            : !strcmp( b, "vulkan"   ) ? WGPUBackendType_Vulkan
+            : !strcmp( b, "metal"    ) ? WGPUBackendType_Metal
+            : !strcmp( b, "opengl"   ) ? WGPUBackendType_OpenGL
+            : !strcmp( b, "opengles" ) ? WGPUBackendType_OpenGLES
+            : !strcmp( b, "null"     ) ? WGPUBackendType_Null
+            :                            WGPUBackendType_Undefined;
+			if( bt != WGPUBackendType_Undefined ) optsReader.desc.backendType = bt;
+   	}
+	}
 
 	// Promise to hand back to JS.
 	Local<Promise::Resolver> resolver =
@@ -532,8 +562,98 @@ void GPUAdapter::requestDevice( const FunctionCallbackInfo<Value>& args ) {
 	desc.deviceLostCallbackInfo.callback = GPUDevice_OnDeviceLost;
 	desc.deviceLostCallbackInfo.userdata1 = req->lostState;
 
+	// requiredFeatures. The generator's mapper only knows the W3C names, so
+	// Dawn-only features fall back to a small hand table — notably
+	// SharedTextureMemoryD3D12Resource, which the OpenXR path needs to import
+	// runtime-owned ID3D12Resource swapchain images as WGPUTextures. Without
+	// it the device looks fine and the import fails much later.
+	//
+	// `features` must outlive wgpuAdapterRequestDevice, which reads the
+	// descriptor synchronously even though the result is async.
+	std::vector<WGPUFeatureName> features;
+	if( args.Length() >= 1 && args[ 0 ]->IsObject() ) {
+		Local<Object> opts = args[ 0 ].As<Object>();
+		Local<Value> rf;
+		if( opts->Get( context, String::NewFromUtf8Literal( isolate, "requiredFeatures" ) )
+		      .ToLocal( &rf ) && rf->IsArray() ) {
+			Local<Array> arr = rf.As<Array>();
+			for( uint32_t i = 0; i < arr->Length(); i++ ) {
+				String::Utf8Value s( isolate,
+					arr->Get( context, i ).ToLocalChecked() );
+				WGPUFeatureName f = wgpu_str_to_GPUFeatureName(
+					*s, (size_t)s.length(), (WGPUFeatureName)0 );
+				if( !f ) {
+					if( !strcmp( *s, "shared-texture-memory-d3d12-resource" ) )
+						f = WGPUFeatureName_SharedTextureMemoryD3D12Resource;
+					else if( !strcmp( *s, "shared-texture-memory-dxgi-shared-handle" ) )
+						f = WGPUFeatureName_SharedTextureMemoryDXGISharedHandle;
+					else if( !strcmp( *s, "shared-fence-dxgi-shared-handle" ) )
+						f = WGPUFeatureName_SharedFenceDXGISharedHandle;
+				}
+				if( f ) features.push_back( f );
+				else lprintf( "requestDevice: unknown feature '%s' — ignored", *s );
+			}
+		}
+	}
+	if( !features.empty() ) {
+		desc.requiredFeatures = features.data();
+		desc.requiredFeatureCount = features.size();
+	}
+
+	// dawnToggles: { enabled: [...], disabled: [...] } — a Dawn extension, so
+	// not in the IDL and not emitted by the generator. Needed because some
+	// features are gated: requesting SharedTextureMemoryD3D12Resource without
+	// "allow_unsafe_apis" fails with "guarded by toggle allow_unsafe_apis"
+	// rather than "unsupported", which is easy to misread as the backend
+	// lacking the feature entirely.
+	//
+	// Storage for the strings and pointer arrays must outlive the request call
+	// below, hence the vectors held in this scope.
+	std::vector<v8::String::Utf8Value*> toggleStrs;
+	std::vector<const char*> togglesOn, togglesOff;
+	WGPUDawnTogglesDescriptor toggleDesc = WGPU_DAWN_TOGGLES_DESCRIPTOR_INIT;
+
+	if( args.Length() >= 1 && args[ 0 ]->IsObject() ) {
+		Local<Object> opts = args[ 0 ].As<Object>();
+		Local<Value> dt;
+		if( opts->Get( context, String::NewFromUtf8Literal( isolate, "dawnToggles" ) )
+		      .ToLocal( &dt ) && dt->IsObject() ) {
+			Local<Object> dto = dt.As<Object>();
+			struct { const char* key; std::vector<const char*>* out; } lists[] = {
+				{ "enabled",  &togglesOn  },
+				{ "disabled", &togglesOff },
+			};
+			for( auto& l : lists ) {
+				Local<Value> v;
+				if( !dto->Get( context, String::NewFromUtf8( isolate, l.key )
+				        .ToLocalChecked() ).ToLocal( &v ) || !v->IsArray() )
+					continue;
+				Local<Array> arr = v.As<Array>();
+				for( uint32_t i = 0; i < arr->Length(); i++ ) {
+					auto* s = new v8::String::Utf8Value( isolate,
+						arr->Get( context, i ).ToLocalChecked() );
+					toggleStrs.push_back( s );
+					l.out->push_back( **s );
+				}
+			}
+		}
+	}
+
+	if( !togglesOn.empty() || !togglesOff.empty() ) {
+		toggleDesc.enabledToggleCount  = togglesOn.size();
+		toggleDesc.enabledToggles      = togglesOn.empty()  ? NULL : togglesOn.data();
+		toggleDesc.disabledToggleCount = togglesOff.size();
+		toggleDesc.disabledToggles     = togglesOff.empty() ? NULL : togglesOff.data();
+		toggleDesc.chain.next  = desc.nextInChain;
+		desc.nextInChain = &toggleDesc.chain;
+	}
+
 	wgpu_async_begin();
 	wgpuAdapterRequestDevice( self->handle_, &desc, info );
+
+	// Dawn copies the descriptor (including toggle strings) during the call
+	// above, so these are safe to release now even though the result is async.
+	for( auto* s : toggleStrs ) delete s;
 
 	args.GetReturnValue().Set( resolver->GetPromise() );
 }
@@ -586,24 +706,40 @@ void GPUAdapter::OnDeviceReady( WGPURequestDeviceStatus status,
 			w->adapter_ = req->adapter;
 		}
 		(void)resolver->Resolve( context, obj );
-	} else if( req->lostState ) {
-		// Request failed. Dawn may still fire the lost callback with
-		// FailedCreation reason in some paths (we don't have a hard
-		// guarantee one way or the other), so use the same detach pattern
-		// as the GC path: mark so the callback skips the resolver, and let
-		// the callback free the struct if it ever fires. Worst case is a
-		// small leak per failed request rather than a use-after-free.
-		req->lostState->wrapperDestroyed = true;
-		req->lostState->resolver.Reset();
-		req->lostState = NULL;
 	} else {
-		(void)resolver->Reject( context, Exception::Error( localStringExternal(
-			isolate, "requestDevice failed" ) ) );
+		// Request failed.
+		//
+		// lostState is allocated unconditionally by requestDevice, so this
+		// used to be split as `else if( req->lostState )` / `else` — which
+		// meant the detach branch always won and the Reject below was dead
+		// code. Every failed request left its promise permanently unsettled,
+		// surfacing in JS as a hung `await` with no error. Detach and reject.
+		if( req->lostState ) {
+			// Dawn may still fire the lost callback with FailedCreation
+			// reason in some paths (we don't have a hard guarantee one way
+			// or the other), so use the same detach pattern as the GC path:
+			// mark so the callback skips the resolver, and let the callback
+			// free the struct if it ever fires. Worst case is a small leak
+			// per failed request rather than a use-after-free.
+			req->lostState->wrapperDestroyed = true;
+			req->lostState->resolver.Reset();
+			req->lostState = NULL;
+		}
+
+		const int msgLen = message.length == SIZE_MAX
+			? (int)strlen( message.data ? message.data : "" )
+			: (int)message.length;
+
+		// Carry Dawn's message into the JS error — for a rejected feature or
+		// limit it names exactly which one, which is the whole diagnosis.
+		char buf[ 512 ];
+		snprintf( buf, sizeof( buf ), "requestDevice failed: status=%d %.*s",
+			(int)status, msgLen, message.data ? message.data : "" );
+
+		(void)resolver->Reject( context,
+			Exception::Error( localStringExternal( isolate, buf ) ) );
 		lprintf( "wgpuAdapterRequestDevice failed: status=%d msg=%.*s",
-			(int)status,
-			message.length == SIZE_MAX ? (int)strlen( message.data ? message.data : "" )
-				: (int)message.length,
-			message.data ? message.data : "" );
+			(int)status, msgLen, message.data ? message.data : "" );
 	}
 
 	req->resolver.Reset();

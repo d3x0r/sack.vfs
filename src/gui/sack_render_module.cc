@@ -726,9 +726,13 @@ RenderObject::~RenderObject() {
 					if( args[5]->IsNull() ) {
 						parent = NULL;
 					}
-					else {
+					else if( args[5]->IsObject() ) {
 						parent_object = args[5]->ToObject(context).ToLocalChecked();
 						parent = ObjectWrap::Unwrap<RenderObject>( parent_object );
+					}
+					else {
+						isolate->ThrowException(Exception::TypeError(localStringExternal(
+							isolate, TranslateText("Fifth argument must be `null` or a renderer (parent renderer)."))));
 					}
 				}
 				if (argc > 6) {
