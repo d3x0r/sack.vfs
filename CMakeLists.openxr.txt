@@ -1,0 +1,93 @@
+# OpenXR loader — external project, mirrors CMakeLists.dawn.txt.
+#
+# Supplies <openxr/openxr.h> + <openxr/openxr_platform.h> and a static
+# openxr_loader. This is the ONLY VR dependency needed: the loader dispatches
+# to whatever runtime is registered at
+#     HKLM\SOFTWARE\Khronos\OpenXR\1\ActiveRuntime
+# which SteamVR and the Meta app both write when set as default. Override it
+# per-process with the XR_RUNTIME_JSON env var when testing against a specific
+# runtime or a simulator. No Steamworks / OpenVR / LibOVR SDK is involved —
+# those are the legacy vendor APIs that OpenXR replaces.
+
+OPTION( INCLUDE_OPENXR "Include OpenXR (VR) interfaces" OFF )
+
+if( INCLUDE_OPENXR )
+
+	# Pin the tag. main is not a stable target and the loader's ABI
+	# expectations track the spec revision.
+	set( OPENXR_VERSION release-1.1.62 )
+
+	set( OPENXR_INSTALL_DIR "${CMAKE_BINARY_DIR}/OpenXR_tmp/${CMAKE_BUILD_TYPE}" )
+
+	include_directories( ${OPENXR_INSTALL_DIR}/include )
+	LINK_DIRECTORIES( ${OPENXR_INSTALL_DIR}/lib )
+
+	# OpenXR-SDK's src/CMakeLists.txt sets OPENXR_DEBUG_POSTFIX to "d" on
+	# Windows, so a Debug build installs openxr_loaderd.lib. BUILD_BYPRODUCTS
+	# has to name the exact file or the generator won't know this
+	# ExternalProject is what produces it, and parallel builds race.
+	if( WIN32 )
+		set( OPENXR_EXTENSION .lib )
+		if( CMAKE_BUILD_TYPE STREQUAL "Debug" )
+			set( OPENXR_LIB_BASE openxr_loaderd )
+		else()
+			set( OPENXR_LIB_BASE openxr_loader )
+		endif()
+	else( WIN32 )
+		set( OPENXR_EXTENSION .a )
+		set( OPENXR_LIB_BASE ${CMAKE_STATIC_LIBRARY_PREFIX}openxr_loader )
+	endif( WIN32 )
+
+	set( OPENXR_LIBS "${OPENXR_INSTALL_DIR}/lib/${OPENXR_LIB_BASE}${OPENXR_EXTENSION}" )
+
+	# Same multi-config split Dawn uses: cmake-js passes --config through as
+	# CMAKE_BUILD_TYPE, but the Visual Studio generator installs per-$<CONFIG>.
+	if( WIN32 )
+		set( OPENXR_USE_CONFIGURATION "$<CONFIG>" )
+		set( OPENXR_USE_BINDIR "<BINARY_DIR>_tmp/$<CONFIG>" )
+	else( WIN32 )
+		set( OPENXR_USE_CONFIGURATION "${CMAKE_BUILD_TYPE}" )
+		set( OPENXR_USE_BINDIR "<BINARY_DIR>_tmp/${CMAKE_BUILD_TYPE}" )
+	endif( WIN32 )
+
+	ExternalProject_Add( OpenXR_External
+		GIT_REPOSITORY  "https://github.com/KhronosGroup/OpenXR-SDK"
+		GIT_TAG         "${OPENXR_VERSION}"
+		GIT_SHALLOW     TRUE
+		BINARY_DIR      ${CMAKE_BINARY_DIR}/OpenXR
+		INSTALL_DIR     ${OPENXR_INSTALL_DIR}
+		BUILD_BYPRODUCTS "${OPENXR_LIBS}"
+		CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${OPENXR_USE_BINDIR}
+			-DCMAKE_BUILD_TYPE:STRING=${OPENXR_USE_CONFIGURATION}
+			-DCMAKE_POSITION_INDEPENDENT_CODE=ON
+			# Static loader: nothing extra to place beside sack_gui.node.
+			# (This is already the Windows default; set explicitly so a
+			# Linux build doesn't silently produce a .so dependency.)
+			-DDYNAMIC_LOADER=OFF
+			-DBUILD_API_LAYERS=OFF
+			-DBUILD_TESTS=OFF
+			-DBUILD_CONFORMANCE_TESTS=OFF
+			-DBUILD_SDK_TESTS=OFF
+			-DINSTALL_SYMBOLS=OFF
+			${MOREOPTS}
+	)
+
+	# openxr_platform.h gates every graphics binding behind these. Without
+	# them XrGraphicsBindingD3D12KHR / XrSwapchainImageD3D12KHR simply don't
+	# exist and you get "undeclared identifier" rather than a useful error.
+	# D3D12 is the binding that pairs with Dawn's public interop surface
+	# (RequestAdapterOptionsLUID -> GetD3D12Device/GetD3D12CommandQueue ->
+	# SharedTextureMemoryD3D12ResourceDescriptor).
+	if( WIN32 )
+		set( MOREDEFS "${MOREDEFS};INCLUDE_OPENXR;XR_USE_PLATFORM_WIN32;XR_USE_GRAPHICS_API_D3D12" )
+	else( WIN32 )
+		set( MOREDEFS "${MOREDEFS};INCLUDE_OPENXR;XR_USE_GRAPHICS_API_VULKAN" )
+	endif( WIN32 )
+
+	# Static loader pulls in registry + COM lookups for runtime discovery.
+	# If the link turns up unresolved PathCch* symbols, add pathcch here.
+	if( WIN32 )
+		set( OPENXR_LIBS ${OPENXR_LIBS} advapi32 ole32 )
+	endif( WIN32 )
+
+endif( INCLUDE_OPENXR )
