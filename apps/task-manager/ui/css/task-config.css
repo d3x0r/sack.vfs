@@ -89,7 +89,7 @@ span {
 .fieldUnit, .fieldUnit-task-config {
 	border-radius: 0;
 	padding: .3vh .6vw;
-	width: 100%;
+	width: unset;
 }
 .field-unit-span-task-config, .field-unit-span {
 	font-size: 2vh;
@@ -142,3 +142,157 @@ span {
 	margin: 3px 25px;
 	line-height: 2.5vh;
 }	
+
+td {
+	font-size : 1vw;
+}
+
+.name {
+	font-size : 1.75vw;
+}
+
+
+div, span{ 
+	font-size : 1.75vw;
+}
+select{ 
+	font-size : 2.25vw;
+}
+
+[class^="buttonInner-service-manager"] {
+	font-size : 1vw;
+
+}
+
+.padded-block{
+	padding: 15px;
+}
+
+.task-manager {
+	position:absolute;
+	left:25vw;
+	top:25vh;
+	width:50vw;
+	height:50vh;
+}
+
+.task-holder {
+	line-height:8vh;
+	display:inline-block;
+	margin: 5px;
+	margin-right: 10vw;
+	border : 3px white solid;
+	border-style:inset;
+	background-color: #222;
+}
+
+.text-label {
+	width:-webkit-fill-available;
+}
+
+.task-config-frame{
+	position:absolute;
+	left: 10vw;
+	top:10vh;
+	width:80vw;
+	height:80vh;
+
+}
+.monitors-frame{
+	border-color:grey;
+	border-width:1px;
+	border-style:inset;
+	width: 50vw;
+	height:25vh;
+	position:relative;
+	top: 5.5vh;
+	box-sizing: border-box;
+}
+.text-field-settings {
+	font-size: 3vh;
+}
+.text-label-settings {
+	font-size: 3vh;
+
+}
+.fieldUnit-settings {
+	border-radius:50vh;
+	border-color:#000;
+	border-width:1;
+	border-style:solid;
+	background-color: #333;
+	font-size:2vh;
+	padding-left:1.5vw;
+	padding-right:1.5vw;
+}
+.formContainer-settings {
+	top: 25vh;
+	left:25vh;
+	color:white;
+}
+.frameContent-settings {
+	width: 50vw;
+	height:50vh;
+}
+.monitors-frame-title{
+	position:absolute;
+	top: -2.5vh;
+	font-size: 2vh;
+	z-index:1;
+}
+
+.monitor-frame{
+	padding:8px;
+	background-color:black;
+	border-color:white;
+	border-width:3px;
+	border-style:solid;
+	box-sizing: border-box;
+}
+.monitor-child{
+	border-radius:5px;
+	background-color:grey;
+	border-color:blue;
+	border-width:2px;
+	border-style:solid;
+	box-sizing: border-box;
+	width:100%;
+	height:100%;
+}
+.green-border {
+	border-color:greenyellow;
+
+}
+.monitor-info{
+	font-size: 2vh;
+
+}
+.monitor-status{
+	display:block;
+	font-size: 2vh;
+}
+
+.button.monitor-confirm {
+	position:absolute;
+	bottom:1vh;
+}
+
+.failed-load {
+	position:absolute;
+	top: 10vh;
+	bottom:10vh;
+	left:10vw;
+	right:10vw;
+
+	font-size:10vh;
+	color:red;
+	background-color:black;
+}
+
+
+.fieldUnit {
+	display:inline;
+}
+.field-unit-span {
+	margin-right: 3vw;
+}

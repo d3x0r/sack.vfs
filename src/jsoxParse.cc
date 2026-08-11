@@ -10,6 +10,9 @@
 
 static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_data *revive );
 static Local<Value> makeValue( struct jsox_value_container *val, struct reviver_data *revive );
+static LOGICAL isStillOpen( struct reviver_data* revive, Local<Value> obj );
+static Local<Value> deferReference( struct reviver_data* revive, PNVDATALIST path );
+static Local<Value> resolveDeferredRefs( struct reviver_data* revive, Local<Value> root );
 
 #if defined( JSOX_USE_TIMING )
 static struct timings {
@@ -213,6 +216,7 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 		if( val ) {
 			struct reviver_data r;
 			r.failed = FALSE;
+	r.needsThrow = FALSE;
 			if( !parser->reviver.IsEmpty() ) {
 				r.revive = TRUE;
 				r.reviver = parser->reviver.Get( isolate );
@@ -226,8 +230,33 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 			r.context = r.isolate->GetCurrentContext();
 			r.parser = parser;
 			parser->currentReviver = &r;
-			argv[0] = convertMessageToJS2( elements, &r );
-			parser->currentReviver = NULL;
+			{
+				// Same boundary as ParseJSOX (see the MEASURED note there): revival
+				// raises by throwing and setting `failed`, but a pending exception is
+				// NOT delivered to JS when this callback returns normally -- it has to
+				// be observed and re-thrown explicitly.  Without this the streaming
+				// path swallowed every revival error and handed the half-built value
+				// to the read callback as if it had succeeded, while JSOX.parse() on
+				// the identical text threw.
+				v8::TryCatch tc( isolate );
+				argv[0] = convertMessageToJS2( elements, &r );
+				parser->currentReviver = NULL;
+				if( tc.HasCaught() || r.failed ) {
+					// do not run the read callback -- calling into JS with an exception
+					// already pending is the double-throw case.
+					// Nothing caught means nothing was raised, so this failure still owes
+					// JS an error; returning quietly here would be the swallow again.
+					if( !tc.HasCaught() )
+						isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate
+							, TranslateText( "Revival failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+					jsox_dispose_message( &elements );
+					if( data_ )
+						delete data_;
+					if( tc.HasCaught() )
+						tc.ReThrow();
+					return;
+				}
+			}
 			if( r.revive ) {
 				Local<Value> args[2] = { String::NewFromUtf8Literal( r.isolate, "" ) , argv[0] };
 				MaybeLocal<Value> res = r.reviver->Call( r.context, r._this, 2, args );
@@ -508,6 +537,16 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 	else {
 		revive->fieldCb.Clear();
 	}
+	// A class-tagged array accumulates positionally, so what the reviver is finally
+	// handed has to be a real Array: `Array.isArray(this)` is how a reviver tells the
+	// `Tag[...]` form from `Tag{...}`, and mapping element 0 onto a field name is only
+	// possible from an indexable value.  Constructing the registered class here instead
+	// made the elements land as numeric properties on an instance whose declared fields
+	// were all still at their defaults.  The instance the reviver returns is the result;
+	// the accumulator is not it.  With no reviver there is nobody to do that mapping, so
+	// the constructed instance stays as-is.
+	if( !revive->fieldCb.IsEmpty() && revive->fieldCb->IsFunction() )
+		sub_o = Array::New( revive->isolate );
 	if( sub_o.IsEmpty() ) {
 		sub_o = Array::New( revive->isolate );
 	}
@@ -615,8 +654,28 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 				{
 					struct jsox_value_container *pathVal;
 					INDEX idx;
-					LOGICAL off_stack = FALSE; // the root object is technically on-stack... 
+					// Every reference is a path from the document root, so there has to be
+					// a document root -- a reference has to name something that already
+					// exists.  A whole document that is nothing but `ref[...]` has nothing
+					// before it to name.  Without this the empty rootObject handle flowed
+					// on and surfaced as an unrelated "Cannot convert undefined or null to
+					// object" from V8.
+					if( revive->rootObject.IsEmpty() ) {
+						revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate
+							, TranslateText( "Reference at the document root has nothing to refer to" )
+							, v8::NewStringType::kNormal ).ToLocalChecked() ) );
+						revive->failed = TRUE;
+						return Undefined( revive->isolate );
+					}
+					LOGICAL off_stack = FALSE; // the root object is technically on-stack...
 					Local<Object> refObj = revive->rootObject;
+					// What the path has landed on so far.  The walk descends through
+					// containers, so every element but the last has to be one; the last
+					// may be any value at all -- ref["a"] where a is 1 is a reference to
+					// 1, not a malformed path.  Chasing 'elements' to the end and then
+					// expecting to step into something is what faulted here.
+					Local<Value> refValue = revive->rootObject;
+					const INDEX pathCount = val->contains->Cnt;
 					//lprintf( "Ref Object is the root object...");
 					DATA_FORALL( val->contains, idx, struct jsox_value_container *, pathVal ) {
 						if( revive->failed ) return Undefined( revive->isolate );
@@ -641,20 +700,18 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									//MaybeLocal<Object> maybeRefObj = arraymember->ToObject( revive->isolate->GetCurrentContext() );
 									{
 
-										struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
-										if( !member ) {
-											lprintf( "Stack is %lu at %lu get %lu", revive->reviveStack->Top, idx, revive->reviveStack->Top - idx - 1 );
-										}
+										// same guard as the string-path case below: no stack, or an
+										// index past its top, means "not on the stack" rather than
+										// a fault.
+										struct reviveStackMember* member = ( revive->reviveStack && idx < revive->reviveStack->Top )
+											? (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 )
+											: NULL;
 										if( member && member->index == (uint32_t)pathVal->result_n ) {
 											LogObject( member->object );
 											if( member->object->IsObject() ) {
+												refValue = member->object;
 												refObj = member->object.As<Object>();
 												off_stack = FALSE;
-												//lprintf( "Saving replacement, maybe we can re-apply a fixup?" );
-												struct reviveMemberReplacement rep;
-												rep.object = revive->refObject;
-												rep.fieldName = revive->fieldName;
-												AddDataItem( &member->pdlSubsts, &rep );
 											} else
 												lprintf( "Unexpected value from member..." );
 
@@ -667,7 +724,15 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								} else {
 									LogObject( arraymember );
 									off_stack = TRUE;
-									refObj = arraymember.As<Object>();
+									refValue = arraymember;
+									if( arraymember->IsObject() )
+										refObj = arraymember.As<Object>();
+									else if( ( idx + 1 ) < pathCount ) {
+										revive->isolate->ThrowException( Exception::TypeError(
+											String::NewFromUtf8( revive->isolate, TranslateText( "Expected an object reference but path lookup failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+										revive->failed = TRUE;
+										return Undefined( revive->isolate );
+									}
 								}
 							}
 						}
@@ -689,8 +754,14 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								//lprintf( "path is:%s", pathVal->string);
 								{
 									// if it's in the stack, prefer that value which is more current.
-									struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 );
-									if( !off_stack && idx < revive->reviveStack->Top ) {
+									// reviveStack is NULL until something is pushed onto it, and
+									// Top - idx - 1 underflows when idx reaches it -- either one
+									// used to fault here rather than simply meaning "not on the
+									// stack", which is what a reference to a plain value is.
+									struct reviveStackMember* member = ( revive->reviveStack && idx < revive->reviveStack->Top )
+										? (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, revive->reviveStack->Top - idx - 1 )
+										: NULL;
+									if( !off_stack && member ) {
 #ifdef DEBUG_REFERENCE_FOLLOW
 										lprintf( "Looking at reviveStack...  %d %d  %.*s %p", off_stack
 											, member->nameLen
@@ -701,12 +772,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 											&& ( StrCmpEx( pathVal->string, member->name, pathVal->stringLen ) == 0 )
 											) {
 											val_temp = member->object;
-											//lprintf( "Saving replacement(2), maybe we can re-apply a fixup?" );
-											struct reviveMemberReplacement rep;
 											off_stack = FALSE;
-											rep.object = revive->refObject;
-											rep.fieldName = revive->fieldName;
-											AddDataItem( &member->pdlSubsts, &rep );
 										} else {
 											if( refObj->Has( revive->context, pathval ).ToChecked() ) {
 												off_stack = TRUE; // probably was offstack too
@@ -723,7 +789,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 											}
 										}
 									}
-									if( idx >= revive->reviveStack->Top || (off_stack) /*|| ( member->object != refObj )*/ ) {
+									// no stack at all means nothing is open above us, which is the
+									// same situation as having walked past its top.
+									if( !revive->reviveStack || idx >= revive->reviveStack->Top || (off_stack) /*|| ( member->object != refObj )*/ ) {
 										if( refObj->Has( revive->context, pathval ).ToChecked() ) {
 #ifdef DEBUG_REFERENCE_FOLLOW
 											lprintf ( "object already has path, use that." );
@@ -741,6 +809,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 								}
 							}
 							LogObject( val_temp );
+							refValue = val_temp;
 							if( val_temp->IsObject() ) {
 								refObj = val_temp.As<Object>();
 #ifdef DEBUG_REFERENCE_FOLLOW
@@ -757,7 +826,9 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									}
 								}
 #endif
-							}  else {
+							}  else if( ( idx + 1 ) < pathCount ) {
+								// only a fault when there is more path to walk; landing on a
+								// plain value at the end is the whole point of the reference.
 								revive->isolate->ThrowException( Exception::TypeError(
 									String::NewFromUtf8( revive->isolate, TranslateText( "Expected an object reference but path lookup failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 //#ifdef DEBUG_REVIVAL_CALLBACKS
@@ -765,13 +836,21 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 //#endif
 								revive->failed = TRUE;
 								return Undefined( revive->isolate );
-
-								//return val_temp;
 							}
 						}
 						//lprintf( "%d %s", pathVal->value_type, pathVal->string );
 					}
-					result = refObj;
+					// The walk found where the reference points, but "where" is not the
+					// same question as "what".  If it landed on a container that is still
+					// being built, the value sitting there now is an accumulator whose
+					// revive has not run -- and that revive may return a different object,
+					// leaving this slot holding something that is about to stop being the
+					// answer.  Hand back a placeholder and settle it in a second pass,
+					// once the document is complete and every identity is final.
+					if( isStillOpen( revive, refValue ) )
+						result = deferReference( revive, val->contains );
+					else
+						result = refValue;
 				}
 				break;
 			default:
@@ -879,31 +958,38 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 					lprintf( "method4 constructor passresing associatiated string?");
 #endif
 					if( val->value_type == JSOX_VALUE_STRING ) {
-						Local<Value> args[] = { result };
-						MaybeLocal<Object> mo = protoCon.As<Function>()->NewInstance( revive->context, 1, args );
-						Local<Value> resultTmp;
-						if( !mo.IsEmpty() ) {
-							resultTmp = mo.ToLocalChecked();
-							LogObject( resultTmp );
-
-							if( !cb.IsEmpty() && cb->IsFunction() ) {
+						// A tagged string hands the reviver the string itself as `this` --
+						// the same contract as `Tag{...}` and `Tag[...]`, where `this` is the
+						// payload that was gathered and the reviver returns the revived value.
+						//
+						// This used to construct protoCon( string ) first and call the reviver
+						// on *that*, which preserved the payload only when the constructor
+						// happened to consume it.  `regex` survives that way -- its protoCon
+						// is RegExp and `new RegExp("abc")` keeps the source -- but a plain
+						// registered class ignores the argument, so the reviver was handed an
+						// empty instance and the string was gone.  The no-constructor branch
+						// below always passed the string, so the two disagreed depending on
+						// whether a protoCon happened to be registered.
+						if( !cb.IsEmpty() && cb->IsFunction() ) {
 #ifdef DEBUG_REVIVAL_CALLBACKS
-								lprintf( "method4a?");
+							lprintf( "method4a?");
 #endif
-								MaybeLocal<Value> mv = cb->Call( revive->context, resultTmp, 0, NULL );
-								if( !mv.IsEmpty() )
-									result = mv.ToLocalChecked();
-								else
-									result = resultTmp;
-							} else {
-								lprintf( "created container reference... resulting without reviver" );
-								result = resultTmp;
-							}
+							MaybeLocal<Value> mv = cb->Call( revive->context, result, 0, NULL );
+							if( !mv.IsEmpty() )
+								result = mv.ToLocalChecked();
 							LogObject( result );
 						}
-						else
-						{
-							lprintf( "Threw an exception in constrcutor" );
+						else {
+							// no reviver -- the constructor is the only thing that can turn the
+							// string into the type, so build from it as before
+							Local<Value> args[] = { result };
+							MaybeLocal<Object> mo = protoCon.As<Function>()->NewInstance( revive->context, 1, args );
+							if( !mo.IsEmpty() ) {
+								result = mo.ToLocalChecked();
+								LogObject( result );
+							}
+							else
+								lprintf( "Threw an exception in constrcutor" );
 						}
 					}
 				}
@@ -1325,27 +1411,17 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 					MaybeLocal<Value> r = finalCb->Call( revive->context, sub_v, 0, NULL );
 					if( !r.IsEmpty() ) {
 						sub_v = r.ToLocalChecked();
-						{
-							// This handles replacing values that were used when this was the old value
-#ifdef DEBUG_REVIVAL_CALLBACKS
-							lprintf( "Finall got the resolved value, let's check the stack?" );
-#endif
-							if( revive->reviveStack->Top )
-							{
-								struct reviveStackMember* member = (struct reviveStackMember*)PeekLink( &revive->reviveStack );
-								if( member->pdlSubsts->Cnt ) {
-									INDEX idx;
-									struct reviveMemberReplacement* rep;
-									DATA_FORALL( member->pdlSubsts, idx, struct reviveMemberReplacement*, rep ) {
-										Local<Object> o = rep->object.As<Object>();
-										o->Set( revive->context, rep->fieldName, sub_v );
-#ifdef DEBUG_REVIVAL_CALLBACKS
-										lprintf( "!!!!! REPLACED STUFF HERE(3)!" );
-#endif
-									}
-								}
-							}
-						}
+						// There was a `pdlSubsts` pass here that repointed slots which had
+						// captured this object before its revive replaced it.  It is gone for
+						// two reasons.  It targeted the wrong list -- this object's own stack
+						// member was popped and deleted just above, so PeekLink returned the
+						// *enclosing* member and wrote this object's value into slots that had
+						// captured the enclosing one.  `{outer:A{a:ref["outer"],b:B{...},c:3}}`
+						// came out with `outer.a` holding the B.  And it is now redundant: a
+						// reference that lands on a still-open object defers, and
+						// resolveDeferredRefs() repoints it from the finished document, where
+						// every identity is final.  Keeping a second, earlier mechanism that
+						// writes a different answer into the same slot could only race it.
 					} else {
 //#ifdef DEBUG_REVIVAL_CALLBACKS
 						lprintf( "Callback threw an exception" );
@@ -1408,12 +1484,199 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 	revive->refObject = priorRefObject;
 }
 
+// ---- deferred references -------------------------------------------------------
+//
+// A reference names a path from the document root, so once the document is complete
+// every one of them resolves by plain traversal, with nothing to guess about.  The
+// only references that need to wait are the ones that pointed at a container which
+// had not been revived yet: what sits in that slot during the build is an accumulator,
+// and the revive may hand back a different object entirely.  Those get a placeholder
+// and are settled here, after the root's identity is final.
+
+// Is this value one of the containers currently being filled?  That is the accumulator
+// being filled right now, plus every enclosing container saved on the revive stack,
+// plus the root -- which is never a stack entry, because nothing is pushed for it.
+static LOGICAL isStillOpen( struct reviver_data* revive, Local<Value> obj ) {
+	if( obj.IsEmpty() || !obj->IsObject() ) return FALSE;
+	if( !revive->rootObject.IsEmpty() && obj->SameValue( revive->rootObject ) ) return TRUE;
+	if( !revive->refObject.IsEmpty() && obj->SameValue( revive->refObject ) ) return TRUE;
+	if( revive->reviveStack ) {
+		INDEX n;
+		for( n = 0; n < revive->reviveStack->Top; n++ ) {
+			struct reviveStackMember* member = (struct reviveStackMember*)PeekLinkEx( &revive->reviveStack, n );
+			if( member && !member->object.IsEmpty() && obj->SameValue( member->object ) )
+				return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+static Local<Value> deferReference( struct reviver_data* revive, PNVDATALIST path ) {
+	struct deferredRef d;
+	if( !revive->pdlDeferred )
+		revive->pdlDeferred = CreateDataList( sizeof( struct deferredRef ) );
+	// borrowed from the parse tree, which is disposed only after the conversion returns
+	d.path = path;
+	// a fresh object nothing else can name, so identity alone marks the slot
+	d.placeholder = Object::New( revive->isolate );
+	d.owner = revive->refObject;
+	d.state = 0;
+	AddDataItem( &revive->pdlDeferred, &d );
+	return d.placeholder;
+}
+
+// Which deferred reference is this value the placeholder for?  INVALID_INDEX if none.
+static INDEX findPlaceholder( struct reviver_data* revive, Local<Value> v ) {
+	INDEX idx;
+	struct deferredRef* d;
+	if( v.IsEmpty() || !v->IsObject() || !revive->pdlDeferred ) return INVALID_INDEX;
+	DATA_FORALL( revive->pdlDeferred, idx, struct deferredRef*, d )
+		if( v->SameValue( d->placeholder ) ) return idx;
+	return INVALID_INDEX;
+}
+
+static Local<Value> resolveDeferredOne( struct reviver_data* revive, Local<Value> root, INDEX which );
+
+// A path may pass through a slot that is itself a pending reference, so step through
+// any placeholder before continuing the walk.
+static Local<Value> derefDeferred( struct reviver_data* revive, Local<Value> root, Local<Value> v ) {
+	INDEX which = findPlaceholder( revive, v );
+	if( which == INVALID_INDEX ) return v;
+	return resolveDeferredOne( revive, root, which );
+}
+
+static void failReference( struct reviver_data* revive, const char* text ) {
+	revive->isolate->ThrowException( Exception::Error( String::NewFromUtf8( revive->isolate
+		, TranslateText( text ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+	revive->failed = TRUE;
+}
+
+static Local<Value> resolveDeferredOne( struct reviver_data* revive, Local<Value> root, INDEX which ) {
+	// `d` points into the list's storage and is held across the recursion below.  That is
+	// safe only because nothing adds to the list once the build is over -- deferral only
+	// happens while parsing.  If that ever changes, re-fetch after recursing.
+	struct deferredRef* d = (struct deferredRef*)GetDataItem( &revive->pdlDeferred, which );
+	if( d->state == 2 ) return d->resolved;
+	if( d->state == 1 ) {
+		failReference( revive, "Reference path is circular through other references" );
+		return Undefined( revive->isolate );
+	}
+	d->state = 1;
+
+	Local<Value> at = derefDeferred( revive, root, root );
+	INDEX idx;
+	struct jsox_value_container* pathVal;
+	DATA_FORALL( d->path, idx, struct jsox_value_container*, pathVal ) {
+		if( revive->failed ) return Undefined( revive->isolate );
+		if( at.IsEmpty() || !at->IsObject() ) {
+			failReference( revive, "Reference did not resolve; path steps into a value that is not a container" );
+			return Undefined( revive->isolate );
+		}
+		Local<Object> o = at.As<Object>();
+		MaybeLocal<Value> next;
+		if( pathVal->value_type == JSOX_VALUE_NUMBER )
+			next = o->Get( revive->context, (uint32_t)pathVal->result_n );
+		else {
+			Local<String> key = String::NewFromUtf8( revive->isolate, pathVal->string
+				, NewStringType::kNormal, (int)pathVal->stringLen ).ToLocalChecked();
+			if( o->IsMap() ) {
+				Local<Value> getter = o->Get( revive->context, localStringExternal( revive->isolate, "get" ) ).ToLocalChecked();
+				Local<Value> args[] = { key };
+				next = getter.As<Function>()->Call( revive->context, o, 1, args );
+			}
+			else {
+				if( !o->Has( revive->context, key ).FromMaybe( false ) ) {
+					failReference( revive, "bad path specified with reference" );
+					return Undefined( revive->isolate );
+				}
+				next = o->Get( revive->context, key );
+			}
+		}
+		if( next.IsEmpty() ) {
+			failReference( revive, "bad path specified with reference" );
+			return Undefined( revive->isolate );
+		}
+		at = derefDeferred( revive, root, next.ToLocalChecked() );
+	}
+	if( revive->failed ) return Undefined( revive->isolate );
+	if( at.IsEmpty() || at->IsUndefined() ) {
+		failReference( revive, "bad path specified with reference" );
+		return Undefined( revive->isolate );
+	}
+	d->state = 2;
+	d->resolved = at;
+	return at;
+}
+
+// Write each resolved value back wherever its placeholder was stored.  `seen` keeps
+// this terminating on exactly the cycles these references exist to create.
+static void substituteDeferred( struct reviver_data* revive, Local<Value> node, Local<Set> seen ) {
+	if( node.IsEmpty() || !node->IsObject() ) return;
+	Local<Object> o = node.As<Object>();
+	if( seen->Has( revive->context, o ).FromMaybe( false ) ) return;
+	if( seen->Add( revive->context, o ).IsEmpty() ) return;
+
+	MaybeLocal<Array> mKeys = o->GetOwnPropertyNames( revive->context );
+	if( mKeys.IsEmpty() ) return;
+	Local<Array> keys = mKeys.ToLocalChecked();
+	uint32_t n, count = keys->Length();
+	for( n = 0; n < count; n++ ) {
+		MaybeLocal<Value> mKey = keys->Get( revive->context, n );
+		if( mKey.IsEmpty() ) return;
+		Local<Value> key = mKey.ToLocalChecked();
+		// reading a property can run a getter, which can throw; stop rather than walk
+		// on with an exception pending, and let the entry point report it.
+		MaybeLocal<Value> mVal = o->Get( revive->context, key );
+		if( mVal.IsEmpty() ) { revive->failed = TRUE; return; }
+		Local<Value> v = mVal.ToLocalChecked();
+		INDEX which = findPlaceholder( revive, v );
+		if( which != INVALID_INDEX ) {
+			struct deferredRef* d = (struct deferredRef*)GetDataItem( &revive->pdlDeferred, which );
+			o->Set( revive->context, key, d->resolved );
+		}
+		else
+			substituteDeferred( revive, v, seen );
+	}
+}
+
+static Local<Value> resolveDeferredRefs( struct reviver_data* revive, Local<Value> root ) {
+	INDEX idx;
+	struct deferredRef* d;
+	if( !revive->pdlDeferred || !revive->pdlDeferred->Cnt ) return root;
+
+	DATA_FORALL( revive->pdlDeferred, idx, struct deferredRef*, d ) {
+		resolveDeferredOne( revive, root, idx );
+		if( revive->failed ) return Undefined( revive->isolate );
+	}
+
+	Local<Set> seen = Set::New( revive->isolate );
+	substituteDeferred( revive, root, seen );
+	// A custom reviver may have stored the value on an object it built itself rather
+	// than on the accumulator, and the root may expose its contents through accessors
+	// the walk above cannot see through -- so also scan from the accumulator each
+	// reference was read under.
+	DATA_FORALL( revive->pdlDeferred, idx, struct deferredRef*, d )
+		substituteDeferred( revive, d->owner, seen );
+
+	// the document itself can be nothing but a reference
+	return derefDeferred( revive, root, root );
+}
+
 Local<Value> convertMessageToJS2( PNVDATALIST msg, struct reviver_data *revive ) {
 	Local<Object> o;
 
 	struct jsox_value_container *val = (struct jsox_value_container *)GetDataItem( &msg, 0 );
 	revive->fieldName = String::NewFromUtf8Literal( revive->isolate, "" );
-	if( val && val->contains ) {
+	// `contains` is not the same question as "is a container".  A typed array carries its
+	// bracket payload there too -- `u8[...]`, `ab[...]`, and `ref[...]` are all written
+	// with brackets -- so testing `contains` alone sent those down the build-an-object
+	// path, where makeValue() built the right value and then buildObject() walked the
+	// very same payload again and assigned it as properties.  On an ArrayBuffer that
+	// showed up as a stray '0'; on a real typed array the raw token was coerced to a
+	// number and silently overwrote element 0 (`u8[$_$_]` decoded to 0,255,191 at the
+	// top level and 251,255,191 anywhere else).  Only objects and arrays get built into.
+	if( val && val->contains
+	    && ( val->value_type == JSOX_VALUE_OBJECT || val->value_type == JSOX_VALUE_ARRAY ) ) {
 #ifdef DEBUG_REVIVAL_CALLBACKS
 		lprintf( "makeValue3" );
 #endif
@@ -1451,12 +1714,17 @@ Local<Value> convertMessageToJS2( PNVDATALIST msg, struct reviver_data *revive )
 					return o;
 				}
 				//lprintf( "Had a field calllback, returning new object" );
-				return o = retval.ToLocalChecked().As<Object>();
+				// This is the root's final identity -- and the root has no revive-stack
+				// entry, so nothing else in the build ever gets to repoint a slot that
+				// captured it.  Settling the deferred references has to happen here,
+				// after this call, for the same reason it happens at all.
+				o = retval.ToLocalChecked().As<Object>();
+				return resolveDeferredRefs( revive, o );
 			}
 			//else lprintf( "no field callback on this type..." );
-			return o;
+			return resolveDeferredRefs( revive, o );
 		}
-		return o.As<Value>();
+		return resolveDeferredRefs( revive, o.As<Value>() );
 	}
 	if( val ) {
 #ifdef DEBUG_REVIVAL_CALLBACKS
@@ -1552,10 +1820,33 @@ static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviv
 	Local<Value> value;
 
 	revive->parser->currentReviver = revive;
-	value = convertMessageToJS2( parsed, revive );
-	//logTick(4);
-
-	jsox_dispose_message( &parsed );
+	{
+		// Revival raises errors by throwing and setting `failed`, then unwinding.  The
+		// unwind used to hand the half-built value back as if nothing happened, and the
+		// pending exception was lost on the way out -- a bad reference inside a revived
+		// type silently dropped the whole property instead of failing.  Catch it here,
+		// at the one exit, and forward it exactly once.
+		// MEASURED 2026-08-09: a pending exception is NOT delivered to JS when this
+		// callback returns normally after GetReturnValue().Set() -- a TryCatch here
+		// reports HasCaught() at both this frame and the outermost one, yet with no
+		// TryCatch at all the throw never reaches JS and the half-built value is
+		// returned as if it succeeded.  So the exception has to be observed and
+		// re-thrown explicitly; ambient propagation cannot be relied on.  The same
+		// applies to any native entry that lets a JS callback throw.
+		v8::TryCatch tc( revive->isolate );
+		value = convertMessageToJS2( parsed, revive );
+		jsox_dispose_message( &parsed );
+		if( tc.HasCaught() ) {
+			tc.ReThrow();
+			return Undefined( revive->isolate );
+		}
+		// failed without anything raised: the handler still owes JS an error.
+		if( revive->failed && revive->needsThrow ) {
+			revive->isolate->ThrowException( Exception::Error(
+				String::NewFromUtf8( revive->isolate, TranslateText( "Revival failed" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
+			return Undefined( revive->isolate );
+		}
+	}
 	//logTick(5);
 	//lprintf( "RETURN REAL VALUE? %d %d", value.IsEmpty(), value.IsEmpty()?0:value->IsObject() );
 	return value;
@@ -1567,6 +1858,7 @@ void JSOXObject::parse( const v8::FunctionCallbackInfo<Value>& args ){
 	r.isolate = Isolate::GetCurrent();
 	r.reviveStack = NULL;
 	r.failed = FALSE;
+	r.needsThrow = FALSE;
 	if( args.Length() == 0 ) {
 		r.isolate->ThrowException( Exception::TypeError(
 			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -1631,6 +1923,7 @@ void parseJSOX( const v8::FunctionCallbackInfo<Value>& args )
 	r.isolate = Isolate::GetCurrent();
 	r.reviveStack = NULL;
 	r.failed = FALSE;
+	r.needsThrow = FALSE;
 	if( args.Length() == 0 ) {
 		r.isolate->ThrowException( Exception::TypeError(
 			String::NewFromUtf8( r.isolate, TranslateText( "Missing parameter, data to parse" ), v8::NewStringType::kNormal ).ToLocalChecked() ) );

@@ -1,71 +1,8 @@
 
-class DateNS extends Date {
-	ns=0;
-	constructor(a,b ) {
-		if( !a ) super();
-		else super(a);
-		this.ns = b || 0;
-	}
-	toString() {
-		return toISONS( this );
-	}
-	toISOString() {
-		return toISONS( this );
-	}
-}
-
-function toISO(this_) {
-	if( this_.getTime()=== -62167219200000) 
-	{
-		return "0000-01-01T00:00:00.000Z";
-	}
-	const yr = this_.getFullYear();
-	const tzo = -this_.getTimezoneOffset(),
-		dif = tzo >= 0 ? '+' : '-',
-		pad = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 10 ? '0' : '') + norm;
-		},
-		pad3 = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-		};
-	return (( yr < 0 )? '-'+Math.abs(yr).toString().padStart( 6, '0' ):yr.toString().padStart( 4, "0" )) +
-		'-' + pad(this_.getMonth() + 1) +
-		'-' + pad(this_.getDate()) +
-		'T' + pad(this_.getHours()) +
-		':' + pad(this_.getMinutes()) +
-		':' + pad(this_.getSeconds()) +
-		'.' + pad3(this_.getMilliseconds()) +
-		dif + pad(tzo / 60) +
-		':' + pad(tzo % 60.0);
-}
-
-function toISONS(this_) {
-	var tzo = -this_.getTimezoneOffset(),
-		dif = tzo >= 0 ? '+' : '-',
-		pad = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 10 ? '0' : '') + norm;
-		},
-		pad3 = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-		},
-		pad6 = function(num) {
-			var norm = Math.floor(Math.abs(num));
-			return (norm < 100000 ? '0' : '') + (norm < 10000 ? '0' : '') + (norm < 1000 ? '0' : '') + (norm < 100 ? '0' : '') + (norm < 10 ? '0' : '') + norm;
-		};
-	return this_.getFullYear() +
-		'-' + pad(this_.getMonth() + 1) +
-		'-' + pad(this_.getDate()) +
-		'T' + pad(this_.getHours()) +
-		':' + pad(this_.getMinutes()) +
-		':' + pad(this_.getSeconds()) +
-		'.' + pad3(this_.getMilliseconds()) + pad6(this_.ns) +
-		dif + pad(tzo / 60) +
-		':' + pad(tzo % 60);
-}
+// DateNS lives in the loader (sack.DateNS) so there is one definition of it; see
+// sack-datens.cjs.
+import sackDateNS from "./sack-datens.cjs";
+const { DateNS, toISO, toISONS } = sackDateNS;
 
 export default function(sack) {
 
@@ -109,8 +46,18 @@ function pushToProto(p,a) {
     toProtoTypes.set( p, a );
 }
 
+/**
+ * Provide minimal escapes for a string to be encapsulated as a JSOX string in quotes.
+ *
+ * The caller supplies the quotes, and may append the result in segments, so this
+ * cannot know which of the three quote characters will end up delimiting it; all
+ * three are escaped regardless.  A parser accepts a foreign quote unescaped -- and
+ * a raw newline in any quote style -- so this is conservative, not required.
+ *
+ * @param {string} string
+ * @returns {string}
+ */
 function escape(string) {
-	//return string.replace( "\\", "\\\\" ).replace( '\"', "\\\"" ).replace( "\'", "\\\'" );
 	let n;
 	let output = '';
 	if( !string ) return string;
@@ -178,7 +125,7 @@ function initPrototypes()
 		if( s.includes( "\u{FEFF}" ) ) return (useQuote + escape(s) +useQuote);
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 			|| /([0-9-])/.test(s[0])
-			|| /((\n|\r|\t)|[ #\[\]{}()<>!+*/.:,-])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
+			|| /[\n\r\t #\[\]{}()<>\~!+*/.:,\-"'`]/.test( s ) )?(useQuote + escape(s) +useQuote):s )
 	}
 
 	pushToProto( ArrayBuffer.prototype, { external:true, name:"ab"
@@ -367,6 +314,7 @@ let lastLog = Date.now();
 sack.JSOX.stringifier = function() {
 	var classes = [];
 	var useQuote = '"';
+	var sortFields = true; // see the `sort` accessor below
 
 	var fieldMap = new WeakMap();
 	var path = [];
@@ -417,7 +365,17 @@ sack.JSOX.stringifier = function() {
 			return o;
 		},
 		stringify(o,r,s,as) { return stringify(this, o,r,s,as) },
-		setQuote(q) { useQuote = q; },
+		// Emit an object's fields in insertion order instead of sorted.  The standard
+		// does not require canonical ordering -- only this implementation sorts.
+		// Class matching still normalizes key order regardless; see defineClass().
+		get sort() { return sortFields; },
+		set sort(v) { sortFields = !!v; },
+		get quote() { return useQuote; },
+		set quote(q) { useQuote = q; },
+		setQuote(q) {
+			console.log( "JSOX: setQuote() is deprecated, use `stringifier.quote = ...` instead." );
+			useQuote = q;
+		},
 		toJSOX( name,proto,f) { return this.registerToJSOX( name,proto,f) },
 		registerToJSOX( name, ptype, f ) {
 			if( ptype.prototype && ptype.prototype !== Object.prototype ) {
@@ -457,7 +415,7 @@ sack.JSOX.stringifier = function() {
 		if( s.includes( "\u{FEFF}" ) ) return (useQuote + escape(s) +useQuote);
 		return ( ( s in keywords /* [ "true","false","null","NaN","Infinity","undefined"].find( keyword=>keyword===s )*/
 			|| /([0-9-])/.test(s[0])
-			|| /((\n|\r|\t)|[ #\[\]{}()<>!+*/.:,-])/.test( s ) )?(useQuote + escape(s) +useQuote):s )
+			|| /[\n\r\t #\[\]{}()<>\~!+*/.:,\-"'`]/.test( s ) )?(useQuote + escape(s) +useQuote):s )
 	}
 
 
@@ -506,6 +464,38 @@ sack.JSOX.stringifier = function() {
 	function stringify( stringifier, object, replacer, space, asField ) {
 		if( object === undefined ) return "undefined";
 		if( object === null ) return "null";
+
+		// stringify( value, { replacer, pretty, sort, quote } ) -- an options object in
+		// the replacer slot.  A replacer is only ever a function or an array, so there is
+		// nothing to disambiguate.  Saves the `stringify( o, null, '\t' )` dance.
+		var restoreSort;
+		var restoreQuote;
+		if( replacer && "object" === typeof replacer && !Array.isArray( replacer ) ) {
+			const opts = replacer;
+			replacer = opts.replacer;
+			if( space === undefined )
+				space = ( opts.pretty !== undefined ) ? opts.pretty : opts.space;
+			if( opts.sort !== undefined ) {
+				restoreSort = sortFields;
+				sortFields = !!opts.sort;
+			}
+			// the quote to prefer where one is needed; `'` or a backtick emit valid JSOX
+			// that is no longer valid JSON.  Only picks the delimiter -- escape() still
+			// escapes all three quotes, since it cannot know which one wraps its result.
+			if( opts.quote !== undefined ) {
+				restoreQuote = useQuote;
+				useQuote = opts.quote;
+			}
+		}
+		try {
+			return stringify_( stringifier, object, replacer, space, asField );
+		} finally {
+			if( restoreSort !== undefined ) sortFields = restoreSort;
+			if( restoreQuote !== undefined ) useQuote = restoreQuote;
+		}
+	}
+
+	function stringify_( stringifier, object, replacer, space, asField ) {
 		var gap;
 		var indent;
 		var rep;
@@ -856,6 +846,10 @@ sack.JSOX.stringifier = function() {
 
 							// sort properties into keys.
 							if (Object.prototype.hasOwnProperty.call(value, k)) {
+								// A class-matched object emits its values positionally against
+								// the class's normalized field list, so its keys must stay
+								// sorted even when the caller asked for insertion order.
+								if( !sortFields && !partialClass ) { keys.push(k); continue; }
 								var n;
 								for( n = 0; n < keys.length; n++ )
 									if( keys[n] > k ) {

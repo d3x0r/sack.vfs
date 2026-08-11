@@ -1,6 +1,7 @@
 
 const sack = require( "../../.." );
-const store = sack.ObjectStorage(  "storage.os" );
+const {ObjectStorage} = require( "sack.vfs/object-storage" );
+const store = new ObjectStorage(  "storage.os" );
 
 const timeline = store.timeline;
 

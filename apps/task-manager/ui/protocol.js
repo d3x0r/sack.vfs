@@ -12,10 +12,6 @@ export const config = {
 		systems : [],
 		systemMap : {},
 	},
-	//AddTaskList : ()=>{},
-	addTaskLog : ()=>{},
-	editTask:()=>{},
-	insertBackLog : ()=>{},
 }
 
 
@@ -191,8 +187,8 @@ export class Protocol extends Events {
 				break;
 			case "backlog":
 				{
-				const log = config.local.logs[msg.id];
-					config.insertBackLog( log, msg.backlog )
+					const log = config.local.logs[msg.id];
+					protocol.on( "insertBackLog", [log,msg.backlog]);
 				}
 				break;
 			case "log":
@@ -200,8 +196,7 @@ export class Protocol extends Events {
 					const log = config.local.logs[msg.id];
 					const task = config.local.tasks[msg.id];
 					if( task && !log ) {
-						protocol.on( "addTaskLog", [task,msg.log] );
-						config.addTaskLog( task, msg.log );
+						protocol.on( "addTaskLog", [ task, msg.log ] );
 					} else {
 						//log.logFrame.show();
 						//debugger;

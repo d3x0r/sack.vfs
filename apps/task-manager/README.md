@@ -9,6 +9,23 @@ Task entries are described below.
 
 `node  --import=sack.vfs/import node_modules\sack.vfs\apps\task-manager\src\main.mjs`
 
+## HTTP controls
+
+The REST-ish endpoints are intended for automation.
+
+| endpoint | query | response |
+|---|---|---|
+| `/start` | `task=<name>` | starts the task; restarts it if already running |
+| `/stop` | `task=<name>` | stops the task |
+| `/restart` | `task=<name>` | sets restart/start behavior for the task |
+| `/running` | `task=<name>` | `true` or `false` |
+| `/list` | optional `json=1` | task ids, running state, and names |
+| `/log` | optional `task=<name>` or `id=<task id>`; optional `time=1`; optional `at=<line index>`; optional `length=<count>`; optional `json=1` | recent log lines as plain text, or JSON with `json=1` |
+
+Task lookup tries exact name, case-insensitive exact name, unique prefix, then unique contains match.  Ambiguous close matches return `409 Ambiguous Task` with candidate task names, or `{ error, matches }` when `json=1`.
+
+`/log` without a task returns the previous 50 retained lines from the interleaved master log.  `/log?task=Example&time=1` returns one task's log and prefixes each line with the captured log timestamp.  `at` uses the absolute line index returned in the `X-Task-Log-At` header to page older retained log lines; `length` controls how many lines are returned.  The response also includes `X-Task-Log-Length`.  `/log?task=Example&json=1` returns `{ at, length, truncated, log }`; `/log?json=1` returns master log entries as `{ taskId, taskName, time, error, line }`.
+
 ## Configuration
 
 `config.jsox` is the configuation file for tasks.
@@ -90,6 +107,7 @@ for the program to run, while windows requires a full path (otherwise stdio redi
 | port | number | port to host service on |
 | useUpstream | bool | Enables connecting to an upstream task server |
 | upstreamServer | string | "Host:port" address to connect to, with `ws://` (support wss?) |
+| maxMasterLogLines | number | maximum number of interleaved master log entries to retain |
 | extraModules| array of {name,function} | Specifies additional modules to load before starting any tasks.  This are expected to be async functions and await resolution of each module in turn.|
 | onStopAll| array of {name,function,options} | Specifies additional modules to load when Stop All is triggered.  This are expected to be async functions and await resolution of each module in turn. `module.function(options)` |
 | tasks | array of Task configurations above | list of defined tasks |
@@ -117,4 +135,3 @@ server will indicate all statuses and tasks of all servers
 that have specified that upstream server.  There is no limit of depth.
 A circular list of upstream servers might be constructed; this is untested, but should be fairly harmless... a system
 which receives itself will end up showing itself as a tab of itself, but no deeper.
-

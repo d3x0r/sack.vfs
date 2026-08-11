@@ -14,8 +14,33 @@ let pendingDepends = [];
 // lines of output retained per task; a long lived service would otherwise grow
 // #log without bound.  Override per task with `maxLogLines` in the task config.
 const DEFAULT_MAX_LOG_LINES = 5000;
+const DEFAULT_MAX_MASTER_LOG_LINES = 5000;
 // trim in chunks - splicing the front on every line is O(n) per line.
 const LOG_TRIM_SLACK = 1024;
+
+function getLogPage( log, logBase, from = logBase + log.length, length = 20 ) {
+	const lineCount = Math.max( 0, Math.floor( length ) || 0 );
+	const start = Math.max( from - lineCount, logBase );
+	const end   = Math.max( from, logBase );
+	const atFloor = start <= logBase && logBase > 0;
+	return { at: atFloor?0:start
+	       , truncated: atFloor
+	       , log: log.slice( start - logBase, end - logBase ) };
+}
+
+export function getMasterLog( from, length ) {
+	return getLogPage( local.masterLog, local.masterLogBase, from, length );
+}
+
+function addMasterLogEntry( task, logEntry ) {
+	local.masterLog.push( { taskId:task.id, taskName:task.name, log:logEntry } );
+	const maxLog = config.config?.maxMasterLogLines || DEFAULT_MAX_MASTER_LOG_LINES;
+	if( local.masterLog.length > maxLog + LOG_TRIM_SLACK ) {
+		const drop = local.masterLog.length - maxLog;
+		local.masterLog.splice( 0, drop );
+		local.masterLogBase += drop;
+	}
+}
 
 export class Task {
 	started = new Date(0);
@@ -209,16 +234,11 @@ export class Task {
 	}
 
 	// `from` is an absolute line index - the oldest line the client holds.
-	// Returns the 20 lines before it, clamped to what is still retained.
+	// Returns the requested lines before it, clamped to what is still retained.
 	// `at:0` tells the client to stop asking; `truncated` says why.
-	getLog( from ) {
-		//console.log( "reading log from:", from, from - 20, from  );
-		const start = Math.max( from - 20, this.#logBase );
-		const end   = Math.max( from, this.#logBase );
-		const atFloor = start <= this.#logBase && this.#logBase > 0;
-		return { at: atFloor?0:start
-		       , truncated: atFloor
-		       , log: this.#log.slice( start - this.#logBase, end - this.#logBase ) };
+	getLog( from = this.#logBase + this.#log.length, length = 20 ) {
+		//console.log( "reading log from:", from, from - lineCount, from  );
+		return getLogPage( this.#log, this.#logBase, from, length );
 	}
 
 	set ws( val) {
@@ -365,9 +385,15 @@ export class Task {
 					console.log( this_.#task.name, ":", line );
 			}
 		}
+		/* this is the low level task end callback
+         the native code has ended. */
 		function stop() {
 			this_.ended = new Date();
 			this_.running = false;
+			if( this_.#stopTimer) { 
+				clearTimeout ( this_.#stopTimer )
+				this_.#stopTimer = 0;
+			} 
 			this_.stopping = false;
 			/*
 			if( this_.#stopTimer !== null ) {
@@ -421,6 +447,7 @@ export class Task {
 
 	#send( buffer ) {
 		this.#log.push( buffer );
+		addMasterLogEntry( this, buffer );
 		const maxLog = this.#task.maxLogLines || DEFAULT_MAX_LOG_LINES;
 		if( this.#log.length > maxLog + LOG_TRIM_SLACK ) {
 			const drop = this.#log.length - maxLog;

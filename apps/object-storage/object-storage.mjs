@@ -294,6 +294,24 @@ class ObjectStorage {
 			this.delete( container);
 		}
 	}
+	getTimes( opts ) {
+		const id = ( "string" === typeof opts ) ? opts : opts?.id;
+		if( !id ) return [];
+		return this.storage.getTimes( id );
+	}
+	getTime( opts ) {
+		const times = this.getTimes( opts );
+		return times.length ? times[0] : null;
+	}
+	setTime( opts, time = new Date() ) {
+		const id = ( "string" === typeof opts ) ? opts : opts?.id;
+		if( !id ) return false;
+		this.storage.setTime( id, time );
+		return true;
+	}
+	get timeline() {
+		return this.storage.timeline;
+	}
 	addEncoders(encoderList) {
 		const this_ = this;
 		encoderList.forEach( f=>{
@@ -376,7 +394,9 @@ class ObjectStorage {
 				console.log( "SAVING A STRING OBJECT" );
 				// this isn't cached on this side.
 				// we don't know the real object.
-				this_.storage.writeRaw( opts.id, obj );
+				this_.storage.writeRaw( opts, obj );
+				if( opts.time )
+					this_.storage.setTime( opts.id, opts.time );
 				return res?res( opts.id ):null;
 			}
 			var container = this_.stored.get( obj );
@@ -405,33 +425,33 @@ class ObjectStorage {
 						})
 
 
-				var stringifier;
-				if( opts && opts.extraEncoders ) {
-					stringifier = sack.JSOX.stringifier();
-					this_.setupStringifier( stringifier );
-					opts.extraEncoders.forEach( f=>{
-						stringifier.registerToJSOX( f.tag, f.p, f.f )
-					});
-				}else {
-					stringifier = this_.stringifier;
+					var stringifier;
+					if( opts && opts.extraEncoders ) {
+						stringifier = sack.JSOX.stringifier();
+						this_.setupStringifier( stringifier );
+						opts.extraEncoders.forEach( f=>{
+							stringifier.registerToJSOX( f.tag, f.p, f.f )
+						});
+					}else {
+						stringifier = this_.stringifier;
+					}
+					container.encoding = true;
+					//console.log( "Setting root container mode....(object already contained)");
+					rootContainer = true;
+					storage = stringifier.stringify( container );
+					container.encoding = false;
+					if( !container.id || container.id === "null" ) {
+						console.trace( "0) Container has no ID or is nUll", container );
+					}
+					_debug_output && console.trace( "WRite:", container.id, storage );
+					if( this_.versioned )
+						console.log( "ObjectStorage versioning was removed; updating current object:", container.id );
+					this_.storage.writeRaw( { id:container.id }, storage );
+					return res?res( container.id ):null;
+				} else {
+					throw new Error( "record is signed, cannot put" );
 				}
-				container.encoding = true;
-
-				rootContainer = true;
-				storage = stringifier.stringify( container );
-				container.encoding = false;
-				if( !container.id || container.id === "null" ) {
-					console.trace( "0) Container has no ID or is nUll", container );
-				}
-				_debug_output && console.trace( "WRite:", container.id, storage );
-				this_.writeRaw( container.id, storage );
-	//		console.log( "Why doesn't this straoge have gettime?", storage );
-				container.time = this_.getTimes( container.id );
-				return res?res( container.id ):null;
-			} else {
-				throw new Error( "record is signed, cannot put" );
 			}
-		}
 
 			if( opts && opts.id ) {
 				var stringifier;
@@ -452,12 +472,11 @@ class ObjectStorage {
 				}
 				_debug_output && console.trace( "Write(root set):", opts, storage );
 				if( this_.versioned ) {				
-					const id = opts.id.split( '.' );
-					//console.log( "Storing with an ID already?", obj, opts );
-					const newVersion = this_.storage.writeRaw( {id:id[0]}, storage );
-					opts.id = id[0] + '.' + newVersion;
-				} else 
-					this_.storage.writeRaw( opts, storage );
+					console.log( "ObjectStorage versioning was removed; updating current object:", opts.id );
+				}
+				this_.storage.writeRaw( opts, storage );
+				if( opts.time )
+					this_.storage.setTime( opts.id, opts.time );
 				res && res( opts.id );
 			} else if( !opts || !opts.id ) {
 				// need a new ID for an object (not string)
@@ -506,6 +525,8 @@ class ObjectStorage {
 				_debug_output && console.log( "Output container to storage... ", container, container.storage, container.id );
 				try {
 					this_.storage.writeRaw( opts, storage );
+					if( opts.time )
+						this_.storage.setTime( container.id, opts.time );
 					if( container.id === undefined ) throw new Error( "Error along path of setting container ID");
 					this_.cached.set( container.id, container.data );
 					//console.log( "2CACHE IS SET HERE ------------------------- ", obj)

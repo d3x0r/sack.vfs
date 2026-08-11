@@ -1,5 +1,5 @@
 
-const JSOX = require( "../../.." ).JSOX;
+const JSOX = require( "sack.vfs" ).JSOX;
 
 var jsox = `
   cls{ author, title }
@@ -13,7 +13,7 @@ var jsox = `
 `;
 
 var arr = JSOX.parse( jsox );
-console.log( "resolved:", arr );
+console.log( "arr:", arr );
 Object.getPrototypeOf( arr[0] ).toString = function(){ return this.author + " wrote " + this.title };
 Object.getPrototypeOf( arr[3] ).toString = function(){ return this.object + "s are " + this.color };
 

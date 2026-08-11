@@ -7,7 +7,7 @@ const stringify = JSOX.stringify;
 
 /**
  * Set the timezone offset from the local timezone offset.
- * Argument "minutes" => -UTC±XX:XX, default = local offset.
+ * Argument "minutes" => -UTCï¿½XX:XX, default = local offset.
  * Property "timezoneOffset" => last-set offset.
  * Return => milliseconds.
  */

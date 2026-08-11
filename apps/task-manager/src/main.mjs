@@ -19,6 +19,7 @@ let firstLoad = true;
 let config = await reloadConfig();
 
 import {openServer} from "../../http-ws/server.mjs"
+import {setupRest} from "./main.rest.mjs"
 
 import {config as taskConfig, Task, closeAllTasks} from "./task.mjs"
 taskConfig.pwdBare = pwdBare;
@@ -55,6 +56,9 @@ const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
 // start server...
 console.log( "Serve on port:", serverOpts.port );
 export const server = openServer( serverOpts, accept, connect );
+
+setupRest( server );
+
 server.addHandler( (req,res)=>{
 	if( req.url.startsWith( "/events")){
 		req.url = "/../.." + req.url;
