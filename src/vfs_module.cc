@@ -512,6 +512,12 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 		InitWebGPU( isolate, exports );
 	}
 #  endif
+#  ifdef INCLUDE_OPENXR
+	{
+		extern void InitOpenXR( v8::Isolate*, v8::Local<v8::Object> );
+		InitOpenXR( isolate, exports );
+	}
+#  endif
 
 #endif
 
