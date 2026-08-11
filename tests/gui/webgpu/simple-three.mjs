@@ -1,5 +1,5 @@
 
-   import "./3d-shell/document.mjs"
+   import "./shell/document.mjs"
 
 	const canvas = document.createElement( "canvas", { width: 1920, height:1080 } );
 

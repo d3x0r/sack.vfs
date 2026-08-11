@@ -1,6 +1,6 @@
 
 
-import {sack} from "sack-gui"
+import {sack} from "@d3x0r/sack-gui"
 
 console.log( "Navigator?", navigator, Object.getPrototypeOf( navigator ), sack );
 
@@ -11,4 +11,4 @@ console.log( "Adapter?",  sack.gpu.requestAdapter().then( (a)=>{console.log( "wa
 function tick() {
 	setTimeout( ()=>{console.log( "tick..." ); tick() }, 2000 );
 }
-tick()
+//tick()
