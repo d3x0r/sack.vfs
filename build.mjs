@@ -45,6 +45,7 @@ case "win32":
 	{
 	const proc = child_process.spawn( "npx"
 			, ["cmake-js", "-t", "ClangCL", "--CDMAKE_GUI="+GUI
+			  , "--CDINCLUDE_OPENXR=ON"
 			  , moreopts.join(' ')
 			  , "--config", config, "configure"]
 			, {stdio:"pipe", shell:true}
