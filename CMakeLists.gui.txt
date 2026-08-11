@@ -135,6 +135,7 @@ endif( __ANDROID__ )
 
 include( ExternalProject )
 	include( CMakeLists.dawn.txt )
+	include( CMakeLists.openxr.txt )
 
 
 if( WIN32 )
@@ -301,6 +302,17 @@ if( INCLUDE_DAWN )
 	source_group( "Source Files\\GUI\\imglib-webgpu" FILES ${IMGLIB_WEBGPU_SOURCES} )
 endif()
 
+if( INCLUDE_OPENXR )
+	set( OPENXR_SOURCES
+		src/gui/openxr/xr_module.h
+		src/gui/openxr/xr_module.cc
+		src/gui/openxr/xr_session.h
+		src/gui/openxr/xr_session.cc
+	)
+	source_group( "Source Files\\GUI\\openxr" FILES ${OPENXR_SOURCES} )
+	list( APPEND GUI_SOURCES ${OPENXR_SOURCES} )
+endif()
+
 source_group( "Source Files\\GUI" FILES ${GUI_SOURCES} ) #REGULAR_EXPRESSION  src/gui/.*)
 
 if( INCLUDE_DAWN )
@@ -345,6 +357,11 @@ set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_E
 add_dependencies( ${PROJECT} sack intershell dekware )
 
 target_link_libraries( ${PROJECT} webgpu_dawn )
+
+if( INCLUDE_OPENXR )
+	add_dependencies( ${PROJECT} OpenXR_External )
+	target_link_libraries( ${PROJECT} ${OPENXR_LIBS} )
+endif( INCLUDE_OPENXR )
 
 if( UNIX )
 	#target_link_libraries( ${PROJECT} tls ssl crypto )
