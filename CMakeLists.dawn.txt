@@ -63,6 +63,19 @@ endif()
 	        # the HLSL writer OFF forever and the D3D12 backend fails to build.
 	        # Pass it explicitly so a clean build (or another machine) works.
 	        -DTINT_BUILD_HLSL_WRITER=ON
+	        # Dawn builds a C++20 module target (dawncpp_module) whenever its own
+	        # probe in src/cmake/DawnCompilerChecks.cmake says the toolchain can
+	        # handle modules. That probe accepts "Visual Studio" generators and
+	        # accepts Clang as long as clang-scan-deps exists — and with clang-cl
+	        # both are true, so it turns modules on. But the Visual Studio
+	        # generator can only scan module dependencies with MSVC cl, not with
+	        # the clang-cl toolset, so CMake's *generate* step then fails with
+	        # "the compiler does not provide a way to discover the import graph".
+	        # The probe is a check_cxx_source_compiles, which skips when the
+	        # variable is already in the cache — so defining it here wins.
+	        # We only ever #include <dawn/webgpu_cpp.h>, never `import dawn;`,
+	        # so losing the module target costs nothing.
+	        -DDAWN_SUPPORTS_CXX_MODULES=OFF
 	        -DDAWN_ENABLE_METAL=OFF        # Disables Metal fallback (if compiling on Apple hardware)
         	-DDAWN_ENABLE_DESKTOP_GL=OFF   # Disables standard desktop OpenGL compatibility lines
 	        -DDAWN_ENABLE_OPENGLES=OFF     # Disables mobile embedded OpenGLES targets
