@@ -100,10 +100,25 @@ export  class threeSackRenderer extends sack.Renderer {
 				//this.setSurfaceDepthFormat('depth24plus') ;
 	}
 	get configured() {
+
+
+		// this is just rendered 3d mode out - can use vulkan driver here.
 		return this.#configured || 
-			sack.gpu.requestAdapter().then( (adapter)=>{
-				return adapter.requestDevice().then( (device)=>{
+			sack.gpu.requestAdapter({backendType:"vulkan"}).then( (adapter)=>{
+				console.log( "Got back adapter:", adapter.info );
+				return adapter.requestDevice({
+				    //     requiredFeatures: [ 'shared-texture-memory-d3d12-resource' ],
+				    dawnToggles: { enabled: [ /*'allow_unsafe_apis' */   // this is for d3d12-resource enable
+                                             /*, 'dump_tint_ir'*/ ]
+                                             //, disabled: [ 'enable_tint_ir_validation_asserts' ] 
+                                             }
+					       } ).then( (device)=>{
                                        this.#device = device;
+//				console.log( "Did get back a device?" );
+
+//let n = 0; const orig = this.#device.createShaderModule.bind( device );
+//device.createShaderModule = ( desc ) => { sack.Volume().write( `shader-${n++}.wgsl`, desc.code ?? "" ); return orig( desc ); };
+
 					// Hook the canvas surface to that device. This is what informs our
 					// imglib-webgpu driver of surface size/format/root Image.
 					this.#ctx = r.getContext('webgpu');
