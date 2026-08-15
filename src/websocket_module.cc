@@ -3477,19 +3477,30 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 
 	//Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
-	// only an actual SSL first-packet handshake error can be "disabled" (fall
-	// back to plain http).  webSockServerLowError only completes the fallback_ssl
-	// handshake (increment to 2) for SACK_NETWORK_ERROR_SSL_HANDSHAKE, so engaging
-	// it for any other LOW_ERROR (e.g. a parse error raised while re-feeding the
-	// bytes as http after a fallback) would spin here forever.
+	// only an actual SSL handshake error can be "disabled" (fall back to plain
+	// http); webSockServerLowError blocks for the app's decision on those alone,
+	// so engaging it for any other LOW_ERROR (e.g. a parse error raised while
+	// re-feeding the bytes as http after a fallback) would release an event that
+	// nobody is waiting on.
 	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR
 	    && ( obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
 	      || obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) ) {
-		// delay until we return to the thread that dispatched this error.
+		// capture before releasing: setting done hands the event back to its
+		// waiter, which drops it as soon as ssl_EndSecure returns - so every
+		// field, waiter included, has to be read before that store.
+		PTHREAD waiter = obj->eventMessage->waiter;
 		obj->eventMessage->data.error.fallback_ssl = 1;
-		// allow this to return immediately, so the SSL layer will give up its lock.
+		// return immediately so the SSL layer gives up its lock; the fallback runs
+		// on that thread, which is the one holding the negotiation.  Nothing waits
+		// for it here and nothing needs to: ssl_EndSecure only delivers the re-fed
+		// bytes after ssl_ClosePipe(), so the earliest request event for this
+		// socket is already posted past the teardown, and it reaches JS through a
+		// later event loop post.
 		obj->eventMessage->done                    = 1;
-		WakeThread( obj->eventMessage->waiter );
+		WakeThread( waiter );
+		// the event belongs to the waiter from here on - clear the slot so the
+		// drain's tail knows not to touch it either.
+		obj->eventMessage = NULL;
 	} else
 		lprintf( "cannot disable SSL outside of error event" );
 }
