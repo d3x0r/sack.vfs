@@ -3053,7 +3053,7 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		//lprintf( "probably doing endsecure on %p %d", pc, ( *pevt ).data.error.fallback_ssl );
 		if( ( *pevt ).data.error.fallback_ssl ) {
 			// increment this, so the caller can recognize the fallback happened...
-			( *pevt ).data.error.fallback_ssl = (*pevt).data.error.fallback_ssl + 1;
+			//( *pevt ).data.error.fallback_ssl = (*pevt).data.error.fallback_ssl + 1;
 			ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
 		} else
 			lprintf( "didn't end secure on %p", pc );
@@ -3490,12 +3490,6 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 		// allow this to return immediately, so the SSL layer will give up its lock.
 		obj->eventMessage->done                    = 1;
 		WakeThread( obj->eventMessage->waiter );
-		// confirm that the fallback happened?  Otherwise this could result with a ssl
-		// enabled socket in the end().
-		while (obj->eventMessage->data.error.fallback_ssl < 2) {
-			Relinquish();
-		}
-		//ssl_EndSecure( obj->eventMessage->pc, (POINTER)obj->eventMessage->data.error.buffer, obj->eventMessage->data.error.buflen );
 	} else
 		lprintf( "cannot disable SSL outside of error event" );
 }
