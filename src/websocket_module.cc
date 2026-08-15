@@ -3031,9 +3031,22 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 	}
 	(*pevt).pc = pc;
 	(*pevt)._this = wss;
-	(*pevt).waiter = MakeThread();
-	// no HoldWssEvent needed: waiter is set, so wssAsyncMsg_ leaves the event to
-	// this thread and the DropWssEvent below is the only release.
+	// Only the SSL handshake failures block below, for the app's synchronous
+	// fallback-to-http decision.  Blocking on any other error deadlocks when the
+	// error is raised from inside ProcessHttp while the http lock is held: this
+	// thread would wait for the JS thread to mark the event done, but the JS
+	// thread is blocked acquiring that same http lock.
+	LOGICAL blocking = ( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+	                  || error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 );
+	// waiter is the ownership marker, and it has to be set before the enqueue
+	// publishes the event to the drain.  Set it only when this thread really does
+	// wait: a non-blocking error is fire-and-forget and wssAsyncMsg_ owns the
+	// drop.  Marking it owned here instead would take the drop below - freeing
+	// the event while it is still sitting in the queue, for the drain to dequeue
+	// out of the pool after some other connection has already been handed it.
+	// No HoldWssEvent needed either way; exactly one side releases it.
+	if( blocking )
+		(*pevt).waiter = MakeThread();
 	EnqueLink( &wss->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "socket HTTP LowError Send %p", &wss->async);
@@ -3042,23 +3055,14 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
 	else
 		uv_async_send( &wss->async );
-	// Only the SSL first-packet handshake failure blocks here for the app's
-	// synchronous fallback-to-http decision.  Blocking on any other error
-	// deadlocks when the error is raised from inside ProcessHttp while the
-	// http lock is held: this thread waits for the JS thread to mark the
-	// event done, but the JS thread is blocked acquiring that same http lock.
-	if( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE || error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) {
+	if( blocking ) {
 		while( !(*pevt).done )
 			WakeableSleep( 1000 );
-		//lprintf( "probably doing endsecure on %p %d", pc, ( *pevt ).data.error.fallback_ssl );
 		if( ( *pevt ).data.error.fallback_ssl ) {
-			// increment this, so the caller can recognize the fallback happened...
-			//( *pevt ).data.error.fallback_ssl = (*pevt).data.error.fallback_ssl + 1;
 			ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
-		} else
-			lprintf( "didn't end secure on %p", pc );
+		}
+		DropWssEvent( pevt );
 	}
-	DropWssEvent( pevt );
 }
 
 #if 0
