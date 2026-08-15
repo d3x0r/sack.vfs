@@ -1657,8 +1657,14 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 				return;
 			}
 
+			// A callback can release the event itself - disableSSL sets done and
+			// wakes the waiter, which drops it as soon as ssl_EndSecure returns.  It
+			// clears this slot to say so, and the event must not be read again here:
+			// a recycled one reads back waiter==NULL and would be dropped a second
+			// time while it is live for somebody else.
+			LOGICAL released     = !myself->eventMessage;
 			myself->eventMessage = NULL;
-			{
+			if( !released ) {
 				// waiter doubles as the ownership marker: a posting thread that
 				// blocks on ->done owns the event and drops it after its wait.
 				// Dropping it here would recycle it (GetWssEvent memsets, clearing
