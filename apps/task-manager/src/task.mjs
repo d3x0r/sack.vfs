@@ -1,6 +1,7 @@
 
 import {local} from "./local.mjs"
 import {sack} from "sack.vfs"
+import path from "path"
 const JSOX = sack.JSOX;
 const disk = sack.Volume();
 
@@ -40,6 +41,20 @@ function addMasterLogEntry( task, logEntry ) {
 		local.masterLog.splice( 0, drop );
 		local.masterLogBase += drop;
 	}
+}
+
+function taskWorkPath( work ) {
+	return work ? path.resolve( config.pwdBare || process.cwd(), work ) : ( config.pwdBare || process.cwd() );
+}
+
+function resolveTaskBin( task, bin ) {
+	if( !bin || !/[\\/]/.test( bin ) ) return bin;
+	if( path.isAbsolute( bin ) ) return path.normalize( bin );
+
+	const resolved = path.resolve( taskWorkPath( task.work ), bin );
+	if( disk.exists( resolved ) ) return resolved;
+
+	return bin;
 }
 
 export class Task {
@@ -297,14 +312,14 @@ export class Task {
 		if( process.platform === "linux" ) {
 			bin = this.#task.bin; // linux will scan path for name
 		}else if( !this.#task.bin.includes( ":" ) )
-			bin = this.#task.bin;
+			bin = resolveTaskBin( this.#task, this.#task.bin );
 		else {
 			if( this.#task.altbin ) {
 				if( disk.exists( this.#task.bin ) )
-					bin = this.#task.bin;
-				else bin = this.#task.altbin;
+					bin = resolveTaskBin( this.#task, this.#task.bin );
+				else bin = resolveTaskBin( this.#task, this.#task.altbin );
 			} else
-				bin = this.#task.bin; // linux will scan path for name
+				bin = resolveTaskBin( this.#task, this.#task.bin ); // linux will scan path for name
 		}
 		if( this.#run ) this.#run.end();
 		const this_ = this;

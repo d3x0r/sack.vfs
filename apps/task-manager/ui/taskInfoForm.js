@@ -14,7 +14,7 @@ export class TaskInfoEditor extends Popup {
 	envKeys = [];
 	page = 0;
 	constructor( taskId, task_ ) {
-		super( "Task Config Editor", local.display, { suffix:"-task-config", shadowFrame: true, enableClose: true });
+		super( "Task Config Editor", document.body, { suffix:"-task-config", shadowFrame: true, enableClose: true });
 		this.on("captionClose", ()=>{
 			//console.log( "This sort of close? turn into remove?" );
 			this.on( "close", true );
@@ -26,7 +26,7 @@ export class TaskInfoEditor extends Popup {
 		  ,popups.utils.addStyleSheetSrc( this, "/css/task-config.css" )];
 		Promise.all( styles ).then( ()=>{
 			this.show();
-			this.center();
+			this.positionEditor();
 		})
 		const task = Object.assign( {}, task_ );
 		const taskOpts = {
@@ -120,6 +120,8 @@ export class TaskInfoEditor extends Popup {
 		this.altbin.tooltip = "Alternate Program to run for this task (if bin fails to run)";
 		this.work = new TextInput( this.group1, task, "work", "Start In Path" );
 		this.work.tooltip = "This is the directory this task starts in.";
+		this.programName = new TextInput( this.group1, task, "programName", "Program Name", false, false, false, "" );
+		this.programName.tooltip = "Program name used for 'use signal'";
 
 		this.groupContainer = document.createElement( "div" );
 		this.groupContainer.className = "task-config-group-container";
@@ -148,8 +150,6 @@ export class TaskInfoEditor extends Popup {
 		c.tooltip = "Do not inherit standard IO (stdin,stdout,stderr, handles 0,1,2,...";
 		c = new TextInput( this.groupOpts, task, "style", "Style", false, false, true, "" );
 		c.tooltip = "Style of the window (WIN32)"
-		c = new TextInput( this.groupOpts, task, "programName", "Program Name", false, false, false, "" );
-		c.tooltip = "Program name used for 'use signal'"
 		
 		const moveOpts = document.createElement( "div" );
 		moveOpts.className = "task-config-move-opts"
@@ -289,10 +289,23 @@ export class TaskInfoEditor extends Popup {
 				case 2:
 					this_.pageFrame.activate( page3);
 					prevButton.style.visibility = 'visible';
+					nextButton.style.visibility = 'visible';
+					break;
+				case 3:
+					this_.pageFrame.activate( page4);
+					prevButton.style.visibility = 'visible';
 					nextButton.style.visibility = 'hidden';
 					break;
 			}
 		}
 		showPage();
 	};
+
+	positionEditor() {
+		const frame = this.divShadow || this.divFrame;
+		const rect = this.divFrame.getBoundingClientRect();
+		const left = Math.max( 16, Math.round( ( window.innerWidth - rect.width ) / 2 ) );
+		frame.style.left = left + "px";
+		frame.style.top = "96px";
+	}
 }
