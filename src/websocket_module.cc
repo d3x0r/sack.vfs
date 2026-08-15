@@ -237,6 +237,13 @@ struct wssEvent {
 			int error;
 			const char *buffer;
 			size_t buflen;
+			// JS-visible copy of `buffer`.  The error callback is handed the live
+			// network read buffer, which the next read reuses and which
+			// ssl_EndSecure re-feeds to the http parser on fallback, so JS must
+			// not alias it.  Ownership passes to the ArrayBuffer's deleter when
+			// the drain hands it over (which NULLs this); anything still here
+			// afterwards never reached JS, and the poster frees it.
+			char *jsBuffer;
 			volatile int fallback_ssl;
 		} error;
 	}data;
@@ -1366,16 +1373,26 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 				if( !myself->errorLowCallback.IsEmpty() ) {
 					argv[0] = Integer::New( isolate, eventMessage->data.error.error );
 					argv[1] = makeSocket( isolate, eventMessage->pc, NULL, myself, NULL, NULL );
-					if( eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
-						if( eventMessage->data.error.buffer ) {
+					// _2 gets the bytes too - the poster captures them for both codes
+					// and the fallback re-feeds them for both, so handing JS null for
+					// _2 only withheld the evidence for the decision it is being asked
+					// to make.  (firstPacket, which picks between the two, flips on a
+					// WANT_READ retry, so a real first-packet failure surfaces as _2.)
+					if( eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+					 || eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) {
+						if( eventMessage->data.error.jsBuffer ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
-								eventMessage->data.error.buflen, dontReleaseBufferBackingStore, NULL );
+							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.jsBuffer,
+								eventMessage->data.error.buflen, releaseBufferBackingStore, NULL );
 							argv[2] = ArrayBuffer::New( isolate, bs );
+							// the ArrayBuffer's deleter owns the copy from here; the
+							// poster frees only what is left behind.
+							eventMessage->data.error.jsBuffer = NULL;
 #else
-						if( eventMessage->data.error.buffer )
+							// the pre-14 API does not take ownership, so leave jsBuffer
+							// set and let the poster free it after the callback.
 							argv[2] = ArrayBuffer::New( isolate,
-							(void*)eventMessage->data.error.buffer,
+								(void*)eventMessage->data.error.jsBuffer,
 								eventMessage->data.error.buflen );
 #endif
 						} else
@@ -3029,6 +3046,14 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		//( ( *pevt ).data.error.buffer ); // keep the buffer, allow SSL to
 		(*pevt).data.error.buflen = va_arg( args, size_t );
 		(*pevt).data.error.fallback_ssl = 0; // make sure this is cleared.
+		// ssl_EndSecure below keeps using `buffer` itself, which is safe because
+		// that all happens inside this read callback - but it is the live network
+		// read buffer, so JS gets a copy rather than a view of memory the next
+		// read reuses and the http parser is about to consume.
+		if( (*pevt).data.error.buffer && (*pevt).data.error.buflen ) {
+			(*pevt).data.error.jsBuffer = NewArray( char, (*pevt).data.error.buflen );
+			MemCpy( (*pevt).data.error.jsBuffer, (*pevt).data.error.buffer, (*pevt).data.error.buflen );
+		}
 		break;
 	case SACK_NETWORK_ERROR_HOST_NOT_FOUND:
 		(*pevt).data.error.buffer = va_arg( args, const char * );
@@ -3067,6 +3092,11 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		if( ( *pevt ).data.error.fallback_ssl ) {
 			ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
 		}
+		// the drain NULLs jsBuffer when it hands the copy to an ArrayBuffer, whose
+		// deleter frees it at GC.  Anything still set here never reached JS (no
+		// lowError handler registered, or a non-handshake code), so free it.
+		if( ( *pevt ).data.error.jsBuffer )
+			Deallocate( char*, ( *pevt ).data.error.jsBuffer );
 		DropWssEvent( pevt );
 	}
 }
