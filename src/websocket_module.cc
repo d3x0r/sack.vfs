@@ -3523,9 +3523,11 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 	// so engaging it for any other LOW_ERROR (e.g. a parse error raised while
 	// re-feeding the bytes as http after a fallback) would release an event that
 	// nobody is waiting on.
+	// _2 means the handshake consumed earlier packets, so the reported bytes are
+	// only the last chunk - falling back would re-feed a truncated request.  Only
+	// _1 is eligible.
 	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR
-	    && ( obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
-	      || obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) ) {
+	    && obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
 		// capture before releasing: setting done hands the event back to its
 		// waiter, which drops it as soon as ssl_EndSecure returns - so every
 		// field, waiter included, has to be read before that store.
