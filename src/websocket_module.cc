@@ -2142,6 +2142,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		wssTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "close", wssObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "disableSSL", wssObject::disableSSL );
+		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "rejectSSL", wssObject::rejectSSL );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wssObject::on );
 
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
@@ -3543,6 +3544,26 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 		obj->eventMessage = NULL;
 	} else
 		lprintf( "cannot disable SSL outside of error event" );
+}
+
+void wssObject::rejectSSL( const FunctionCallbackInfo<Value>& args ) {
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
+	// same gate as disableSSL: only the handshake failures have a waiter parked on
+	// this decision, so releasing anything else would free an event nobody owns.
+	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR
+	    && ( obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+	      || obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) ) {
+		// leave fallback_ssl clear: the poster then skips ssl_EndSecure, and the SSL
+		// layer's own "still have a session, so nobody fell back" branch closes the
+		// socket as a failed handshake.  Setting done here only makes that happen
+		// now rather than whenever this callback happens to return, so a firewall
+		// rule installed just above this call is in place before the peer is dropped.
+		PTHREAD waiter = obj->eventMessage->waiter;
+		obj->eventMessage->done = 1;
+		WakeThread( waiter );
+		obj->eventMessage = NULL;
+	} else
+		lprintf( "cannot reject SSL outside of error event" );
 }
 
 void wssObject::close( const FunctionCallbackInfo<Value>& args ) {
