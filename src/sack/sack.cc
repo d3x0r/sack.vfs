@@ -79181,6 +79181,18 @@ struct ssl_session {
 	struct internalCert* cert;
 	LOGICAL ignoreVerification;
 	LOGICAL firstPacket;
+	// Sticky: this connection has already consumed at least one packet into the
+	// SSL layer, so the bytes handed to any later handshake failure are only the
+	// last chunk and a fallback would re-feed a truncated stream.  firstPacket
+	// cannot carry this - it flips back on a WANT_READ retry, which is why a
+	// genuine first-packet failure can surface as _2.
+	LOGICAL priorPacketConsumed;
+	// Sticky: this connection has already consumed at least one packet into the
+	// SSL layer, so the bytes handed to any later handshake failure are only the
+	// last chunk and a fallback would re-feed a truncated stream.  firstPacket
+	// cannot carry this - it flips back on a WANT_READ retry, which is why a
+	// genuine first-packet failure can surface as _2.
+	LOGICAL priorPacketConsumed;
 	LOGICAL noHost;
 	LOGICAL closed;
 	// Graceful-close intent carried across a deferred close.  ssl_CloseSession can
@@ -90028,6 +90040,14 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 				// normal condition...
 				lprintf( "Receive handshake not complete iBuffer" );
 #endif
+				// about to consume this packet and ask for another; from here on a
+				// handshake failure cannot be re-fed as http, because the earlier
+				// bytes are already inside the SSL layer and unavailable.
+				ses[0]->priorPacketConsumed = TRUE;
+				// about to consume this packet and ask for another; from here on a
+				// handshake failure cannot be re-fed as http, because the earlier
+				// bytes are already inside the SSL layer and unavailable.
+				ses[0]->priorPacketConsumed = TRUE;
 				ses[0]->inUse--;
 				LeaveCriticalSec( &ses[0]->csReadWrite );
 				// read more...
@@ -90143,8 +90163,11 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session** ses, POINTER buf
 				//lprintf( "handshake failed - client connection: %zd %p %d", length, ses[0]->errorCallback, ses[0]->noHost );
 				if( pc && ses[0]->errorCallback && !ses[0]->noHost ) {
 					ses[0]->errorCallback( ses[0]->psvErrorCallback, pc
-						, ses[0]->firstPacket ? SACK_NETWORK_ERROR_SSL_HANDSHAKE
-						: SACK_NETWORK_ERROR_SSL_HANDSHAKE_2
+						// _2 now means "fallback is not possible" rather than "failed
+						// on a later packet" - derived from the sticky fact instead of
+						// firstPacket, which mislabels real first-packet failures.
+						, ses[0]->priorPacketConsumed ? SACK_NETWORK_ERROR_SSL_HANDSHAKE_2
+						: SACK_NETWORK_ERROR_SSL_HANDSHAKE
 						, buffer, length );
 #ifdef DEBUG_NO_HOST_AND_FALLBACK
 					lprintf( "Sent error callback");
@@ -91258,6 +91281,12 @@ LOGICAL ssl_IsClientSecure( PCLIENT pc ) {
 	return (!!pc->ssl_session) && !pc->ssl_session->deleteInUse;
 }
 void ssl_EndSecure(PCLIENT pc, POINTER buffer, size_t length ) {
+	if( pc && pc->ssl_session && pc->ssl_session->priorPacketConsumed ) {
+		// refuse rather than corrupt: `buffer` is only the last chunk of a
+		// multi-packet handshake, so re-feeding it hands http a truncated stream.
+		lprintf( "cannot fall back on %p: earlier packets were already consumed by the SSL layer", pc );
+		return;
+	}
 	if( pc && pc->ssl_session ) {
 #if defined( DEBUG_SSL_FALLBACK )
 		lprintf( "Restoring old callbacks %p %p %p", buffer, pc->ssl_session->cpp_user_read, pc->ssl_session->user_read );
