@@ -1489,10 +1489,14 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 						// re-validate; the connection can close between the check at
 						// dispatch and here, and a recycled client must not be closed.
 						if (eventMessage->pc && NetworkClientValid(eventMessage->pc, eventMessage->pcSerial)) {
-							// balance the AddNetWork done when this request event was posted;
+							// balance the AddNetWork( httpInternal ) done at the handoff above;
 							// without it bInUse stays set and the deferred close never completes
 							// (the !bInUse close guards leave the socket in CLOSE_WAIT).
-							ClearNetWork(eventMessage->pc, (uintptr_t)myself);
+							// NOT `myself` - that is the listening wssObject, which is never in
+							// psvInUse, so ClearNetWork's FindLink found nothing and this cleared
+							// no hold at all.  The event's own entry was already cleared at the
+							// handoff; httpInternal is what is live here.
+							ClearNetWork(eventMessage->pc, (uintptr_t)httpInternal);
 							RemoveClientEx(eventMessage->pc, 0, 1);
 						}
 
@@ -1506,10 +1510,12 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 							// and then even after this returns, the write might be pending...
 						} else if( eventMessage->pc ) {
 							// empty/bogus request: the handler is skipped, so end() (which does the
-							// ClearNetWork) never runs.  Balance the AddNetWork done when this event
-							// was posted, or bInUse stays set and the deferred close never completes
-							// (the !bInUse close guards then strand the socket in CLOSE_WAIT).
-							ClearNetWork( eventMessage->pc, (uintptr_t)myself );
+							// ClearNetWork) never runs.  Balance the AddNetWork( httpInternal ) from
+							// the handoff above, or bInUse stays set and the deferred close never
+							// completes (the !bInUse close guards then strand the socket in
+							// CLOSE_WAIT).  NOT `myself` - the listening wssObject is never in
+							// psvInUse, so that cleared nothing.
+							ClearNetWork( eventMessage->pc, (uintptr_t)httpInternal );
 						}
 					}
 					//else
@@ -3072,6 +3078,9 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		break;
 	}
 	(*pevt).pc = pc;
+	// pc is only usable while NetworkClientValid( pc, pcSerial ); the release below
+	// runs after the app has had the socket for an arbitrary time, so it needs this.
+	(*pevt).pcSerial = pc ? NetworkClientSerial( pc ) : 0;
 	(*pevt)._this = wss;
 	// Only the SSL handshake failures block below, for the app's synchronous
 	// fallback-to-http decision.  Blocking on any other error deadlocks when the
@@ -3089,6 +3098,13 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 	// No HoldWssEvent needed either way; exactly one side releases it.
 	if( blocking )
 		(*pevt).waiter = MakeThread();
+	// Hold the socket across the decision.  psvInUse marks the client in use, so a
+	// close defers rather than reaping the connection the app is still deciding
+	// about, and webSockHttpClose's GetNetWork walk can find this event and mark it
+	// WS_EVENT_NOOP.  Same registration webSockHttpRequest does for the request
+	// event.  Must be taken BEFORE the enqueue publishes the event to the drain.
+	if( blocking && pc )
+		AddNetWork( pc, (uintptr_t)pevt );
 	EnqueLink( &wss->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "socket HTTP LowError Send %p", &wss->async);
@@ -3108,6 +3124,14 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		// lowError handler registered, or a non-handshake code), so free it.
 		if( ( *pevt ).data.error.jsBuffer )
 			Deallocate( char*, ( *pevt ).data.error.jsBuffer );
+		// Balance the AddNetWork above, after ssl_EndSecure - the whole point of the
+		// hold is that the socket survives the fallback.  Re-validate first: the
+		// connection can close and be recycled while the app decides, and clearing
+		// against a recycled client would strip a hold that belongs to someone else.
+		// If a close was deferred on our account, ClearNetWork completes it here.
+		// (Once the wait is removed this moves to disableSSL/rejectSSL.)
+		if( pc && NetworkClientValid( pc, (*pevt).pcSerial ) )
+			ClearNetWork( pc, (uintptr_t)pevt );
 		DropWssEvent( pevt );
 	}
 }
