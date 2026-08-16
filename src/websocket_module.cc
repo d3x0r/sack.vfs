@@ -2405,6 +2405,16 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	else {
 		uintptr_t psvServer = WebSocketGetServerData( pc );
 		wssObject *wss = (wssObject*)psvServer;
+		if( !wss ) {
+			// WebSocketGetServerData returns 0 by design for a client that is
+			// already closing - GetNetworkLong finds no user data and logs
+			// "User data wasn't set on socket... 0" - and every path below
+			// dereferences wss, starting with wss->c->thread.  There is nothing to
+			// dispatch: the server object this close would be reported to is no
+			// longer reachable from this socket.  Guard before GetWssEvent so the
+			// early return cannot leak an event from the pool.
+			return;
+		}
 		//DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
 		if( ( (*pevt).waiter = MakeThread() ) != wss->c->thread )  {
