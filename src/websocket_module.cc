@@ -245,6 +245,16 @@ struct wssEvent {
 			// afterwards never reached JS, and the poster frees it.
 			char *jsBuffer;
 			volatile int fallback_ssl;
+			// The SSL layer no longer applies a verdict itself for handshake errors -
+			// it hands the decision over and returns.  Set once disableSSL/rejectSSL
+			// (or the drain default) has answered, so the answer is applied exactly once.
+			volatile int ssl_decided;
+			// Set when the drain hands jsBuffer to the ArrayBuffer's deleter.  The
+			// POINTER deliberately stays valid here afterwards - the fallback re-feeds
+			// these same bytes from wssResolveSSLVerdict, which runs while the
+			// callback's ArrayBuffer argument is still on the stack.  Only the free
+			// changes hands, so there is exactly one copy of the buffer.
+			volatile int jsBufferGiven;
 		} error;
 	}data;
 	PLIST send;
@@ -256,6 +266,7 @@ struct wssEvent {
 	int uses;
 };
 typedef struct wssEvent WSS_EVENT;
+static void wssResolveSSLVerdict( struct wssEvent *pevt, LOGICAL fallback );
 #define MAXWSS_EVENTSPERSET 64
 DeclareSet( WSS_EVENT );
 
@@ -1387,7 +1398,9 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 							argv[2] = ArrayBuffer::New( isolate, bs );
 							// the ArrayBuffer's deleter owns the copy from here; the
 							// poster frees only what is left behind.
-							eventMessage->data.error.jsBuffer = NULL;
+							// The deleter owns the copy from here; the pointer stays set so
+							// the fallback can re-feed the same bytes without a second copy.
+							eventMessage->data.error.jsBufferGiven = 1;
 #else
 							// the pre-14 API does not take ownership, so leave jsBuffer
 							// set and let the poster free it after the callback.
@@ -1406,6 +1419,13 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 						argv[2] = Null( isolate );
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 				}
+				// The poster no longer waits for an answer, so if the app did not give
+				// one - no handler registered, or it ignored the event - the verdict
+				// still has to be applied, and the default is reject.  A no-op once
+				// disableSSL/rejectSSL has already decided.
+				if( eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+				 || eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 )
+					wssResolveSSLVerdict( eventMessage, FALSE );
 			} else if( eventMessage->eventType == WS_EVENT_NOOP ) {
 				//lprintf( "event canceled before dispatch!" );
 				if( eventMessage->pc && NetworkClientValid( eventMessage->pc, eventMessage->pcSerial ) )
@@ -1651,10 +1671,30 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 				}
 			} else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
 				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc, myself->wsPipe, myself, NULL, NULL );
-				if( !myself->errorCloseCallback.IsEmpty() ) {
-					Local<Function> cb = myself->errorCloseCallback.Get( isolate );
-					argv[0] = closingSock;
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+				// Release the poster HERE, not after the callback.  makeSocket has
+				// copied everything it needs out of pc - addresses go through
+				// GetAddrName into fresh Strings, headers and hostname into new
+				// objects - so the socket only had to survive that call.  The JS
+				// callback below cannot do anything meaningful with a network thread
+				// parked on it anyway, and waiting for it is the 1000ms-quantised
+				// close stall (webSockHttpClose's WakeableSleep( 1000 )).
+				//
+				// Capture off the event BEFORE the store: setting done hands it back
+				// to the waiter, which DropWssEvent()s it immediately, so nothing may
+				// read eventMessage after this point.  Clearing myself->eventMessage
+				// is how the tail below learns the event is already gone (same
+				// protocol disableSSL uses).
+				{
+					Local<Object> closeRecv = eventMessage->_this->_this.Get( isolate );
+					PTHREAD waiter = eventMessage->waiter;
+					eventMessage->done = TRUE;
+					if( waiter ) WakeThread( waiter );
+					myself->eventMessage = NULL;
+					if( !myself->errorCloseCallback.IsEmpty() ) {
+						Local<Function> cb = myself->errorCloseCallback.Get( isolate );
+						argv[0] = closingSock;
+						cb->Call( context, closeRecv, 1, argv );
+					}
 				}
 
 				//myself->readyState = CLOSED;
@@ -3082,13 +3122,14 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 	// runs after the app has had the socket for an arbitrary time, so it needs this.
 	(*pevt).pcSerial = pc ? NetworkClientSerial( pc ) : 0;
 	(*pevt)._this = wss;
-	// Only the SSL handshake failures block below, for the app's synchronous
-	// fallback-to-http decision.  Blocking on any other error deadlocks when the
-	// error is raised from inside ProcessHttp while the http lock is held: this
-	// thread would wait for the JS thread to mark the event done, but the JS
-	// thread is blocked acquiring that same http lock.
-	LOGICAL blocking = ( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
-	                  || error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 );
+	// The handshake failures are the ones with a verdict still outstanding: the SSL
+	// layer hands that decision to the app and returns without applying one.  Nothing
+	// blocks here any more - this used to wait for the app's answer, which made the
+	// whole peer go deaf for as long as the app took, and (with the win32 ClosedClients
+	// reaper firing 1s after AddClosed) could leave a dispatch parked past the point
+	// the client was reaped.
+	LOGICAL deferredVerdict = ( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+	                         || error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 );
 	// waiter is the ownership marker, and it has to be set before the enqueue
 	// publishes the event to the drain.  Set it only when this thread really does
 	// wait: a non-blocking error is fire-and-forget and wssAsyncMsg_ owns the
@@ -3096,14 +3137,14 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 	// the event while it is still sitting in the queue, for the drain to dequeue
 	// out of the pool after some other connection has already been handed it.
 	// No HoldWssEvent needed either way; exactly one side releases it.
-	if( blocking )
-		(*pevt).waiter = MakeThread();
+	// No waiter: every LOW_ERROR is fire-and-forget now, so wssAsyncMsg_ owns the
+	// drop in all cases.
 	// Hold the socket across the decision.  psvInUse marks the client in use, so a
 	// close defers rather than reaping the connection the app is still deciding
 	// about, and webSockHttpClose's GetNetWork walk can find this event and mark it
 	// WS_EVENT_NOOP.  Same registration webSockHttpRequest does for the request
 	// event.  Must be taken BEFORE the enqueue publishes the event to the drain.
-	if( blocking && pc )
+	if( deferredVerdict && pc )
 		AddNetWork( pc, (uintptr_t)pevt );
 	EnqueLink( &wss->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
@@ -3113,27 +3154,6 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
 	else
 		uv_async_send( &wss->async );
-	if( blocking ) {
-		while( !(*pevt).done )
-			WakeableSleep( 1000 );
-		if( ( *pevt ).data.error.fallback_ssl ) {
-			ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
-		}
-		// the drain NULLs jsBuffer when it hands the copy to an ArrayBuffer, whose
-		// deleter frees it at GC.  Anything still set here never reached JS (no
-		// lowError handler registered, or a non-handshake code), so free it.
-		if( ( *pevt ).data.error.jsBuffer )
-			Deallocate( char*, ( *pevt ).data.error.jsBuffer );
-		// Balance the AddNetWork above, after ssl_EndSecure - the whole point of the
-		// hold is that the socket survives the fallback.  Re-validate first: the
-		// connection can close and be recycled while the app decides, and clearing
-		// against a recycled client would strip a hold that belongs to someone else.
-		// If a close was deferred on our account, ClearNetWork completes it here.
-		// (Once the wait is removed this moves to disableSSL/rejectSSL.)
-		if( pc && NetworkClientValid( pc, (*pevt).pcSerial ) )
-			ClearNetWork( pc, (uintptr_t)pevt );
-		DropWssEvent( pevt );
-	}
 }
 
 #if 0
@@ -3546,6 +3566,37 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 	}
 }
 
+// Apply the outstanding verdict for a handshake error, exactly once.  The poster
+// used to do this after waiting for the app; it is fire-and-forget now, so the
+// answer is applied here on the JS thread instead.  Safe against a connection that
+// closed while the app was deciding: the AddNetWork hold defers the recycle, and the
+// serial re-check catches a client that got away anyway.
+static void wssResolveSSLVerdict( struct wssEvent *pevt, LOGICAL fallback ) {
+	PCLIENT pc = pevt->pc;
+	if( pevt->data.error.ssl_decided ) return;
+	pevt->data.error.ssl_decided = 1;
+	pevt->data.error.fallback_ssl = fallback;
+	if( pc && NetworkClientValid( pc, pevt->pcSerial ) ) {
+		if( fallback )
+			// re-feed the bytes as plain http.  This uses the poster's own copy, not
+			// the live network read buffer the callback was handed - that buffer
+			// belonged to a read that has already returned.
+			ssl_EndSecure( pc, (POINTER)pevt->data.error.jsBuffer, pevt->data.error.buflen );
+		else
+			// the reject verdict ssl_ReadComplete_ would have applied inline when the
+			// callback still blocked.
+			ssl_EndStream( pc );
+		// balance the poster's hold, after the verdict - the whole point of it is
+		// that the socket survives the decision.  If a close was deferred on our
+		// account, this completes it.
+		ClearNetWork( pc, (uintptr_t)pevt );
+	} else if( pc )
+		lprintf( "SSL verdict: client went away while the app was deciding" );
+	if( pevt->data.error.jsBuffer && !pevt->data.error.jsBufferGiven )
+		Deallocate( char*, pevt->data.error.jsBuffer );
+	pevt->data.error.jsBuffer = NULL;
+}
+
 void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 	// at this point there is a socket, but it's not a JS object yet even...
 	// so we can't set that it is NOT SSL?
@@ -3565,19 +3616,13 @@ void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 		// capture before releasing: setting done hands the event back to its
 		// waiter, which drops it as soon as ssl_EndSecure returns - so every
 		// field, waiter included, has to be read before that store.
-		PTHREAD waiter = obj->eventMessage->waiter;
-		obj->eventMessage->data.error.fallback_ssl = 1;
-		// return immediately so the SSL layer gives up its lock; the fallback runs
-		// on that thread, which is the one holding the negotiation.  Nothing waits
-		// for it here and nothing needs to: ssl_EndSecure only delivers the re-fed
-		// bytes after ssl_ClosePipe(), so the earliest request event for this
-		// socket is already posted past the teardown, and it reaches JS through a
-		// later event loop post.
-		obj->eventMessage->done                    = 1;
-		WakeThread( waiter );
-		// the event belongs to the waiter from here on - clear the slot so the
-		// drain's tail knows not to touch it either.
-		obj->eventMessage = NULL;
+		// Perform the fallback here, on this thread.  It used to be handed back to
+		// the parked poster because that thread was the one holding the negotiation;
+		// there is no parked poster now, and the session cannot be torn down under
+		// this call because a closer only RETIRES it (the objects live until
+		// ssl_finalize under both channel locks) and the poster's hold defers the
+		// recycle.
+		wssResolveSSLVerdict( obj->eventMessage, TRUE );
 	} else
 		lprintf( "cannot disable SSL outside of error event" );
 }
@@ -3594,10 +3639,9 @@ void wssObject::rejectSSL( const FunctionCallbackInfo<Value>& args ) {
 		// socket as a failed handshake.  Setting done here only makes that happen
 		// now rather than whenever this callback happens to return, so a firewall
 		// rule installed just above this call is in place before the peer is dropped.
-		PTHREAD waiter = obj->eventMessage->waiter;
-		obj->eventMessage->done = 1;
-		WakeThread( waiter );
-		obj->eventMessage = NULL;
+		// Apply the reject now rather than at the drain default, so a firewall rule
+		// installed just above this call is in place before the peer is dropped.
+		wssResolveSSLVerdict( obj->eventMessage, FALSE );
 	} else
 		lprintf( "cannot reject SSL outside of error event" );
 }

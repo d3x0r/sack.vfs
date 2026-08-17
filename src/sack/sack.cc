@@ -79201,8 +79201,6 @@ struct ssl_session {
 	BIO *rbio;
 	BIO *wbio;
 	//EVP_PKEY *privkey;
- // sockets being accepted so we can find the proper SSL*
-	PLIST          accepting;
   // accepted client's hostname request (NULL if none)
 	TEXTSTR	       hostname;
  // protocol select from TLS
@@ -90137,6 +90135,16 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 #endif
 	if( ses[0] )
 	{
+		// Capture ONCE for the whole dispatch.  A closer may NULL this slot at any
+		// moment, but it now only RETIRES the session - the object is parked on the
+		// client and not released until ssl_finalize() runs under both channel
+		// locks, which cannot happen while this dispatch is executing.  So `s` stays
+		// valid to the end of the function.  Re-reading ses[0] is exactly what
+		// faulted: it went NULL between a passing test and the next deref.
+		// Bare `ses[0]` tests below are kept deliberately - they still mean "has a
+		// closer retired this?", which is a real question; only the DEREFS move.
+		struct ssl_session *s = ses[0];
+		if( !s ) return;
 		if( buffer )
 		{
 			int len;
@@ -90147,34 +90155,26 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 			// this local at each point where the value is about to be used repeatedly.
 			// inUse is held across those regions, so the object cannot be freed while
 			// we work with it; only the attachment (ses[0]) can be dropped.
-			struct ssl_session *s;
 			//lprintf( "Read from network: %d", length );
 			//LogBinary( (const uint8_t*)buffer, length );
 			// Read the slot every time rather than caching it: this is
 			// &pc->ssl_session, which a closing thread stores NULL into, and the
 			// short-write branch below used to fault on a cached copy's inUse--
 			// while another thread tore the session down.
-			{
-	/* Capture once.  A closer may NULL this slot at any moment, but it
-				 * only RETIRES the session now - the object stays alive until
-				 * ssl_finalize runs under both channel locks, which cannot happen
-				 * while this dispatch is executing.  Re-reading ses[0] is what
-				 * faulted: it went NULL between the test and the deref. */
-				struct ssl_session *s0_ = ses[0];
-				if( !s0_ ) return;
-				EnterCriticalSec( &s0_->csReadWrite );
-				if( ses[0] != s0_ ) { LeaveCriticalSec( &s0_->csReadWrite ); return; }
-				if( s0_->dying ) { LeaveCriticalSec( &s0_->csReadWrite ); return; }
-				s0_->inUse++;
-			}
-			len = BIO_write( ses[0]->rbio, buffer, (int)length );
+			EnterCriticalSec( &s->csReadWrite );
+			// still a real question, and still worth an early out - but no longer a
+			// correctness requirement: a retired session stays parked and valid.
+			if( ses[0] != s ) { LeaveCriticalSec( &s->csReadWrite ); return; }
+			if( s->dying ) { LeaveCriticalSec( &s->csReadWrite ); return; }
+			s->inUse++;
+			len = BIO_write( s->rbio, buffer, (int)length );
 #ifdef DEBUG_SSL_IO_VERBOSE
 			lprintf( "Wrote %zd", len );
 #endif
 			if( len < (int)length ) {
 				lprintf( "Internal buffer error; wrote less to buffer than specified?" );
-				ses[0]->inUse--;
-				LeaveCriticalSec( &ses[0]->csReadWrite );
+				s->inUse--;
+				LeaveCriticalSec( &s->csReadWrite );
 				//ssl_CloseSession( pc );
 				ssl_ClosePipeSession( ses );
 				if( pc )
@@ -90196,11 +90196,11 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 				// about to consume this packet and ask for another; from here on a
 				// handshake failure cannot be re-fed as http, because the earlier
 				// bytes are already inside the SSL layer and unavailable.
-				ses[0]->priorPacketConsumed = TRUE;
-				ses[0]->inUse--;
-				LeaveCriticalSec( &ses[0]->csReadWrite );
+				s->priorPacketConsumed = TRUE;
+				s->inUse--;
+				LeaveCriticalSec( &s->csReadWrite );
 				// read more...
-				ses[0]->recv_callback( ses[0]->psvSendRecv, ses[0]->ibuffer, ses[0]->ibuflen );
+				s->recv_callback( s->psvSendRecv, s->ibuffer, s->ibuflen );
 				//ReadTCP( pc, ses->ibuffer, ses->ibuflen );
 				return;
 			}
@@ -90213,16 +90213,16 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 			if( hs_rc == 2 ) {
 				// newly completed handshake.
 				{
-					if( !ses[0]->ignoreVerification && SSL_get_peer_certificate( ses[0]->ssl ) ) {
+					if( !s->ignoreVerification && SSL_get_peer_certificate( s->ssl ) ) {
 						int r;
-						if( ( r = SSL_get_verify_result( ses[0]->ssl ) ) != X509_V_OK ) {
-							//lprintf( "Verify result - client connection: %d %p", r, ses[0]->errorCallback );
+						if( ( r = SSL_get_verify_result( s->ssl ) ) != X509_V_OK ) {
+							//lprintf( "Verify result - client connection: %d %p", r, s->errorCallback );
 							if( pc )
-								if( ses[0]->errorCallback )
-									ses[0]->errorCallback( ses[0]->psvErrorCallback, pc, SACK_NETWORK_ERROR_SSL_CERTCHAIN_FAIL );
+								if( s->errorCallback )
+									s->errorCallback( s->psvErrorCallback, pc, SACK_NETWORK_ERROR_SSL_CERTCHAIN_FAIL );
 							lprintf( "Certificate verification failed. %d", r );
-							ses[0]->inUse--;
-							LeaveCriticalSec( &ses[0]->csReadWrite );
+							s->inUse--;
+							LeaveCriticalSec( &s->csReadWrite );
 							ssl_ClosePipeSession( ses );
 							if( pc )
 								if( !( pc->dwFlags & ( CF_CLOSED | CF_CLOSING ) ) )
@@ -90231,7 +90231,7 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 							//ERR_print_errors_cb( logerr, (void*)__LINE__ );
 						}
 					}
-					LeaveCriticalSec( &ses[0]->csReadWrite );
+					LeaveCriticalSec( &s->csReadWrite );
 					//lprintf( "Sending connect now, but the SSL server requet hasn't completed?");
 					// connect callback is where read callback is typically setup, so the initial read following this can work.
 					if( pc->pcServer ) {
@@ -90250,23 +90250,23 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 					// following dereferences it, so re-validate before going on.  Nothing is
 					// held at this point, so returning is clean.
 					if( !ses[0] ) return;
-					//lprintf( "Initial read dispatch.. %d", ses[0]->dwOriginalFlags & CF_CPPREAD );
-					if( ses[0]->dwOriginalFlags & CF_CPPREAD ) {
-						if( ses[0]->cpp_user_read )
-							ses[0]->cpp_user_read( ses[0]->psvRead, NULL, 0 );
+					//lprintf( "Initial read dispatch.. %d", s->dwOriginalFlags & CF_CPPREAD );
+					if( s->dwOriginalFlags & CF_CPPREAD ) {
+						if( s->cpp_user_read )
+							s->cpp_user_read( s->psvRead, NULL, 0 );
 						else lprintf( "Couldn't send initial read - no C++ function?!" );
 					} else {
-						if( ses[0]->user_read )
-							ses[0]->user_read( pc, NULL, 0 );
+						if( s->user_read )
+							s->user_read( pc, NULL, 0 );
 						else lprintf( "Couldn't send initial read - no function?!" );
 					}
 					// same again: the initial-read callback can close the connection.
-					// (crash was at the SSL_pending( ses[0]->ssl ) below, from a core dump)
+					// (crash was at the SSL_pending( s->ssl ) below, from a core dump)
 					if( !ses[0] ) return;
-					if( ses[0]->deleteInUse ){
+					if( s->deleteInUse ){
 						lprintf( "Pending close... was in-use when closed.");
 					}
-					EnterCriticalSec( &ses[0]->csReadWrite );
+					EnterCriticalSec( &s->csReadWrite );
 				}
 				len = 0;
 			}
@@ -90276,66 +90276,70 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 			read_more:
 				// arrived here either by falling through or by the `goto` after the
 				// application read callback, which may have detached the session.
-				s = ses[0];
 				if( !s ) return;
 				// if read isn't done before pending, pending doesn't get set
 				// but this read doens't return a useful length.
  //-V575
-				len = SSL_read( ses[0]->ssl, NULL, 0 );
+				len = SSL_read( s->ssl, NULL, 0 );
 				//lprintf( "return of 0 read: %d", len );
 				//if( len < 0 )
-				//	lprintf( "error of 0 read is %d", SSL_get_error( ses[0]->ssl, len ) );
-				len = SSL_pending( ses[0]->ssl );
+				//	lprintf( "error of 0 read is %d", SSL_get_error( s->ssl, len ) );
+				len = SSL_pending( s->ssl );
 				if( len ) {
-					if( len > (int)ses[0]->dbuflen ) {
+					if( len > (int)s->dbuflen ) {
 						//lprintf( "Needed to expand buffer..." );
-						Release( ses[0]->dbuffer );
-						ses[0]->dbuflen = ( len + 4095 ) & 0xFFFF000;
-						ses[0]->dbuffer = NewArray( uint8_t, ses[0]->dbuflen );
+						Release( s->dbuffer );
+						s->dbuflen = ( len + 4095 ) & 0xFFFF000;
+						s->dbuffer = NewArray( uint8_t, s->dbuflen );
 					}
-					len = SSL_read( ses[0]->ssl, ses[0]->dbuffer, (int)ses[0]->dbuflen );
+					len = SSL_read( s->ssl, s->dbuffer, (int)s->dbuflen );
 #ifdef DEBUG_SSL_IO_VERBOSE
 					lprintf( "normal read - just get the data from the other buffer : %d", len );
 #endif
 					if( len < 0 ) {
-						int error = SSL_get_error( ses[0]->ssl, len );
+						int error = SSL_get_error( s->ssl, len );
 						if( error == SSL_ERROR_WANT_READ ) {
 							lprintf( "want more data?" );
 						} else
 							lprintf( "SSL_Read failed. %d", error );
-						if( pc && ses[0]->errorCallback )
-							ses[0]->errorCallback( ses[0]->psvErrorCallback, pc, SACK_NETWORK_ERROR_SSL_FAIL );
+						if( pc && s->errorCallback )
+							s->errorCallback( s->psvErrorCallback, pc, SACK_NETWORK_ERROR_SSL_FAIL );
 					}
 				}
 			}
 			else if( hs_rc == -1 ) {
-				//lprintf( "handshake failed - client connection: %zd %p %d", length, ses[0]->errorCallback, ses[0]->noHost );
-				if( pc && ses[0]->errorCallback && !ses[0]->noHost ) {
-					ses[0]->errorCallback( ses[0]->psvErrorCallback, pc
+				//lprintf( "handshake failed - client connection: %zd %p %d", length, s->errorCallback, s->noHost );
+				// Whether the verdict is ours to apply.  It is, unless we hand the
+				// decision to an app error callback below - that callback is
+				// fire-and-forget now, so the answer arrives later on the JS thread.
+				LOGICAL ownVerdict = TRUE;
+				if( pc && s->errorCallback && !s->noHost ) {
+					ownVerdict = FALSE;
+					s->errorCallback( s->psvErrorCallback, pc
 						// _2 now means "fallback is not possible" rather than "failed
 						// on a later packet" - derived from the sticky fact instead of
 						// firstPacket, which mislabels real first-packet failures.
-						, ses[0]->priorPacketConsumed ? SACK_NETWORK_ERROR_SSL_HANDSHAKE_2
+						, s->priorPacketConsumed ? SACK_NETWORK_ERROR_SSL_HANDSHAKE_2
 						: SACK_NETWORK_ERROR_SSL_HANDSHAKE
 						, buffer, length );
 #ifdef DEBUG_NO_HOST_AND_FALLBACK
 					lprintf( "Sent error callback");
 #endif
 				}
-				// disableSSL call can happen during error callback
-				// in which case this will eventually fall back to non-SSL reading
-				// and the buffer will get passed back in (or a new buffer if someone really crafty uses it...)
-				if( pc && !pc->ssl_session ) {
-					ses[0] = NULL;
-				}
+				// A disableSSL call can happen during the error callback, in which case
+				// this eventually falls back to non-SSL reading and the buffer gets
+				// passed back in (or a new buffer, if someone is really crafty).
+				// Nothing to do here: ses is &pc->ssl_session at the only call site
+				// that passes a pc, so clearing ses[0] when pc->ssl_session is already
+				// NULL wrote NULL over NULL.
 				if( ses[0] ) {
-					ses[0]->inUse--;
-					LeaveCriticalSec( &ses[0]->csReadWrite );
+					s->inUse--;
+					LeaveCriticalSec( &s->csReadWrite );
 #if defined( DEBUG_SSL_FALLBACK )
-					lprintf( "Pending SSL (not socket close) close(2)... was in-use when closed. %d %d %d", ses[0]->inUse, ses[0]->deleteInUse, ses[0]->noHost );
+					lprintf( "Pending SSL (not socket close) close(2)... was in-use when closed. %d %d %d", s->inUse, s->deleteInUse, s->noHost );
 #endif
 					/*
-					if( ses[0]->noHost ){
+					if( s->noHost ){
 						if( pc ) {
 							if( !( pc->dwFlags & ( CF_CLOSED | CF_CLOSING ) )
 								&& (pc->dwFlags & CF_CONNECTED ) )
@@ -90347,10 +90351,21 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 #ifdef DEBUG_NO_HOST_AND_FALLBACK
 					lprintf( "Handshake failed - close socket? %p %p %d", pc, pc->pcServer, pc->dwFlags & CF_CONNECT_ISSUED );
 #endif
-					// this is the reject verdict - see ssl_EndStream above.  The
-					// inUse--/Leave immediately preceding stays here: it balances this
+					// The reject verdict - see ssl_EndStream above.  The inUse--/Leave
+					// immediately preceding stays here regardless: it balances this
 					// function's own acquire, and a later JS-thread caller holds neither.
-					ssl_EndStream( pc );
+					//
+					// Only apply it if nobody else owns the answer.  This used to be
+					// unconditional, and it worked only because the error callback
+					// BLOCKED until disableSSL/rejectSSL answered - so reaching here
+					// with the session still attached really did mean "no fallback".
+					// The callback returns immediately now, so applying it here would
+					// reject before the app has decided.  disableSSL performs the
+					// fallback; rejectSSL, or the drain when the app answers neither,
+					// calls ssl_EndStream. The AddNetWork hold taken by the poster
+					// keeps the socket alive across that decision.
+					if( ownVerdict )
+						ssl_EndStream( pc );
 					//ssl_ClosePipeSession( ses );
 				}
 #if defined( DEBUG_SSL_FALLBACK )
@@ -90362,7 +90377,7 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 				len = 0;
 			// ses[0] is pc->ssl_session, which a concurrent close clears (ssl_ClosePipe
 			// takes the session out of it).  This check has to happen BEFORE the two
-			// dereferences below, not after them: unlocking &ses[0]->csReadWrite on a
+			// dereferences below, not after them: unlocking &s->csReadWrite on a
 			// NULL session computes a bogus lock address (0xf0) and faults.  The lock
 			// is gone along with the session, so there is nothing to release here.
 			if( !ses[0] ) {
@@ -90370,36 +90385,35 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 			}
 			// this is the block that faulted with pcs=0xf0: the check above passed and
 			// then ses[0] was NULLed before the unlock re-read it.
-			s = ses[0];
 			ssl_handlePendingControlwrites( s );
-			LeaveCriticalSec( &ses[0]->csReadWrite );
+			LeaveCriticalSec( &s->csReadWrite );
 			// do was have any decrypted data to give to the application?
 			if( len > 0 ) {
 #ifdef DEBUG_SSL_IO_BUFFERS
 				if( ssl_global.flags.bLogBuffers ) {
 					lprintf( "READ BUFFER:" );
-					LogBinary( ses[0]->dbuffer, (( ssl_global.flags.bLogBuffers ) || ( 256 > len ))? len : 256 );
+					LogBinary( s->dbuffer, (( ssl_global.flags.bLogBuffers ) || ( 256 > len ))? len : 256 );
 				}
 #endif
-				if( ses[0]->dwOriginalFlags & CF_CPPREAD ) {
-					if( ses[0]->cpp_user_read )
-						ses[0]->cpp_user_read( ses[0]->psvRead, ses[0]->dbuffer, len );
+				if( s->dwOriginalFlags & CF_CPPREAD ) {
+					if( s->cpp_user_read )
+						s->cpp_user_read( s->psvRead, s->dbuffer, len );
 					else lprintf( "Somehow missing the C++ read function?");
 				} else {
-					if( ses[0]->user_read )
-						ses[0]->user_read( pc, ses[0]->dbuffer, len );
+					if( s->user_read )
+						s->user_read( pc, s->dbuffer, len );
 					else lprintf( "Somehow missing the read function?");
 				}
 				// the read callback above may have closed/detached; ses[0] is the
 				// attachment test, s stays valid because inUse is still held.
 				if( ses[0] ) {
-					if( ses[0]->deleteInUse ){
+					if( s->deleteInUse ){
 						//lprintf( "Pending close(3)... was in-use when closed.");
-						ses[0]->inUse--;
+						s->inUse--;
 						RemoveClient( pc );
 					}
 					else {
-						EnterCriticalSec( &ses[0]->csReadWrite );
+						EnterCriticalSec( &s->csReadWrite );
 						goto read_more;
 					}
 				} else {
@@ -90407,57 +90421,57 @@ static void ssl_ReadComplete_( PCLIENT pc, struct ssl_session * volatile * ses, 
 				}
 			}
 			else if( len == 0 ) {
-				ses[0]->inUse--;
+				s->inUse--;
 #ifdef DEBUG_SSL_IO_VERBOSE
 				lprintf( "incomplete read (no more data to read)" );
 #endif
 			}
 		}
 		else {
-			EnterCriticalSec( &ses[0]->csReadWrite );
+			EnterCriticalSec( &s->csReadWrite );
 			// refuse once a closer has claimed this session
-			if( ses[0]->dying ) { LeaveCriticalSec( &ses[0]->csReadWrite ); return; }
-			ses[0]->inUse++;
-			ses[0]->ibuffer = NewArray( uint8_t, ses[0]->ibuflen = (4327 + 39) );
-			ses[0]->dbuffer = NewArray( uint8_t, ses[0]->dbuflen = 4096 );
+			if( s->dying ) { LeaveCriticalSec( &s->csReadWrite ); return; }
+			s->inUse++;
+			s->ibuffer = NewArray( uint8_t, s->ibuflen = (4327 + 39) );
+			s->dbuffer = NewArray( uint8_t, s->dbuflen = 4096 );
 			// should probably just call handshake() function here too?
 			{
 				int r;
-				if( ( r = SSL_do_handshake( ses[0]->ssl ) ) < 0 ) {
+				if( ( r = SSL_do_handshake( s->ssl ) ) < 0 ) {
 					//char buf[256];
-					//r = SSL_get_error( ses[0]->ssl, r );
+					//r = SSL_get_error( s->ssl, r );
 					ERR_print_errors_cb( logerr, (void*)__LINE__ );
 					//lprintf( "err: %s", ERR_error_string( r, buf ) );
 				}
 				{
 					// the read generated write data, output that data
-					size_t pending = BIO_ctrl_pending( ses[0]->wbio );
+					size_t pending = BIO_ctrl_pending( s->wbio );
 #ifdef DEBUG_SSL_IO
 					lprintf( "Pending Control To Send: %d", pending );
 #endif
 					if( pending > 0 ) {
 						int read;
-						if( pending > ses[0]->obuflen ) {
-							if( ses[0]->obuffer )
-								Deallocate( uint8_t *, ses[0]->obuffer );
-							ses[0]->obuffer = NewArray( uint8_t, ses[0]->obuflen = pending * 2 );
+						if( pending > s->obuflen ) {
+							if( s->obuffer )
+								Deallocate( uint8_t *, s->obuffer );
+							s->obuffer = NewArray( uint8_t, s->obuflen = pending * 2 );
 							//lprintf( "making obuffer bigger %d %d", pending, pending * 2 );
 						}
-						read = BIO_read( ses[0]->wbio, ses[0]->obuffer, (int)ses[0]->obuflen );
+						read = BIO_read( s->wbio, s->obuffer, (int)s->obuflen );
 #ifdef DEBUG_SSL_IO
 						lprintf( "Sending bio pending? %zd (even though we're closing the ssl to fallback?)", pending );
 #endif
-						ses[0]->send_callback( ses[0]->psvSendRecv, ses[0]->obuffer, read );
-						//SendTCP( pc, ses[0]->obuffer, read );
+						s->send_callback( s->psvSendRecv, s->obuffer, read );
+						//SendTCP( pc, s->obuffer, read );
 					}
 				}
 			}
 			if( ses[0] ){
-				ses[0]->inUse--;
-				LeaveCriticalSec( &ses[0]->csReadWrite );
-				if( ses[0]->deleteInUse ){
+				s->inUse--;
+				LeaveCriticalSec( &s->csReadWrite );
+				if( s->deleteInUse ){
 					lprintf( "Pending close... was in-use when closed. (DO CLOSE!)");
-					ssl_CloseSession( pc, ses[0]->closeLinger );
+					ssl_CloseSession( pc, s->closeLinger );
 				}
 			}
 		}
@@ -90674,7 +90688,6 @@ static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 	ses->pc = pcNew;
  // servername callback looks this up
 	SSL_set_ex_data( ses->ssl, ssl_ex_session_idx, ses );
-	AddLink( &pcServer->ssl_session->accepting, ses );
 	ses->errorCallback = pcServer->ssl_session?pcServer->ssl_session->errorCallback:pcServer->errorCallback;
 	ses->psvErrorCallback = pcServer->ssl_session?pcServer->ssl_session->psvErrorCallback:pcServer->psvErrorCallback;
 	pcNew->ssl_session = ses;
@@ -90703,39 +90716,6 @@ static void ssl_ClientConnected( PCLIENT pcServer, PCLIENT pcNew ) {
 	ClearClientFlags( pcNew, CF_CPPREAD );
 	pcNew->close.CloseCallback = ssl_CloseCallback;
 	ClearClientFlags( pcNew, CF_CPPCLOSE );
-}
-struct ssl_session* ssl_ClientPipeConnected( struct ssl_session* session, uintptr_t psvNew, void (*read)(uintptr_t psv, POINTER, size_t), void ( **write )( struct ssl_session *session, POINTER, size_t )
-				, void ( *connect )( uintptr_t psv, POINTER, size_t ), void (*close)(uintptr_t psv ), void (*netrecv)(uintptr_t psv, POINTER, size_t), void (*netsend)(uintptr_t psv, POINTER, size_t) ) {
-	struct ssl_session* ses;
-	ses = New( struct ssl_session );
-	MemSet( ses, 0, sizeof( struct ssl_session ) );
-	ses->ssl = SSL_new( session->ctx );
-	{
-		static uint32_t tick;
-		tick++;
-//sizeof( ses->ctx ) );
-		SSL_set_session_id_context( ses->ssl, (const unsigned char*)&tick, 4 );
-	}
-	ssl_InitSession( ses );
-	SSL_set_accept_state( ses->ssl );
-	ses->hostname = DupCStrLen( (CTEXTSTR)"no extension", 12 );
-	ses->pc = (PCLIENT)psvNew;
- // servername callback looks this up
-	SSL_set_ex_data( ses->ssl, ssl_ex_session_idx, ses );
-	AddLink( &session->accepting, ses);
-	//pcNew->ssl_session = ses;
-#ifdef DEBUG_SSL_IO_VERBOSE
-	SSL_set_info_callback( pcNew->ssl_session->ssl, infoCallback );
-#endif
-	//lprintf( "pipe connected callback.....................");
-	ses->user_read = (cReadComplete)read;
-	ses->user_close = (cCloseCallback)close;
-	if( write ) write[0] = ssl_WriteData;
-	ses->send_callback = (cppWriteComplete)netsend;
-	ses->recv_callback = (cppReadComplete)netrecv;
-	ses->psvSendRecv = (uintptr_t)psvNew;
-	//ses->dwOriginalFlags = pcServer->ssl_session->dwOriginalFlags;
-	return ses;
 }
 #if !defined( LIBRESSL_VERSION_NUMBER )
 static int handleServerName( SSL* ssl, int* al, void* param ) {
@@ -90873,18 +90853,15 @@ static int handleServerName( SSL* ssl, int* al, void* param ) {
 	struct ssl_session* ses = (struct ssl_session*)param;
 	struct ssl_session *ssl_Accept;
 	INDEX idx;
-	// The session is hung off the SSL itself at accept time.  Searching ses->accepting
-	// for it used to dereference every entry (ssl_Accept->ssl == ssl) while other
-	// threads were AddLink/SetLink-ing that same unlocked PLIST - at any real handshake
-	// concurrency this faults on an entry being replaced mid-walk.
+	// The session is hung off the SSL itself at accept time.  This replaced a walk of
+	// a per-listener PLIST that dereferenced every entry while other threads were
+	// AddLink/SetLink-ing that same unlocked list - at any real handshake concurrency
+	// that faults on an entry being replaced mid-walk.  The list is now gone.
 	ssl_Accept = (struct ssl_session*)SSL_get_ex_data( ssl, ssl_ex_session_idx );
 	if( !ssl_Accept ) {
 		lprintf( "FATAL, NO SUCH ACCEPTING SOCKET" );
 		return 0;
 	}
-	// remove by value - there is no walk to hand us an index any more, and comparing
-	// pointers (rather than dereferencing each entry) cannot fault on a stale one.
-	DeleteLink( &ses->accepting, ssl_Accept );
 	PLIST* ctxList = &ses->hosts;
 	// if no hosts to check.
 	if( !ctxList[0] ) return SSL_TLSEXT_ERR_OK;
