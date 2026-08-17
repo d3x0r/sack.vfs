@@ -8362,7 +8362,7 @@ NETWORK_PROC( void, ssl_WriteData )( struct ssl_session* session, POINTER buffer
 /*
 * Send data out ssl connection
 */
-NETWORK_PROC( LOGICAL, ssl_SendPipe )( struct ssl_session** ses, CPOINTER buffer, size_t length );
+NETWORK_PROC( LOGICAL, ssl_SendPipe )( struct ssl_session * volatile * ses, CPOINTER buffer, size_t length );
 /*
 * set the send and receive work functions for an SSL connection
 */
@@ -8379,10 +8379,15 @@ NETWORK_PROC( CTEXTSTR, ssl_GetRequestedHostName )(PCLIENT pc);
 // just closed, but new error handling allows fallback to HTTP in order to send
 // a redirect to the HTTPS address proper.
 NETWORK_PROC( void, ssl_EndSecure )(PCLIENT pc, POINTER buffer, size_t buflen );
+/* The other verdict on a failed handshake: end the stream and the socket with it.
+   ssl_EndSecure keeps the socket and re-feeds the bytes as plaintext; this one does
+   not.  Exposed so the decision can be made from the application's callback rather
+   than by parking the network thread until it answers.                          */
+NETWORK_PROC( void, ssl_EndStream )(PCLIENT pc );
 /*
  For a ssl_session pipe, this is a close.
  */
-NETWORK_PROC( void, ssl_EndSecurePipe )(struct ssl_session** session );
+NETWORK_PROC( void, ssl_EndSecurePipe )(struct ssl_session * volatile * session );
 /* use this to send on SSL Connection instead of SendTCP. */
 NETWORK_PROC( LOGICAL, ssl_Send )( PCLIENT pc, CPOINTER buffer, size_t length );
 /* User Datagram Packet connection methods. This controls
