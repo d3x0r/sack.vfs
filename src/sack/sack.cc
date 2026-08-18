@@ -128085,6 +128085,7 @@ SQLGETOPTION_PROC( int32_t, SACK_GetProfileInt )( CTEXTSTR pSection, CTEXTSTR pO
 SQLGETOPTION_PROC( LOGICAL, SACK_WritePrivateOptionStringEx )( PODBC odbc, CTEXTSTR pSection, CTEXTSTR pName, CTEXTSTR pValue, CTEXTSTR pINIFile, LOGICAL flush )
 {
 	POPTION_TREE_NODE optval;
+	int givenFile = !!pINIFile;
 	if( !pINIFile )
 		pINIFile = DEFAULT_PUBLIC_KEY;
 	else
@@ -128096,7 +128097,7 @@ SQLGETOPTION_PROC( LOGICAL, SACK_WritePrivateOptionStringEx )( PODBC odbc, CTEXT
 	if( sg.flags.bLogOptionConnection )
 		_lprintf( DBG_SRC )( "Setting option {%s}[%s]%s=%s", pINIFile, pSection, pName, pValue );
 #endif
-	optval = GetOptionIndexExxx( odbc, NULL, NULL, pINIFile, pSection, pName, TRUE, FALSE, FALSE DBG_SRC );
+	optval = GetOptionIndexExxx( odbc, NULL, ((givenFile && !pSection) || (pSection && pSection[0] == '/')) ? "" : NULL, pINIFile, pSection, pName, TRUE, FALSE, FALSE DBG_SRC );
 	if( !optval )
 	{
 		lprintf( "Creation of path failed!" );
