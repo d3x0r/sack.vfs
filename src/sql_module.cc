@@ -19,6 +19,33 @@ static Local<Function> emptyFunction;
 static void handleCorruption(uintptr_t psv, PODBC odbc);
 
 #define SQL_ODBC_POOL_IDLE_TIMEOUT 30000
+#define SQL_ODBC_POOL_DEFAULT_MAX_IDLE 1
+
+static LOGICAL sqlTraceEnabled() {
+	static int checked = 0;
+	static LOGICAL enabled = FALSE;
+	if( !checked ) {
+		const char *value = getenv( "SACK_SQL_TRACE" );
+		enabled = ( value && value[0] && value[0] != '0' ) ? TRUE : FALSE;
+		checked = 1;
+	}
+	return enabled;
+}
+
+static int sqlMaxIdleODBC() {
+	static int checked = 0;
+	static int maxIdle = SQL_ODBC_POOL_DEFAULT_MAX_IDLE;
+	if( !checked ) {
+		const char *value = getenv( "SACK_SQL_MAX_IDLE_ODBC" );
+		if( value && value[0] ) {
+			int parsed = atoi( value );
+			if( parsed >= 0 )
+				maxIdle = parsed;
+		}
+		checked = 1;
+	}
+	return maxIdle;
+}
 
 struct SqlObjectUserFunction {
 	class SqlObject *sql;
@@ -69,10 +96,17 @@ struct sql_object_state {
 	PLINKQUEUE messages;
 	class SqlObject *sql;
 	int pending;
+	int activeOdbc;
+	int pooledOdbc;
+	int openedOdbc;
+	int reusedOdbc;
+	int closedOdbc;
 	LOGICAL wantAutoTransact; // last transaction mode specified for this connection.
 	LOGICAL required;
 	LOGICAL logging;
 	PODBC transactingOdbc; // this is the odbc connection currently in a transaction, if any.
+	PODBC openingOdbc; // connection currently invoking the open callback.
+	LOGICAL openCallbackInvoked;
 };
 
 //#define optionInitialized  state->optionInitialized
@@ -137,6 +171,15 @@ public:
 	~SqlObject();
 	void closePooledODBC( struct sql_pooled_odbc *pooled ) {
 		if( !pooled ) return;
+		EnterCriticalSec( &this->state->csOdbcPool );
+		this->state->pooledOdbc--;
+		this->state->closedOdbc++;
+		if( sqlTraceEnabled() )
+			lprintf( "SQLTRACE close pooled sql=%p odbc=%p pooled=%d active=%d opened=%d reused=%d closed=%d dsn=%s"
+			       , this, pooled->odbc, this->state->pooledOdbc, this->state->activeOdbc
+			       , this->state->openedOdbc, this->state->reusedOdbc, this->state->closedOdbc
+			       , this->state->dsn );
+		LeaveCriticalSec( &this->state->csOdbcPool );
 		CloseDatabase( pooled->odbc );
 		Release( pooled );
 	}
@@ -161,8 +204,22 @@ public:
 		if (!odbc) return;
 		// commit or rollback has to remove this from transacting before it drops.
 		if (odbc == this->state->transactingOdbc) return; 
+		if (odbc == this->state->openingOdbc) return;
 		uint64_t now = timeGetTime64();
 		this->pruneIdleODBCs( now );
+		if( this->state->pooledOdbc >= sqlMaxIdleODBC() ) {
+			EnterCriticalSec( &this->state->csOdbcPool );
+			this->state->activeOdbc--;
+			this->state->closedOdbc++;
+			if( sqlTraceEnabled() )
+				lprintf( "SQLTRACE close excess sql=%p odbc=%p pooled=%d active=%d opened=%d reused=%d closed=%d dsn=%s"
+				       , this, odbc, this->state->pooledOdbc, this->state->activeOdbc
+				       , this->state->openedOdbc, this->state->reusedOdbc, this->state->closedOdbc
+				       , this->state->dsn );
+			LeaveCriticalSec( &this->state->csOdbcPool );
+			CloseDatabase( odbc );
+			return;
+		}
 		struct sql_pooled_odbc *pooled = NewArray( struct sql_pooled_odbc, 1 );
 		pooled->next = NULL;
 		pooled->me = NULL;
@@ -170,10 +227,17 @@ public:
 		pooled->lastUsed = now;
 		EnterCriticalSec( &this->state->csOdbcPool );
 		LinkThing( this->state->odbc_pool, pooled );
+		this->state->activeOdbc--;
+		this->state->pooledOdbc++;
+		if( sqlTraceEnabled() )
+			lprintf( "SQLTRACE drop sql=%p odbc=%p pooled=%d active=%d pending=%d dsn=%s"
+			       , this, odbc, this->state->pooledOdbc, this->state->activeOdbc
+			       , this->state->pending, this->state->dsn );
 		LeaveCriticalSec( &this->state->csOdbcPool );
 	}
 	PODBC useODBC() {
 		if (this->state->transactingOdbc) return this->state->transactingOdbc;
+		if (this->state->openingOdbc) return this->state->openingOdbc;
 		this->pruneIdleODBCs( timeGetTime64() );
 		PODBC odbc = NULL;
 		struct sql_pooled_odbc *pooled;
@@ -185,9 +249,31 @@ public:
 		if (pooled) {
 			odbc = pooled->odbc;
 			Release( pooled );
+			EnterCriticalSec( &this->state->csOdbcPool );
+			this->state->pooledOdbc--;
+			this->state->activeOdbc++;
+			this->state->reusedOdbc++;
+			if( sqlTraceEnabled() )
+				lprintf( "SQLTRACE reuse sql=%p odbc=%p pooled=%d active=%d pending=%d dsn=%s"
+				       , this, odbc, this->state->pooledOdbc, this->state->activeOdbc
+				       , this->state->pending, this->state->dsn );
+			LeaveCriticalSec( &this->state->csOdbcPool );
 		}
 		if (!odbc) {
-			odbc = ConnectToDatabaseLoginCallback(this->state->dsn, NULL, NULL, FALSE, SqlObject::OnOpen, (uintptr_t)this DBG_SRC);
+			LOGICAL callOpenCallback = ( !this->openCallback.IsEmpty() && !this->state->openCallbackInvoked );
+			if( callOpenCallback )
+				this->state->openCallbackInvoked = TRUE;
+			odbc = ConnectToDatabaseLoginCallback(this->state->dsn, NULL, NULL, FALSE
+				, callOpenCallback ? SqlObject::OnOpen : NULL
+				, callOpenCallback ? (uintptr_t)this : 0 DBG_SRC);
+			EnterCriticalSec( &this->state->csOdbcPool );
+			this->state->activeOdbc++;
+			this->state->openedOdbc++;
+			if( sqlTraceEnabled() )
+				lprintf( "SQLTRACE open sql=%p odbc=%p pooled=%d active=%d opened=%d pending=%d dsn=%s"
+				       , this, odbc, this->state->pooledOdbc, this->state->activeOdbc
+				       , this->state->openedOdbc, this->state->pending, this->state->dsn );
+			LeaveCriticalSec( &this->state->csOdbcPool );
 		}
 		SetSQLAutoTransact(odbc, this->state->wantAutoTransact );
 		SetConnectionRequired(odbc, this->state->required );
@@ -1172,6 +1258,9 @@ static uintptr_t queryThread( PTHREAD thread ) {
 		struct userMessage* msg = NewArray( struct userMessage, 1 );
 
 		//lprintf( "ThreadTo Doing Query:%s", GetText( params->statement ) );
+		if( sqlTraceEnabled() )
+			lprintf( "SQLTRACE run sql=%p params=%p thread=%p pending=%d dsn=%s"
+			       , params->sql, params, thread, params->sql->state->pending, params->sql->state->dsn );
 		DoQuery( params );
 
 		//delete params;
@@ -1204,8 +1293,12 @@ static void startQueuedQuery( struct sql_object_state *state ) {
 			state->promisedRunning = TRUE;
 	}
 	LeaveCriticalSec( &state->csPromised );
-	if( params )
+	if( params ) {
+		if( sqlTraceEnabled() )
+			lprintf( "SQLTRACE start sql=%p params=%p pending=%d pooled=%d active=%d dsn=%s"
+			       , state->sql, params, state->pending, state->pooledOdbc, state->activeOdbc, state->dsn );
 		ThreadTo( queryThread, (uintptr_t)params );
+	}
 }
 
 static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject *sql, LOGICAL promised ) {
@@ -1373,6 +1466,9 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 				uv_ref( (uv_handle_t*)&sql->state->async ); // keeps active, but doesn't keep loop open.
 			}
 			sql->state->pending++;
+			if( sqlTraceEnabled() )
+				lprintf( "SQLTRACE enqueue sql=%p params=%p pending=%d running=%d dsn=%s"
+				       , sql, params, sql->state->pending, sql->state->promisedRunning, sql->state->dsn );
 			EnqueLink( &sql->state->plqPromised, params );
 			startQueuedQuery( sql->state );
 			args.GetReturnValue().Set( pr->GetPromise() );
@@ -1419,6 +1515,7 @@ void SqlObject::OnOpen( uintptr_t psv, PODBC odbc ){
 	struct userMessage msg;
 
 	//this_->state->odbc = odbc;
+	this_->state->openingOdbc = odbc;
 
 	msg.mode = UserMessageModes::OnOpen;
 	msg.onwhat = NULL;
@@ -1447,6 +1544,7 @@ void SqlObject::OnOpen( uintptr_t psv, PODBC odbc ){
 			sqlUserAsyncMsgEx_( this_->state->isolate, this_->state->isolate->GetCurrentContext(), this_->state, TRUE, &closing );
 		}
 	}
+	this_->state->openingOdbc = NULL;
 }
 //-----------------------------------------------------------
 
@@ -1488,6 +1586,11 @@ SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Lo
 	state->sql = this;
 	state->ivm_hosted = FALSE;
 	state->odbc_pool = NULL;
+	state->activeOdbc = 0;
+	state->pooledOdbc = 0;
+	state->openedOdbc = 0;
+	state->reusedOdbc = 0;
+	state->closedOdbc = 0;
 	InitializeCriticalSec( &state->csOdbcPool );
 	state->plqPromised = NULL;
 	state->promisedRunning = FALSE;
@@ -1501,6 +1604,8 @@ SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Lo
 	state->required = FALSE;
 	state->logging = TRUE;
 	state->transactingOdbc = NULL;
+	state->openingOdbc = NULL;
+	state->openCallbackInvoked = FALSE;
 
 	state->isolate = isolate;
 	this->_this.Reset( isolate, jsThis );
@@ -2098,9 +2203,14 @@ void sqlUserAsyncMsgEx_( Isolate *isolate , Local<Context> context, struct sql_o
 
 			// this just triggers node's idle callback so the resolved/rejected promise can be dispatched
 			//lprintf( "Releasing message..." );
+			struct query_thread_params *doneParams = msg->params;
 			Release( msg );
 			msg = NULL;
 			myself->pending--;
+			if( sqlTraceEnabled() )
+				lprintf( "SQLTRACE complete sql=%p params=%p pending=%d pooled=%d active=%d dsn=%s"
+				       , myself->sql, doneParams, myself->pending, myself->pooledOdbc
+				       , myself->activeOdbc, myself->dsn );
 			if( !myself->pending ) {
 				//lprintf( "uv_unref on async..." );
 				uv_unref( (uv_handle_t*)&myself->async ); // keeps active, but doesn't keep loop open.

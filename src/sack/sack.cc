@@ -121615,15 +121615,18 @@ int FetchSQLRecordJS( PODBC odbc, PDATALIST *ppdlRecord ) {
 			odbc = g.odbc;
 		ReleaseSQLRecord( ppdlRecord[0] );
 		if( odbc ) {
+			LOGICAL removedTemporary = FALSE;
 			if( odbc->flags.bThreadProtect ) {
 				EnterCriticalSec( &odbc->cs );
 				odbc->nProtect++;
 			}
 			while( odbc->collection && odbc->collection->flags.bTemporary ) {
+				removedTemporary = TRUE;
 				DestroyCollector( odbc->collection );
 			}
 			if( !odbc->collection ) {
-				lprintf( "Lost ODBC result collection..." );
+				if( !removedTemporary )
+					lprintf( "Lost ODBC result collection..." );
 				return 0;
 			}
 			odbc->collection->flags.bBuildResultArray = 1;
@@ -121650,6 +121653,7 @@ int FetchSQLRecord( PODBC odbc, CTEXTSTR **result )
 			odbc = g.odbc;
 		if( odbc )
 		{
+			LOGICAL removedTemporary = FALSE;
 			if( odbc->flags.bThreadProtect )
 			{
 				EnterCriticalSec( &odbc->cs );
@@ -121657,11 +121661,13 @@ int FetchSQLRecord( PODBC odbc, CTEXTSTR **result )
 			}
 			while( odbc->collection && odbc->collection->flags.bTemporary )
 			{
+				removedTemporary = TRUE;
 				DestroyCollector( odbc->collection );
 			}
 			if( !odbc->collection )
 			{
-				lprintf( "Lost ODBC result collection..." );
+				if( !removedTemporary )
+					lprintf( "Lost ODBC result collection..." );
 				return 0;
 			}
 			odbc->collection->flags.bBuildResultArray = 1;
