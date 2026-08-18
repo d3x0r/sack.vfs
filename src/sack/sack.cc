@@ -79060,27 +79060,15 @@ enum NetworkConnectionFlags {
 	, CF_READPENDING     = 0x00000008
 	// set if next read to pend should recv also
 	, CF_READREADY       = 0x00000010
-	// set if reading application is waiting in-line for result.
-	, CF_READWAITING     = 0x00008000
 	// set when FD_CONNECT is issued...
 	, CF_CONNECTED       = 0x00000020
 	, CF_CONNECTERROR    = 0x00000040
 	, CF_CONNECTING      = 0x00000080
-	, CF_CONNECT_WAITING = 0x00400000
-	, CF_CONNECT_CLOSED  = 0x00100000
-  // connection to socket callback for server connect was issued.
-	, CF_CONNECT_ISSUED  = 0x00800000
 	// A graceful close was requested for this client.  Latched, because a later
 	// close can arrive with bLinger FALSE - the read-error branch in the event
 	// loops hard-codes it - and that would swap in SO_LINGER{1,0}, resetting the
 	// connection and discarding a response that is sent but not yet ACKed.
 	// CF_WANTCLOSE cannot serve as this marker: it is set on both paths.
-	// 0x00200000 COLLIDED with CF_WRITEREADY (below) - same bit, same enum.  Any
-	// write-ready event set it, so InternalRemoveClientExx read "graceful already
-	// latched" and skipped the abortive SO_LINGER{1,0}; and the write path's
-	// ClearClientFlags( CF_WRITEREADY ) wiped a genuine graceful latch, which is
-	// exactly the RST-discards-the-response regression this flag exists to prevent.
-	, CF_LINGERCLOSE     = 0x01000000
   // wants to close at the next opportunity.
 	, CF_TOCLOSE         = 0x00000100
 	// Set by RemoveClientExx (network.c ~1666) on BOTH of its branches, and set
@@ -79097,6 +79085,10 @@ enum NetworkConnectionFlags {
 	, CF_CLOSED          = 0x00001000
 	, CF_ACTIVE          = 0x00002000
 	, CF_AVAILABLE       = 0x00004000
+  //( CF_ACTIVE | CF_AVAILABLE | CF_CLOSED)
+	, CF_STATEFLAGS      = 0x1000 | 0x2000 | 0x4000
+	// set if reading application is waiting in-line for result.
+	, CF_READWAITING     = 0x00008000
 	, CF_CPPCONNECT      = 0x00010000
 	// server/client is implied in usage....
 	// much like Read, ReadEX are implied in TCP/UDP usage...
@@ -79106,15 +79098,23 @@ enum NetworkConnectionFlags {
 	, CF_CPPCLOSE        = 0x00040000
 	, CF_CPPWRITE        = 0x00080000
 	, CF_CALLBACKTYPES   = 0x00010000
-                        | 0x00020000
-                        | 0x00040000
+	                     | 0x00020000
+	                     | 0x00040000
 //(CF_CPPCONNECT | CF_CPPREAD | CF_CPPCLOSE | CF_CPPWRITE)
-                        | 0x00080000
-  //( CF_ACTIVE | CF_AVAILABLE | CF_CLOSED)
-	, CF_STATEFLAGS      = 0x1000 | 0x2000 | 0x4000
+	                     | 0x00080000
+	, CF_CONNECT_CLOSED  = 0x00100000
+	, CF_WRITEREADY      = 0x00200000
+	, CF_CONNECT_WAITING = 0x00400000
+  // connection to socket callback for server connect was issued.
+	, CF_CONNECT_ISSUED  = 0x00800000
 	//, CF_WANTS_GLOBAL_LOCK = 0x10000000
+	// 0x00200000 COLLIDED with CF_WRITEREADY (below) - same bit, same enum.  Any
+	// write-ready event set it, so InternalRemoveClientExx read "graceful already
+	// latched" and skipped the abortive SO_LINGER{1,0}; and the write path's
+	// ClearClientFlags( CF_WRITEREADY ) wiped a genuine graceful latch, which is
+	// exactly the RST-discards-the-response regression this flag exists to prevent.
+	, CF_LINGERCLOSE     = 0x01000000
 	, CF_PROCESSING      = 0x20000000
-	, CF_WRITEREADY	 = 0x00200000
 };
 #ifdef __cplusplus
 #  ifndef DEFINE_ENUM_FLAG_OPERATORS
@@ -79768,6 +79768,11 @@ __END_DECLS
 #include <iphlpapi.h>
 #endif
 SACK_NETWORK_NAMESPACE
+/* PROBE: how often does RemoveClientExx have to skip TerminateClosedClient because a
+ * channel was locked?  That is the case that leaves a client on ClosedClients with no
+ * marker for the unlock path to find, and it is what the win32 timer sweep cleans up.
+ * If this never fires under the existing tests, the sweep is uncovered by them. */
+static volatile uint32_t strandedTerminates;
 PRELOAD( InitNetworkGlobalOptions )
 {
 	if( !globalNetworkData.flags.bOptionsRead ) {
@@ -79994,10 +79999,15 @@ void unlockNetWorkList( void ) {
 	netWorkListLock = 0;
 }
 //----------------------------------------------------------------------------
-static PCLIENT AddClosed( PCLIENT pClient )
+static PCLIENT AddClosed( PCLIENT pClient DBG_PASS )
 {
 	if( pClient )
 	{
+#if DBG_AVAILABLE
+		// blame the caller of InternalRemoveClientEx, not this line - see netstruc.h
+		pClient->closedFile = pFile;
+		pClient->closedLine = nLine;
+#endif
 		// leaving active life; invalidate handles captured against this connection.
 		LockedIncrement( &pClient->serial );
 		SetClientFlags( pClient, CF_CLOSED );
@@ -80991,15 +81001,24 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 #ifdef LOG_SOCKET_CREATION
 	_lprintf( DBG_RELAY )( "InternalRemoveClient Removing this client %p (%d)", lpClient, lpClient->Socket );
 #endif
+	// Record the first close mode requested and replay it, rather than letting a
+	// deferred completion (ClearNetWork -> RemoveClient) substitute its own defaults.
+	// bBlockNotify is not cosmetic: below it gates the close callback, the CF_CLOSING
+	// mark, the serial bump that starts failing NetworkClientValid for deferred
+	// handles, and the pWaiting wake - so replaying the wrong value either fires a
+	// callback the caller suppressed or loses the one the application was waiting
+	// for.  Neither direction is safe to override: first value wins, and a later
+	// disagreement is logged rather than silently dropped.  linger is deliberately
+	// NOT first-wins - CF_LINGERCLOSE stays a one-way latch, because the read-error
+	// branch hard-codes bLinger=FALSE and firing first would downgrade a later
+	// genuine graceful close.
 	if( lpClient && !lpClient->closeModeSet ) {
 		lpClient->closeModeSet = TRUE;
 		lpClient->closeBlockNotify = bBlockNotify;
 	} else if( lpClient ) {
-		// a deferred completion (ClearNetWork -> RemoveClient) passes its own
-		// default; replay what was first requested instead.
 		if( ( !lpClient->closeBlockNotify ) != ( !bBlockNotify ) )
 			_xlprintf( LOG_ERROR DBG_RELAY )( "close mode conflict on %p: first bBlockNotify=%d, now %d - replaying the first"
-			                   , lpClient, (int)lpClient->closeBlockNotify, (int)bBlockNotify );
+			                                , lpClient, (int)lpClient->closeBlockNotify, (int)bBlockNotify );
 		bBlockNotify = lpClient->closeBlockNotify;
 	}
 	if( lpClient && IsValid(lpClient->Socket) )
@@ -81078,7 +81097,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 #ifdef LOG_DEBUG_CLOSING
 				lprintf( "Client was NOT already closed?!?!" );
 #endif
-				AddClosed( GrabClient( lpClient ) );
+				AddClosed( GrabClient( lpClient ) DBG_RELAY );
 			}
 #ifdef LOG_DEBUG_CLOSING
 			else
@@ -81186,7 +81205,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 #ifdef LOG_DEBUG_CLOSING
 		lprintf( "Adding current client to closed clients." );
 #endif
-		AddClosed( GrabClient( lpClient ) );
+		AddClosed( GrabClient( lpClient ) DBG_RELAY );
 #ifdef LOG_DEBUG_CLOSING
 		lprintf( "Leaving client critical section" );
 #endif
@@ -81261,6 +81280,8 @@ void RemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLinger DBG
 		else if( n ) {
 			NetworkUnlock( lpClient, 0 );
 			SetClientFlags( lpClient, CF_TOCLOSE );
+			fprintf( stderr, "STRANDED: RemoveClientExx skipped TerminateClosedClient (channel locked); count=%u\n",
+			         (unsigned)LockedIncrement( &strandedTerminates ) );
 		}
 		LeaveCriticalSec( &globalNetworkData.csNetwork );
 	}
@@ -82625,6 +82646,40 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 				next = pc->next;
 				if( +GetTickCount() > (pc->LastEvent + 1000) )
 				{
+					/* Kept deliberately.  Each hit is a close that ONLY completed because
+					 * of this timer sweep - a client no further FD_ event would have
+					 * rescued, since FD_WRITE re-arms only after WSAEWOULDBLOCK and
+					 * FD_CLOSE is one-shot.  Believed to be zero on current code (the
+					 * FD_WRITE expectation was fixed, SSL shutdown is graceful now, and
+					 * the blocking waits that held channel locks are gone), so if this
+					 * ever prints, the sweep is still load-bearing and the deferred
+					 * terminate wants completing at unlock instead. */
+					{
+						static volatile uint32_t reaped;
+#if DBG_AVAILABLE
+						// name the site that put this on ClosedClients and walked away
+						// recyclePending=1 here means TerminateClosedClientEx deferred (network.c
+						// ~550) and NetworkUnlockEx's completion hook (~1389) never saw both
+						// channels free with the flag set - i.e. the sweep is finishing a
+						// deferred RECYCLE, not rescuing an unclosed socket.
+						xlprintf( LOG_ERROR )( "Delayed-close sweep terminated a client that nothing else would have; count=%u closed by %s(%u) recyclePending=%u rd=%u wr=%u sock=%s"
+						                     , (unsigned)LockedIncrement( &reaped )
+						                     , pc->closedFile ? pc->closedFile : "(unset)"
+						                     , (unsigned)pc->closedLine
+						                     , (unsigned)pc->recyclePending
+						                     , (unsigned)pc->csLockRead.dwLocks
+						                     , (unsigned)pc->csLockWrite.dwLocks
+						                     , IsValid( pc->Socket ) ? "open" : "closed" );
+						// who is still holding it - the sweep's own thread would mean a
+						// reentrant/self hold, any other thread means a leaked recursion.
+						xlprintf( LOG_ERROR )( "   ...write lock owner=%016" _64fx " sweep thread=%016" _64fx
+						                     , (uint64_t)pc->csLockWrite.dwThreadID
+						                     , (uint64_t)GetMyThreadID() );
+#else
+						xlprintf( LOG_ERROR )( "Delayed-close sweep terminated a client that nothing else would have; count=%u"
+						                     , (unsigned)LockedIncrement( &reaped ) );
+#endif
+					}
 					//lprintf( "Remove thread event on closed thread (should be terminate here..)" );
 					// also does the remove.
 					TerminateClosedClient( pc );
@@ -85912,6 +85967,19 @@ SACK_NETWORK_NAMESPACE_END
 #  define MSG_NOSIGNAL 0
 #endif
 SACK_NETWORK_NAMESPACE
+// Read-dispatch nesting depth, per thread.  A read callback that re-enters the
+// message pump - Idle() is the way that happens - can dispatch another read on this
+// same thread, underneath one already in progress.  Everything that reasons about
+// "no dispatch is in flight" (the ssl_finalize precondition, the win32 ClosedClients
+// sweep) is only true at depth 0, so the depth has to be observable before it can be
+// relied on.  Counting only for now: the high-water mark is reported when it rises,
+// so a run that never nests says depth 1 exactly once and then goes quiet.
+DeclareThreadLocal uint32_t readStackLevel;
+// Starts at 1 so the ordinary un-nested case never logs: this only speaks when a
+// read dispatch actually nests, which needs a read callback to re-enter the pump
+// (Idle()).  Expected to stay silent for a long time - sack.vfs does not do it; only
+// some very old applications can.
+DeclareThreadLocal uint32_t readStackHigh = 1;
 	extern int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t quick_check );
 _TCP_NAMESPACE
 //----------------------------------------------------------------------------
@@ -87046,6 +87114,10 @@ dispatch_ReadEvent:
 #ifdef LOG_PENDING
 					//lprintf( "Send to application...." );
 #endif
+					if( ++readStackLevel > readStackHigh ) {
+						readStackHigh = readStackLevel;
+						fprintf( stderr, "READSTACK: read dispatch depth now %u\n", (unsigned)readStackLevel );
+					}
 					if( lpClient->dwFlags & CF_CPPREAD )
 					{
 						lpClient->read.CPPReadComplete( lpClient->psvRead
@@ -87058,6 +87130,8 @@ dispatch_ReadEvent:
 															 lpClient->RecvPending.buffer.p,
 															 length );
 					}
+					// decrement BEFORE the early return below, or that path leaks a level
+					readStackLevel--;
  // closed
 					if( !IsValid( lpClient->Socket ) )
 						return -1;
