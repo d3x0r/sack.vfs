@@ -16,6 +16,10 @@ void editOptions( const v8::FunctionCallbackInfo<Value>& args );
 
 static Local<Function> emptyFunction;
 
+static void handleCorruption(uintptr_t psv, PODBC odbc);
+
+#define SQL_ODBC_POOL_IDLE_TIMEOUT 30000
+
 struct SqlObjectUserFunction {
 	class SqlObject *sql;
 	Persistent<Function> cb;
@@ -36,8 +40,25 @@ public:
 	static void Set( const v8::FunctionCallbackInfo<Value>& args );
 };
 
-struct sql_object_state {
+struct sql_promised_result {
+	Persistent<Promise::Resolver> promise;
+	SqlObject* sql;
+};	
+
+struct sql_pooled_odbc {
+	DeclareLink( struct sql_pooled_odbc );
 	PODBC odbc;
+	uint64_t lastUsed;
+};
+
+struct sql_object_state {
+	//PODBC odbc;
+	const char* dsn;
+	struct sql_pooled_odbc *odbc_pool;
+	CRITICALSECTION csOdbcPool;
+	PLINKQUEUE plqPromised;
+	CRITICALSECTION csPromised;
+	LOGICAL promisedRunning;
 	int optionInitialized;
 	PTHREAD thread;
 	Isolate *isolate; // this is constant for the life of the connection
@@ -48,6 +69,10 @@ struct sql_object_state {
 	PLINKQUEUE messages;
 	class SqlObject *sql;
 	int pending;
+	LOGICAL wantAutoTransact; // last transaction mode specified for this connection.
+	LOGICAL required;
+	LOGICAL logging;
+	PODBC transactingOdbc; // this is the odbc connection currently in a transaction, if any.
 };
 
 //#define optionInitialized  state->optionInitialized
@@ -110,6 +135,89 @@ public:
 	static void doWrap( SqlObject *sql, Local<Object> o );
 
 	~SqlObject();
+	void closePooledODBC( struct sql_pooled_odbc *pooled ) {
+		if( !pooled ) return;
+		CloseDatabase( pooled->odbc );
+		Release( pooled );
+	}
+	void pruneIdleODBCs( uint64_t now ) {
+		struct sql_pooled_odbc *pooled, *next, *closeList = NULL;
+		EnterCriticalSec( &this->state->csOdbcPool );
+		for( pooled = this->state->odbc_pool; pooled; pooled = next ) {
+			next = pooled->next;
+			if( ( now - pooled->lastUsed ) > SQL_ODBC_POOL_IDLE_TIMEOUT ) {
+				UnlinkThing( pooled );
+				LinkThing( closeList, pooled );
+			}
+		}
+		LeaveCriticalSec( &this->state->csOdbcPool );
+		while( closeList ) {
+			pooled = closeList;
+			UnlinkThing( pooled );
+			this->closePooledODBC( pooled );
+		}
+	}
+	void dropODBC(PODBC odbc) {
+		if (!odbc) return;
+		// commit or rollback has to remove this from transacting before it drops.
+		if (odbc == this->state->transactingOdbc) return; 
+		uint64_t now = timeGetTime64();
+		this->pruneIdleODBCs( now );
+		struct sql_pooled_odbc *pooled = NewArray( struct sql_pooled_odbc, 1 );
+		pooled->next = NULL;
+		pooled->me = NULL;
+		pooled->odbc = odbc;
+		pooled->lastUsed = now;
+		EnterCriticalSec( &this->state->csOdbcPool );
+		LinkThing( this->state->odbc_pool, pooled );
+		LeaveCriticalSec( &this->state->csOdbcPool );
+	}
+	PODBC useODBC() {
+		if (this->state->transactingOdbc) return this->state->transactingOdbc;
+		this->pruneIdleODBCs( timeGetTime64() );
+		PODBC odbc = NULL;
+		struct sql_pooled_odbc *pooled;
+		EnterCriticalSec( &this->state->csOdbcPool );
+		pooled = this->state->odbc_pool;
+		if( pooled )
+			UnlinkThing( pooled );
+		LeaveCriticalSec( &this->state->csOdbcPool );
+		if (pooled) {
+			odbc = pooled->odbc;
+			Release( pooled );
+		}
+		if (!odbc) {
+			odbc = ConnectToDatabaseLoginCallback(this->state->dsn, NULL, NULL, FALSE, SqlObject::OnOpen, (uintptr_t)this DBG_SRC);
+		}
+		SetSQLAutoTransact(odbc, this->state->wantAutoTransact );
+		SetConnectionRequired(odbc, this->state->required );
+		SetSQLLoggingDisable(odbc, !this->state->logging );
+		if (!this->onCorruption.IsEmpty())
+			SetSQLCorruptionHandler(odbc, handleCorruption, (uintptr_t)this);
+		else
+			SetSQLCorruptionHandler(odbc, NULL, (uintptr_t)0);
+
+		return odbc;
+	}
+	void closePooledODBCs() {
+		struct sql_pooled_odbc *pooled, *closeList;
+		for(;;) {
+			EnterCriticalSec( &this->state->csOdbcPool );
+			closeList = this->state->odbc_pool;
+			this->state->odbc_pool = NULL;
+			for( pooled = closeList; pooled; pooled = pooled->next )
+				pooled->me = NULL;
+			LeaveCriticalSec( &this->state->csOdbcPool );
+			if( !closeList )
+				break;
+			while( closeList ) {
+				pooled = closeList;
+				closeList = pooled->next;
+				pooled->next = NULL;
+				this->closePooledODBC( pooled );
+			}
+		}
+	}
 };
 
 
@@ -149,6 +257,7 @@ enum UserMessageModes {
 };
 
 struct query_thread_params {
+	PODBC odbc;
 	Isolate* isolate;
 	SqlObject* sql;
 	PTEXT statement;
@@ -188,6 +297,7 @@ struct sqlUserAsyncTask : SackTask {
 };
 
 static void sqlUserAsyncMsg( uv_async_t* handle );
+static void startQueuedQuery( struct sql_object_state *state );
 
 /* This is used from external code... */
 void createSqlObject( const char *name, Isolate *isolate, Local<Object> into ) {
@@ -418,7 +528,7 @@ int IsTextAnyNumber( CTEXTSTR text, double *fNumber, int64_t *iNumber )
 void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	CloseDatabase( sql->state->odbc );
+	sql->closePooledODBCs();
 	if( sql->state->thread ) {
 		static struct userMessage msg;
 		msg.mode = OnClose;
@@ -432,7 +542,6 @@ void SqlObject::closeDb( const v8::FunctionCallbackInfo<Value>& args ) {
 			uv_async_send( &sql->state->async );
 		// cant' wait here.
 	}
-
 }
 
 void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -440,29 +549,45 @@ void SqlObject::autoTransact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Local<Context> context = args.GetIsolate()->GetCurrentContext();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetSQLAutoTransact( sql->state->odbc, args[0]->TOBOOL(args.GetIsolate()) );
+	sql->state->wantAutoTransact = args[0]->TOBOOL(args.GetIsolate());
+	//SetSQLAutoTransact( sql->state->odbc, args[0]->TOBOOL(args.GetIsolate()) );
 }
 //-----------------------------------------------------------
 void SqlObject::transact( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SQLBeginTransact( sql->state->odbc );
+	sql->state->transactingOdbc = sql->useODBC();
+	SQLBeginTransact(sql->state->transactingOdbc);
 }
 //-----------------------------------------------------------
 void SqlObject::commit( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SQLCommit( sql->state->odbc );
+	if( sql->state->transactingOdbc ) {
+		SQLCommit( sql->state->transactingOdbc );
+		PODBC odbc = sql->state->transactingOdbc;
+		sql->state->transactingOdbc = NULL;
+		sql->dropODBC(odbc);
+
+	}
+	else
+		lprintf("Commit issued with no trnsaction started");
 }
 //-----------------------------------------------------------
 void SqlObject::rollback(const v8::FunctionCallbackInfo<Value>& args) {
 	//Isolate* isolate = args.GetIsolate();
 
 	SqlObject* sql = ObjectWrap::Unwrap<SqlObject>(args.This());
-	SQLCommand(sql->state->odbc, "ROLLBACK");
-	//SQLRollback(sql->state->odbc);
+	if( sql->state->transactingOdbc ) {
+		SQLRollback( sql->state->transactingOdbc );
+		PODBC odbc = sql->state->transactingOdbc;
+		sql->state->transactingOdbc = NULL;
+		sql->dropODBC(odbc);
+	}
+	else
+		lprintf("Rollback issued with no transaction started");
 }
 //-----------------------------------------------------------
 
@@ -476,7 +601,9 @@ void SqlObject::escape( const v8::FunctionCallbackInfo<Value>& args ) {
 	}
 	String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
 	size_t resultlen;
-	char *out = EscapeSQLBinaryExx(sql->state->odbc, (*tmp), tmp.length(), &resultlen, FALSE DBG_SRC );
+	PODBC odbc = sql->useODBC();
+	char *out = EscapeSQLBinaryExx( odbc, (*tmp), tmp.length(), &resultlen, FALSE DBG_SRC );
+	sql->dropODBC(odbc);
 	args.GetReturnValue().Set( String::NewFromUtf8( isolate, out, NewStringType::kNormal, (int)resultlen ).ToLocalChecked() );
 	Deallocate( char*, out );
 
@@ -702,6 +829,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		//tables[usedTables].table = NULL;
 		tables[usedTables].alias = NULL;
 		usedTables++;
+		PODBC odbc = params->odbc;
 		//lprintf( "adding a table usage NULL" );
 
 		DATA_FORALL( pdlRecord, idx, struct jsox_value_container*, jsval ) {
@@ -715,18 +843,27 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					colMap[idx].depth = fields[m].used;
 					if (colMap[idx].depth > maxDepth)
 						maxDepth = colMap[idx].depth + 1;
-					const char* alias = PSSQL_GetColumnTableAliasName(sql->state->odbc, (int)idx);
-					colMap[idx].alias = StrDup( alias );
-					colMap[idx].jsAlias = String::NewFromUtf8( USE_ISOLATE(isolate) alias ).ToLocalChecked(); 
+					const char* alias = PSSQL_GetColumnTableAliasName(odbc, (int)idx);
+					if( alias && alias[0] ) {
+						colMap[idx].alias = StrDup( alias );
+						colMap[idx].jsAlias = String::NewFromUtf8( USE_ISOLATE(isolate) alias ).ToLocalChecked();
+					} else {
+						colMap[idx].alias = NULL;
+						colMap[idx].jsAlias = String::Empty( isolate );
+					}
 					//lprintf( "Alias:%s also in %s", jsval->name, colMap[idx].alias);
-					int table;
-					for (table = 0; table < usedTables; table++) {
-						if (StrCmp( tables[table].alias, colMap[idx].alias ) == 0) {
-							colMap[idx].t = tables + table;
-							break;
+					int table = usedTables;
+					if( colMap[idx].alias ) {
+						for (table = 1; table < usedTables; table++) {
+							if (StrCmp( tables[table].alias, colMap[idx].alias ) == 0) {
+								colMap[idx].t = tables + table;
+								break;
+							}
 						}
 					}
-					if (table == usedTables) {
+					else
+						colMap[idx].t = tables;
+					if (colMap[idx].alias && table == usedTables) {
 						tables[table].alias = colMap[idx].alias;
 						tables[table].jsAlias = colMap[idx].jsAlias;
 						colMap[idx].t = tables + table;
@@ -742,14 +879,19 @@ static void buildQueryResult( struct query_thread_params* params ) {
 				colMap[idx].depth = 0;
 				// this value is invalid once this row is stepped; so duplicate it.
 				// could be invalidated on the next call - though a different index should be a new constant value from ODBC...
-				const char* alias = PSSQL_GetColumnTableAliasName(sql->state->odbc, (int)idx);
-				colMap[idx].alias = StrDup( alias );
-				colMap[idx].jsAlias = String::NewFromUtf8( isolate, alias ).ToLocalChecked();
+				const char* alias = PSSQL_GetColumnTableAliasName(odbc, (int)idx);
+				if( alias && alias[0] ) {
+					colMap[idx].alias = StrDup( alias );
+					colMap[idx].jsAlias = String::NewFromUtf8( isolate, alias ).ToLocalChecked();
+				} else {
+					colMap[idx].alias = NULL;
+					colMap[idx].jsAlias = String::Empty( isolate );
+				}
 
 				//lprintf( "Alias:%s in %s", jsval->name, colMap[idx].alias);
 				if (colMap[idx].alias && colMap[idx].alias[0]) {
 					int table;
-					for (table = 0; table < usedTables; table++) {
+					for (table = 1; table < usedTables; table++) {
 						if (StrCmp( tables[table].alias, colMap[idx].alias ) == 0) {
 							colMap[idx].t = tables + table;
 							break;
@@ -784,7 +926,6 @@ static void buildQueryResult( struct query_thread_params* params ) {
 					}
 				}
 			}
-
 		int extraUsedFields = 0;
 
 		// table values won't have come back as a column in the data
@@ -952,7 +1093,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 				//lprintf("At the end we had %d values for %d names", validx, nameidx);
 				Local<Object> record = Object::New( isolate, proto, names, values, nameidx );
 				records->Set( context, row++, rowScope.Escape( record ) );
-			} while (FetchSQLRecordJS( sql->state->odbc, &pdlRecord ));
+			} while (FetchSQLRecordJS( odbc, &pdlRecord ));
 		}
 		{
 			int c;
@@ -977,6 +1118,8 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		else {
 			params->results = records;
 		}
+		sql->dropODBC(odbc);
+		params->odbc = NULL;
 		//args.GetReturnValue().Set(records);
 	}
 	else
@@ -989,6 +1132,8 @@ static void buildQueryResult( struct query_thread_params* params ) {
 		else {
 			params->results = Array::New( isolate );
 		}
+		sql->dropODBC(params->odbc);
+		params->odbc = NULL;
 			//lprintf( "Probably an empty result...");
 		//args.GetReturnValue().Set();
 	}
@@ -1003,11 +1148,12 @@ static void DoQuery( struct query_thread_params *params ) {
 
 	SqlObject* sql = params->sql;
 	PTEXT statement = params->statement;
+	PODBC odbc = params->odbc = sql->useODBC();
 	//lprintf( "Doing Query:%s", GetText( params->statement ) );
-	if (!SQLRecordQuery_js(sql->state->odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, params->pdlParams DBG_SRC)) {
+	if (!SQLRecordQuery_js(odbc, GetText(statement), GetTextSize(statement), &params->pdlRecord, params->pdlParams DBG_SRC)) {
 		const char* error;
 		ReleaseSQLResults( &params->pdlRecord );
-		FetchSQLError(sql->state->odbc, &error);
+		FetchSQLError(odbc, &error);
 		params->error = StrDup( error );
 		if( params->promise.IsEmpty() ) {
 			// not promised, can throw an exception now.
@@ -1016,33 +1162,50 @@ static void DoQuery( struct query_thread_params *params ) {
 
 		}
 	}
-
 }
 
 static uintptr_t queryThread( PTHREAD thread ) {
 	struct query_thread_params* params = (struct query_thread_params*)GetThreadParam( thread );
-	struct userMessage* msg = NewArray( struct userMessage, 1 );
-	SetSQLThreadProtect( params->sql->state->odbc, TRUE );
-	//lprintf( "ThreadTo Doing Query:%s", GetText( params->statement ) );
-	DoQuery( params );
-	//delete params;
+	// since the odbc is grabbed in each thread, it is safe from other threads already.
+	//SetSQLThreadProtect(params->odbc, TRUE);
+	{
+		struct userMessage* msg = NewArray( struct userMessage, 1 );
 
-	msg->mode = UserMessageModes::Query;
-	// build result is called in uv thread, so all info is just passed....
-	msg->params = params;
-	msg->onwhat = NULL;
-	msg->argc = 0;
-	msg->argv = NULL;
-	msg->done = 0;
-	EnqueLink( &params->sql->state->messages, msg );
+		//lprintf( "ThreadTo Doing Query:%s", GetText( params->statement ) );
+		DoQuery( params );
+
+		//delete params;
+
+		msg->mode = UserMessageModes::Query;
+		// build result is called in uv thread, so all info is just passed....
+		msg->params = params;
+		msg->onwhat = NULL;
+		msg->argc = 0;
+		msg->argv = NULL;
+		msg->done = 0;
+		EnqueLink( &params->sql->state->messages, msg );
 #ifdef DEBUG_EVENTS
-	lprintf( "uv_send queryThread %p", &params->sql->state->async );
+		lprintf( "uv_send queryThread %p", &params->sql->state->async );
 #endif	
-	if( params->sql->state->ivm_hosted )	{
-		params->sql->state->c->ivm_post( params->sql->state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(params->sql->state) );
-	}else
-		uv_async_send( &params->sql->state->async );
+		if( params->sql->state->ivm_hosted )	{
+			params->sql->state->c->ivm_post( params->sql->state->c->ivm_holder, std::make_unique<sqlUserAsyncTask>(params->sql->state) );
+		}else
+			uv_async_send( &params->sql->state->async );
+	}
 	return 0;
+}
+
+static void startQueuedQuery( struct sql_object_state *state ) {
+	struct query_thread_params* params = NULL;
+	EnterCriticalSec( &state->csPromised );
+	if( !state->promisedRunning ) {
+		params = (struct query_thread_params*)DequeLink( &state->plqPromised );
+		if( params )
+			state->promisedRunning = TRUE;
+	}
+	LeaveCriticalSec( &state->csPromised );
+	if( params )
+		ThreadTo( queryThread, (uintptr_t)params );
 }
 
 static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject *sql, LOGICAL promised ) {
@@ -1183,6 +1346,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 		params->isolate = isolate;
 		params->context = context;
 		params->sql = sql;
+		params->odbc = NULL;
 		params->statement = statement;
 		params->pdlRecord = NULL;
 		params->pdlParams = pdlParams;
@@ -1209,7 +1373,8 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 				uv_ref( (uv_handle_t*)&sql->state->async ); // keeps active, but doesn't keep loop open.
 			}
 			sql->state->pending++;
-			ThreadTo( queryThread, (uintptr_t)params );
+			EnqueLink( &sql->state->plqPromised, params );
+			startQueuedQuery( sql->state );
 			args.GetReturnValue().Set( pr->GetPromise() );
 			//lprintf("Should return now?");
 		}
@@ -1222,6 +1387,8 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 				args.GetReturnValue().Set( params->results );
 			} else {
 				// buildQueryResult releases resources that are used...
+				params->sql->dropODBC(params->odbc);
+				params->odbc = NULL;
 				if( params->error ) ReleaseEx( params->error DBG_SRC );
 				else args.GetReturnValue().Set( Array::New( isolate ) );
 				if( params->pdlParams )
@@ -1250,7 +1417,9 @@ void SqlObject::OnOpen( uintptr_t psv, PODBC odbc ){
 	if( this_->openCallback.IsEmpty() ) return;
 	PTHREAD thread = MakeThread();
 	struct userMessage msg;
-	this_->state->odbc = odbc;
+
+	//this_->state->odbc = odbc;
+
 	msg.mode = UserMessageModes::OnOpen;
 	msg.onwhat = NULL;
 	msg.done = 0;
@@ -1318,11 +1487,20 @@ SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Lo
 	state->pending = 0;
 	state->sql = this;
 	state->ivm_hosted = FALSE;
+	state->odbc_pool = NULL;
+	InitializeCriticalSec( &state->csOdbcPool );
+	state->plqPromised = NULL;
+	state->promisedRunning = FALSE;
+	InitializeCriticalSec( &state->csPromised );
 	memset( &state->async, 0, sizeof( state->async ) );
 	state->messages = NULL;
 	state->userFunctions = NULL;
 	state->thread = NULL;
 	state->optionInitialized = FALSE;
+	state->wantAutoTransact = FALSE;
+	state->required = FALSE;
+	state->logging = TRUE;
+	state->transactingOdbc = NULL;
 
 	state->isolate = isolate;
 	this->_this.Reset( isolate, jsThis );
@@ -1341,8 +1519,10 @@ SqlObject::SqlObject( const char *dsn, Isolate *isolate, Local<Object>jsThis, Lo
 		else uv_async_init( c->loop, &this->state->async, sqlUserAsyncMsg );
 		this->openCallback.Reset( isolate, _openCallback );
 	}
-	state->odbc = ConnectToDatabaseLoginCallback( dsn, NULL, NULL, FALSE, SqlObject::OnOpen, (uintptr_t)this DBG_SRC );
-	SetSQLThreadProtect( state->odbc, FALSE );
+	this->state->dsn = StrDup(dsn);
+	PODBC oneODBC = this->useODBC();
+	SetSQLThreadProtect( oneODBC, FALSE );
+	this->dropODBC( oneODBC );
 	//SetSQLAutoClose( odbc, TRUE );
 }
 
@@ -1373,7 +1553,7 @@ SqlObject::~SqlObject() {
 		}else
 			uv_async_send( &state->async );
 	}
-	CloseDatabase( state->odbc );
+	this->closePooledODBCs();
 	//ReleaseEx( state DBG_SRC );
 }
 
@@ -1447,7 +1627,7 @@ void SqlObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( !sqlParent->state->optionInitialized ) {
-		SetOptionDatabaseOption( sqlParent->state->odbc );
+		SetOptionDatabaseOption( sqlParent->useODBC() /*state->odbc*/ );
 		sqlParent->state->optionInitialized = TRUE;
 	}
 
@@ -1460,9 +1640,10 @@ void SqlObject::getOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( o.ToLocalChecked() );
 
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o.ToLocalChecked() );
-	oto->odbc = sqlParent->state->odbc;
+	oto->odbc = sqlParent->useODBC();// state->odbc;
 	//lprintf( "SO Get %p ", sqlParent->odbc );
-	oto->node =  GetOptionIndexExx( sqlParent->state->odbc, NULL, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
+	oto->node =  GetOptionIndexExx( oto->odbc, NULL, optionPath, NULL, NULL, NULL, TRUE, TRUE DBG_SRC );
+	//sqlParent->dropODBC( oto->odbc );
 }
 
 
@@ -1506,11 +1687,13 @@ void SqlObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 	char *optionPath = StrDup( *tmp );
 	SqlObject *sqlParent = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( !sqlParent->state->optionInitialized ) {
-		SetOptionDatabaseOption( sqlParent->state->odbc );
+		SetOptionDatabaseOption( sqlParent->useODBC() );
 		sqlParent->state->optionInitialized = TRUE;
 	}
-	POPTION_TREE_NODE newNode = GetOptionIndexExx( sqlParent->state->odbc, NULL, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
 
+	PODBC odbc = sqlParent->useODBC();// state->odbc;
+	POPTION_TREE_NODE newNode = GetOptionIndexExx( odbc, NULL, optionPath, NULL, NULL, NULL, FALSE, TRUE DBG_SRC );
+	sqlParent->dropODBC(odbc);
 	if( newNode ) {
 		class constructorSet *c = getConstructors( isolate );
 		Local<Function> cons = Local<Function>::New( isolate, c->otoConstructor );
@@ -1518,7 +1701,7 @@ void SqlObject::findOptionNode( const v8::FunctionCallbackInfo<Value>& args ) {
 		args.GetReturnValue().Set( o = cons->NewInstance( isolate->GetCurrentContext(), 0, NULL ).ToLocalChecked() );
 
 		OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( o );
-		oto->odbc = sqlParent->state->odbc;
+		oto->odbc = sqlParent->useODBC();// state->odbc;
 		oto->node = newNode;
 	}
 	Release( optionPath );
@@ -1597,10 +1780,11 @@ static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args, SqlObj
 	LOGICAL dropODBC;
 	if( sqlParent ) {
 		if( !sqlParent->state->optionInitialized ) {
-			SetOptionDatabaseOption( sqlParent->state->odbc );
+			// this PODBC leaks to the option subsystem.
+			SetOptionDatabaseOption( sqlParent->useODBC() );
 			sqlParent->state->optionInitialized = TRUE;
 		}
-		callbackArgs.odbc = sqlParent->state->odbc;
+		callbackArgs.odbc = sqlParent->useODBC();// state->odbc;
 		dropODBC = FALSE;
 	}
 	else {
@@ -1716,17 +1900,18 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 
 	TEXTCHAR readbuf[1024];
 	PODBC use_odbc = NULL;
+	SqlObject* sql = NULL;
 	if( internal ) {
 		// use_odbc = NULL;
 	} else 
 	{
-		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
+		sql = SqlObject::Unwrap<SqlObject>(args.This());
+		use_odbc = sql->useODBC();// state->odbc;
 
 		if( !sql->state->optionInitialized ) {
-			SetOptionDatabaseOption( sql->state->odbc );
+			SetOptionDatabaseOption( use_odbc );
 			sql->state->optionInitialized = TRUE;
 		}
-		use_odbc = sql->state->odbc;
 	}
 	SACK_GetPrivateProfileStringExxx( use_odbc
 		, sect
@@ -1738,7 +1923,8 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 		, TRUE
 		DBG_SRC
 		);
-
+	if( sql )
+		sql->dropODBC( use_odbc );
 	Local<String> returnval = String::NewFromUtf8( isolate, readbuf, v8::NewStringType::kNormal ).ToLocalChecked();
 	args.GetReturnValue().Set( returnval );
 
@@ -1799,11 +1985,12 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 	TEXTCHAR readbuf[1024];
 
 	PODBC use_odbc = NULL;
+	SqlObject* sql = NULL;
 	if( internal ) {
 	} else 
 	{
-		SqlObject *sql = SqlObject::Unwrap<SqlObject>( args.This() );
-		use_odbc = sql->state->odbc;
+		sql = SqlObject::Unwrap<SqlObject>(args.This());
+		use_odbc = sql->useODBC();// state->odbc;
 	}
 	if( ( sect && sect[0] == '/' ) ) {
 		SACK_GetPrivateProfileStringExxx(use_odbc
@@ -1844,6 +2031,8 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 			);
 		}
 	}
+	if( sql )
+		sql->dropODBC(use_odbc);
 	Deallocate( char*, optname );
 	Deallocate( char*, sect );
 	Deallocate( char*, defaultVal );
@@ -1872,13 +2061,14 @@ void SqlObject::makeTable( const v8::FunctionCallbackInfo<Value>& args ) {
 		SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 
 		table = GetFieldsInSQLEx( tableCommand, false DBG_SRC );
+		PODBC odbc = sql->useODBC();
 		if( !table ) 
 			args.GetReturnValue().Set( False( isolate ) );
-		else if( CheckODBCTable( sql->state->odbc, table, CTO_MERGE ) )
+		else if( CheckODBCTable( odbc, table, CTO_MERGE ) )
 			args.GetReturnValue().Set( True(isolate) );
 		else
 			args.GetReturnValue().Set( False( isolate ) );
-
+		sql->dropODBC(odbc);
 	}
 	else
 		args.GetReturnValue().Set( False( isolate ) );
@@ -1912,6 +2102,8 @@ void sqlUserAsyncMsgEx_( Isolate *isolate , Local<Context> context, struct sql_o
 				LineRelease( params->statement );			
 				DeleteDataList( &params->pdlParams );
 				ReleaseSQLResults( &params->pdlRecord );
+				params->sql->dropODBC(params->odbc);
+				params->odbc = NULL;
 			} else {
 				// probably results in a Resolve();
 				buildQueryResult( msg->params ); // this is in charge of releasing any data... 
@@ -1926,6 +2118,10 @@ void sqlUserAsyncMsgEx_( Isolate *isolate , Local<Context> context, struct sql_o
 				//lprintf( "uv_unref on async..." );
 				uv_unref( (uv_handle_t*)&myself->async ); // keeps active, but doesn't keep loop open.
 			}
+			EnterCriticalSec( &myself->csPromised );
+			myself->promisedRunning = FALSE;
+			LeaveCriticalSec( &myself->csPromised );
+			startQueuedQuery( myself );
 
 		} else if (msg->mode == UserMessageModes::OnOpen) {
 			Local<Function> cb = myself->sql->openCallback.Get( isolate );
@@ -2155,7 +2351,9 @@ void SqlObject::userFunction( const v8::FunctionCallbackInfo<Value>& args ) {
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->sql = sql;
-		PSSQL_AddSqliteFunction( sql->state->odbc, *name, callUserFunction, destroyUserData, -1, userData );
+		PODBC odbc = sql->useODBC();
+		PSSQL_AddSqliteFunction( odbc, *name, callUserFunction, destroyUserData, -1, userData );
+		sql->dropODBC(odbc);
 	}
 }
 
@@ -2178,7 +2376,9 @@ void SqlObject::userProcedure( const v8::FunctionCallbackInfo<Value>& args ) {
 		userData->isolate = isolate;
 		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->sql = sql;
-		PSSQL_AddSqliteProcedure( sql->state->odbc, *name, callUserFunction, destroyUserData, -1, userData );
+		PODBC odbc = sql->useODBC();
+		PSSQL_AddSqliteProcedure( odbc, *name, callUserFunction, destroyUserData, -1, userData );
+		sql->dropODBC(odbc);
 	}
 }
 
@@ -2354,19 +2554,20 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 
 void SqlObject::getRequire( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
-	args.GetReturnValue().Set( False( isolate ) );
+	SqlObject* sql = ObjectWrap::Unwrap<SqlObject>(args.This());
+	args.GetReturnValue().Set(sql->state->required ? True(isolate) : False(isolate));
 }
 
 void SqlObject::setRequire( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	SetConnectionRequired( sql->state->odbc, args[0]->TOBOOL( isolate ) );
+	sql->state->required = args[0]->TOBOOL(isolate);
 }
 
 void SqlObject::getLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	args.GetReturnValue().Set( GetConnectionRequired( sql->state->odbc )?True(isolate):False( isolate ) );
+	args.GetReturnValue().Set(sql->state->logging ? True(isolate) : False(isolate));// GetConnectionRequired(sql->state->odbc) ? True(isolate) : False(isolate) );
 }
 
 void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -2374,10 +2575,7 @@ void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( args.Length() ) {
 		bool b( args[0]->TOBOOL( isolate ) );
-		if( b )
-			SetSQLLoggingDisable( sql->state->odbc, FALSE );
-		else
-			SetSQLLoggingDisable( sql->state->odbc, TRUE );
+		sql->state->logging = b;
 	}
 }
 
@@ -2385,7 +2583,9 @@ void SqlObject::setLogging( const v8::FunctionCallbackInfo<Value>& args ) {
 void SqlObject::error( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	const char *error;
-	FetchSQLError( sql->state->odbc, &error );
+	PODBC odbc = sql->useODBC();
+	FetchSQLError( odbc, &error );
+	sql->dropODBC(odbc);
 	args.GetReturnValue().Set( String::NewFromUtf8( args.GetIsolate(), error, NewStringType::kNormal, (int)strlen(error) ).ToLocalChecked() );
 
 }
@@ -2393,12 +2593,14 @@ void SqlObject::error( const v8::FunctionCallbackInfo<Value>& args ) {
 void SqlObject::getProvider( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	SqlObject* sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
-	int provider = GetDatabaseProvider( sql->state->odbc );
+	PODBC odbc = sql->useODBC();
+	int provider = GetDatabaseProvider( odbc );
+	sql->dropODBC(odbc);
 	args.GetReturnValue().Set( Number::New( isolate, provider ) );
 
 }
 
-static void handleCorruption( uintptr_t psv, PODBC odbc ) {
+void handleCorruption( uintptr_t psv, PODBC odbc ) {
 	v8::Isolate* isolate = v8::Isolate::GetCurrent();
 	SqlObject *sql = (SqlObject*)psv;
 	Local<Function> cb = Local<Function>::New( isolate, sql->onCorruption.Get( isolate ) );
@@ -2411,7 +2613,6 @@ void SqlObject::setOnCorruption( const v8::FunctionCallbackInfo<Value>& args ) {
 	SqlObject *sql = ObjectWrap::Unwrap<SqlObject>( args.This() );
 	if( args.Length() > 0 ) {
 		sql->onCorruption.Reset( isolate, Local<Function>::Cast( args[0] ) );
-		SetSQLCorruptionHandler( sql->state->odbc, handleCorruption, (uintptr_t)sql );
 	} else {
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, TranslateText( "Corruption handler requires a callback function." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
@@ -2430,7 +2631,9 @@ void SqlObject::aggregateFunction( const v8::FunctionCallbackInfo<Value>& args )
 		userData->cb.Reset( isolate, Local<Function>::Cast( args[1] ) );
 		userData->cb2.Reset( isolate, Local<Function>::Cast( args[2] ) );
 		userData->sql = sql;
-		PSSQL_AddSqliteAggregate( sql->state->odbc, *name, callAggStep, callAggFinal, destroyUserData, -1, userData );
+		PODBC odbc = sql->useODBC();
+		PSSQL_AddSqliteAggregate( odbc, *name, callAggStep, callAggFinal, destroyUserData, -1, userData );
+		sql->dropODBC(odbc);
 
 		if( !sql->state->thread ) {
 			sql->state->thread = MakeThread();
