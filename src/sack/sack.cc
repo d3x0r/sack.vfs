@@ -79423,7 +79423,6 @@ struct NetworkClient
 	// win32 delayed-close sweep to finish - which reports these, so a reaped
 	// client names the site that abandoned it.  Cleared on recycle (both live
 	// past clear_offset, so ClearClient's memset zeroes them).
-
 	// First close mode requested for this client, so a deferred completion replays
 	// what was actually asked for instead of whatever the completing caller passes.
 	// bBlockNotify is not cosmetic: at network.c ~1553 it gates the close callback,
