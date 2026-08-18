@@ -21972,7 +21972,7 @@ void InitSyslog( int ignore_options )
 			SystemLogTime( SYSLOG_TIME_HIGH );
 		}
 #else
-#  if defined( _DEBUG ) || defined( DEFAULT_OUTPUT_STDERR ) || defined( DEFAULT_OUTPUT_STDOUT )
+#  if ( defined( _DEBUG ) || defined( _DEBUG_INFO ) ) || defined( DEFAULT_OUTPUT_STDERR ) || defined( DEFAULT_OUTPUT_STDOUT )
 		{
 #    if defined( __LINUX__ ) && 0
 			logtype = SYSLOG_SOCKET_SYSLOGD;
@@ -23023,7 +23023,7 @@ void  LogBinaryFL ( const uint8_t* buffer, size_t size FILELINE_PASS )
 #undef LogBinaryEx
  void  LogBinaryEx ( const uint8_t* buffer, size_t size DBG_PASS )
 {
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	LogBinaryFL( buffer,size DBG_RELAY );
 #else
 	LogBinaryFL( buffer,size FILELINE_NULL );
@@ -23164,7 +23164,7 @@ static INDEX CPROC _null_vlprintf ( CTEXTSTR format, va_list args )
 }
 static INDEX CPROC _real_vlprintf ( CTEXTSTR format, va_list args )
 {
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	// this can be used to force logging early to stdout
 	struct next_lprint_info *_next_lprintf = GetNextInfo();
 #endif
@@ -23226,7 +23226,7 @@ static INDEX CPROC _real_vlprintf ( CTEXTSTR format, va_list args )
 		ofs += StrLen( buffer + ofs );
 #endif
 		{
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 			CTEXTSTR pFile;
 #ifndef _LOG_FULL_FILE_NAMES
 			CTEXTSTR p;
@@ -23283,7 +23283,7 @@ RealVLogFunction  _vxlprintf ( uint32_t level DBG_PASS )
 	//EnterCriticalSec( &next_lprintf.cs );
 	_next_lprintf = GetNextInfo();
 	next_lprintf.nLevel = level;
-#if _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	next_lprintf.pFile = pFile;
 	next_lprintf.nLine = nLine;
 #endif
@@ -23319,7 +23319,7 @@ RealLogFunction _xlprintf( uint32_t level DBG_PASS )
 		InitSyslog(1);
 #endif
 	_next_lprintf = GetNextInfo();
-#if _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	next_lprintf.pFile = pFile;
 	next_lprintf.nLine = nLine;
 #endif
@@ -37051,7 +37051,7 @@ PRIORITY_ATEXIT( StopTimers, ATEXIT_PRIORITY_TIMERS )
 //--------------------------------------------------------------------------
 static void InitWakeup( PTHREAD thread, CTEXTSTR event_name )
 {
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	int prior;
 	prior = ClearAllocateLogging( FALSE );
 #endif
@@ -37136,7 +37136,7 @@ static void InitWakeup( PTHREAD thread, CTEXTSTR event_name )
 	//thread->semaphore = -1;
 #endif
 #endif
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	ResetAllocateLogging( prior );
 #endif
 }
@@ -37170,7 +37170,7 @@ static PTHREAD FindWakeup( CTEXTSTR name )
 	check = (PTHREAD)ForAllInSet( THREAD, globalTimerData.threadset, check_thread_name, (uintptr_t)name );
 	if( !check )
 	{
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 		//lprintf( DBG_FILELINEFMT "Failed to find the thread - so let's add it" );
 #endif
 		check = GetFromSet( THREAD, &globalTimerData.threadset );
@@ -37222,7 +37222,7 @@ static PTHREAD FindThreadWakeup( CTEXTSTR name, THREAD_ID thread )
 	check = (PTHREAD)ForAllInSet( THREAD, globalTimerData.threadset, check_thread_name_and_id, (uintptr_t)&params );
 	if( !check )
 	{
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 		//lprintf( DBG_FILELINEFMT "Failed to find the thread - so let's add it" );
 #endif
 		check = GetFromSet( THREAD, &globalTimerData.threadset );
@@ -37267,7 +37267,7 @@ static PTHREAD FindThread( THREAD_ID thread )
 	check = (PTHREAD)ForAllInSet( THREAD, globalTimerData.threadset, check_thread, (uintptr_t)&thread );
 	if( !check )
 	{
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 		//lprintf( DBG_FILELINEFMT "Failed to find the thread - so let's add it" );
 #endif
 		check = GetFromSet( THREAD, &globalTimerData.threadset );
@@ -38377,7 +38377,7 @@ static int CPROC ProcessTimers( uintptr_t psvForce )
 #ifdef ENABLE_CRITICALSEC_LOGGING
 	BIT_FIELD bLock = globalTimerData.flags.bLogCriticalSections;
 #endif
-	uint32_t newtick;
+	uint64_t newtick;
 	if( globalTimerData.flags.bExited )
 		return -1;
 	if( !psvForce && !IsThisThread( globalTimerData.pTimerThread ) )
@@ -38457,7 +38457,7 @@ static int CPROC ProcessTimers( uintptr_t psvForce )
 			SetCriticalLogging( bLock );
 #endif
 #ifdef LOG_LATENCY
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 			_xlprintf( 1, timer->pFile, timer->nLine )( "Tick: %u Last: %u  delta: %u Timerdelta: %u"
 																	, globalTimerData.this_tick, globalTimerData.last_tick, globalTimerData.this_tick-globalTimerData.last_tick, timer->delta );
 #else
@@ -38496,7 +38496,7 @@ static int CPROC ProcessTimers( uintptr_t psvForce )
 					if( globalTimerData.flags.bLogTimerDispatch )
 					{
 						level++;
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 						lprintf( "%d Dispatching timer %" _32fs " freq %" _32fs " %s(%d)", level, timer->ID, timer->frequency
 						       , timer->pFile, timer->nLine );
 #else
@@ -38692,7 +38692,7 @@ uint32_t  AddTimerExx( uint32_t start, uint32_t frequency, TimerCallbackProc cal
 	} while( thisTimer == 0 );
 	timer->ID        = thisTimer;
 	timer->userdata  = user;
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	timer->pFile = pFile;
 	timer->nLine = nLine;
 #endif
@@ -38725,6 +38725,8 @@ uint32_t  AddTimerEx( uint32_t start, uint32_t frequency, void (CPROC*callback)(
 {
 	return AddTimerExx( start, frequency, callback, user DBG_SRC );
 }
+#define AddTimerEx( s,f,c,u ) AddTimerExx( (s),(f),(c),(u) DBG_SRC )
+#define AddTimer( f, c, u ) AddTimerExx( (f), (f), (c), (u) DBG_SRC)
 //--------------------------------------------------------------------------
 void  RemoveTimerEx( uint32_t ID DBG_PASS )
 {
@@ -38927,7 +38929,7 @@ LOGICAL  EnterCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 	int d;
 	THREAD_ID prior = 0;
 #ifdef LOG_DEBUG_CRITICAL_SECTIONS
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	if( global_timer_structure && globalTimerData.flags.bLogCriticalSections )
 		_lprintf( DBG_RELAY )( "Enter critical section %p (owner) %" _64fx, pcs, pcs->dwThreadID );
 #endif
@@ -38954,11 +38956,11 @@ LOGICAL  EnterCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 {
 	THREAD_ID dwCurProc;
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	uint64_t curtick;
 #endif
 	while( 1 ) {
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 		curtick = timeGetTime64();
 #endif
 #ifdef ENABLE_CRITICALSEC_LOGGING
@@ -38966,7 +38968,7 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 			_xlprintf( LOG_NOISE DBG_RELAY )( "Begin leave critical section %p %" _64fx, pcs, pcs->dwThreadWaiting );
 #endif
 		while( LockedExchange( &pcs->dwUpdating, 1 )
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 			//GetTickCount() )
 			&& ( ( curtick + 2000 ) > timeGetTime64() )
 #endif
@@ -38978,7 +38980,7 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 			Relinquish();
 		}
 		dwCurProc = GetThisThreadID();
-#ifdef _DEBUG
+#if defined( _DEBUG ) || defined( _DEBUG_INFO )
 		//GetTickCount() )
 		if( ( curtick + 2000 ) <= timeGetTime64() ) {
 #ifdef DEBUG_CRITICAL_SECTIONS
@@ -39011,7 +39013,7 @@ LOGICAL  LeaveCriticalSecEx( PCRITICALSECTION pcs DBG_PASS )
 	if( pcs->dwThreadID == dwCurProc )
 	{
 #ifdef DEBUG_CRITICAL_SECTIONS
-#  ifdef _DEBUG
+#  if defined( _DEBUG ) || defined( _DEBUG_INFO )
 		pcs->pFile[pcs->nPrior] = pFile;
 		pcs->nLine[pcs->nPrior] = nLine;
 #  else
@@ -53308,7 +53310,8 @@ void CPROC NewScanTimer( uintptr_t unused )
 					 //for( cur = Monitors; cur; cur = cur->next )
    while( 1 )
 	{
-		static uint8_t buf[4096];
+		// this is a thread per monitor fdMon; static buffer here is bad news.
+		uint8_t buf[4096];
 		struct inotify_event *event;
 		int len;
       int used;
@@ -53318,7 +53321,7 @@ void CPROC NewScanTimer( uintptr_t unused )
 			PFILEMON filemon = NULL;
 			for( used = 0; used < len; used += sizeof( struct inotify_event ) + event->len ) {
 				PCHANGEHANDLER Change;
-				event = (struct inotify_event*)buf;
+				event = (struct inotify_event*)(buf + used);
 				//lprintf( "Events: %d %d %08x (%d)%s", len, used, event->mask, event->len, event->name );
 				if( event->len ) {
 					for( Change = monitor->ChangeHandlers; Change; Change = Change->next ) {
@@ -79072,10 +79075,21 @@ enum NetworkConnectionFlags {
 	// loops hard-codes it - and that would swap in SO_LINGER{1,0}, resetting the
 	// connection and discarding a response that is sent but not yet ACKed.
 	// CF_WANTCLOSE cannot serve as this marker: it is set on both paths.
-	, CF_LINGERCLOSE     = 0x00200000
+	// 0x00200000 COLLIDED with CF_WRITEREADY (below) - same bit, same enum.  Any
+	// write-ready event set it, so InternalRemoveClientExx read "graceful already
+	// latched" and skipped the abortive SO_LINGER{1,0}; and the write path's
+	// ClearClientFlags( CF_WRITEREADY ) wiped a genuine graceful latch, which is
+	// exactly the RST-discards-the-response regression this flag exists to prevent.
+	, CF_LINGERCLOSE     = 0x01000000
   // wants to close at the next opportunity.
 	, CF_TOCLOSE         = 0x00000100
-  // this flag is unused at this time
+	// Set by RemoveClientExx (network.c ~1666) on BOTH of its branches, and set
+	// nowhere else - so CF_WANTCLOSE means exactly "RemoveClientEx has run", i.e.
+	// the close was requested through the API rather than observed on the wire.
+	// That distinction matters: the FD_CLOSE handler sets CF_TOCLOSE by hand to
+	// defer a peer-initiated close while the application still owns the socket,
+	// and in that state the application's response is still to come.  So
+	// CF_TOCLOSE alone != "no more writes"; only the pair does.
 	, CF_WANTCLOSE       = 0x00000200
 	, CF_CLOSING         = 0x00000400
 	, CF_DRAINING        = 0x00000800
@@ -79402,6 +79416,30 @@ struct NetworkClient
 	PendingBuffer *volatile lpFirstPending, *volatile lpLastPending;
  // GetTickCount() of last event...
 	uint32_t    LastEvent;
+#if DBG_AVAILABLE
+	// Site that called InternalRemoveClientEx for this close, relayed through to
+	// AddClosed.  AddClosed is what puts a client on ClosedClients, and callers
+	// that do not follow it with TerminateClosedClient leave it there for the
+	// win32 delayed-close sweep to finish - which reports these, so a reaped
+	// client names the site that abandoned it.  Cleared on recycle (both live
+	// past clear_offset, so ClearClient's memset zeroes them).
+	// First close mode requested for this client, so a deferred completion replays
+	// what was actually asked for instead of whatever the completing caller passes.
+	// bBlockNotify is not cosmetic: at network.c ~1553 it gates the close callback,
+	// the CF_CLOSING mark and the serial bump (which is what starts failing
+	// NetworkClientValid for deferred handles), and the pWaiting wake.  Replaying
+	// the wrong value either fires a callback the caller suppressed or loses the one
+	// the application was waiting for, so neither direction is safe to override:
+	// first value wins, and a later disagreeing request is logged rather than
+	// silently dropped.  Deliberately plain logicals, not CF_ bits - the flags word
+	// is a cross-thread RMW target and these are per-lifetime bookkeeping.
+      // has a close mode been recorded yet
+	LOGICAL     closeModeSet;
+  // the recorded bBlockNotify
+	LOGICAL     closeBlockNotify;
+	CTEXTSTR    closedFile;
+	uint32_t    closedLine;
+#endif
 	DeclareLink( struct NetworkClient );
  // server this listen socket came from - because connect callback has to be delayed until after handshake of TLS.
 	PCLIENT pcServer;
@@ -80953,6 +80991,17 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 #ifdef LOG_SOCKET_CREATION
 	_lprintf( DBG_RELAY )( "InternalRemoveClient Removing this client %p (%d)", lpClient, lpClient->Socket );
 #endif
+	if( lpClient && !lpClient->closeModeSet ) {
+		lpClient->closeModeSet = TRUE;
+		lpClient->closeBlockNotify = bBlockNotify;
+	} else if( lpClient ) {
+		// a deferred completion (ClearNetWork -> RemoveClient) passes its own
+		// default; replay what was first requested instead.
+		if( ( !lpClient->closeBlockNotify ) != ( !bBlockNotify ) )
+			_xlprintf( LOG_ERROR DBG_RELAY )( "close mode conflict on %p: first bBlockNotify=%d, now %d - replaying the first"
+			                   , lpClient, (int)lpClient->closeBlockNotify, (int)bBlockNotify );
+		bBlockNotify = lpClient->closeBlockNotify;
+	}
 	if( lpClient && IsValid(lpClient->Socket) )
 	{
 		// an abortive request cannot override a graceful one already latched
@@ -81258,7 +81307,35 @@ void ClearNetWork( PCLIENT lpClient, uintptr_t psv ) {
 	unlockNetWorkList();
 	if( !emptied )
 		return;
-	if( lpClient->dwFlags & CF_TOCLOSE && (!lpClient->lpFirstPending || !lpClient->lpFirstPending->dwAvail) ) {
+	// nWritesPended counts writes parked on the global pdqPendingWrites queue,
+	// which set neither lpFirstPending nor CF_WRITEPENDING - so without it this
+	// test sees "nothing pending" and closes on top of the response it was
+	// deferring for.  Same counter already added to InternalRemoveClientExx
+	// (~1514) and RemoveClientExx (~1660); this completion path was missed.
+	// deliverPendingWrite finishes the close once the queue drains.
+	if( ( lpClient->dwFlags & CF_TOCLOSE ) && lpClient->nWritesPended ) {
+		// PROBE (silent counter): declining the close while a write is queued is the
+		// NORMAL path - deliverPendingWrite completes it.  Pair with
+		// DELIVER-HANDOFF - the same pc printed by both means neither completed
+		// the close and the client is stranded (win32 has no re-notification to
+		// rescue it, so this is the suspected source of the intermittent stall).
+		static volatile uint32_t nDefer;
+  // silent: DELIVER-HANDOFF is the one that speaks
+		LockedIncrement( &nDefer );
+	}
+	if( lpClient->dwFlags & CF_TOCLOSE && !lpClient->nWritesPended
+	 && (!lpClient->lpFirstPending || !lpClient->lpFirstPending->dwAvail) ) {
+	// PROBE: is a response parked on pdqPendingWrites when we close here?
+		{
+			// nWritesPended is checked in InternalRemoveClientExx (~1514) and
+			// RemoveClientExx (~1660) but NOT in this test.
+			static volatile uint32_t nClose, nCloseWithWrites;
+			LockedIncrement( &nClose );
+			if( lpClient->nWritesPended )
+				fprintf( stderr, "CLEARNET-CLOSE-DISCARDS pc=%p flags=%08x nWritesPended=%u n=%u of=%u\n"
+				       , (void*)lpClient, (unsigned)lpClient->dwFlags, (unsigned)lpClient->nWritesPended
+				       , (unsigned)LockedIncrement( &nCloseWithWrites ), (unsigned)nClose );
+		}
 		RemoveClient( lpClient );
 	}
 }
@@ -82283,7 +82360,9 @@ static void HandleEvent( PCLIENT pClient )
 						// work, or both sides believe the other performs the close and
 						// the socket strands in CLOSE_WAIT.
 						LOGICAL deferred = FALSE;
+						uint8_t dbgInUse;
 						lockNetWorkList();
+						dbgInUse = pClient->flags.bInUse;
 						if( ( pClient->dwFlags & CF_ACTIVE ) && pClient->flags.bInUse )
 						{
 							// application holds work on this socket; mark the close so
@@ -82292,6 +82371,20 @@ static void HandleEvent( PCLIENT pClient )
 							deferred = TRUE;
 						}
 						unlockNetWorkList();
+	// PROBE: which FD_CLOSE decisions run with no work held?
+						{
+							// Only the ACTIVE+!deferred case actually closes here; the
+							// inactive ones are no-ops and printing them wedged the server.
+							// ordinal counts every FD_CLOSE decision; at CONC=1 connections are
+							// strictly serial, so ordinal N == request N and can be compared
+							// directly against the client's lost-index list.
+							static volatile uint32_t nDefer, nNowActive, nNowIdle;
+							if( deferred ) LockedIncrement( &nDefer );
+							else if( pClient->dwFlags & CF_ACTIVE )
+  // silent: question answered, kept as a counter
+								LockedIncrement( &nNowActive );
+							else LockedIncrement( &nNowIdle );
+						}
 						if( !deferred && ( pClient->dwFlags & CF_ACTIVE ) )
 						{
 							// might already be cleared and gone..
@@ -87610,6 +87703,17 @@ static LOGICAL deliverPendingWrite( struct PendingWrite *pending, PTHREAD thread
 		// it on release, as the event threads do.
 		finishClose = ( !pc->nWritesPended && !pc->lpFirstPending
 		             && ( pc->dwFlags & CF_TOCLOSE ) && !pc->flags.bInUse );
+	// PROBE: this side declining while ClearNetWork also declines is how a
+		{
+			// deferred close strands (each believes the other completes it).  Pair
+			// these against CLEARNET-DEFER: the same pc in both is a stranded client.
+			static volatile uint32_t nHandoff, nFinish;
+			if( finishClose ) LockedIncrement( &nFinish );
+			else if( !pc->nWritesPended && ( pc->dwFlags & CF_TOCLOSE ) && pc->flags.bInUse )
+				fprintf( stderr, "DELIVER-HANDOFF pc=%p flags=%08x inUse=1 n=%u finished=%u\n"
+				       , (void*)pc, (unsigned)pc->dwFlags
+				       , (unsigned)LockedIncrement( &nHandoff ), (unsigned)nFinish );
+		}
 		if( finishClose )
 			ClearClientFlags( pc, CF_TOCLOSE );
 		NetworkUnlockEx( pc, 0|0x10 DBG_SRC );
@@ -87727,6 +87831,11 @@ LOGICAL doTCPWriteV2( PCLIENT lpClient
 //#ifdef VERBOSE_DEBUG
 		_lprintf(DBG_RELAY)( "TCP Write failed - invalid client." );
 //#endif
+		{	static volatile uint32_t nInactive;
+			fprintf( stderr, "WRITEFAIL-INACTIVE pc=%p flags=%08x len=%d n=%u\n"
+			       , (void*)lpClient, lpClient ? (unsigned)lpClient->dwFlags : 0
+			       , (int)nInLen, (unsigned)LockedIncrement( &nInactive ) );
+		}
   // cannot process a closed channel. data not sent.
 		return FALSE;
 	}
@@ -87747,12 +87856,32 @@ LOGICAL doTCPWriteV2( PCLIENT lpClient
 		if( lpClient->wakeOnUnlock )
 			lprintf( "client is already waiting for wake on unlock? %p  %p", lpClient, lpClient->wakeOnUnlock);
 #endif
-		if( (!(lpClient->dwFlags & CF_ACTIVE )) || (lpClient->dwFlags & CF_TOCLOSE) )
+		// CF_TOCLOSE must NOT fail the send.  Since the deferred-close rework it
+		// means "close once pending writes flush", so a write arriving while it is
+		// set is precisely the response the close is waiting for - refusing it
+		// discards the response and the peer sees a clean FIN with no body.  Same
+		// correction already made in deliverPendingWrite; this was the sibling site.
+		// CF_TOCLOSE ALONE is the peer-FIN deferral: the FD_CLOSE handler sets it by
+		// hand while the app still holds work, so the response is still to come and
+		// must not be refused.  Paired with CF_WANTCLOSE it means RemoveClientExx
+		// actually ran (that is its only setter, on both of its branches), i.e. the
+		// application asked to close - and a write arriving after that is too late.
+		// A client that has gone inactive can never take data.
+		if( !(lpClient->dwFlags & CF_ACTIVE )
+		 || ( ( lpClient->dwFlags & ( CF_TOCLOSE | CF_WANTCLOSE ) )
+		      == ( CF_TOCLOSE | CF_WANTCLOSE ) ) )
 		{
 #ifdef LOG_NETWORK_LOCKING
 			_lprintf(DBG_RELAY)( "Failing send... inactive or closing" );
 			LogBinary( (uint8_t*)pInBuffer, nInLen );
 #endif
+			{	static volatile uint32_t nRefuse;
+				fprintf( stderr, "WRITEFAIL-LOOP pc=%p flags=%08x active=%u toclose=%u len=%d n=%u\n"
+				       , (void*)lpClient, (unsigned)lpClient->dwFlags
+				       , (unsigned)( ( lpClient->dwFlags & CF_ACTIVE ) != 0 )
+				       , (unsigned)( ( lpClient->dwFlags & CF_TOCLOSE ) != 0 )
+				       , (int)nInLen, (unsigned)LockedIncrement( &nRefuse ) );
+			}
 			return FALSE;
 		}
 		if( pend_on_fail ) {

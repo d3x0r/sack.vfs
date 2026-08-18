@@ -2818,7 +2818,14 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					lprintf( "Sending header buffer: %p  %d", obj->pc, GetTextSize(buffer) );
 					LogBinary( GetText( buffer ), GetTextSize( buffer ) );
 #endif
-					SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
+					// doTCPWriteV2's result used to be discarded here, and that is what made a
+					// lost response invisible: the write is refused, end() returns normally, and
+					// the peer gets a clean FIN with no body.  -1 means the write was QUEUED
+					// (normal, not a failure); only FALSE means the data was dropped.
+					// LOG_ERROR so it survives release log-level filtering.
+					if( !SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) ) )
+						xlprintf( LOG_ERROR )( "Response not accepted for send; %d bytes dropped for client %p"
+						                     , (int)GetTextSize( buffer ), (void*)obj->pc );
 					if( content && contentLen ) {
 #ifdef DEBUG_AGGREGATE_WRITES
 						lprintf( "And send data: %d", contentLen );
@@ -2826,8 +2833,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						lprintf( "And there's some content to send: %p %d", obj->pc, contentLen );
 #endif
 						// allow network layer to keep this content buffer
-						SendTCPLong( obj->pc, content, contentLen );
-					} 
+						if( !SendTCPLong( obj->pc, content, contentLen ) )
+							xlprintf( LOG_ERROR )( "Response body not accepted for send; %d bytes dropped for client %p"
+							                     , (int)contentLen, (void*)obj->pc );
+					}
 					// no content is allowed.
 					//else
 					//	lprintf( "Content disappeared?" );
@@ -2838,6 +2847,16 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					WebSocketPipeSend( obj->wss->wsPipe, GetText( buffer ), GetTextSize( buffer ) );
 					if( content && contentLen )
 						WebSocketPipeSend( obj->wss->wsPipe, content, contentLen );
+				} else {
+					// PROBE: neither branch taken - the response is discarded here with
+					// no error to JS and nothing in the log.  This is the suspected
+					// silent lost-response site.
+					static volatile uint32_t nDropped;
+					fprintf( stderr, "HTTP-END-DROPPED pc=%p active=%d hdr=%d content=%d n=%u\n"
+					       , (void*)obj->pc
+					       , obj->pc ? (int)sack_network_is_active( obj->pc ) : -1
+					       , (int)GetTextSize( buffer ), (int)contentLen
+					       , (unsigned)LockedIncrement( &nDropped ) );
 				}
 #ifdef DEBUG_AGGREGATE_WRITES
 				lprintf( "Done with end function %p", obj->pc );

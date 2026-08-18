@@ -296,6 +296,13 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/deadstart/deadstart_lib.c
 )
 
+set( EXTRA_INTERNAL_INCLUDES 
+	${SACK_BASE}/src/netlib/netstruc.h
+	${SACK_BASE}/src/netlib/network_linux.c
+	${SACK_BASE}/src/netlib/network_mac.c
+	${SACK_BASE}/src/netlib/network_win32.c
+)
+
 # android has to force this off....
 # Message service support - SYSV Message Queue IPC.  
 # Unused; network websocket connectivity suffices.
@@ -411,8 +418,41 @@ endif( WIN32 )
 
 
 if( EXISTS ${PPCTOOL} )
-  set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc ${EXTRA_SOURCES} )
-  set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.h ${EXTRA_HEADERS} )
+  # Consume ppc's own dependency output.  ppc records every file it actually read,
+  # which is authoritative in a way a hand-maintained list cannot be - it named 78
+  # files the explicit lists missed, including contrib sources and a data file
+  # (SQLlib/optlib/makeopts.mysql).  Entries without a full path are ones ppc did
+  # not find (system headers); IS_ABSOLUTE+EXISTS drops those, or they would become
+  # phantom prerequisites.  CMAKE_CONFIGURE_DEPENDS re-runs configure when the dep
+  # set changes, so this is self-maintaining after the first build; on a clean tree
+  # the explicit lists still cover build #1.
+  set( AMALG_AUTODEPS "" )
+  foreach( _depfile ${CMAKE_BINARY_DIR}/tmpdeps.dep ${CMAKE_BINARY_DIR}/tmpdepsh.dep )
+    set_property( DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_depfile} )
+    if( EXISTS ${_depfile} )
+      # file( STRINGS ) hands back the file as a list of lines, so no newline
+      # escaping is needed here at all.
+      file( STRINGS ${_depfile} _deplines )
+      set( _depstext "" )
+      foreach( _line ${_deplines} )
+        separate_arguments( _line )
+        list( APPEND _depstext ${_line} )
+      endforeach()
+      foreach( _d ${_depstext} )
+        if( IS_ABSOLUTE "${_d}" AND EXISTS "${_d}" )
+          list( APPEND AMALG_AUTODEPS "${_d}" )
+        endif()
+      endforeach()
+    endif()
+  endforeach()
+  if( AMALG_AUTODEPS )
+    list( REMOVE_DUPLICATES AMALG_AUTODEPS )
+  endif()
+  list( LENGTH AMALG_AUTODEPS _n_autodeps )
+  message( STATUS "amalgam auto-dependencies from ppc: ${_n_autodeps}" )
+
+  set( AMALG_COMMAND ${PPCTOOL} -c -K -once -ssio -MF${CMAKE_BINARY_DIR}/tmpdeps.dep -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc ${EXTRA_SOURCES} )
+  set( AMALG_COMMAND2 ${PPCTOOL} -c -K -once -ssio -MF${CMAKE_BINARY_DIR}/tmpdepsh.dep -sd ${INCLUDES} -p -o${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.h ${EXTRA_HEADERS} )
 
   add_custom_command( OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc
 		#COMMAND cmake -E echo ${AMALG_COMMAND}
@@ -420,7 +460,7 @@ if( EXISTS ${PPCTOOL} )
 		COMMAND ${AMALG_COMMAND}
 		#COMMAND cmake -E echo ${AMALG_COMMAND2}
 		COMMAND ${AMALG_COMMAND2}
-		DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS}
+		DEPENDS ${EXTRA_SOURCES} ${EXTRA_HEADERS} ${EXTRA_INTERNAL_INCLUDES} ${AMALG_AUTODEPS}
 		WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   )
   add_custom_target( doit DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/sack.cc 
