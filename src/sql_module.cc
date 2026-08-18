@@ -1759,6 +1759,9 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 
 	argv[0] = o;
 	argv[1] = String::NewFromUtf8( args->isolate, name, v8::NewStringType::kNormal ).ToLocalChecked();
+	(void)o->Set( args->isolate->GetCurrentContext()
+		, String::NewFromUtf8Literal( args->isolate, "name" )
+		, argv[1] );
 
 	MaybeLocal<Value> r = args->cb->Call(args->isolate->GetCurrentContext(), Null(args->isolate), 2, argv );
 	if( r.IsEmpty() )
@@ -1766,17 +1769,45 @@ int CPROC invokeCallback( uintptr_t psv, CTEXTSTR name, POPTION_TREE_NODE ID, in
 	return 1;
 }
 
+static POPTION_TREE_NODE getOptionNodeFromString( PODBC odbc, POPTION_TREE_NODE parent, CTEXTSTR optionPath ) {
+	if( !optionPath || !optionPath[0] )
+		return parent;
+
+	if( strchr( optionPath, '/' ) )
+		return GetOptionIndexExx( odbc, NULL, "", optionPath, NULL, NULL, FALSE, FALSE DBG_SRC );
+
+	if( parent )
+		return GetOptionIndexExx( odbc, parent, NULL, NULL, NULL, optionPath, FALSE, FALSE DBG_SRC );
+
+	return GetOptionIndexExx( odbc, NULL, "node", "DEFAULT", NULL, optionPath, FALSE, FALSE DBG_SRC );
+}
 
 static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args, SqlObject *sqlParent ) {
 	struct enumArgs callbackArgs;
 	callbackArgs.isolate = args.GetIsolate();
 
+	Isolate* isolate = args.GetIsolate();
 	int argc = args.Length();
 	if( argc < 1 ) {
+		isolate->ThrowException( Exception::TypeError(
+			String::NewFromUtf8Literal( isolate, "eo expects (callback) or (path, callback)" ) ) );
 		return;
 	}
 	
-	Isolate* isolate = args.GetIsolate();
+	int callbackIndex = 0;
+	char *optionPath = NULL;
+	if( !args[0]->IsFunction() ) {
+		if( ( argc < 2 ) || !args[1]->IsFunction() ) {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8Literal( isolate, "eo expects (callback) or (path, callback)" ) ) );
+			return;
+		}
+
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
+		optionPath = StrDup( *tmp );
+		callbackIndex = 1;
+	}
+
 	LOGICAL dropODBC;
 	if( sqlParent ) {
 		if( !sqlParent->state->optionInitialized ) {
@@ -1791,15 +1822,22 @@ static void enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args, SqlObj
 		callbackArgs.odbc = GetOptionODBC( GetDefaultOptionDatabaseDSN() );
 		dropODBC = TRUE;
 	}
-	Local<Function> arg0 = Local<Function>::Cast( args[0] );
+	POPTION_TREE_NODE parentNode = NULL;
+	if( optionPath )
+		parentNode = getOptionNodeFromString( callbackArgs.odbc, NULL, optionPath );
+
+	Local<Function> arg0 = Local<Function>::Cast( args[callbackIndex] );
 	Local<Function> cb( arg0 );
 
 	callbackArgs.cb = Local<Function>::New( isolate, cb );
 	callbackArgs.isolate = isolate;
 
-	EnumOptionsEx( callbackArgs.odbc, NULL, invokeCallback, (uintptr_t)&callbackArgs );
+	if( !optionPath || parentNode )
+		EnumOptionsEx( callbackArgs.odbc, parentNode, invokeCallback, (uintptr_t)&callbackArgs );
 	if( dropODBC )
 		DropOptionODBC( callbackArgs.odbc );
+	if( optionPath )
+		Release( optionPath );
 }
 
 void SqlObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1816,19 +1854,40 @@ void OptionTreeObject::enumOptionNodes( const v8::FunctionCallbackInfo<Value>& a
 
 	int argc = args.Length();
 	if( argc < 1 ) {
+		args.GetIsolate()->ThrowException( Exception::TypeError(
+			String::NewFromUtf8Literal( args.GetIsolate(), "eo expects (callback) or (path, callback)" ) ) );
 		return;
 	}
 
 	Isolate* isolate = args.GetIsolate();
 	OptionTreeObject *oto = ObjectWrap::Unwrap<OptionTreeObject>( args.This() );
-	Local<Function> arg0 = Local<Function>::Cast( args[0] );
+	int callbackIndex = 0;
+	char *optionPath = NULL;
+	POPTION_TREE_NODE parentNode = oto->node;
+	if( !args[0]->IsFunction() ) {
+		if( ( argc < 2 ) || !args[1]->IsFunction() ) {
+			isolate->ThrowException( Exception::TypeError(
+				String::NewFromUtf8Literal( isolate, "eo expects (callback) or (path, callback)" ) ) );
+			return;
+		}
+
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
+		optionPath = StrDup( *tmp );
+		parentNode = getOptionNodeFromString( oto->odbc, oto->node, optionPath );
+		callbackIndex = 1;
+	}
+
+	Local<Function> arg0 = Local<Function>::Cast( args[callbackIndex] );
 	Local<Function> cb( arg0 );
 
 	callbackArgs.odbc = oto->odbc;
 	callbackArgs.cb = Local<Function>::New( isolate, cb );
 	callbackArgs.isolate = isolate;
 
-	EnumOptionsEx( oto->odbc, oto->node, invokeCallback, (uintptr_t)&callbackArgs );
+	if( !optionPath || parentNode )
+		EnumOptionsEx( oto->odbc, parentNode, invokeCallback, (uintptr_t)&callbackArgs );
+	if( optionPath )
+		Release( optionPath );
 }
 
 void OptionTreeObject::readOptionNode( v8::Local<v8::Name> field,
@@ -1856,8 +1915,6 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 
 	int argc = args.Length();
 	char *sect;
-	char *optname = NULL;
-	char *filename = NULL;
 
 	if (argc > 0) {
 		String::Utf8Value tmp(USE_ISOLATE(isolate) args[0]);
@@ -1866,16 +1923,6 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	else {
 		return;
 	}
-
-	if (sect[0] != '/' ) {
-		optname = sect;
-		sect = NULL;
-	}
-	else if (sect[0] == '/' ) {
-		filename = sect;
-		sect = NULL;
-	}
-	//lprintf("section has a name? %p %p %p", sect, optname, filename);
 
 	SqlObject* sql = NULL;
 	PODBC use_odbc;
@@ -1893,12 +1940,13 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	}
 	size_t len = 0;
 	char* result = NULL;
+	//lprintf("section has a name? %p %p %p", sect, optname, filename);
 	SACK_ReadPrivateProfileStringOdbc(use_odbc
-		, sect
-		, optname
+		, NULL
+		, (sect[0] != '/')?sect:NULL
 		, &result
 		, &len
-		, filename
+		, (sect[0] == '/')?sect:NULL
 	);
 	if (internal)
 		DropOptionODBC(use_odbc);
@@ -1907,8 +1955,7 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 	Local<String> returnval = String::NewFromUtf8(isolate, result, v8::NewStringType::kNormal, len).ToLocalChecked();
 	args.GetReturnValue().Set(returnval);
 
-	Deallocate(char*, filename);
-	Deallocate(char*, optname);
+	Deallocate(char*, sect);
 }
 
 void SqlObject::option( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1952,8 +1999,6 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 		return;
 	}
 
-	TEXTCHAR readbuf[1024];
-
 	PODBC use_odbc = NULL;
 	SqlObject* sql = NULL;
 	if( internal ) {
@@ -1961,47 +2006,17 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 	} else 
 	{
 		sql = SqlObject::Unwrap<SqlObject>(args.This());
+		if (!sql->state->optionInitialized) {
+			SetOptionDatabaseOption(sql->useODBC());
+			sql->state->optionInitialized = TRUE;
+		}
 		use_odbc = sql->useODBC();// state->odbc;
 	}
-	if( ( sect && sect[0] == '/' ) ) {
-		SACK_GetPrivateProfileStringExxx(use_odbc
-			, NULL
-			, NULL
-			, defaultVal
-			, readbuf
-			, 1024
-			, sect
-			, TRUE
-			DBG_SRC
-		);
-
-		if (strcmp(readbuf, defaultVal)) {
-			SACK_WritePrivateOptionStringEx(use_odbc
-				, NULL
-				, NULL
-				, defaultVal
-				, sect, FALSE);
-		}
-	}
-	else {
-		SACK_GetPrivateProfileStringExxx(use_odbc
-			, sect
-			, NULL
-			, defaultVal
-			, readbuf
-			, 1024
-			, NULL
-			, TRUE
-			DBG_SRC
-		);
-		if (strcmp(readbuf, defaultVal)) {
-			SACK_WriteOptionString(use_odbc
-				, sect
-				, NULL
-				, defaultVal
-			);
-		}
-	}
+	SACK_WritePrivateOptionStringEx(use_odbc
+		, NULL
+		, (sect[0] != '/') ? sect : NULL
+		, defaultVal
+		, (sect[0] == '/') ? sect : NULL, FALSE);
 	if (internal)
 		DropOptionODBC(use_odbc);
 	else if( sql )
