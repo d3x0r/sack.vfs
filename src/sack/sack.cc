@@ -127489,7 +127489,7 @@ static POPTION_TREE_NODE GetOptionIndexExxx( PODBC odbc, POPTION_TREE_NODE paren
 			|| ( StrCaseCmpEx( pBranch, _program, _program_length ) != 0 ) )
 		{
 			program = file;
-			file = _program;
+			file = (_program&&_program[0])?_program:NULL;
 		}
 		else
 		{
@@ -127513,7 +127513,7 @@ static POPTION_TREE_NODE GetOptionIndexExxx( PODBC odbc, POPTION_TREE_NODE paren
 		system = _system;
 	}
 	//lprintf( "GetOptionIndex for %s %s %s", program?program:"NO PROG", file, pBranch );
-	return New4GetOptionIndexExxx( odbc, tree, parent, system, program, file, pBranch, pValue, bCreate, bBypassParsing, bIKnowItDoesntExist DBG_RELAY );
+	return New4GetOptionIndexExxx( odbc, tree, parent, system, (program&&program[0])?program:NULL, file, pBranch, pValue, bCreate, bBypassParsing, bIKnowItDoesntExist DBG_RELAY );
 }
 POPTION_TREE_NODE GetOptionIndexExx( PODBC odbc, POPTION_TREE_NODE parent, CTEXTSTR program, const TEXTCHAR *file, const TEXTCHAR *pBranch, const TEXTCHAR *pValue, int bCreate, int bBypassParsing DBG_PASS )
 {
@@ -128018,6 +128018,7 @@ SQLGETOPTION_PROC( int, SACK_ReadPrivateProfileStringOdbc )( PODBC odbc, CTEXTST
 	POPTION_TREE_NODE optval;
 	LOGICAL drop_odbc = FALSE;
 	int success = FALSE;
+	int givenFile = !!pINIFile;
 	EnterCriticalSec( &og.cs_option );
 	if( !odbc )
 	{
@@ -128032,7 +128033,7 @@ SQLGETOPTION_PROC( int, SACK_ReadPrivateProfileStringOdbc )( PODBC odbc, CTEXTST
 		pINIFile = ResolveININame( odbc, pSection, buf, pINIFile );
 	}
 	// bCreate FALSE - a read must not add the option to the tree.
-	optval = GetOptionIndexExx( odbc, OPTION_ROOT_VALUE, NULL, pINIFile, pSection, pOptname, FALSE, FALSE DBG_SRC );
+	optval = GetOptionIndexExxx( odbc, OPTION_ROOT_VALUE, ((givenFile && !pSection)||(pSection&&pSection[0]=='/'))?"":NULL, pINIFile, pSection, pOptname, FALSE, FALSE, FALSE DBG_SRC );
 	if( optval )
 	{
 		TEXTCHAR *value = NULL;

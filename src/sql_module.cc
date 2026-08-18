@@ -1856,82 +1856,59 @@ static void option_( const v8::FunctionCallbackInfo<Value>& args, int internal )
 
 	int argc = args.Length();
 	char *sect;
-	char *optname;
-	char *defaultVal;
-	char *filename;
+	char *optname = NULL;
+	char *filename = NULL;
 
-	if( argc > 0 ) {
-		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
-		defaultVal = StrDup( *tmp );
+	if (argc > 0) {
+		String::Utf8Value tmp(USE_ISOLATE(isolate) args[0]);
+		sect = StrDup(*tmp);
 	}
-	else
-		defaultVal = StrDup( "" );
+	else {
+		return;
+	}
 
-	if( argc > 1 ) {
-		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[1] );
-		sect = defaultVal;
-		defaultVal = StrDup( *tmp );
-	}
-	else
+	if (sect[0] != '/' ) {
+		optname = sect;
 		sect = NULL;
+	}
+	else if (sect[0] == '/' ) {
+		filename = sect;
+		sect = NULL;
+	}
+	//lprintf("section has a name? %p %p %p", sect, optname, filename);
 
-	if( argc > 2 ) {
-		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[2] );
-		optname = defaultVal;
-		defaultVal = StrDup( *tmp );
-	}
-	else {
-		if ((sect && sect[0] == '/')) {
-			optname = NULL;
-		}
-		else {
-			optname = sect;
-			sect = NULL;
-		}
-	}
-
-	if( argc > 3 ) {
-		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[3] );
-		filename = StrDup(*tmp);
-	}
-	else {
-		filename = NULL;
-	}
-
-	TEXTCHAR readbuf[1024];
-	PODBC use_odbc = NULL;
 	SqlObject* sql = NULL;
-	if( internal ) {
-		// use_odbc = NULL;
-	} else 
+	PODBC use_odbc;
+	if (internal) {
+		use_odbc = GetOptionODBC(GetDefaultOptionDatabaseDSN());
+	}
+	else
 	{
 		sql = SqlObject::Unwrap<SqlObject>(args.This());
-		use_odbc = sql->useODBC();// state->odbc;
-
-		if( !sql->state->optionInitialized ) {
-			SetOptionDatabaseOption( use_odbc );
+		use_odbc = sql->useODBC();
+		if (!sql->state->optionInitialized) {
+			SetOptionDatabaseOption(use_odbc);  // creates/initializes options
 			sql->state->optionInitialized = TRUE;
 		}
 	}
-	SACK_GetPrivateProfileStringExxx( use_odbc
+	size_t len = 0;
+	char* result = NULL;
+	SACK_ReadPrivateProfileStringOdbc(use_odbc
 		, sect
 		, optname
-		, defaultVal
-		, readbuf
-		, 1024
+		, &result
+		, &len
 		, filename
-		, TRUE
-		DBG_SRC
-		);
-	if( sql )
-		sql->dropODBC( use_odbc );
-	Local<String> returnval = String::NewFromUtf8( isolate, readbuf, v8::NewStringType::kNormal ).ToLocalChecked();
-	args.GetReturnValue().Set( returnval );
+	);
+	if (internal)
+		DropOptionODBC(use_odbc);
+	else
+		sql->dropODBC(use_odbc);
+	Local<String> returnval = String::NewFromUtf8(isolate, result, v8::NewStringType::kNormal, len).ToLocalChecked();
+	args.GetReturnValue().Set(returnval);
 
-	Deallocate( char*, filename );
-	Deallocate( char*, optname );
-	Deallocate( char*, sect );
-	Deallocate( char*, defaultVal );
+	Deallocate(char*, filename);
+	Deallocate(char*, optname);
 }
 
 void SqlObject::option( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1956,37 +1933,31 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 
 	int argc = args.Length();
 	char *sect;
-	char *optname;
 	char *defaultVal;
 
 	if( argc > 0 ) {
 		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[0] );
-		defaultVal = StrDup( *tmp );
-	}
-	else
-		defaultVal = StrDup( "" );
-
-	if( argc > 1 ) {
-		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[1] );
-		sect = defaultVal;
-		defaultVal = StrDup( *tmp );
+		sect = StrDup( *tmp );
 	}
 	else
 		sect = NULL;
 
-	if( argc > 2 ) {
-		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[2] );
-		optname = defaultVal;
+	if( argc > 1 ) {
+		String::Utf8Value tmp( USE_ISOLATE( isolate ) args[1] );
 		defaultVal = StrDup( *tmp );
 	}
-	else
-		optname = NULL;
+	else {
+		if (sect) Release(sect);
+		sect = NULL;
+		return;
+	}
 
 	TEXTCHAR readbuf[1024];
 
 	PODBC use_odbc = NULL;
 	SqlObject* sql = NULL;
 	if( internal ) {
+		use_odbc = GetOptionODBC(GetDefaultOptionDatabaseDSN());
 	} else 
 	{
 		sql = SqlObject::Unwrap<SqlObject>(args.This());
@@ -1995,7 +1966,7 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 	if( ( sect && sect[0] == '/' ) ) {
 		SACK_GetPrivateProfileStringExxx(use_odbc
 			, NULL
-			, optname
+			, NULL
 			, defaultVal
 			, readbuf
 			, 1024
@@ -2007,7 +1978,7 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 		if (strcmp(readbuf, defaultVal)) {
 			SACK_WritePrivateOptionStringEx(use_odbc
 				, NULL
-				, optname
+				, NULL
 				, defaultVal
 				, sect, FALSE);
 		}
@@ -2015,7 +1986,7 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 	else {
 		SACK_GetPrivateProfileStringExxx(use_odbc
 			, sect
-			, optname
+			, NULL
 			, defaultVal
 			, readbuf
 			, 1024
@@ -2026,14 +1997,15 @@ static void setOption( const v8::FunctionCallbackInfo<Value>& args, int internal
 		if (strcmp(readbuf, defaultVal)) {
 			SACK_WriteOptionString(use_odbc
 				, sect
-				, optname
+				, NULL
 				, defaultVal
 			);
 		}
 	}
-	if( sql )
+	if (internal)
+		DropOptionODBC(use_odbc);
+	else if( sql )
 		sql->dropODBC(use_odbc);
-	Deallocate( char*, optname );
 	Deallocate( char*, sect );
 	Deallocate( char*, defaultVal );
 }
