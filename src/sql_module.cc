@@ -19,7 +19,7 @@ static Local<Function> emptyFunction;
 static void handleCorruption(uintptr_t psv, PODBC odbc);
 
 #define SQL_ODBC_POOL_IDLE_TIMEOUT 30000
-#define SQL_ODBC_POOL_DEFAULT_MAX_IDLE 1
+#define SQL_ODBC_POOL_DEFAULT_MAX_IDLE 4
 
 static LOGICAL sqlTraceEnabled() {
 	static int checked = 0;
@@ -200,11 +200,14 @@ public:
 			this->closePooledODBC( pooled );
 		}
 	}
-	void dropODBC(PODBC odbc) {
+	void dropODBC(PODBC odbc DBG_PASS) {
+#define dropODBC(odbc) dropODBC(odbc DBG_SRC)
+		//_lprintf( DBG_RELAY )("Dropped odbc? %p", odbc);
 		if (!odbc) return;
 		// commit or rollback has to remove this from transacting before it drops.
 		if (odbc == this->state->transactingOdbc) return; 
 		if (odbc == this->state->openingOdbc) return;
+		//_lprintf(DBG_RELAY) ("Dropping odbc %p", odbc);
 		uint64_t now = timeGetTime64();
 		this->pruneIdleODBCs( now );
 		if( this->state->pooledOdbc >= sqlMaxIdleODBC() ) {
@@ -234,8 +237,14 @@ public:
 			       , this, odbc, this->state->pooledOdbc, this->state->activeOdbc
 			       , this->state->pending, this->state->dsn );
 		LeaveCriticalSec( &this->state->csOdbcPool );
+		//lprintf("pooled connection");
+		this->outstanding--;
+		this->pooled++;
 	}
-	PODBC useODBC() {
+	int outstanding = 0;
+	int pooled = 0;
+	PODBC useODBC( DBG_VOIDPASS ) {
+#define useODBC() useODBC(DBG_VOIDSRC)
 		if (this->state->transactingOdbc) return this->state->transactingOdbc;
 		if (this->state->openingOdbc) return this->state->openingOdbc;
 		this->pruneIdleODBCs( timeGetTime64() );
@@ -248,8 +257,10 @@ public:
 		LeaveCriticalSec( &this->state->csOdbcPool );
 		if (pooled) {
 			odbc = pooled->odbc;
+			this->pooled--;
 			Release( pooled );
 			EnterCriticalSec( &this->state->csOdbcPool );
+			//_xlprintf(50 DBG_RELAY )("got a pooled connection %d outstanding %d pooled", this->outstanding, this->pooled);
 			this->state->pooledOdbc--;
 			this->state->activeOdbc++;
 			this->state->reusedOdbc++;
@@ -263,6 +274,7 @@ public:
 			LOGICAL callOpenCallback = ( !this->openCallback.IsEmpty() && !this->state->openCallbackInvoked );
 			if( callOpenCallback )
 				this->state->openCallbackInvoked = TRUE;
+			//_xlprintf( 50 DBG_RELAY )("Didn't get a pooled connection %d outstanding %d pooled", this->outstanding, this->pooled );
 			odbc = ConnectToDatabaseLoginCallback(this->state->dsn, NULL, NULL, FALSE
 				, callOpenCallback ? SqlObject::OnOpen : NULL
 				, callOpenCallback ? (uintptr_t)this : 0 DBG_SRC);
@@ -282,7 +294,7 @@ public:
 			SetSQLCorruptionHandler(odbc, handleCorruption, (uintptr_t)this);
 		else
 			SetSQLCorruptionHandler(odbc, NULL, (uintptr_t)0);
-
+		this->outstanding++;
 		return odbc;
 	}
 	void closePooledODBCs() {
@@ -1480,6 +1492,7 @@ static void queryBuilder( const v8::FunctionCallbackInfo<Value>& args, SqlObject
 			DoQuery( params ); // might throw instead of having a record.
 			if( !params->error ) {
 				buildQueryResult( params );
+				//lprintf("Was there supposed to be a drop of the conection or something? %s", params->odbc);
 				args.GetReturnValue().Set( params->results );
 			} else {
 				// buildQueryResult releases resources that are used...
