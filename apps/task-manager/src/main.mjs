@@ -16,7 +16,6 @@ import {sack} from "sack.vfs"
 const disk = sack.Volume();
 export const pwdBare = process.cwd();
 let firstLoad = true;
-let config = await reloadConfig();
 
 import {openServer} from "../../http-ws/server.mjs"
 import {setupRest} from "./main.rest.mjs"
@@ -29,26 +28,35 @@ taskConfig.local = local;
 local.addTask = addTask;
 
 const JSOX = sack.JSOX;
+import {config} from "./config.mjs"
 
-async function reloadConfig() {
-	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
-	const config_tasks = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_TASK_CONFIG||"config.tasks.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
-	const config = config_run
-			|| config_tasks
-	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_CONFIG||"config.jsox") ).catch( err=>({default:null}) )).default 
-	      || { extraModules:[]
-	         , hostname:""
-	         , useUpstream: false
-	         , upstreamServer: ""
-	         , port:0
-	         , tasks:[] 
-	         };
-
-	if( !firstLoad )
-		config.tasks.forEach( loadTask );
-	firstLoad = false;
-	return config;
+if( config.extraModules ) {	
+	await new Promise( (res,rej)=>{
+		loadModules( 0 );
+	
+		function loadModules( n ) {
+			if( n >= config.extraModules.length ) {
+				return res();
+			}
+			return import( "file://"+pwdBare+"/"+config.extraModules[n].name ).then( (module)=>{
+				return module[config.extraModules[n].function](config.extraModules[n].options).then( ()=>{
+					return loadModules( n+1 );
+				} ).catch( (err)=>{
+					console.log( "Error running:", config.extraModules[n].name, config.extraModules[n].function, err );
+					return loadModules( n+1 );
+				} )
+			} ).catch( (err)=>{
+					console.log( "Error loading:", config.extraModules[n].name, err );
+					return loadModules( n+1 );
+				} );
+		}
+	} );
 }
+
+
+config.tasks.forEach( loadTask );
+
+
 
 const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
 	, npmPath:process.env.NPM_PATH || (parentRoot+"/..")
@@ -259,10 +267,7 @@ export function beginScheduler() {
 	//console.log( "Loading tasks?", config.tasks, local.tasks );
 	config.tasks.forEach( loadTask );
 
-	if( config.extraModules ) {
-		loadModules( 0 );
-	}
-	else startTasks();
+	startTasks();
 
 }
 
@@ -282,22 +287,6 @@ function loadTask( task ) {
 		oldTask.update( task );
 		return oldTask;
 	}
-}
-
-function loadModules( n ) {
-	if( n >= config.extraModules.length )
-		return startTasks();
-	import( config.extraModules[n].name ).then( (module)=>{
-		module[config.extraModules[n].function](config.extraModules[n].options).then( ()=>{
-			loadModules( n+1 );
-		} ).catch( (err)=>{
-			console.log( "Error loading:", config.extraModules[n].name, config.extraModules[n].function );
-			loadModules( n+1 );
-		} )
-	} ).catch( (err)=>{
-			console.log( "Error loading:", config.extraModules[n].name, config.extraModules[n].function );
-			loadModules( n+1 );
-		} );
 }
 
 function onStopAll( n ) {
