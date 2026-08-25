@@ -41,7 +41,6 @@ export class Events {
 	}
 	static off( evt, d ) {
 		if( evt instanceof EventHandle ) {
-			const type = getType( this );
 			const l = evt.list;
 			for( let i = 0; i < l.length; i++ ) { if( l[i] === evt ) { l.splice(i,1); return; } }
 			// throw handle already removed?
@@ -92,7 +91,10 @@ function on( events, usePriority, log, evt, d, extra ) {
 			else if( index === 0 ) eventList.unshift( callback ); // first in list
 			else eventList.push( callback ); // lowest priority.
 		}
-		else events[evt] = callback.list = [callback];
+		else {
+			events[evt] = callback.list = [callback];
+			callback.priority = priority;
+		}
 		return callback;
 	}else if( "undefined" !== typeof d ) {
 		if( log ) console.log( "Emiting event handler for:", evt );
