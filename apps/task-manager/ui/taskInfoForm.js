@@ -4,6 +4,7 @@ import {TextInput} from "/node_modules/@d3x0r/popups2/controls/text-input.js"
 import {Button} from "/node_modules/@d3x0r/popups2/controls/button.js"
 import {DataGrid} from "/node_modules/@d3x0r/popups2/controls/data-grid.js"
 import {Checkbox} from "/node_modules/@d3x0r/popups2/controls/checkbox.js"
+import {ChoiceInput} from "/node_modules/@d3x0r/popups2/controls/choice-input.js"
 import {createSimpleForm} from "/node_modules/@d3x0r/popups2/forms/simple-form.js"
 import {local} from "./local.js"
 import {config as protocolConfig, protocol} from "./protocol.js"
@@ -29,8 +30,29 @@ export class TaskInfoEditor extends Popup {
 			this.positionEditor();
 		})
 		const task = Object.assign( {}, task_ );
+		// hidden/minimized/maximized are mutually exclusive on the launch side (they all end up
+		// as a single wShowWindow value), so the form drives them from one selection.
+		const showStates = [ { text:"Normal",    value:"normal" }
+		                   , { text:"Minimized", value:"minimized" }
+		                   , { text:"Maximized", value:"maximized" }
+		                   , { text:"Hidden",    value:"hidden" }
+		                   ];
+		function getShowState( t ) {
+			if( t.hidden ) return "hidden";
+			if( t.minimized ) return "minimized";
+			if( t.maximized ) return "maximized";
+			return "normal";
+		}
+		function setShowState( t, state ) {
+			// always write all three; task.update() only copies keys that are present, so a
+			// missing key would leave the previous state set in the stored config.
+			t.hidden    = state === "hidden";
+			t.minimized = state === "minimized";
+			t.maximized = state === "maximized";
+		}
 		const taskOpts = {
 			moveToEnable : false,
+			showState : getShowState( task ),
 		}
 		const flexFrame = document.createElement( "div" );
 		flexFrame.className = "task-config-flex-frame";
@@ -148,6 +170,16 @@ export class TaskInfoEditor extends Popup {
 		c.tooltip = "Use a break signal to stop this task";
 		c = new Checkbox( this.groupOpts, task, "noInheritStdio", "No Inherit Standard IO" );
 		c.tooltip = "Do not inherit standard IO (stdin,stdout,stderr, handles 0,1,2,...";
+		c = new ChoiceInput( this.groupOpts, taskOpts, "showState", showStates, "Window State"
+		                   , { change: ()=>setShowState( task, taskOpts.showState ) } );
+		// ChoiceInput has no tooltip setter; match what the other controls render.
+		{
+			const tip = document.createElement( "span" );
+			tip.className = "tooltip-text";
+			tip.textContent = "How the task's window is shown when it starts (WIN32)";
+			c.el.appendChild( tip );
+			c.el.classList.add( "has-tooltip" );
+		}
 		c = new TextInput( this.groupOpts, task, "style", "Style", false, false, true, "" );
 		c.tooltip = "Style of the window (WIN32)"
 		
@@ -265,6 +297,7 @@ export class TaskInfoEditor extends Popup {
 		function processForm(create) {
 			//Object.assign( task_, task );
 			task.args = this_.argVal.map( arg=>arg.arg );
+			setShowState( task, taskOpts.showState );
 			task.env = {};
 			for( let key of this_.envKeys ){
 				task.env[key.key] = key.val;

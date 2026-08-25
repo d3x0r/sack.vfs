@@ -262,6 +262,19 @@ select{
 	text-align: right;
 }
 
+/* ChoiceInput labels its own control ("choice-label"), so it needs the same
+   flex treatment .field-unit-span gets above to sit on one option row. */
+.task-config-group-opts .choice-label-task-config {
+	width: auto;
+	flex: 1 1 auto;
+	text-align: left;
+	white-space: nowrap;
+}
+
+.task-config-group-opts .selectInput-task-config {
+	max-width: 8rem;
+}
+
 .task-config-footer {
 	display: flex;
 	justify-content: space-between;
