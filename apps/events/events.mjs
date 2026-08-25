@@ -101,7 +101,7 @@ function on( events, usePriority, log, evt, d, extra ) {
 		}
 		else {
 			events[evt] = callback.list = [callback];
-			callback.priority = priority;
+			callback.priority = extra;
 		}
 		return callback;
 	}else if( "undefined" !== typeof d ) {
