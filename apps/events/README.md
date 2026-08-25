@@ -14,6 +14,7 @@ Options for logging, and priority are also per type.
 |on  | (string, array)| If the second parameter is an array, then the callback is called with `.apply(array)`.|
 |on  | (string)| If the second parameter is undefined then the result is true if at least one event handler has been registered.  This is a query for handler existance. |
 |off | (string,function) | Remove a subscription by name and function |
+|off | (Retrun from on(string,function)) | Remove a subscription by handle |
 
 ## Events Accessors
 
