@@ -81,7 +81,7 @@ function on( events, usePriority, log, evt, d, extra ) {
 		if( log ) console.log( "Defining event handler for:", evt );
 		const callback = new EventHandle(d);
 		const findPriority = ( usePriority && "number" === typeof extra )
-			?(findPriority = callback.priority = extra)
+			?(callback.priority = extra)
 			:0;
 		if( evt in events ) {
 			const eventList = callback.list = events[evt];
