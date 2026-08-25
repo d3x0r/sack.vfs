@@ -9,7 +9,8 @@ function getType( type ) {
 	return newType;
 }
 
-class Event {
+class EventHandle {
+	list = null;
 	cb = null;
 	priority = 0;
 
@@ -39,6 +40,12 @@ export class Events {
 		return on( type.static_events, type.usePriority, type.log, evt, d, extra );		
 	}
 	static off( evt, d ) {
+		if( evt instanceof Event ) {
+			const type = getType( this );
+			const l = evt.list;
+			for( let i = 0; i < l.length; i++ ) { if( l[i] === evt ) { l.splice(i,1); return; } }
+			// throw handle already removed?
+		}
 		if( !this ) throw new Error( "(off)Events should have the class type as this..."+(this)+(Events) );
 		const type = getType( this );
 		return off( type.static_events, type.log, evt, d );
@@ -60,6 +67,11 @@ export class Events {
 		return on( this.#events, type.usePriority, type.log, evt, d, extra );
 	}
 	off( evt, d ) {
+		if( evt instanceof Event ) {
+			const l = evt.list;
+			for( let i = 0; i < l.length; i++ ) { if( l[i] === evt ) { l.splice(i,1); return; } }
+			// throw handle already removed?
+		}
 		const type = getType( Object.getPrototypeOf( this ).constructor );
 		return off( this.#events, type.log, evt, d );
 	}
@@ -68,19 +80,19 @@ export class Events {
 function on( events, usePriority, log, evt, d, extra ) {
 	if( "function" === typeof d ) {
 		if( log ) console.log( "Defining event handler for:", evt );
-		const callback = new Event(d);
+		const callback = new EventHandle(d);
 		if( evt in events ) {
-			const eventList = events[evt];
+			const eventList = callback.list = events[evt];
 			let findPriority = 0;
 			if( usePriority && "number" === typeof extra ) {
 				findPriority = callback.priority = extra;
 			}
 			const index = eventList.findIndex( (cb)=>( cb.priority < findPriority ) )
-			if( index > 0 ) eventList.splice( index-1, 0, callback ); // insert one before the one found
+			if( index > 0 ) eventList.splice( index, 0, callback ); // insert before the one found
 			else if( index === 0 ) eventList.unshift( callback ); // first in list
 			else eventList.push( callback ); // lowest priority.
 		}
-		else events[evt] = [callback];
+		else events[evt] = callback.list = [callback];
 		return callback;
 	}else if( "undefined" !== typeof d ) {
 		if( log ) console.log( "Emiting event handler for:", evt );
@@ -99,7 +111,7 @@ function off( events, log, evt, d ) {
 	if( "function" === typeof d ) {
 		const a = events[evt];
 		for( let i = 0; i < a.length; i++ ) {
-			if( a[i] === d ) {
+			if( a[i].cb === d ) {
 				if( log ) console.log( "Removed event handler for:", evt );
 				a.splice( i, 1 );
 				break;
