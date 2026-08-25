@@ -88,21 +88,18 @@ function on( events, usePriority, log, evt, d, extra ) {
 	if( "function" === typeof d ) {
 		if( log ) console.log( "Defining event handler for:", evt );
 		const callback = new EventHandle(d);
+		const findPriority = ( usePriority && "number" === typeof extra )
+			?(findPriority = callback.priority = extra)
+			:0;
+
 		if( evt in events ) {
 			const eventList = callback.list = events[evt];
-			let findPriority = 0;
-			if( usePriority && "number" === typeof extra ) {
-				findPriority = callback.priority = extra;
-			}
 			const index = eventList.findIndex( (cb)=>( cb.priority < findPriority ) )
 			if( index > 0 ) eventList.splice( index, 0, callback ); // insert one before the one found
 			else if( index === 0 ) eventList.unshift( callback ); // first in list
 			else eventList.push( callback ); // lowest priority.
 		}
-		else {
-			events[evt] = callback.list = [callback];
-			callback.priority = extra;
-		}
+		else events[evt] = callback.list = [callback];
 		return callback;
 	}else if( "undefined" !== typeof d ) {
 		if( log ) console.log( "Emiting event handler for:", evt );
