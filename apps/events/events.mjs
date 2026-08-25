@@ -9,7 +9,7 @@ function getType( type ) {
 	return newType;
 }
 
-class Event {
+class EventHandle {
 	cb = null;
 	priority = 0;
 
@@ -76,7 +76,7 @@ export class Events {
 function on( events, usePriority, log, evt, d, extra ) {
 	if( "function" === typeof d ) {
 		if( log ) console.log( "Defining event handler for:", evt );
-		const callback = new Event(d);
+		const callback = new EventHandle(d);
 		if( evt in events ) {
 			const eventList = events[evt];
 			let findPriority = 0;
@@ -84,7 +84,7 @@ function on( events, usePriority, log, evt, d, extra ) {
 				findPriority = callback.priority = extra;
 			}
 			const index = eventList.findIndex( (cb)=>( cb.priority < findPriority ) )
-			if( index > 0 ) eventList.splice( index-1, 0, callback ); // insert one before the one found
+			if( index > 0 ) eventList.splice( index, 0, callback ); // insert one before the one found
 			else if( index === 0 ) eventList.unshift( callback ); // first in list
 			else eventList.push( callback ); // lowest priority.
 		}
@@ -107,7 +107,7 @@ function off( events, log, evt, d ) {
 	if( "function" === typeof d ) {
 		const a = events[evt];
 		for( let i = 0; i < a.length; i++ ) {
-			if( a[i] === d ) {
+			if( a[i].cb === d ) {
 				if( log ) console.log( "Removed event handler for:", evt );
 				a.splice( i, 1 );
 				break;
