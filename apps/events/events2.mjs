@@ -40,7 +40,7 @@ export class Events {
 		return on( type.static_events, type.usePriority, type.log, evt, d, extra );		
 	}
 	static off( evt, d ) {
-		if( evt instanceof Event ) {
+		if( evt instanceof EventHandle ) {
 			const type = getType( this );
 			const l = evt.list;
 			for( let i = 0; i < l.length; i++ ) { if( l[i] === evt ) { l.splice(i,1); return; } }
@@ -67,7 +67,7 @@ export class Events {
 		return on( this.#events, type.usePriority, type.log, evt, d, extra );
 	}
 	off( evt, d ) {
-		if( evt instanceof Event ) {
+		if( evt instanceof EventHandle ) {
 			const l = evt.list;
 			for( let i = 0; i < l.length; i++ ) { if( l[i] === evt ) { l.splice(i,1); return; } }
 			// throw handle already removed?
