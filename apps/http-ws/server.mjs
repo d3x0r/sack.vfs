@@ -115,18 +115,17 @@ const extMap = { '.js': 'text/javascript'
               ,'.pem':'application/x-pem-file'
               ,'.wasm': 'application/wasm'
               , '.asm': 'application/wasm' 
-			, '.bat':'application/x-msdownload'
-			, '.dll':'application/x-msdownload'
-			, '.exe':'application/x-msdownload'
-			, '.cmd':'application/x-msdownload'
-			, '.com':'application/x-msdownload'
-			, '.msi':'application/x-msdownload'
-		, ".gltf":"model/gltf+json"
-		, ".glb":"model/gltf+binary"
-		, ".obj":"model/obj"
-		, ".bin":"application/octet-stream"
-		, ".mtl":"model/mtl"
-
+              , '.bat':'application/x-msdownload'
+              , '.dll':'application/x-msdownload'
+              , '.exe':'application/x-msdownload'
+              , '.cmd':'application/x-msdownload'
+              , '.com':'application/x-msdownload'
+              , '.msi':'application/x-msdownload'
+              , ".gltf":"model/gltf+json"
+              , ".glb":"model/gltf+binary"
+              , ".obj":"model/obj"
+              , ".bin":"application/octet-stream"
+              , ".mtl":"model/mtl"
 		}
 
 const requests = [];
