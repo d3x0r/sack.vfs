@@ -1,6 +1,40 @@
+/**
+ * @file Events2 — a small event class.
+ *
+ * `on()` is three operations depending on its second argument: subscribe with a
+ * function, dispatch with anything else, probe with nothing.  Each is declared
+ * as a separate `@overload` so callers get the right return type instead of
+ * `any` — an EventHandle, the array of handler results, or a boolean.
+ */
 
+/**
+ * A handler.
+ *
+ * Dispatch passes the payload followed by the array of results returned by the
+ * handlers that already ran, so a handler can see what came before it.  An
+ * array payload is spread, so `on("x",[1,2])` calls `cb(1,2,results)`.
+ *
+ * @callback EventHandler
+ * @param {...any} args
+ * @returns {any}
+ */
+
+/**
+ * Per-class state, keyed by constructor.
+ *
+ * @typedef {object} EventTypeState
+ * @property {Object<string,EventHandle[]>} static_events
+ * @property {boolean} usePriority
+ * @property {boolean} log
+ */
+
+/** @type {WeakMap<Function,EventTypeState>} */
 const eventTypes = new WeakMap();
 
+/**
+ * @param {Function} type
+ * @returns {EventTypeState}
+ */
 function getType( type ) {
 	const t = eventTypes.get( type );
 	if( t ) return t;
@@ -9,18 +43,34 @@ function getType( type ) {
 	return newType;
 }
 
-class EventHandle {
+/**
+ * A subscription, returned by `on()`.
+ *
+ * It carries the list it lives in, so `off(handle)` can splice it out directly
+ * rather than searching by name and function.
+ */
+export class EventHandle {
+	/** The handler list this registration belongs to. @type {EventHandle[]|null} */
 	list = null;
+	/** @type {EventHandler|null} */
 	cb = null;
+	/** Higher runs earlier; equal priorities keep registration order. @type {number} */
 	priority = 0;
 
+	/** @param {EventHandler} cb */
 	constructor(cb) {
 		this.cb = cb;
 	}
 }
 
 export class Events {
+	/** @type {Object<string,EventHandle[]>} */
 	#events = {};
+
+	/**
+	 * Enable debug logging for this class. Once enabled it cannot be disabled.
+	 * @param {boolean} value
+	 */
 	static set log(value) {
 		if( !this ) throw new Error( "(log)Events should have the class type as this..."+(this)+(Events) );
 		const type = getType( this );
@@ -28,17 +78,68 @@ export class Events {
 			type.log = value;
 	}
 
+	/**
+	 * Whether the argument after a handler is treated as a priority.
+	 * @param {boolean} value
+	 */
 	static set usePriority(value) {
 		if( !this ) throw new Error( "(SetPriority)Events should have the class type as this..."+(this)+(Events) );
 		const type = getType( this );
 		type.usePriority = value;
 	}
 
+	/**
+	 * Subscribe to a static event.
+	 * @overload
+	 * @param {string} evt
+	 * @param {EventHandler} d
+	 * @param {number} [extra] priority; higher runs earlier, default 0
+	 * @returns {EventHandle}
+	 */
+	/**
+	 * Dispatch a static event. An array payload is spread across the handler's
+	 * parameters, so an array passed AS one argument must be wrapped twice.
+	 * @overload
+	 * @param {string} evt
+	 * @param {any[]|Record<string,any>|string|number|boolean} d
+	 * @returns {any[]|undefined} every handler's return value, in call order
+	 */
+	/**
+	 * Ask whether anything is listening.
+	 * @overload
+	 * @param {string} evt
+	 * @returns {boolean|undefined}
+	 */
+	/**
+	 * @param {string} evt
+	 * @param {any} [d]
+	 * @param {number} [extra]
+	 * @returns {any}
+	 */
 	static on( evt, d, extra ) {
 		if( !this ) throw new Error( "(on)Events should have the class type as this..."+(this)+(Events) );
 		const type = getType( this );
-		return on( type.static_events, type.usePriority, type.log, evt, d, extra );		
+		return on( type.static_events, type.usePriority, type.log, evt, d, extra );
 	}
+
+	/**
+	 * Remove a static subscription by its handle.
+	 * @overload
+	 * @param {EventHandle} evt
+	 * @returns {void}
+	 */
+	/**
+	 * Remove a static subscription by name and function.
+	 * @overload
+	 * @param {string} evt
+	 * @param {EventHandler} d
+	 * @returns {void}
+	 */
+	/**
+	 * @param {string|EventHandle} evt
+	 * @param {EventHandler} [d]
+	 * @returns {void}
+	 */
 	static off( evt, d ) {
 		if( evt instanceof EventHandle ) {
 			const l = evt.list;
@@ -50,6 +151,10 @@ export class Events {
 		return off( type.static_events, type.log, evt, d );
 	}
 
+	/**
+	 * Whether the argument after a handler is treated as a priority.
+	 * @param {boolean} value
+	 */
 	set usePriority(value) {
 		const ThisEventClass = Object.getPrototypeOf( this ).constructor;
 		const type = getType( ThisEventClass );
@@ -61,10 +166,58 @@ export class Events {
 		getType( ThisEventClass );
 	}
 
+	/**
+	 * Subscribe.
+	 * @overload
+	 * @param {string} evt
+	 * @param {EventHandler} d
+	 * @param {number} [extra] priority; higher runs earlier, default 0
+	 * @returns {EventHandle}
+	 */
+	/**
+	 * Dispatch. An array payload is spread across the handler's parameters, so
+	 * an array passed AS one argument must be wrapped twice: `on("x",[[1,2]])`.
+	 * @overload
+	 * @param {string} evt
+	 * @param {any[]|Record<string,any>|string|number|boolean} d
+	 * @returns {any[]|undefined} every handler's return value, in call order
+	 */
+	/**
+	 * Ask whether anything is listening.
+	 * @overload
+	 * @param {string} evt
+	 * @returns {boolean|undefined}
+	 */
+	/**
+	 * @param {string} evt
+	 * @param {any} [d]
+	 * @param {number} [extra]
+	 * @returns {any}
+	 */
 	on( evt, d, extra ) {
 		const type = getType( Object.getPrototypeOf( this ).constructor );
 		return on( this.#events, type.usePriority, type.log, evt, d, extra );
 	}
+
+	/**
+	 * Remove a subscription by its handle — the cheap path, since the handle
+	 * already knows which list it is in.
+	 * @overload
+	 * @param {EventHandle} evt
+	 * @returns {void}
+	 */
+	/**
+	 * Remove a subscription by name and function.
+	 * @overload
+	 * @param {string} evt
+	 * @param {EventHandler} d
+	 * @returns {void}
+	 */
+	/**
+	 * @param {string|EventHandle} evt
+	 * @param {EventHandler} [d]
+	 * @returns {void}
+	 */
 	off( evt, d ) {
 		if( evt instanceof EventHandle ) {
 			const l = evt.list;
@@ -76,6 +229,15 @@ export class Events {
 	}
 }
 
+/**
+ * @param {Object<string,EventHandle[]>} events
+ * @param {boolean} usePriority
+ * @param {boolean} log
+ * @param {string} evt
+ * @param {any} [d]
+ * @param {number} [extra]
+ * @returns {EventHandle|any[]|boolean|undefined}
+ */
 function on( events, usePriority, log, evt, d, extra ) {
 	if( "function" === typeof d ) {
 		if( log ) console.log( "Defining event handler for:", evt );
@@ -86,8 +248,7 @@ function on( events, usePriority, log, evt, d, extra ) {
 		if( evt in events ) {
 			const eventList = callback.list = events[evt];
 			const index = eventList.findIndex( (cb)=>( cb.priority < findPriority ) )
-			if( index > 0 ) eventList.splice( index, 0, callback ); // insert before the one found
-			else if( index === 0 ) eventList.unshift( callback ); // first in list
+			if( index >= 0 ) eventList.splice( index, 0, callback ); // insert before the one found
 			else eventList.push( callback ); // lowest priority.
 		}
 		else events[evt] = callback.list = [callback];
@@ -105,6 +266,13 @@ function on( events, usePriority, log, evt, d, extra ) {
 	}
 }
 
+/**
+ * @param {Object<string,EventHandle[]>} events
+ * @param {boolean} log
+ * @param {string|EventHandle} evt
+ * @param {EventHandler} [d]
+ * @returns {void}
+ */
 function off( events, log, evt, d ) {
 	if( "function" === typeof d ) {
 		const a = events[evt];
