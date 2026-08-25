@@ -35708,18 +35708,19 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 				}
 			}
 		}
-		else
 		{
-			//lprintf( "Not setting IO handles." );
 			task->si.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW;
 			if( !( flags & LPP_OPTION_DO_NOT_HIDE ) )
 				task->si.StartupInfo.wShowWindow = SW_HIDE;
-			else
-				task->si.StartupInfo.wShowWindow = SW_SHOW;
-			if( flags & LPP_OPTION_MINIMIZED )
-				task->si.StartupInfo.wShowWindow = SW_HIDE;
-			else if( flags & LPP_OPTION_MAXIMIZED )
-				task->si.StartupInfo.wShowWindow = SW_SHOW;
+			else {
+				if( flags & LPP_OPTION_MINIMIZED )
+//SW_SHOWMINIMIZED;
+					task->si.StartupInfo.wShowWindow = SW_SHOWMINNOACTIVE;
+				else if( flags & LPP_OPTION_MAXIMIZED )
+					task->si.StartupInfo.wShowWindow = SW_SHOWMAXIMIZED;
+				else
+					task->si.StartupInfo.wShowWindow = SW_SHOWNORMAL;
+			}
 		}
 		{
 			if( flags & LPP_OPTION_IMPERSONATE_EXPLORER )
@@ -81012,6 +81013,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 	// NOT first-wins - CF_LINGERCLOSE stays a one-way latch, because the read-error
 	// branch hard-codes bLinger=FALSE and firing first would downgrade a later
 	// genuine graceful close.
+#if DBG_AVAILABLE
 	if( lpClient && !lpClient->closeModeSet ) {
 		lpClient->closeModeSet = TRUE;
 		lpClient->closeBlockNotify = bBlockNotify;
@@ -81021,6 +81023,7 @@ void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNotify, LOGICAL bLi
 			                                , lpClient, (int)lpClient->closeBlockNotify, (int)bBlockNotify );
 		bBlockNotify = lpClient->closeBlockNotify;
 	}
+#endif
 	if( lpClient && IsValid(lpClient->Socket) )
 	{
 		// an abortive request cannot override a graceful one already latched

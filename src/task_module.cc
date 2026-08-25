@@ -891,9 +891,9 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, work?*work[0]:NULL
 				, newTask->argArray
 				, ( firstArgIsArg? LPP_OPTION_FIRST_ARG_IS_ARG:0 )
-				| ( hidden?0:LPP_OPTION_DO_NOT_HIDE)
-				| (minimized ? 0 : LPP_OPTION_MINIMIZED)
-				| (maximized ? 0 : LPP_OPTION_MAXIMIZED)
+				| ( hidden?0:LPP_OPTION_DO_NOT_HIDE )
+				| (minimized ? LPP_OPTION_MINIMIZED : 0)
+				| (maximized ? LPP_OPTION_MAXIMIZED : 0)
 				| (newGroup? LPP_OPTION_NEW_GROUP : 0)
 				| (newConsole ? LPP_OPTION_NEW_CONSOLE : 0)
 				| (suspend? LPP_OPTION_SUSPEND : 0)
@@ -1942,6 +1942,7 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 		char eventName[256];
 		HANDLE hEvent;
 		snprintf(eventName, 256, "Global\\%s(%d):exit", name, id);
+		//lprintf("Generating signal to: %s", eventName);
 		ReleaseEx(name DBG_SRC);
 		hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, eventName);
 		//lprintf( "Signal process event: %s", eventName );
