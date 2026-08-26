@@ -78,6 +78,9 @@
     "./task-manager": {
       "import": "./apps/task-manager/src/main.mjs"
     },
+    "./task-manager/config": {
+      "import": "./apps/task-manager/src/config.mjs"
+    },
     "./dbUtil": {
       "import": "./apps/dbUtil/db.mjs"
     },

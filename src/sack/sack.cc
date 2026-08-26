@@ -91438,6 +91438,9 @@ LOGICAL ssl_BeginClientSession_( struct ssl_session*ses, CPOINTER client_keypair
 	{
 		int needsKey = 0;
 		ses->cert = New( struct internalCert );
+		ses->cert->chain = NULL;
+		ses->cert->pkey = NULL;
+		ses->cert->x509 = NULL;
 		if( rootCert ) {
 #if NODE_MAJOR_VERSION < 10
 			ses->ctx = SSL_CTX_new( TLSv1_2_client_method() );
