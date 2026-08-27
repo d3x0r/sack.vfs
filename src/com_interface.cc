@@ -101,10 +101,9 @@ bool ComObject::_ivm_hosted = false;
 PLINKQUEUE ComObject::_readQueue;
 
 static	uintptr_t CPROC RegisterAndCreateMonitor( PTHREAD thread );
-static void reEnablePort( char const *port, bool enable = false );
-static void getPortProperties( char const*com, Isolate * isolate, Local<Object> result );
 int64_t FiletimeToJavascriptTick( FILETIME ft );
-
+static void getPortProperties( char const*com, Isolate * isolate, Local<Object> result );
+static void reEnablePort( char const *port, bool enable = false );
 
 ComObject::ComObject( char *name ) : jsObject() {
 	this->readQueue = CreateLinkQueue();
@@ -509,18 +508,24 @@ void ComObject::resetComByName( const v8::FunctionCallbackInfo<Value> &args ) {
 	String::Utf8Value port( isolate, args[ 0 ].As<String>() );
 	//com->wantEnable = true;
 	AddLink( &l.want_enable, StrDup( *port ) );
+#ifdef _WIN32
 	reEnablePort( *port, false );
+#endif	
 }
 
 void ComObject::disableComByName( const v8::FunctionCallbackInfo<Value> &args ) {
 	Isolate *isolate = args.GetIsolate();
 	String::Utf8Value port( isolate, args[ 0 ].As<String>() );
+#ifdef _WIN32
 	reEnablePort( *port, false );
+#endif	
 }
 void ComObject::enableComByName( const v8::FunctionCallbackInfo<Value> &args ) {
 	Isolate *isolate = args.GetIsolate();
 	String::Utf8Value port( isolate, args[ 0 ].As<String>() );
+#ifdef _WIN32
 	reEnablePort( *port, true );
+#endif
 }
 
 
@@ -532,7 +537,9 @@ void ComObject::resetCom( const v8::FunctionCallbackInfo<Value> &args ) {
 		SackCloseComm( com->handle );
 	}
 	com->wantEnable = true;
+#ifdef _WIN32
 	reEnablePort( com->portName, false );
+#endif	
 }
 	
 
@@ -1328,7 +1335,7 @@ int64_t FiletimeToJavascriptTick( FILETIME ft ) {
 
 #else
 
-void getPortProperties(ComObject *com, Isolate* isolate, Local<Object> result) {
+void getPortProperties(char const *com, Isolate* isolate, Local<Object> result) {
 
 }
 
