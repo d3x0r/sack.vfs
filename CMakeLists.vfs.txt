@@ -154,7 +154,7 @@ if( EXISTS ${SACK_BASE} )
 set( INCLUDES
 	-I${SACK_BASE}/include
 	-I${SACK_BASE}/src/contrib/sha1lib
-	-I${SACK_BASE}/src/contrib/K12/lib
+	-I${SACK_BASE}/src/contrib
 	-I${SACK_BASE}/src/contrib/sqlite/3.52.0-TableAlias
  )
 
@@ -271,7 +271,7 @@ SET( EXTRA_SOURCES
 	${SACK_BASE}/src/contrib/sha1lib/sha1.c
 	${SACK_BASE}/src/contrib/sha2lib/sha2.c
 	${SACK_BASE}/src/contrib/sha3lib/sha3.c
-	${SACK_BASE}/src/contrib/K12/lib/KangarooTwelve.c
+	${SACK_BASE}/src/contrib/k12.c
 
 	${SACK_BASE}/src/contrib/sqlite/sqlite_interface.c
 	${SACK_BASE}/src/SQLlib/sqlstruc.h
