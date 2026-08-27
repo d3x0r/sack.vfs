@@ -27,7 +27,10 @@ try {
 } catch( e ) { /* not fatal - the assertions below still hold */ }
 
 const port  = Number( process.argv[2] ) || 8443;
-const COUNT = Number( process.argv[3] ) || Number( process.env.COUNT ) || 400;
+// Deliberately modest by default: each request in the reject arm is a full failed
+// TLS handshake plus its lprintf, so this is CPU-heavy.  Raise with COUNT/REPS only
+// when you actually want a soak, and expect it to load the box while it runs.
+const COUNT = Number( process.argv[3] ) || Number( process.env.COUNT ) || 50;
 const REPS  = Number( process.env.REPS ) || 1;
 
 //--------------------------------------------------- untrusted chain, generated in-process

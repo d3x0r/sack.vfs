@@ -23461,7 +23461,9 @@ LOGGING_NAMESPACE_END
 #ifndef _POSIX_C_SOURCE
 #  define _POSIX_C_SOURCE 2
 #endif
-#define _POSIX_SOURCE
+#ifndef _POSIX_SOURCE
+#  define _POSIX_SOURCE
+#endif
 #ifdef WIN32
 //#undef StrDup
 //#undef StrRChr
@@ -42896,8 +42898,8 @@ PRIORITY_PRELOAD( InitGlobal, DEFAULT_PRELOAD_PRIORITY )
 	g.allowLogging = 1;
 }
 #if __GNUC__
-#pragma GCC warning "C Preprocessor got here!"
-#  pragma message( "GNUC COMPILER" )
+//#  pragma GCC warning "C Preprocessor got here!"
+//#  pragma message( "GNUC COMPILER" )
 #  ifndef __ATOMIC_RELAXED
 #    define __ATOMIC_RELAXED 0
 #  endif
@@ -42905,13 +42907,13 @@ PRIORITY_PRELOAD( InitGlobal, DEFAULT_PRELOAD_PRIORITY )
 #    define __GNUC_VERSION ( __GNUC__ * 10000 ) + ( __GNUC_MINOR__ * 100 )
 #  endif
 #  if  ( __GNUC_VERSION >= 40800 || __clang_major__ >= 18 ) || defined(__MAC__) || defined( __EMSCRIPTEN__ )
-#    pragma GCC warning "gcc is going to use __atomic_exchange_n"
-#    pragma message( "gcc is going to use __atomic_exchange_n")
+//#    pragma GCC warning "gcc is going to use __atomic_exchange_n"
+//#    pragma message( "gcc is going to use __atomic_exchange_n")
 #    define XCHG(p,val)  __atomic_exchange_n(p,val,__ATOMIC_RELAXED)
 ///  for some reason __GNUC_VERSION doesn't exist from android ?
 #  elif defined __ARM__ || defined __ANDROID__
-#    pragma GCC warning "gcc is going to use __atomic_exchange_n(2)"
-#    pragma message( "gcc is going to use __atomic_exchange_n")
+//#    pragma GCC warning "gcc is going to use __atomic_exchange_n(2)"
+//#    pragma message( "gcc is going to use __atomic_exchange_n")
 #    define XCHG(p,val)  __atomic_exchange_n(p,val,__ATOMIC_RELAXED)
 #  else
 #    pragma GCC warning "gcc is a version without __atomic_exchange_n"
@@ -50412,8 +50414,9 @@ TEXTSTR GetCurrentPath( TEXTSTR path, int len )
 #ifndef _WIN32
 static void convert( uint64_t* outtime, time_t *time )
 {
-#warning convert time function is incomplete.
-	*outtime = *time;
+	// time_t is seconds from 1970; FILETIME is 100ns units from 1601.  EPOCH_DIFF
+	// (stdhdrs.h) is the gap between those two epochs, in seconds.
+	*outtime = ( (uint64_t)*time + EPOCH_DIFF ) * 10000000ULL;
 }
 #endif
 //-----------------------------------------------------------------------
@@ -50425,13 +50428,16 @@ uint64_t GetTimeAsFileTime ( void )
 	FILETIME result;
 //&tz );
 	gettimeofday( &tmp, NULL );
-	result = ( tmp.tv_usec * 10LL ) + ( tmp.tv_sec * 1000LL * 1000LL * 10LL );
+	// 100ns units from 1601, same base as the windows branch below, so values
+	// from the two platforms (and from GetFileWriteTime) are comparable.
+	result = ( ( (uint64_t)tmp.tv_sec + EPOCH_DIFF ) * 10000000ULL ) + ( tmp.tv_usec * 10LL );
 	return result;
 #else
-	SYSTEMTIME st;
+	// UTC, not local: GetFileTime() (and so GetFileWriteTime below) reports UTC,
+	// so a local time here made every now-versus-file comparison wrong by the
+	// zone offset.  GetSystemTimeAsFileTime is already the 1601 base we want.
 	FILETIME result;
-	GetLocalTime( &st );
-	SystemTimeToFileTime( &st, &result );
+	GetSystemTimePreciseAsFileTime( &result );
 	return *(uint64_t*)&result;
 #endif
 }
@@ -62004,6 +62010,9 @@ struct HttpState {
 		BIT_FIELD connection_ready : 1;
 		// the opened callback has already been told; it only fires once.
 		BIT_FIELD connection_opened : 1;
+		// the opening byte of this message has been validated as plausible HTTP.
+		// Cleared by EndHttp so every message on a kept-alive socket is checked.
+		BIT_FIELD first_byte_checked : 1;
 	}flags;
 	CRITICALSECTION lock;
 	struct HTTPRequestOptions* options;
@@ -62534,7 +62543,17 @@ enum ProcessHttpResult ProcessHttp( struct HttpState *pHttpState, int ( *send )(
 										PTEXT tmp;
 										PTEXT resource_path = NULL;
 										PTEXT next;
-										if( TextSimilar( request, "GET" ) )
+										/* Methods with no request body.  These used to fall off the end of this
+						 * chain leaving numeric_code 0, so the request never completed and the
+						 * connection sat there - a plain OPTIONS preflight was indistinguishable
+						 * from junk.  They only need to reach the app; what it does with CONNECT
+						 * or TRACE is the app's decision, not the parser's. */
+						if( TextSimilar( request, "GET" )
+						 || TextSimilar( request, "HEAD" )
+						 || TextSimilar( request, "OPTIONS" )
+						 || TextSimilar( request, "DELETE" )
+						 || TextSimilar( request, "TRACE" )
+						 || TextSimilar( request, "CONNECT" ) )
 										{
  // initialize to assume it's incomplete; NOT OK.  (requests should be OK)
 											pHttpState->numeric_code = HTTP_STATE_RESULT_CONTENT;
@@ -62552,7 +62571,9 @@ enum ProcessHttpResult ProcessHttp( struct HttpState *pHttpState, int ( *send )(
 											//GET will never have a body?
 											pHttpState->flags.no_content_length = 0;
 										}
-										else if( TextSimilar( request, "POST" ) )
+										/* may carry a body - same handling POST already had */
+						else if( TextSimilar( request, "POST" )
+						      || TextSimilar( request, "PATCH" ) )
 										{
  // initialize to assume it's incomplete; NOT OK.  (requests should be OK)
 											pHttpState->numeric_code = HTTP_STATE_RESULT_CONTENT;
@@ -62840,6 +62861,34 @@ LOGICAL AddHttpData( struct HttpState *pHttpState, CPOINTER buffer, size_t size 
 	lockHttp( pHttpState );
 	//lprintf( "AddHttpData:%d", size );
 	pHttpState->last_read_tick = timeGetTime();
+	/* Is this even HTTP?  Nothing downstream asks: ProcessHttp scans for CR/LF and
+	 * nothing else, so a stream that never produces one - a TLS ClientHello arriving
+	 * on a plain listener is the ordinary case - accumulates in 'partial' forever and
+	 * the connection just hangs until the peer gives up.  A TLS client will not give
+	 * up; it is waiting for a ServerHello.
+	 *
+	 * Every method's first letter, plus 'H' for the HTTP/x.y response line this same
+	 * parser reads on the client side:
+	 *   Connect Delete Get Head Options Post Put Patch Trace  ->  C D G H O P T
+	 * A TLS record starts 0x16, an SSH banner 'S' - both refused.  Returning FALSE
+	 * means "not HTTP, drop the socket"; the callers close without answering, because
+	 * writing a TLS alert back would claim a security layer this socket never had. */
+	if( !pHttpState->flags.first_byte_checked && size ) {
+		const unsigned char *scan = (const unsigned char *)buffer;
+		size_t n;
+		/* RFC 7230 3.5 - tolerate leading CRLF before a request line.  If this read is
+		 * nothing but line endings, stay undecided and check the next one. */
+		for( n = 0; n < size && ( scan[n] == 13 || scan[n] == 10 ); n++ );
+		if( n < size ) {
+			unsigned char c0 = scan[n];
+			pHttpState->flags.first_byte_checked = 1;
+			if( c0 != 'C' && c0 != 'D' && c0 != 'G' && c0 != 'H'
+			 && c0 != 'O' && c0 != 'P' && c0 != 'T' ) {
+				unlockHttp( pHttpState );
+				return FALSE;
+			}
+		}
+	}
 	{
 		//lprintf( "Add HTTP Data:%p %d", pHttpState->pc[0], size );
 		//LogBinary( (uint8_t*)buffer, 256>size?size:256 );
@@ -62884,6 +62933,8 @@ void EndHttp( struct HttpState *pHttpState )
 	pHttpState->flags.no_content_length = 1;
 	pHttpState->content_length = 0;
 	pHttpState->flags.success = 0;
+	// next message on this socket gets its own opening-byte check
+	pHttpState->flags.first_byte_checked = 0;
 	LineRelease( pHttpState->method );
 	pHttpState->method = NULL;
 	LineRelease( pHttpState->content );
@@ -63945,7 +63996,11 @@ static void CPROC HandleRequest( PCLIENT pc, POINTER buffer, size_t length )
 #endif
 		//lprintf( "RECEVED HTTP FROM NETWORK." );
 		//LogBinary( buffer, length );
-		AddHttpData( pHttpState, buffer, length );
+		if( !AddHttpData( pHttpState, buffer, length ) ) {
+			// not HTTP - drop it without answering.
+			RemoveClientEx( pc, 0, 1 );
+			return;
+		}
 		while( ( result = ProcessHttp( pHttpState, NULL, 0 ) ) )
 		{
 			int status;
@@ -68673,6 +68728,17 @@ void WebSocketWrite( HTML5WebSocket socket, CPOINTER buffer, size_t length )
 		{
 			if( AddHttpData( socket->http_state, buffer, length ) )
 				read_complete_process_data( socket );
+			else {
+				/* AddHttpData refused the opening byte - this stream is not HTTP
+				 * (a TLS ClientHello on a plain listener is the ordinary case).
+				 * Drop it silently; answering in TLS on a socket that was never
+				 * TLS would be a lie, and there is nothing else to say. */
+				if( socket->pc )
+					RemoveClient( socket->pc );
+				else if( socket->input_state.do_close )
+					socket->input_state.do_close( socket->input_state.psvCloser );
+				return;
+			}
 		}
 		else
 		{
