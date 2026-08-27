@@ -363,7 +363,7 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 		}
 		*/
 #ifdef DEBUG_REVIVAL_CALLBACKS
-		lprintf( "lookup up classname:%.*s", val->classNameLen, val->className );
+		lprintf( "lookup up classname:%.*s", (int)val->classNameLen, val->className );
 #endif
 		if( mprotoDef.IsEmpty() && revive->parser && !revive->parser->fromPrototypeMap.IsEmpty() ) {
 			mprotoDef = revive->parser->fromPrototypeMap.Get( revive->isolate )->Get( revive->context, className );
@@ -393,7 +393,7 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 						}
 						else {
 //#ifdef DEBUG_REVIVAL_CALLBACKS
-							lprintf( "Constructor threw exception: % .*s", val->classNameLen, val->className );
+							lprintf( "Constructor threw exception: %.*s", (int)val->classNameLen, val->className );
 //#endif
 							revive->failed = TRUE;
 						}
@@ -499,7 +499,7 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 						if( !mo.IsEmpty() )
 							sub_o = mo.ToLocalChecked();
 						else
-							lprintf("Constructor threw exception: %.*s", val->classNameLen, val->className);
+							lprintf("Constructor threw exception: %.*s", (int)val->classNameLen, val->className);
 					}
 				}
 			}
@@ -528,7 +528,7 @@ static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_con
 						if( !mo.IsEmpty() )
 							sub_o = mo.ToLocalChecked();
 						else
-							lprintf( "Constructor threw exception: %.*s", val->classNameLen, val->className);
+							lprintf( "Constructor threw exception: %.*s", (int)val->classNameLen, val->className);
 					}
 				}
 			}
@@ -764,8 +764,8 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 									if( !off_stack && member ) {
 #ifdef DEBUG_REFERENCE_FOLLOW
 										lprintf( "Looking at reviveStack...  %d %d  %.*s %p", off_stack
-											, member->nameLen
-											, member->nameLen
+											, (int)member->nameLen
+											, (int)member->nameLen
 											, member->name, member->name );
 #endif
 										if( ( member->nameLen == pathVal->stringLen )
@@ -890,7 +890,7 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 			Local<Function> cb;
 			Local<String> className = String::NewFromUtf8( revive->isolate, val->className, v8::NewStringType::kNormal, (int)val->classNameLen ).ToLocalChecked();
 #ifdef DEBUG_REVIVAL_CALLBACKS
-			lprintf( "Class name is what? %.*s", val->classNameLen, val->className );
+			lprintf( "Class name is what? %.*s", (int)val->classNameLen, val->className );
 #endif
 			if( revive->parser && !revive->parser->promiseFromPrototypeMap.IsEmpty() ) {
 				valmethod = revive->parser->promiseFromPrototypeMap.Get( revive->isolate )->
@@ -1140,7 +1140,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 	{
 		Local<Value> sub_o_orig;
 #ifdef DEBUG_REFERENCE_FOLLOW
-		lprintf( "value name is : %d %.*s", val->value_type, val->nameLen, val->name ? val->name : "(NULL)" );
+		lprintf( "value name is : %d %.*s", val->value_type, (int)val->nameLen, val->name ? val->name : "(NULL)" );
 #endif
 		if( val->name )
 			revive->fieldName = String::NewFromUtf8( revive->isolate, val->name, MODE, (int)val->nameLen ).ToLocalChecked();
@@ -1188,7 +1188,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 				Local<Value> tmp = makeValue( val, revive );
 #if defined( DEBUG_REFERENCE_FOLLOW ) || defined( DEBUG_REVIVAL_CALLBACKS )
 				if( val->name )
-					lprintf( "set value to fieldname: %.*s", val->nameLen, val->name );
+					lprintf( "set value to fieldname: %.*s", (int)val->nameLen, val->name );
 				else
 					lprintf( "set value to index: %d", currentIndex );
 				
@@ -1228,7 +1228,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 				}
 
 #ifdef DEBUG_REFERENCE_FOLLOW
-				lprintf( "called callback to set array value %.*s", val->nameLen, val->name );
+				lprintf( "called callback to set array value %.*s", (int)val->nameLen, val->name );
 #endif
 			}
 			else {
@@ -1385,13 +1385,13 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 						lprintf("Excception from call.");
 					}
 #if defined( DEBUG_REFERENCE_FOLLOW ) || defined( DEBUG_REVIVAL_CALLBACKS )
-					lprintf( "called callback to set object value %.*s", val->nameLen, val->name );
+					lprintf( "called callback to set object value %.*s", (int)val->nameLen, val->name );
 #endif
 				}
 				else { 
 #if defined( DEBUG_REFERENCE_FOLLOW ) || defined( DEBUG_REVIVAL_CALLBACKS )
 					if( val->name )
-						lprintf( "Set object value %.*s:", val->nameLen, val->name );
+						lprintf( "Set object value %.*s:", (int)val->nameLen, val->name );
 					else
 						lprintf( "set value to index: %d", currentIndex );
 #endif
@@ -1775,7 +1775,7 @@ void escapeJSOX( const v8::FunctionCallbackInfo<Value>& args ) {
 static Local<Value> ParseJSOX(  const char *utf8String, size_t len, struct reviver_data *revive, struct jsox_parse_state *state ) {
 	PDATALIST parsed = NULL;
 #ifdef DEBUG_INPUT
-	lprintf("Parse:%.*s", len, utf8String );
+	lprintf("Parse:%.*s", (int)len, utf8String );
 #endif
 	int result = jsox_parse_add_data( state, utf8String, len );
 	if( !result )
