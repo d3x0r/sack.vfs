@@ -1427,7 +1427,7 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 				DWORD result                                = DisplayConfigGetDeviceInfo( &sourceName.header );
 				if( result != ERROR_SUCCESS ) {
 					
-					lprintf( "error getting adapater! %d", result );
+					lprintf( "error getting adapater! %lu", result );
 					//return ;
 				}
 
@@ -1967,17 +1967,17 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 			BOOL a = AttachConsole( id );
 			if( !a ) {
 				DWORD dwError = GetLastError();
-				lprintf( "Failed to attachConsole %d %d %d", a, dwError, id );
+				lprintf( "Failed to attachConsole %d %lu %d", a, dwError, id );
 			}
 			if( code == 0 ) {
 				if( !GenerateConsoleCtrlEvent( CTRL_C_EVENT, id ) ) {
 					DWORD error = GetLastError();
-					lprintf( "Failed to send CTRL_C_EVENT %d %d", id, error );
+					lprintf( "Failed to send CTRL_C_EVENT %d %lu", id, error );
 				}// else lprintf( "Success sending ctrl C?" );
 			} else {
 				if( !GenerateConsoleCtrlEvent( CTRL_BREAK_EVENT, id ) ) {
 					DWORD error = GetLastError();
-					lprintf( "Failed to send CTRL_BREAK_EVENT %d %d", id, error );
+					lprintf( "Failed to send CTRL_BREAK_EVENT %d %lu", id, error );
 				}// else lprintf( "Success sending ctrl break?" );
 			}
 		}
@@ -2024,7 +2024,7 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 		CloseHandle( hProcess );
 	} else {
 		DWORD dwError = GetLastError();
-		lprintf( "Failed to open process %d:%d", id, dwError );
+		lprintf( "Failed to open process %d:%lu", id, dwError );
 	}
 #else
 	kill( id, SIGKILL );
@@ -2159,7 +2159,7 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 			valueSize = valueBufferSize;
 		}
 		if( lastError != ERROR_NO_MORE_ITEMS )
-			lprintf( "Failed with %d", lastError );
+			lprintf( "Failed with %lu", lastError );
 		RegCloseKey( hKey );
 	}
 	//HKEY_CURRENT_USER\Environment
@@ -2207,7 +2207,7 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 			valueSize = valueBufferSize;
 		}
 		if( lastError != ERROR_NO_MORE_ITEMS )
-			lprintf( "Failed with %d", lastError );
+			lprintf( "Failed with %lu", lastError );
 		RegCloseKey( hKey );
 	} else {
 		lprintf( "Failed to open user key?" );

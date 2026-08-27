@@ -200,6 +200,13 @@ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
 // real work.  YieldProcessor() resolves to _mm_pause on x86 and __yield on ARM64.
 #  define SpinHint()         YieldProcessor()
 #  define Relinquish()       do { SpinHint(); Sleep(0); } while( 0 )
+// GetLastError() is a DWORD here and (int32_t)errno on posix; make both int32_t so
+// call sites are plain %d on every target and never need a cast.  Signed is the
+// honest type: negative errno is common, and a windows code with the high bit set
+// reads as an HRESULT rather than anything GetLastError() actually returns.
+// The self reference is not re-expanded (C11 6.10.3.4p2), so the real API is still
+// called, exactly once.
+#  define GetLastError() ((int32_t)GetLastError())
 //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
 //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
 #  ifdef __cplusplus_cli
@@ -4966,6 +4973,18 @@ enum system_logging_option_list {
 #  define _lprintf(file_line,...)       _xlprintf(LOG_NOISE file_line,##__VA_ARGS__)
 #  define xlprintf(level)       _xlprintf(level DBG_SRC)
 #  define vxlprintf(level)       _vxlprintf(level DBG_SRC)
+#  if defined( __clang__ )
+// clang honors __format__ on a function declaration, but silently drops it from a
+// function pointer typedef - so calls through what _xlprintf() returns go unchecked
+// (gcc does check them, which is why only gcc builds ever report format mistakes).
+// Name the same arguments once more inside a sizeof(), which is unevaluated: no call,
+// no symbol reference, no generated code, purely so -Wformat gets a look at them.
+// _sack_log_format_check is declared and deliberately never defined anywhere.
+extern int _sack_log_format_check( CTEXTSTR format, ... )
+	__attribute__ ((__format__ (__printf__, 1, 2)));
+#   undef lprintf
+#   define lprintf(...)  ( (void)sizeof( _sack_log_format_check( __VA_ARGS__ ) ), _xlprintf( LOG_NOISE DBG_SRC )( __VA_ARGS__ ) )
+#  endif
 # else
 #  ifdef _MSC_VER
 #   define vlprintf      (1)?(0):
@@ -21071,7 +21090,7 @@ void InvokeDeadstart( void )
 #  ifndef UNDER_CE
 		if( GetConsoleWindow() )
 		{
-			if( !SetConsoleCtrlHandler( CtrlC, TRUE ) ) fprintf( stderr, "failed to SetConsoleCtrlHandler? %lu\n", GetLastError() );
+			if( !SetConsoleCtrlHandler( CtrlC, TRUE ) ) fprintf( stderr, "failed to SetConsoleCtrlHandler? %d\n", GetLastError() );
 		}
 		else
 		{
@@ -23154,6 +23173,20 @@ void free_next_info( void ) {
 #  endif
 #endif
 }
+// Logging has to be transparent to the last error.  GetNextInfo() calls
+// TlsGetValue(), which SetLastError(ERROR_SUCCESS) on success, and lprintf()
+// expands to _xlprintf(...)( args ) - the two calls are only indeterminately
+// sequenced (C11 6.5.2.2p10), so an inline lprintf( "...", GetLastError() )
+// could read the error after the log path had already cleared it.  Writing the
+// output can clobber it just as easily, which would catch anything that reads
+// the error after logging it.
+#ifndef WIN32
+#  define SAVE_LAST_ERROR     int32_t _savedLastError = errno
+#  define RESTORE_LAST_ERROR  errno = _savedLastError
+#else
+#  define SAVE_LAST_ERROR     int32_t _savedLastError = GetLastError()
+#  define RESTORE_LAST_ERROR  SetLastError( (DWORD)_savedLastError )
+#endif
 static INDEX CPROC _null_vlprintf ( CTEXTSTR format, va_list args )
 {
  // fix unused
@@ -23164,12 +23197,15 @@ static INDEX CPROC _null_vlprintf ( CTEXTSTR format, va_list args )
 }
 static INDEX CPROC _real_vlprintf ( CTEXTSTR format, va_list args )
 {
+	SAVE_LAST_ERROR;
 #if defined( _DEBUG ) || defined( _DEBUG_INFO )
 	// this can be used to force logging early to stdout
 	struct next_lprint_info *_next_lprintf = GetNextInfo();
 #endif
-	if( cannot_log )
+	if( cannot_log ) {
+		RESTORE_LAST_ERROR;
 		return 0;
+	}
 	if( logtype != SYSLOG_NONE )
 	{
 		CTEXTSTR logtime = GetLogTime();
@@ -23263,6 +23299,7 @@ static INDEX CPROC _real_vlprintf ( CTEXTSTR format, va_list args )
 		}
 	}
 	//LeaveCriticalSec( &next_lprintf.cs );
+	RESTORE_LAST_ERROR;
 	return 0;
 }
 static INDEX CPROC _real_lprintf( CTEXTSTR f, ... )
@@ -23277,7 +23314,15 @@ static INDEX CPROC _null_lprintf( CTEXTSTR f, ... )
    (void)f;
 	return 0;
 }
+static RealVLogFunction _vxlprintf_( uint32_t level DBG_PASS );
 RealVLogFunction  _vxlprintf ( uint32_t level DBG_PASS )
+{
+	SAVE_LAST_ERROR;
+	RealVLogFunction result = _vxlprintf_( level DBG_RELAY );
+	RESTORE_LAST_ERROR;
+	return result;
+}
+static RealVLogFunction _vxlprintf_( uint32_t level DBG_PASS )
 {
 	struct next_lprint_info *_next_lprintf;
 	//EnterCriticalSec( &next_lprintf.cs );
@@ -23299,7 +23344,15 @@ RealVLogFunction  _vxlprintf ( uint32_t level DBG_PASS )
 	}
 	return _null_vlprintf;
 }
+static RealLogFunction _xlprintf_( uint32_t level DBG_PASS );
 RealLogFunction _xlprintf( uint32_t level DBG_PASS )
+{
+	SAVE_LAST_ERROR;
+	RealLogFunction result = _xlprintf_( level DBG_RELAY );
+	RESTORE_LAST_ERROR;
+	return result;
+}
+static RealLogFunction _xlprintf_( uint32_t level DBG_PASS )
 {
 	struct next_lprint_info *_next_lprintf;
 	//EnterCriticalSec( &next_lprintf.cs );
@@ -24634,7 +24687,7 @@ static uintptr_t moveTaskWindowThread( PTHREAD thread ) {
 		}
 		if( !success ) {
 			DWORD dwError = GetLastError();
-			lprintf( "Failed to move window? %d Trying again...", dwError );
+			lprintf( "Failed to move window? %lu Trying again...", dwError );
 			continue;
 		} else {
 			break;
@@ -24914,17 +24967,17 @@ LOGICAL CPROC StopProgram( PTASK_INFO task )
 				BOOL a = AttachConsole( dwKillId );
 				if( !a ) {
 					DWORD dwError = GetLastError();
-					lprintf( "Failed to attachConsole %d %d %d", a, dwError, dwKillId );
+					lprintf( "Failed to attachConsole %d %lu %lu", a, dwError, dwKillId );
 				}
 				if( !task->flags.useCtrlBreak )
 					if( !GenerateConsoleCtrlEvent( CTRL_C_EVENT, dwKillId ) ) {
 						error = GetLastError();
-						lprintf( "Failed to send CTRL_C_EVENT %d %d", dwKillId, error );
+						lprintf( "Failed to send CTRL_C_EVENT %lu %d", dwKillId, error );
 					} else lprintf( "Success sending ctrl C?" );
 				else
 					if( !GenerateConsoleCtrlEvent( CTRL_BREAK_EVENT, dwKillId ) ) {
 						error = GetLastError();
-						lprintf( "Failed to send CTRL_BREAK_EVENT %d %d", dwKillId, error );
+						lprintf( "Failed to send CTRL_BREAK_EVENT %lu %d", dwKillId, error );
 					} else lprintf( "Success sending ctrl break?" );
 				IgnoreBreakHandler( 0 );
 			} else {
@@ -25015,7 +25068,7 @@ uintptr_t TerminateProgramEx( PTASK_INFO task, int options ) {
 				PLINKSTACK stack = NULL;
 				ProcIdFromParentProcId( task->pi.dwProcessId, &pdlProcs );
 				DATA_FORALL( pdlProcs, idx, struct process_id_pair*, pair ) {
-					lprintf( "Got Pair: %d %d", pair->parent, pair->child );
+					lprintf( "Got Pair: %lu %lu", pair->parent, pair->child );
 					PushLink( &stack, pair );
 					//dwKillId = pair->child;
 				}
@@ -25024,7 +25077,7 @@ uintptr_t TerminateProgramEx( PTASK_INFO task, int options ) {
 					if( hChild != INVALID_HANDLE_VALUE ) {
 						TerminateProcess( hChild, 0xdead );
 						CloseHandle( hChild );
-					} else lprintf( "Failed to open child process handle...", GetLastError() );
+					} else lprintf( "Failed to open child process handle... %d", GetLastError() );
 				}
 				DeleteLinkStack( &stack );
 				DeleteDataList( &pdlProcs );
@@ -25148,14 +25201,14 @@ uintptr_t CPROC WaitForTaskEnd( PTHREAD pThread )
 					{
 						DWORD dwError = GetLastError();
 						// maybe the read wasn't queued yet....
-						lprintf( "Failed to cancel IO on thread %d %d", GetThreadHandle( task->hStdOut.hThread ), dwError );
+						lprintf( "Failed to cancel IO on thread %p %lu", GetThreadHandle( task->hStdOut.hThread ), dwError );
 					}
 				if( task->hStdErr.hThread )
 					if( !MyCancelSynchronousIo( GetThreadHandle( task->hStdErr.hThread ) ) )
 					{
 						DWORD dwError = GetLastError();
 						// maybe the read wasn't queued yet....
-						lprintf( "Failed to cancel IO on thread %d %d", GetThreadHandle( task->hStdErr.hThread ), dwError );
+						lprintf( "Failed to cancel IO on thread %p %lu", GetThreadHandle( task->hStdErr.hThread ), dwError );
 					}
 			}
 			else
@@ -25515,7 +25568,7 @@ int TryShellExecute( PTASK_INFO task, CTEXTSTR path, CTEXTSTR program, PTEXT cmd
 			//switch( (uintptr_t)execinfo.hInstApp )
 			{
 			//default:
-				lprintf( "Shell exec error : %p (gle:%d)", (uintptr_t)execinfo.hInstApp , GetLastError() );
+				lprintf( "Shell exec error : %p (gle:%d)", execinfo.hInstApp , GetLastError() );
 				//break;
 			}
 			return FALSE;
@@ -26006,9 +26059,9 @@ SYSTEM_PROC( generic_function, LoadFunctionExx )( CTEXTSTR libname, CTEXTSTR fun
 			//if( l.flags.bLog )
 #  ifdef _DEBUG
 			for( int i = 0; i < 4; i++ )
-				lprintf( "Error LoadLibrary: %5d %ls %d", errors[i].error, errors[i].name, i==0?err1:i==1?err2:i==2?err3:err4 );
+				lprintf( "Error LoadLibrary: %5lu %ls %d", errors[i].error, errors[i].name, i==0?err1:i==1?err2:i==2?err3:err4 );
 #  else
-			_xlprintf( 2 DBG_RELAY )("Attempt to load [%ls][%ls][%ls]%ls(%s) failed. %d %d %d %d"
+			_xlprintf( 2 DBG_RELAY )("Attempt to load [%ls][%ls][%ls]%ls(%s) failed. %lu %lu %lu %lu"
 					, library->cur_full_name
 					, library->full_name
 					, library->alt_full_name
@@ -33189,11 +33242,7 @@ namespace sack {
 // this is the techincal type of SYSV IPC MSGQueues
 #define MSGIDTYPE long
 #ifdef __64__
-#  ifdef __LINUX__
-#    define _MsgID_f  _64fs
-#  else
-#    define _MsgID_f  _32fs
-#  endif
+#  define _MsgID_f  "ld"
 #else
 #  define _MsgID_f  _32fs
 #endif
@@ -35058,7 +35107,7 @@ static uintptr_t CPROC HandleTaskOutput(PTHREAD thread )
 								if( PeekNamedPipe( phi->handle, NULL, 0, NULL, &dwAvail, NULL ) ) {
 									if( dwAvail ) {
 										if( task->flags.log_input )
-											lprintf( "More data became available: %d", dwAvail );
+											lprintf( "More data became available: %lu", dwAvail );
 										continue;
 									}
 								}
@@ -35068,7 +35117,7 @@ static uintptr_t CPROC HandleTaskOutput(PTHREAD thread )
 							break;
 						}
 						if( task->flags.log_input )
-							lprintf( "got read on task's stdout: %d %d", taskParams->stdErr, dwRead );
+							lprintf( "got read on task's stdout: %d %lu", taskParams->stdErr, dwRead );
 						//lprintf( "result %d", dwRead );
 						GetText( pInput )[offset] = 0;
 						pInput->data.size = offset;
@@ -35703,7 +35752,7 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 					if( !UpdateProcThreadAttribute( task->si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
 					                                task->hPty, sizeof( task->hPty ), NULL, NULL ) ) {
 						DWORD dwErr = GetLastError();
-						lprintf( "Error setting attributes on starup info:%d", dwErr );
+						lprintf( "Error setting attributes on starup info:%lu", dwErr );
 					}
 				}
 			}
@@ -43876,8 +43925,8 @@ uintptr_t GetFileSize( int fd )
 									//| FILE_FLAG_DELETE_ON_CLOSE
 									, NULL );
 #ifdef DEBUG_OPEN_SPACE
-			ll_lprintf( "Create file %s result %d", pWhere, hFile );
-			ll_lprintf( "File result is %ld (error %ld)", hFile, GetLastError() );
+			ll_lprintf( "Create file %s result %p", pWhere, hFile );
+			ll_lprintf( "File result is %p (error %d)", hFile, GetLastError() );
 #endif
 			if( hFile == INVALID_HANDLE_VALUE )
 			{
@@ -51011,6 +51060,21 @@ FILEMON_NAMESPACE
 using namespace sack::containers::queue;
 #endif
 //-------------------------------------------------------------------------
+#ifdef WIN32
+// A FILETIME reads as a date rather than a 64 bit count; this only feeds the
+// change-stats log, where the point is comparing against what the shell shows,
+// so local time it is.  Caller owns the buffer - two of these appear in one call.
+static CTEXTSTR FormatFileTime( FILETIME ft, TEXTCHAR *buf, size_t buflen ) {
+	FILETIME   local;
+	SYSTEMTIME st;
+	if( FileTimeToLocalFileTime( &ft, &local ) && FileTimeToSystemTime( &local, &st ) )
+		tnprintf( buf, buflen, "%04d-%02d-%02d %02d:%02d:%02d.%03d"
+		        , st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, st.wMilliseconds );
+	else
+		tnprintf( buf, buflen, "(unset)" );
+	return buf;
+}
+#endif
 static void InitFileMonitor( void )
 {
 	if( !local_filemon.flags.bInit )
@@ -51230,14 +51294,17 @@ uintptr_t CPROC ScanFile( uintptr_t psv, INDEX idx, POINTER *item )
 		}
 #ifdef WIN32
 		// this
-		if( local_filemon.flags.bLog )
-		lprintf( "File change stats: %s(%s) %lu %lu, %lu %lu, %s"
-				 , filemon->name
-				 , filemon->filename
-				 , dwSize
-				 , filemon->lastknownsize
-			   , lastmodified, filemon->lastmodifiedtime
-			   , filemon->flags.bToDelete?"delete":"" );
+		if( local_filemon.flags.bLog ) {
+			TEXTCHAR modbuf[32], knownbuf[32];
+			lprintf( "File change stats: %s(%s) %u %llu, %s %s, %s"
+					 , filemon->name
+					 , filemon->filename
+					 , dwSize
+					 , filemon->lastknownsize
+					 , FormatFileTime( lastmodified, modbuf, 32 )
+					 , FormatFileTime( filemon->lastmodifiedtime, knownbuf, 32 )
+					 , filemon->flags.bToDelete?"delete":"" );
+		}
 #endif
 		if( dwSize != filemon->lastknownsize
 			|| (*(uint64_t*)&lastmodified) != (*(uint64_t*)&filemon->lastmodifiedtime)
@@ -53640,7 +53707,7 @@ static void FileMonAddThreadEvent( PMONITOR monitor, struct filemon_peer_thread_
 			AddDataItem( &peer->event_list, &monitor->hChange );
 			if( local_filemon.flags.bLog )
 			{
-				lprintf( "Added handle %d on %s", monitor->hChange, monitor->directory );
+				lprintf( "Added handle %p on %s", monitor->hChange, monitor->directory );
 				//LogBinary( event_list->data, (nEvents +1)* sizeof( HANDLE ));
 			}
 			peer->nEvents++;
@@ -53653,7 +53720,7 @@ static void ReadChanges( PMONITOR monitor )
 	static uint8_t buffer[4096];
 	DWORD dwResultSize;
 	if( local_filemon.flags.bLog )
-		lprintf( "Begin getting changes on %p (%d)", monitor, monitor->hChange );
+		lprintf( "Begin getting changes on %p (%p)", monitor, monitor->hChange );
 	if( ReadDirectoryChangesW( monitor->hChange
 	                        , buffer
 	                        , sizeof( buffer )
@@ -53684,7 +53751,7 @@ static void ReadChanges( PMONITOR monitor )
 				MemCpy( dupname, pni->FileName, pni->FileNameLength );
 				dupname[pni->FileNameLength/2] = '\0';
 				if( local_filemon.flags.bLog )
-					lprintf( "offset %d, next %d", dwOffset, pni->NextEntryOffset );
+					lprintf( "offset %lu, next %lu", dwOffset, pni->NextEntryOffset );
 				if( !pni->NextEntryOffset )
 					dwOffset = (DWORD)INVALID_INDEX;
 				else
@@ -53968,7 +54035,7 @@ static uintptr_t CPROC MonitorFileThread( PTHREAD pThread )
 			if( !FindNextChangeNotification( monitor->hChange ) )
 			{
 				DWORD dwError = GetLastError();
-				lprintf( "Find next change failed...%d %s", dwError, monitor->directory );
+				lprintf( "Find next change failed...%lu %s", dwError, monitor->directory );
 				// bad things happened
 				//MessageBox( NULL, "Find change notification failed", "Monitor Failed", MB_OK );
 				if( dwError == ERROR_TOO_MANY_CMDS )
@@ -54040,7 +54107,7 @@ FILEMONITOR_PROC( PMONITOR, MonitorFilesEx )( CTEXTSTR directory, int scan_delay
 	                                               | FILE_NOTIFY_CHANGE_CREATION
 	                                               | FILE_NOTIFY_CHANGE_SECURITY
 	                                              );
-	if( local_filemon.flags.bLog ) lprintf( "Opened handle %d on %s", monitor->hChange, monitor->directory );
+	if( local_filemon.flags.bLog ) lprintf( "Opened handle %p on %s", monitor->hChange, monitor->directory );
 	if( monitor->hChange == INVALID_HANDLE_VALUE )
 	{
 		TEXTCHAR msg[128];
@@ -54061,7 +54128,7 @@ FILEMONITOR_PROC( PMONITOR, MonitorFilesEx )( CTEXTSTR directory, int scan_delay
 	// This could be added boefre the thread is ready; but then we're not guaranteed that this will be in the list of objects to wait on
 	LinkLast( Monitors, PMONITOR, monitor );
 	if( local_filemon.flags.bLog )
-		lprintf( "Signal monitor to wake on %d", local_filemon.hMonitorThreadControlEvent );
+		lprintf( "Signal monitor to wake on %p", local_filemon.hMonitorThreadControlEvent );
 	SetEvent( local_filemon.hMonitorThreadControlEvent );
 	if( local_filemon.flags.bLog )
 		Log1( "Adding timer %d", scan_delay / 3 );
@@ -57994,7 +58061,7 @@ INDEX vvtprintf( PVARTEXT pvt, CTEXTSTR format, va_list args )
 			tries++;
 			if( tries == 100 )
 			{
-				lprintf( "Single buffer expanded more then %d", tries * ( (pvt->expand_by)?pvt->expand_by:(16384+pvt->expand_by) ) );
+				lprintf( "Single buffer expanded more then %zd", tries * ( (pvt->expand_by)?pvt->expand_by:(16384+pvt->expand_by) ) );
  // didn't add any
 				return 0;
 			}
@@ -65500,10 +65567,11 @@ void DumpTermios( struct termios *opts )
 					pct->dcb.fDtrControl = DTR_CONTROL_ENABLE;
  // try this - remove maybe.
 					pct->flags.bUseCarrierDetect = iCarrier;
-					lprintf( " pct->dcb.BaudRate is %lu pct->dcb.ByteSize is %lu pct->dcb.Parity is %lu pct->dcb.fRtsControl is %lu "
+					lprintf( " pct->dcb.BaudRate is %lu pct->dcb.ByteSize is %u pct->dcb.Parity is %u pct->dcb.fRtsControl is %u "
 					       , pct->dcb.BaudRate
 					       , pct->dcb.ByteSize
 					       , pct->dcb.Parity
+ // only a couple bits of the DWORD
 					       , pct->dcb.fRtsControl
 					);
 				//EscapeCommFunction( (HANDLE)(intptr_t)iCommId, SETDTR );
@@ -65917,16 +65985,6 @@ void DumpTermios( struct termios *opts )
 			tnprintf ( cOut, sizeof( cOut ), "SackCommReadBuffer: read %d chars, error=%d"
                , nCharsRead, nCommError );
 			xlprintf(LOG_NOISE)( "%s", cOut );
-#ifndef __LINUX__
-			lprintf ( "    cs.status=%u,0x%02X  cs.in=%u  cs.out=%u"
-#ifdef BCC_16
-               , pComTrack->cs.status
-#else
-               , *(uint32_t*)&pComTrack->cs
-#endif
-               , pComTrack->cs.cbInQue
-					, pComTrack->cs.cbOutQue );
-#endif
 			iResult = SACKCOMM_ERR_COMM;
 		}
  // no data, check timeout
@@ -73687,7 +73745,7 @@ static int openObject( struct jsox_parse_state *state, struct jsox_output_buffer
 		//state->word = JSOX_WORD_POS_FIELD;
 		if( state->val.className ) {
 #ifdef DEBUG_PARSING
-			lprintf( "define class: %*.*s", state->val.stringLen, state->val.stringLen, state->val.className );
+			lprintf( "define class: %*.*s", (int)state->val.stringLen, (int)state->val.stringLen, state->val.className );
 #endif
 			nextObjectMode = JSOX_OBJECT_CONTEXT_CLASS_FIELD;
 			LIST_FORALL( state->classes, idx, PJSOX_CLASS, cls )
@@ -73846,7 +73904,7 @@ static LOGICAL openArray( struct jsox_parse_state *state, struct jsox_output_buf
 	if( state->val.value_type == JSOX_VALUE_STRING ) {
 		state->val.className = state->val.string;
 #ifdef DEBUG_CLASS_STATES
-		lprintf( "SET class: %.*s %d", state->val.stringLen, state->val.className, state->val.stringLen );
+		lprintf( "SET class: %.*s %zu", (int)state->val.stringLen, state->val.className, state->val.stringLen );
 #endif
 		state->val.classNameLen = state->val.stringLen;
 		state->val.string = NULL;
@@ -73879,7 +73937,7 @@ static LOGICAL openArray( struct jsox_parse_state *state, struct jsox_output_buf
 			state->word = JSOX_WORD_POS_FIELD;
 			newArrayType = (int)typeIndex;
 #ifdef DEBUG_PARSING
-			lprintf( "setup array type... %d", typeIndex );
+			lprintf( "setup array type... %zu", typeIndex );
 #endif
 			// collect the next part as base64 data.
 			state->val.string = output->pos;
@@ -74271,7 +74329,7 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 			state->val.stringLen = output->pos - state->val.string;
 		}
 #ifdef DEBUG_STRING_LENGTH
-			lprintf( "Update stringLen  '%c'  :%d", cInt?cInt:'?', state->val.stringLen );
+			lprintf( "Update stringLen  '%c'  :%zu", cInt?cInt:'?', state->val.stringLen );
 #endif
 /*','*/
 	} else if( cInt == 44 ) {
@@ -74282,7 +74340,7 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 			state->val.stringLen = output->pos - state->val.string;
 }
 #ifdef DEBUG_STRING_LENGTH
-		lprintf( "Update stringLen  '%c'  :%d", cInt?cInt:'~', state->val.stringLen );
+		lprintf( "Update stringLen  '%c'  :%zu", cInt?cInt:'~', state->val.stringLen );
 #endif
 	} else if( cInt >= 0 ) {
 		// ignore white space.
@@ -74295,7 +74353,7 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 				state->val.stringLen = output->pos - state->val.string;
 }
 #ifdef DEBUG_STRING_LENGTH
-			lprintf( "Update stringLen  '%c'  :%d", cInt, state->val.stringLen );
+			lprintf( "Update stringLen  '%c'  :%zu", cInt, state->val.stringLen );
 #endif
 			return 0;
 		}
@@ -74329,11 +74387,11 @@ int recoverIdent( struct jsox_parse_state *state, struct jsox_output_buffer* out
 			if( cInt < 128 ) (*output->pos++) = cInt;
 			else output->pos += ConvertToUTF8( output->pos, cInt );
 #ifdef DEBUG_PARSING
-			lprintf( "Collected .. %d %c  %*.*s", cInt, cInt, output->pos - state->val.string, output->pos - state->val.string, state->val.string );
+			lprintf( "Collected .. %d %c  %*.*s", cInt, cInt, (int)( output->pos - state->val.string ), (int)( output->pos - state->val.string ), state->val.string );
 #endif
 			state->val.stringLen = output->pos - state->val.string;
 #ifdef DEBUG_STRING_LENGTH
-			lprintf( "Update stringLen  '%c'  :%d", cInt, state->val.stringLen );
+			lprintf( "Update stringLen  '%c'  :%zu", cInt, state->val.stringLen );
 #endif
 		}
 	}
@@ -74364,7 +74422,7 @@ static void pushValue( struct jsox_parse_state *state, PDATALIST *pdl, struct js
 #ifdef DEBUG_PARSING
 	lprintf( "pushValue:%p %d %d", val->contains, val->value_type, state->arrayType );
 	if( val->name )
-		lprintf( "push named:%*.*s %d", val->nameLen, val->nameLen, val->name, line );
+		lprintf( "push named:%*.*s %d", (int)val->nameLen, (int)val->nameLen, val->name, line );
 #endif
  // no value to push.
 	if( val->value_type == JSOX_VALUE_UNSET ) return;
@@ -74412,7 +74470,7 @@ static void pushValue( struct jsox_parse_state *state, PDATALIST *pdl, struct js
 	}
 	AddDataItem( pdl, val );
 #ifdef DEBUG_CLASS_STATES
-	lprintf( "RESET CLASS NAME %.*s", val->classNameLen, val->className );
+	lprintf( "RESET CLASS NAME %.*s", (int)val->classNameLen, val->className );
 #endif
 	val->className = NULL;
 	val->classNameLen = 0;
@@ -74607,10 +74665,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				if( state->n > input->size ) DebugBreak();
 				state->val.stringLen = (output->pos - state->val.string)-1;
 #ifdef DEBUG_STRING_LENGTH
-				lprintf( "Update stringLen  collcting string :%d", state->val.stringLen );
+				lprintf( "Update stringLen  collcting string :%zu", state->val.stringLen );
 #endif
 #ifdef DEBUG_PARSING
-				lprintf( "STRING1: %s %d", state->val.string, state->val.stringLen );
+				lprintf( "STRING1: %s %zu", state->val.string, state->val.stringLen );
 #endif
 				if( state->status ) {
 					state->val.value_type = JSOX_VALUE_STRING;
@@ -74702,11 +74760,11 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				state->val.value_type = JSOX_VALUE_STRING;
 				output->pos += ConvertToUTF8( output->pos, c );
 #ifdef DEBUG_PARSING
-				lprintf( "Collected .. %d %c  %*.*s", c, c, output->pos - state->val.string, output->pos - state->val.string, state->val.string );
+				lprintf( "Collected .. %d %c  %*.*s", c, c, (int)( output->pos - state->val.string ), (int)( output->pos - state->val.string ), state->val.string );
 #endif
 				state->val.stringLen = output->pos - state->val.string;
 #ifdef DEBUG_STRING_LENGTH
-				lprintf( "Update stringLen  unicode character:%d", state->val.stringLen );
+				lprintf( "Update stringLen  unicode character:%zu", state->val.stringLen );
 #endif
 			}
 			else switch( c )
@@ -74958,10 +75016,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							if( state->val.value_type != JSOX_VALUE_STRING ) {
 								state->val.stringLen = output->pos - state->val.string;
 #ifdef DEBUG_STRING_LENGTH
-								lprintf( "Update stringLen  close array :%d", state->val.stringLen );
+								lprintf( "Update stringLen  close array :%zu", state->val.stringLen );
 #endif
 #ifdef DEBUG_PARSING
-								lprintf( "STRING3: %s %d", state->val.string, state->val.stringLen );
+								lprintf( "STRING3: %s %zu", state->val.string, state->val.stringLen );
 #endif
 								(*output->pos++) = 0;
 							}
@@ -75168,7 +75226,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							break;
 						}
 #ifdef DEBUG_CLASS_STATES
-						lprintf( "Setting classname for string here... %d %.*s", state->val.stringLen, state->val.stringLen, state->val.string );
+						lprintf( "Setting classname for string here... %zu %.*s", state->val.stringLen, (int)state->val.stringLen, state->val.string );
 #endif
 						state->val.className = state->val.string;
 						state->val.classNameLen = state->val.stringLen;
@@ -75224,7 +75282,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					else output->pos += ConvertToUTF8( output->pos, c );
 					state->val.stringLen = output->pos - state->val.string;
 #ifdef DEBUG_STRING_LENGTH
-					lprintf( "Update stringLen  already an ident %c :%d", c, state->val.stringLen );
+					lprintf( "Update stringLen  already an ident %c :%zu", c, state->val.stringLen );
 #endif
 					break;
 				}
@@ -75232,7 +75290,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				) {
 #ifdef DEBUG_PARSING
 					if( state->val.string )
-						lprintf( "gathering object field:%c  %d %.*s", c, output->pos- state->val.string, output->pos - state->val.string, state->val.string );
+						lprintf( "gathering object field:%c  %td %.*s", c, ( output->pos - state->val.string ), (int)( output->pos - state->val.string ), state->val.string );
 					else
 						lprintf( "Gathering, but no string yet? %c", c );
 #endif
@@ -75265,12 +75323,12 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 								&& !state->val.className ) ) {
 							(*output->pos++) = 0;
 #ifdef DEBUG_PARSING
-							lprintf( "Promoting previous string to... what? %d %.*s", state->val.stringLen, state->val.stringLen, state->val.string );
+							lprintf( "Promoting previous string to... what? %zu %.*s", state->val.stringLen, (int)state->val.stringLen, state->val.string );
 #endif
 							state->val.className = state->val.string;
 							state->val.classNameLen = state->val.stringLen;
 #ifdef DEBUG_CLASS_STATES
-							lprintf( "Setting classname HERE (why?):", state->val.string );
+							lprintf( "Setting classname HERE (why?): %.*s", (int)state->val.stringLen, state->val.string );
 #endif
 						}
 #ifdef DEBUG_PARSING
@@ -75289,11 +75347,11 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							state->gatheringString = FALSE;
 							state->val.stringLen = (output->pos - state->val.string) - 1;
 #ifdef DEBUG_STRING_LENGTH
-							lprintf( "Update stringLen  collcting string :%d", state->val.stringLen );
+							lprintf( "Update stringLen  collcting string :%zu", state->val.stringLen );
 #endif
 							if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) state->completed = TRUE;
 #ifdef DEBUG_PARSING
-							lprintf( "STRING4: %s %d", state->val.string, state->val.stringLen );
+							lprintf( "STRING4: %s %zu", state->val.string, state->val.stringLen );
 #endif
 						}
 						state->n = input->pos - input->buf;
@@ -75374,7 +75432,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						else output->pos += ConvertToUTF8( output->pos, c );
 						state->val.stringLen = output->pos - state->val.string;
 #ifdef DEBUG_STRING_LENGTH
-						lprintf( "Update stringLen  default collcting string :%d", state->val.stringLen );
+						lprintf( "Update stringLen  default collcting string :%zu", state->val.stringLen );
 #endif
  // default
 						break;
@@ -75414,7 +75472,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						state->val.className = state->val.string;
 						state->val.classNameLen = state->val.stringLen;
 #ifdef DEBUG_CLASS_STATES
-						lprintf( "Setting classname HERE (why?): %d %.*s", state->val.stringLen, state->val.stringLen, state->val.string );
+						lprintf( "Setting classname HERE (why?): %zu %.*s", state->val.stringLen, (int)state->val.stringLen, state->val.string );
 #endif
 					}
 					state->val.string = output->pos;
@@ -75428,10 +75486,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						state->gatheringString = FALSE;
 						state->val.stringLen = (output->pos - state->val.string) - 1;
 #ifdef DEBUG_STRING_LENGTH
-						lprintf( "Update stringLen  quoted string :%d", state->val.stringLen );
+						lprintf( "Update stringLen  quoted string :%zu", state->val.stringLen );
 #endif
 #ifdef DEBUG_PARSING
-						lprintf( "STRING5: %s %d", state->val.string, state->val.stringLen );
+						lprintf( "STRING5: %s %zu", state->val.string, state->val.stringLen );
 #endif
 					} else if( state->complete_at_end ) {
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
@@ -75802,10 +75860,10 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							(*output->pos++) = 0;
 							state->val.stringLen = (output->pos - state->val.string) - 1;
 #ifdef DEBUG_STRING_LENGTH
-							lprintf( "Update stringLen  extra nul :%d", state->val.stringLen );
+							lprintf( "Update stringLen  extra nul :%zu", state->val.stringLen );
 #endif
 #ifdef DEBUG_PARSING
-							lprintf( "STRING6: %s %d", state->val.string, state->val.stringLen );
+							lprintf( "STRING6: %s %zu", state->val.string, state->val.stringLen );
 #endif
 							state->gatheringNumber = FALSE;
 							//lprintf( "result with number:%s", state->val.string );
@@ -82018,7 +82076,7 @@ static int NetworkStartup( void )
 		if( sockMaster == INVALID_SOCKET )
 		{
 			nError = WSAGetLastError();
-			lprintf( "Failed to create a socket - error is %ld", WSAGetLastError() );
+			lprintf( "Failed to create a socket - error is %d", WSAGetLastError() );
  // provvider init fail )
 			if( nError == 10106 )
 			{
@@ -82384,9 +82442,7 @@ static void HandleEvent( PCLIENT pClient )
 						// work, or both sides believe the other performs the close and
 						// the socket strands in CLOSE_WAIT.
 						LOGICAL deferred = FALSE;
-						uint8_t dbgInUse;
 						lockNetWorkList();
-						dbgInUse = pClient->flags.bInUse;
 						if( ( pClient->dwFlags & CF_ACTIVE ) && pClient->flags.bInUse )
 						{
 							// application holds work on this socket; mark the close so
@@ -82444,7 +82500,7 @@ static void HandleEvent( PCLIENT pClient )
 			// no longer a socket, probably in a closed or closing state.
 		}
 		else
-			lprintf( "Event enum failed... do what? close socket? %p %" _32f, pClient, dwError );
+			lprintf( "Event enum failed... do what? close socket? %p %lu", pClient, dwError );
 	}
 	ClearClientFlags( pClient, CF_PROCESSING );
 }
@@ -82494,7 +82550,7 @@ void RemoveThreadEvent( PCLIENT pc ) {
 					AddLink( &newList, previous );
 					SetDataItem( &thread->event_list, c++, p );
 				} else {
-					lprintf( "Item %d is not found in events.", idx );
+					lprintf( "Item %zu is not found in events.", idx );
 				}
 			}
 		}
@@ -82768,7 +82824,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t qui
 				thread->flags.bProcessing = 0;
 				break;
 			}
-			lprintf( "error of wait is %d   %p", dwError, thread );
+			lprintf( "error of wait is %lu   %p", dwError, thread );
 			LogBinary( (const uint8_t*)thread->event_list->data, 64 );
 			thread->flags.bProcessing = 0;
 			break;
@@ -85898,7 +85954,7 @@ void LoadNetworkAddresses( void ) {
 		}
 	}
 	else {
-		lprintf( "GetAdaptersInfo failed with error: %d\n", dwRetVal );
+		lprintf( "GetAdaptersInfo failed with error: %lu\n", dwRetVal );
 	}
 #if 0
 //msdn.microsoft.com/en-us/library/windows/desktop/aa365915%28v=vs.85%29.aspx?f=255&MSPPError=-2147217396
@@ -87022,9 +87078,15 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 				case ECONNRESET:
 				// sometimes this leaks past connect and read happens?
 				case ECONNREFUSED:
+#define SOCKET_FORMAT "%d"
 #else
 				case WSAECONNRESET:
 				case WSAECONNABORTED:
+#  ifdef __64__
+#    define SOCKET_FORMAT "%lld"
+#  else
+#    define SOCKET_FORMAT "%ld"
+#  endif
 #endif
 #ifdef LOG_DEBUG_CLOSING
 					lprintf( "Read from reset connection - closing. %p", lpClient );
@@ -87032,7 +87094,7 @@ int FinishPendingRead(PCLIENT lpClient DBG_PASS )
 					if(0)
 					{
 					default:
-						lprintf( "Failed reading from %p %d (err:%d) into %p %" _size_f " bytes %" _size_f " read already.",
+						lprintf( "Failed reading from %p " SOCKET_FORMAT " (err:%d) into %p %" _size_f " bytes %" _size_f " read already.",
 							  lpClient,
 							  lpClient->Socket,
 							  WSAGetLastError(),
@@ -88201,12 +88263,6 @@ PCLIENT CPPServeUDPAddrEx( SOCKADDR *pAddr
 		return NULL;
 	}
 #ifdef WIN32
-	if( 0 )
-	{
-		DWORD dwFlags;
-		GetHandleInformation( (HANDLE)pc->Socket, &dwFlags );
-		lprintf( "Natural was %d", dwFlags );
-	}
 	SetHandleInformation( (HANDLE)pc->Socket, HANDLE_FLAG_INHERIT, 0 );
 #else
 	{
@@ -88541,10 +88597,11 @@ NETWORK_PROC( LOGICAL, SendUDPEx )( PCLIENT pc, CPOINTER pBuf, size_t nSize, SOC
 	{
 #ifdef WIN32
 		DWORD dwError = WSAGetLastError();
+		lprintf("SendUDP: Error (%lu)", dwError);
 #else
 		int dwError = errno;
+		lprintf("SendUDP: Error (%d)", dwError);
 #endif
-		Log1( "SendUDP: Error (%d)", dwError );
 		DumpAddr( "SendTo Socket", (sa) );
 		return FALSE;
 	}
@@ -88729,7 +88786,7 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 	DWORD dwSize;
 	dwErr = GetExtendedTcpTable( table, &dwSize, FALSE, AF_INET, TCP_TABLE_OWNER_PID_LISTENER, 0 );
 	if( dwErr != ERROR_INSUFFICIENT_BUFFER ) {
-		lprintf( "unexpected error getting listening sockets: %d", dwErr );
+		lprintf( "unexpected error getting listening sockets: %lu", dwErr );
 		return;
 	}
 	table = (MIB_TCPTABLE_OWNER_PID*)Allocate( dwSize );
@@ -88745,14 +88802,14 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 		}
 		Release( table );
 	} else {
-		lprintf( "unexpected error getting listening sockets: %d", dwErr );
+		lprintf( "unexpected error getting listening sockets: %lu", dwErr );
 		return;
 	}
 	MIB_TCP6TABLE_OWNER_PID*table6 = NULL;
 	dwSize = 0;
 	dwErr = GetExtendedTcpTable( table6, &dwSize, FALSE, AF_INET6, TCP_TABLE_OWNER_PID_LISTENER, 0 );
 	if( dwErr != ERROR_INSUFFICIENT_BUFFER ) {
-		lprintf( "unexpected error getting listening sockets: %d", dwErr );
+		lprintf( "unexpected error getting listening sockets: %lu", dwErr );
 		return;
 	}
 	table6 = (MIB_TCP6TABLE_OWNER_PID*)Allocate( dwSize );
@@ -88768,7 +88825,7 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 				DATA_FORALL( ppList[0], idx, struct listener_pid_info*, info ) {
 					if( info->port == l.port ) {
 						if( info->pid != l.pid ) {
-							lprintf( "Port in use by multiple processes: %d %d", info->pid, l.pid );
+							lprintf( "Port in use by multiple processes: %llu %llu", info->pid, l.pid );
 							continue;
 						}
 						break;
@@ -88780,7 +88837,7 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 		}
 		Release( table6 );
 	} else {
-		lprintf( "unexpected error getting listening sockets: %d", dwErr );
+		lprintf( "unexpected error getting listening sockets: %lu", dwErr );
 		return;
 	}
 #if 0
@@ -88806,7 +88863,7 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 			return;
 		}
 	} else {
-		lprintf( "Unhandled initial error - expected size error: %d", dwErr );
+		lprintf( "Unhandled initial error - expected size error: %lu", dwErr );
 		return;
 	}
 	int count = size / sizeof( MIB_TCPTABLE2 );
@@ -119191,7 +119248,7 @@ int DumpInfoEx( PODBC odbc, PVARTEXT pvt, SQLSMALLINT type, SQLHANDLE *handle, L
 			}
 			else
 			{
-				lprintf( "This is some other error (%5s)[%d]:%s", statecode, native, message );
+				lprintf( "This is some other error (%5s)[%ld]:%s", statecode, native, message );
 				if( StrCmp( statecode, "IM002" ) == 0 )
 					vtprintf( pvt, "(%5s)[%" _32f "]:%s<%s>", statecode, native, message, odbc->info.pDSN?odbc->info.pDSN:"" );
 				else

@@ -4091,9 +4091,9 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 			WebSocketPipeSendText( obj->wsPipe, *buf, buf.length() );
 		}
 	} else if( args[0]->IsObject() ) {
-		lprintf( "Cannot send argument that is a type of object passed to websocket send." );
+		isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate, "Cannot send argument that is a type of object passed to websocket send.")));
 	}  else {
-		lprintf( "Argument passed to send is not a String, ArrayBuffer or TypeAarray." );
+		isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate, "Argument passed to send is not a String, ArrayBuffer or TypedArray.")));
 	}
 }
 

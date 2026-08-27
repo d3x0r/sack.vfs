@@ -191,6 +191,13 @@ __declspec(dllimport) DWORD WINAPI timeGetTime(void);
 // real work.  YieldProcessor() resolves to _mm_pause on x86 and __yield on ARM64.
 #  define SpinHint()         YieldProcessor()
 #  define Relinquish()       do { SpinHint(); Sleep(0); } while( 0 )
+// GetLastError() is a DWORD here and (int32_t)errno on posix; make both int32_t so
+// call sites are plain %d on every target and never need a cast.  Signed is the
+// honest type: negative errno is common, and a windows code with the high bit set
+// reads as an HRESULT rather than anything GetLastError() actually returns.
+// The self reference is not re-expanded (C11 6.10.3.4p2), so the real API is still
+// called, exactly once.
+#  define GetLastError() ((int32_t)GetLastError())
 //#pragma pragnoteonly("GetFunctionAddress is lazy and has no library cleanup - needs to be a lib func")
 //#define GetFunctionAddress( lib, proc ) GetProcAddress( LoadLibrary( lib ), (proc) )
 #  ifdef __cplusplus_cli
@@ -4957,6 +4964,18 @@ enum system_logging_option_list {
 #  define _lprintf(file_line,...)       _xlprintf(LOG_NOISE file_line,##__VA_ARGS__)
 #  define xlprintf(level)       _xlprintf(level DBG_SRC)
 #  define vxlprintf(level)       _vxlprintf(level DBG_SRC)
+#  if defined( __clang__ )
+// clang honors __format__ on a function declaration, but silently drops it from a
+// function pointer typedef - so calls through what _xlprintf() returns go unchecked
+// (gcc does check them, which is why only gcc builds ever report format mistakes).
+// Name the same arguments once more inside a sizeof(), which is unevaluated: no call,
+// no symbol reference, no generated code, purely so -Wformat gets a look at them.
+// _sack_log_format_check is declared and deliberately never defined anywhere.
+extern int _sack_log_format_check( CTEXTSTR format, ... )
+	__attribute__ ((__format__ (__printf__, 1, 2)));
+#   undef lprintf
+#   define lprintf(...)  ( (void)sizeof( _sack_log_format_check( __VA_ARGS__ ) ), _xlprintf( LOG_NOISE DBG_SRC )( __VA_ARGS__ ) )
+#  endif
 # else
 #  ifdef _MSC_VER
 #   define vlprintf      (1)?(0):
@@ -15699,11 +15718,7 @@ namespace sack {
 // this is the techincal type of SYSV IPC MSGQueues
 #define MSGIDTYPE long
 #ifdef __64__
-#  ifdef __LINUX__
-#    define _MsgID_f  _64fs
-#  else
-#    define _MsgID_f  _32fs
-#  endif
+#  define _MsgID_f  "ld"
 #else
 #  define _MsgID_f  _32fs
 #endif

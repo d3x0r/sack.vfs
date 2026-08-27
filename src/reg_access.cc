@@ -226,7 +226,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 
 		dwStatus = RegOpenKeyEx( hive, end, 0, KEY_ALL_ACCESS, &hTemp );
 		if( dwStatus )
-			lprintf( "open? %p  %s %08x %p", hive, end, dwStatus, hTemp );
+			lprintf( "open? %p  %s %08lx %p", hive, end, dwStatus, hTemp );
 		if( dwStatus == ERROR_FILE_NOT_FOUND )
 		{
 			DWORD dwDisposition;
@@ -259,7 +259,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 										  , REG_DWORD
 										  , (const BYTE *)&dw, 4 );
 #endif
-			lprintf( "stauts of update is %d", dwStatus );
+			lprintf( "stauts of update is %lu", dwStatus );
 
 		} else if( args[1]->IsString() ) {
 			String::Utf8Value val( isolate,  args[1] );
@@ -269,7 +269,7 @@ void RegObject::setRegItem(const v8::FunctionCallbackInfo<Value>& args ) {
 										  , (const BYTE *)*val, (DWORD)StrLen( *val ) );
 #endif
 			if( dwStatus )
-				lprintf( "Failed to set registry? %d %p %s", dwStatus, hTemp, keyStart );
+				lprintf( "Failed to set registry? %lu %p %s", dwStatus, hTemp, keyStart );
 
 		} else {
 			isolate->ThrowException( Exception::Error(

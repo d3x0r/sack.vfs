@@ -21,3 +21,6 @@ src/sack/libssh2/maketgz
 src/sack/libssh2/Makefile.am
 tests/tasks/vgcore*
 apps/task-manager/config.run.jsox
+nw.js
+src/ppc
+build-vs2022

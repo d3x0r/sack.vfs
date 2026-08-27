@@ -127,7 +127,7 @@ PNVLIST GetProcessCommandLines( const char* process, int pid ) {
 						if( !dwResult ) {
 							DWORD dwError = GetLastError();
 							if( dwError == ERROR_INVALID_HANDLE ) {
-								lprintf( "error Code: %d %p", dwError, hProcess );
+								lprintf( "error Code: %lu %p", dwError, hProcess );
 								continue;
 							} else if( dwError == ERROR_INSUFFICIENT_BUFFER ) {
 								processFileNameLength *= 2;
@@ -135,7 +135,7 @@ PNVLIST GetProcessCommandLines( const char* process, int pid ) {
 								processFileName = NewArray( wchar_t, processFileNameLength );
 								retry = TRUE;
 							} else
-								lprintf( "error Code: %d", dwError );
+								lprintf( "error Code: %lu", dwError );
 						}
 					} while( retry );
 					wchar_t* filename = pathrchrW( processFileName );
@@ -166,7 +166,7 @@ PNVLIST GetProcessCommandLines( const char* process, int pid ) {
 							AddLink( &results, result_val );
 							//lprintf( "Adding result: %p %p %S", pInfo->uString.Buffer, pInfo->chars, pInfo->chars );
 						} else {
-							lprintf( "Unhandled status: %08x for PID:%d", result, pe.th32ProcessID );
+							lprintf( "Unhandled status: %08lx for PID:%lu", result, pe.th32ProcessID );
 						}
 					} while( retry );
 
@@ -176,7 +176,7 @@ PNVLIST GetProcessCommandLines( const char* process, int pid ) {
 					if( dwError == ERROR_ACCESS_DENIED ) {
 						//lprintf( "Didn't open process ID %d %d", dwError, pe.th32ProcessID );
 					} else 
-						lprintf( "Didn't open process ID %d %d", dwError, pe.th32ProcessID );
+						lprintf( "Didn't open process ID %lu %lu", dwError, pe.th32ProcessID );
 				}
 			} while( Process32Next( hp, &pe ) );
 		}

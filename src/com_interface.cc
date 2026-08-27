@@ -664,7 +664,7 @@ static LONG CALLBACK MonitorMessageHandler( HWND hWnd, UINT uMsg, WPARAM wParam,
 					DEV_BROADCAST_HDR* msg = (DEV_BROADCAST_HDR*)lParam;
 					switch (msg->dbch_devicetype) {
 						default:
-							lprintf("Unhandled device type: %d", msg->dbch_devicetype);
+							lprintf("Unhandled device type: %lu", msg->dbch_devicetype);
 							break;
 						case DBT_DEVTYP_PORT: {
 							DEV_BROADCAST_PORT_A* msg = (DEV_BROADCAST_PORT_A*)lParam;
@@ -679,7 +679,7 @@ static LONG CALLBACK MonitorMessageHandler( HWND hWnd, UINT uMsg, WPARAM wParam,
 				DEV_BROADCAST_HDR *msg = (DEV_BROADCAST_HDR *)lParam;
 				switch( msg->dbch_devicetype ) {
 				default:
-					lprintf("Unhandled device type: %d", msg->dbch_devicetype);
+					lprintf("Unhandled device type: %lu", msg->dbch_devicetype);
 					break;
 				case DBT_DEVTYP_PORT: {
 					DEV_BROADCAST_PORT_A* msg = (DEV_BROADCAST_PORT_A*)lParam;
@@ -717,7 +717,7 @@ static LONG CALLBACK MonitorMessageHandler( HWND hWnd, UINT uMsg, WPARAM wParam,
 			   //lprintf( "something changed somewhere..." );
 				break;
 			default: 
-				lprintf( "Unhandled device change: %d", wParam );
+				lprintf( "Unhandled device change: %llu", wParam );
 				break;
 			}
 			return TRUE; // allow.
@@ -859,7 +859,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 							   DWORD dwError = GetLastError();
 							   if( dwError == ERROR_NO_MORE_ITEMS )
 								   break;
-							   lprintf( "Err: %d", dwError );
+							   lprintf( "Err: %lu", dwError );
 							   break;
 						   }
 
@@ -936,7 +936,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 														   //         "only?)" );
 													   }
 												   } else
-													   lprintf( "Key Error: %08x", hr );
+													   lprintf( "Key Error: %08lx", hr );
 											   }
 											   CoTaskMemFree( name );
 										   }
@@ -948,7 +948,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 										                           , 0 );
 										   switch( propType ) {
 										   default:
-											   lprintf( "Unhandled type: %d(%08x)", propType, propType );
+											   lprintf( "Unhandled type: %lu(%08lx)", propType, propType );
 											   break;
 										   case DEVPROP_TYPE_STRING_LIST: {
 											   Local<Array> list = Array::New( isolate );
@@ -1069,7 +1069,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 												   TEXTSTR t_className = WcharConvert( (const wchar_t *)propertyBuffer );
 												   lprintf( "Property name:%s", t_className );
 											   } else {
-												   lprintf( "unsupported format %d", propType );
+												   lprintf( "unsupported format %lu", propType );
 											   }
 										   }
 									   }
@@ -1082,7 +1082,7 @@ void getPortProperties( char const*com, Isolate * isolate, Local<Object> result 
 				
 			   }
 		   } else {
-			   lprintf( "CM_Get_Class_Property failed for a class with error: %d", cr );
+			   lprintf( "CM_Get_Class_Property failed for a class with error: %lu", cr );
 		   }
 	   }
 	   /*
@@ -1215,7 +1215,7 @@ void reEnablePort( char const *port, bool enable ) {
 
 										  CONFIGRET r2 = CM_Enable_DevNode( data.DevInst, 0 );
 										  if( r2 )
-											lprintf( "Device enable Failed? %d(%08x)", r2, r2 );
+											lprintf( "Device enable Failed? %lu(%08lx)", r2, r2 );
 									  }
 									  // found the match, done.
 									  if( port && port[ 0 ] )
@@ -1229,7 +1229,7 @@ void reEnablePort( char const *port, bool enable ) {
 					  }
 				  }
 			  } else {
-				  lprintf( "CM_Get_Class_Property failed for a class with error: %d", cr );
+				  lprintf( "CM_Get_Class_Property failed for a class with error: %lu", cr );
 			  }
 		  }
 		  /*

@@ -67,7 +67,7 @@ void getInterfaces_( ReturnValue<Value> *returnValue, Isolate *isolate, LOGICAL 
 				DWORD dwStatus = RegOpenKeyEx( HKEY_LOCAL_MACHINE, buf, 0
 				                             , KEY_QUERY_VALUE | STANDARD_RIGHTS_READ | STANDARD_RIGHTS_READ, &hTemp );
 				if( dwStatus )
-					lprintf( "open? %p  %s %08x %p", HKEY_LOCAL_MACHINE, buf, dwStatus, hTemp );
+					lprintf( "open? %p  %s %08lx %p", HKEY_LOCAL_MACHINE, buf, dwStatus, hTemp );
 				char pValue[ 512 ];
 				DWORD dwRetType, dwBufSize = 512;
 
@@ -77,7 +77,7 @@ void getInterfaces_( ReturnValue<Value> *returnValue, Isolate *isolate, LOGICAL 
 
 				dwStatus = RegQueryValueEx( hTemp, "FriendlyName", 0, &dwRetType, (PBYTE)pValue, &dwBufSize );
 				if( dwStatus )
-					lprintf( "Probably had bad key so this is bad? %d %p %s", dwStatus, hTemp, pValue );
+					lprintf( "Probably had bad key so this is bad? %lu %p %s", dwStatus, hTemp, pValue );
 				RegCloseKey( hTemp );
 				StrCpyEx( pDev->friendlyname, pValue, sizeof( pDev->friendlyname ) );
 			}
