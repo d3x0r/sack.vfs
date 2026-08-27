@@ -93809,243 +93809,59 @@ void *sha3(const void *in, size_t inlen, void *md, int mdlen);
 void shake_xof(sha3_ctx_t *c);
 void shake_out(sha3_ctx_t *c, void *out, size_t len);
 #endif
-/*
-Implementation by Ronny Van Keer, hereby denoted as "the implementer".
-For more information, feedback or questions, please refer to our website:
-https://keccak.team/
-To the extent possible under law, the implementer has waived all copyright
-and related or neighboring rights to the source code in this file.
-http://creativecommons.org/publicdomain/zero/1.0/
-*/
-#ifndef _KangarooTwelve_h_
-#define _KangarooTwelve_h_
-//#include "KeccakP-1600-SnP.h"
-#ifdef __64__
-/*
-Implementation by the Keccak Team, namely, Guido Bertoni, Joan Daemen,
-Michaël Peeters, Gilles Van Assche and Ronny Van Keer,
-hereby denoted as "the implementer".
-For more information, feedback or questions, please refer to our website:
-https://keccak.team/
-To the extent possible under law, the implementer has waived all copyright
-and related or neighboring rights to the source code in this file.
-http://creativecommons.org/publicdomain/zero/1.0/
----
-Please refer to the XKCP for more details.
-*/
-#ifndef _KeccakP_1600_SnP_h_
-#define _KeccakP_1600_SnP_h_
-/*
- ---------------------------------------------------------------------------
- Copyright (c) 1998-2008, Brian Gladman, Worcester, UK. All rights reserved.
- LICENSE TERMS
- The redistribution and use of this software (with or without changes)
- is allowed without the payment of fees or royalties provided that:
-  1. source code distributions include the above copyright notice, this
-     list of conditions and the following disclaimer;
-  2. binary distributions include the above copyright notice, this list
-     of conditions and the following disclaimer in their documentation;
-  3. the name of the copyright holder is not used to endorse products
-     built using this software without specific written permission.
- DISCLAIMER
- This software is provided 'as is' with no explicit or implied warranties
- in respect of its properties, including, but not limited to, correctness
- and/or fitness for purpose.
- ---------------------------------------------------------------------------
- Issue Date: 20/12/2007
- Changes for ARM 9/9/2010
-*/
-#ifndef _BRG_ENDIAN_H
-#define _BRG_ENDIAN_H
-#define IS_BIG_ENDIAN      4321
-#define IS_LITTLE_ENDIAN   1234
-#if 0
-/* Include files where endian defines and byteswap functions may reside */
-#if defined( __sun )
-#  include <sys/isa_defs.h>
-#elif defined( __FreeBSD__ ) || defined( __OpenBSD__ ) || defined( __NetBSD__ )
-#  include <sys/endian.h>
-#elif defined( BSD ) && ( BSD >= 199103 ) || defined( __APPLE__ ) ||       defined( __CYGWIN32__ ) || defined( __DJGPP__ ) || defined( __osf__ )
-#  include <machine/endian.h>
-#elif defined( __linux__ ) || defined( __GNUC__ ) || defined( __GNU_LIBRARY__ )
-#  if !defined( __MINGW32__ ) && !defined( _AIX )
-#    include <endian.h>
-#    if !defined( __BEOS__ )
-#      include <byteswap.h>
-#    endif
-#  endif
+/* KangarooTwelve (K12) - self contained implementation.
+ *
+ * Replaces the eXtended Keccak Code Package (contrib/K12/lib) with a single
+ * portable C file; the API and the produced bytes are identical to the
+ * reference implementation by Ronny Van Keer (https://keccak.team/), which
+ * this is derived from, so it is a drop-in replacement.
+ *
+ * Fixed parameters (as in the K12 specification):
+ *    security 128 bits, capacity 256 bits, rate 1344 bits (168 bytes),
+ *    Keccak-p[1600,12], chunk size 8192 bytes, chaining values of 32 bytes.
+ *
+ * To the extent possible under law, the implementer has waived all copyright
+ * and related or neighboring rights to the source code in this file.
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+#ifndef SACK_CONTRIB_K12_INCLUDED
+#define SACK_CONTRIB_K12_INCLUDED
+#ifdef __cplusplus
+extern "C" {
 #endif
-#endif
-/* Now attempt to set the define for platform byte order using any  */
-/* of the four forms SYMBOL, _SYMBOL, __SYMBOL & __SYMBOL__, which  */
-/* seem to encompass most endian symbol definitions                 */
-#if defined( BIG_ENDIAN ) && defined( LITTLE_ENDIAN )
-#  if defined( BYTE_ORDER ) && BYTE_ORDER == BIG_ENDIAN
-#    define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#  elif defined( BYTE_ORDER ) && BYTE_ORDER == LITTLE_ENDIAN
-#    define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#  endif
-#elif defined( BIG_ENDIAN )
-#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#elif defined( LITTLE_ENDIAN )
-#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#endif
-#if defined( _BIG_ENDIAN ) && defined( _LITTLE_ENDIAN )
-#  if defined( _BYTE_ORDER ) && _BYTE_ORDER == _BIG_ENDIAN
-#    define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#  elif defined( _BYTE_ORDER ) && _BYTE_ORDER == _LITTLE_ENDIAN
-#    define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#  endif
-#elif defined( _BIG_ENDIAN )
-#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#elif defined( _LITTLE_ENDIAN )
-#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#endif
-#if defined( __BIG_ENDIAN ) && defined( __LITTLE_ENDIAN )
-#  if defined( __BYTE_ORDER ) && __BYTE_ORDER == __BIG_ENDIAN
-#    define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#  elif defined( __BYTE_ORDER ) && __BYTE_ORDER == __LITTLE_ENDIAN
-#    define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#  endif
-#elif defined( __BIG_ENDIAN )
-#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#elif defined( __LITTLE_ENDIAN )
-#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#endif
-#if defined( __BIG_ENDIAN__ ) && defined( __LITTLE_ENDIAN__ )
-#  if defined( __BYTE_ORDER__ ) && __BYTE_ORDER__ == __BIG_ENDIAN__
-#    define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#  elif defined( __BYTE_ORDER__ ) && __BYTE_ORDER__ == __LITTLE_ENDIAN__
-#    define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#  endif
-#elif defined( __BIG_ENDIAN__ )
-#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#elif defined( __LITTLE_ENDIAN__ )
-#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#endif
-/*  if the platform byte order could not be determined, then try to */
-/*  set this define using common machine defines                    */
-#if !defined(PLATFORM_BYTE_ORDER)
-#if   defined( __alpha__ ) || defined( __alpha ) || defined( i386 )       ||       defined( __i386__ )  || defined( _M_I86 )  || defined( _M_IX86 )    ||       defined( __OS2__ )   || defined( sun386 )  || defined( __TURBOC__ ) ||       defined( vax )       || defined( vms )     || defined( VMS )        ||       defined( __VMS )     || defined( _M_X64 )
-#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#elif defined( AMIGA )    || defined( applec )    || defined( __AS400__ )  ||       defined( _CRAY )    || defined( __hppa )    || defined( __hp9000 )   ||       defined( ibm370 )   || defined( mc68000 )   || defined( m68k )       ||       defined( __MRC__ )  || defined( __MVS__ )   || defined( __MWERKS__ ) ||       defined( sparc )    || defined( __sparc)    || defined( SYMANTEC_C ) ||       defined( __VOS__ )  || defined( __TIGCC__ ) || defined( __TANDEM )   ||       defined( THINK_C )  || defined( __VMCMS__ ) || defined( _AIX )       ||       defined( __s390__ ) || defined( __s390x__ ) || defined( __zarch__ )
-#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#elif defined(__arm__)
-# ifdef __BIG_ENDIAN
-#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-# else
-#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-# endif
-#elif 1
-#  define PLATFORM_BYTE_ORDER IS_LITTLE_ENDIAN
-#elif 0
-#  define PLATFORM_BYTE_ORDER IS_BIG_ENDIAN
-#else
-#  error Please edit lines 132 or 134 in brg_endian.h to set the platform byte order
-#endif
-#endif
-#endif
-#define KeccakP1600_implementation_config "all rounds unrolled"
-#define KeccakP1600_fullUnrolling
-/* Or */
-/*
-#define KeccakP1600_implementation_config "6 rounds unrolled"
-#define KeccakP1600_unrolling 6
-*/
-/* Or */
-/*
-#define KeccakP1600_implementation_config "lane complementing, 6 rounds unrolled"
-#define KeccakP1600_unrolling 6
-#define KeccakP1600_useLaneComplementing
-*/
-/* Or */
-/*
-#define KeccakP1600_implementation_config "lane complementing, all rounds unrolled"
-#define KeccakP1600_fullUnrolling
-#define KeccakP1600_useLaneComplementing
-*/
-/* Or */
-/*
-#define KeccakP1600_implementation_config "lane complementing, all rounds unrolled, using SHLD for rotations"
-#define KeccakP1600_fullUnrolling
-#define KeccakP1600_useLaneComplementing
-#define KeccakP1600_useSHLD
-*/
-#define KeccakP1600_implementation      "generic 64-bit optimized implementation (" KeccakP1600_implementation_config ")"
-#define KeccakP1600_stateSizeInBytes    200
-#define KeccakP1600_stateAlignment      8
-#define KeccakF1600_FastLoop_supported
-#define KeccakP1600_12rounds_FastLoop_supported
-#define KeccakP1600_StaticInitialize()
-void KeccakP1600_Initialize(void *state);
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-#define KeccakP1600_AddByte(state, byte, offset)     ((unsigned char*)(state))[(offset)] ^= (byte)
-#else
-void KeccakP1600_AddByte(void *state, unsigned char data, unsigned int offset);
-#endif
-void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
-void KeccakP1600_Permute_12rounds(void *state);
-void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length);
-size_t KeccakP1600_12rounds_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen);
-#endif
-#else
-/*
-Implementation by Ronny Van Keer, hereby denoted as "the implementer".
-For more information, feedback or questions, please refer to our website:
-https://keccak.team/
-To the extent possible under law, the implementer has waived all copyright
-and related or neighboring rights to the source code in this file.
-http://creativecommons.org/publicdomain/zero/1.0/
----
-Please refer to the XKCP for more details.
-*/
-#ifndef _KeccakP_1600_SnP_h_
-#define _KeccakP_1600_SnP_h_
-#define KeccakP1600_implementation      "in-place 32-bit optimized implementation"
-#define KeccakP1600_stateSizeInBytes    200
-#define KeccakP1600_stateAlignment      8
-#define KeccakP1600_StaticInitialize()
-void KeccakP1600_Initialize(void *state);
-void KeccakP1600_AddByte(void *state, unsigned char data, unsigned int offset);
-void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
-void KeccakP1600_Permute_12rounds(void *state);
-void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length);
-#endif
-#endif
-#ifdef ALIGN
-#undef ALIGN
-#endif
-#if defined(__GNUC__)
-#define ALIGN(x) __attribute__ ((aligned(x)))
-#elif defined(_MSC_VER)
-#define ALIGN(x) __declspec(align(x))
-#elif defined(__ARMCC_VERSION)
-#define ALIGN(x) __align(x)
-#else
-#define ALIGN(x)
-#endif
-ALIGN(KeccakP1600_stateAlignment) typedef struct KeccakWidth1600_12rounds_SpongeInstanceStruct {
-    unsigned char state[KeccakP1600_stateSizeInBytes];
-    unsigned int rate;
-    unsigned int byteIOIndex;
-    int squeezing;
-} KeccakWidth1600_12rounds_SpongeInstance;
+#define K12_SECURITY         128
+#define K12_CAPACITY         ( 2 * K12_SECURITY )
+#define K12_CAPACITY_BYTES   ( K12_CAPACITY / 8 )
+#define K12_RATE             ( 1600 - K12_CAPACITY )
+#define K12_RATE_BYTES       ( K12_RATE / 8 )
+#define K12_CHUNK_SIZE       8192
 typedef enum {
-    NOT_INITIALIZED,
-    ABSORBING,
-    FINAL,
-    SQUEEZING
+	NOT_INITIALIZED,
+	ABSORBING,
+	FINAL,
+	SQUEEZING
 } KCP_Phases;
 typedef KCP_Phases KangarooTwelve_Phases;
+/* one Keccak-p[1600,12] sponge; rate is always K12_RATE_BYTES.
+   `state' is kept in little endian lane order at all times, so extracting
+   output is a plain copy on every host. */
+typedef struct KeccakWidth1600_12rounds_SpongeInstanceStruct {
+	union {
+		uint8_t  b[200];
+		uint64_t q[25];
+	} state;
+	unsigned int byteIOIndex;
+	int          squeezing;
+} KeccakWidth1600_12rounds_SpongeInstance;
 typedef struct {
-    KeccakWidth1600_12rounds_SpongeInstance queueNode;
-    KeccakWidth1600_12rounds_SpongeInstance finalNode;
-    size_t fixedOutputLength;
-    size_t blockNumber;
-    unsigned int queueAbsorbedLen;
-    KangarooTwelve_Phases phase;
+	KeccakWidth1600_12rounds_SpongeInstance queueNode;
+	KeccakWidth1600_12rounds_SpongeInstance finalNode;
+	size_t       fixedOutputLength;
+	size_t       blockNumber;
+	unsigned int queueAbsorbedLen;
+	KangarooTwelve_Phases phase;
 } KangarooTwelve_Instance;
-/** Extendable ouput function KangarooTwelve.
+/** Extendable output function KangarooTwelve.
   * @param  input           Pointer to the input message (M).
   * @param  inputByteLen    The length of the input message in bytes.
   * @param  output          Pointer to the output buffer.
@@ -94054,7 +93870,7 @@ typedef struct {
   * @param  customByteLen   The length of the customization string in bytes.
   * @return 0 if successful, 1 otherwise.
   */
-int KangarooTwelve(const unsigned char *input, size_t inputByteLen, unsigned char *output, size_t outputByteLen, const unsigned char *customization, size_t customByteLen );
+int KangarooTwelve( const unsigned char *input, size_t inputByteLen, unsigned char *output, size_t outputByteLen, const unsigned char *customization, size_t customByteLen );
 /**
   * Function to initialize a KangarooTwelve instance.
   * @param  ktInstance      Pointer to the instance to be initialized.
@@ -94062,38 +93878,29 @@ int KangarooTwelve(const unsigned char *input, size_t inputByteLen, unsigned cha
   *                         or 0 for an arbitrarily-long output.
   * @return 0 if successful, 1 otherwise.
   */
-int KangarooTwelve_Initialize(KangarooTwelve_Instance *ktInstance, size_t outputByteLen);
+int KangarooTwelve_Initialize( KangarooTwelve_Instance *ktInstance, size_t outputByteLen );
 /**
   * Function to give input data to be absorbed.
-  * @param  ktInstance      Pointer to the instance initialized by KangarooTwelve_Initialize().
-  * @param  input           Pointer to the input message data (M).
-  * @param  inputByteLen    The number of bytes provided in the input message data.
   * @return 0 if successful, 1 otherwise.
   */
-int KangarooTwelve_Update(KangarooTwelve_Instance *ktInstance, const unsigned char *input, size_t inputByteLen);
+int KangarooTwelve_Update( KangarooTwelve_Instance *ktInstance, const unsigned char *input, size_t inputByteLen );
 /**
   * Function to call after all the input message has been input, and to get
   * output bytes if the length was specified when calling KangarooTwelve_Initialize().
-  * @param  ktInstance      Pointer to the hash instance initialized by KangarooTwelve_Initialize().
-  * If @a outputByteLen was not 0 in the call to KangarooTwelve_Initialize(), the number of
-  *     output bytes is equal to @a outputByteLen.
-  * If @a outputByteLen was 0 in the call to KangarooTwelve_Initialize(), the output bytes
-  *     must be extracted using the KangarooTwelve_Squeeze() function.
-  * @param  output          Pointer to the buffer where to store the output data.
-  * @param  customization   Pointer to the customization string (C).
-  * @param  customByteLen   The length of the customization string in bytes.
+  * If @a outputByteLen was 0 there, the output bytes must be extracted using
+  * KangarooTwelve_Squeeze().
   * @return 0 if successful, 1 otherwise.
   */
-int KangarooTwelve_Final(KangarooTwelve_Instance *ktInstance, unsigned char *output, const unsigned char *customization, size_t customByteLen);
+int KangarooTwelve_Final( KangarooTwelve_Instance *ktInstance, unsigned char *output, const unsigned char *customization, size_t customByteLen );
 /**
-  * Function to squeeze output data.
-  * @param  ktInstance     Pointer to the hash instance initialized by KangarooTwelve_Initialize().
-  * @param  data           Pointer to the buffer where to store the output data.
-  * @param  outputByteLen  The number of output bytes desired.
-  * @pre    KangarooTwelve_Final() must have been already called.
+  * Function to squeeze output data; KangarooTwelve_Final() must have been called.
+  * May be called repeatedly, the output continues the same stream.
   * @return 0 if successful, 1 otherwise.
   */
-int KangarooTwelve_Squeeze(KangarooTwelve_Instance *ktInstance, unsigned char *output, size_t outputByteLen);
+int KangarooTwelve_Squeeze( KangarooTwelve_Instance *ktInstance, unsigned char *output, size_t outputByteLen );
+#ifdef __cplusplus
+}
+#endif
 #endif
 struct random_context {
 	LOGICAL use_version2 : 1;
@@ -97314,1079 +97121,398 @@ void shake_out(sha3_ctx_t *c, void *out, size_t len)
     }
     c->pt = j;
 }
-/*
-Implementation by Ronny Van Keer, hereby denoted as "the implementer".
-For more information, feedback or questions, please refer to our website:
-https://keccak.team/
-To the extent possible under law, the implementer has waived all copyright
-and related or neighboring rights to the source code in this file.
-http://creativecommons.org/publicdomain/zero/1.0/
-*/
-#ifdef __64__
-#define KeccakP1600_implementation_config "all rounds unrolled"
-#define KeccakP1600_fullUnrolling
-/* Or */
-/*
-#define KeccakP1600_implementation_config "6 rounds unrolled"
-#define KeccakP1600_unrolling 6
-*/
-/* Or */
-/*
-#define KeccakP1600_implementation_config "lane complementing, 6 rounds unrolled"
-#define KeccakP1600_unrolling 6
-#define KeccakP1600_useLaneComplementing
-*/
-/* Or */
-/*
-#define KeccakP1600_implementation_config "lane complementing, all rounds unrolled"
-#define KeccakP1600_fullUnrolling
-#define KeccakP1600_useLaneComplementing
-*/
-/* Or */
-/*
-#define KeccakP1600_implementation_config "lane complementing, all rounds unrolled, using SHLD for rotations"
-#define KeccakP1600_fullUnrolling
-#define KeccakP1600_useLaneComplementing
-#define KeccakP1600_useSHLD
-*/
-/*
-Implementation by the Keccak Team, namely, Guido Bertoni, Joan Daemen,
-Michaël Peeters, Gilles Van Assche and Ronny Van Keer,
-hereby denoted as "the implementer".
-For more information, feedback or questions, please refer to our website:
-https://keccak.team/
-To the extent possible under law, the implementer has waived all copyright
-and related or neighboring rights to the source code in this file.
-http://creativecommons.org/publicdomain/zero/1.0/
----
-Please refer to the XKCP for more details.
-*/
-typedef unsigned char UINT8;
-typedef unsigned long long int UINT64;
-#if defined(KeccakP1600_useLaneComplementing)
-#define UseBebigokimisa
+/* KangarooTwelve (K12) - self contained implementation.  See k12.h.
+ *
+ * Derived from the reference implementation by Ronny Van Keer
+ * (https://keccak.team/) and produces identical output; the multi-lane
+ * (SIMD) leaf paths and the external Keccak code package are dropped in
+ * favour of one portable Keccak-p[1600,12] permutation.
+ *
+ * To the extent possible under law, the implementer has waived all copyright
+ * and related or neighboring rights to the source code in this file.
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+/* KangarooTwelve (K12) - self contained implementation.
+ *
+ * Replaces the eXtended Keccak Code Package (contrib/K12/lib) with a single
+ * portable C file; the API and the produced bytes are identical to the
+ * reference implementation by Ronny Van Keer (https://keccak.team/), which
+ * this is derived from, so it is a drop-in replacement.
+ *
+ * Fixed parameters (as in the K12 specification):
+ *    security 128 bits, capacity 256 bits, rate 1344 bits (168 bytes),
+ *    Keccak-p[1600,12], chunk size 8192 bytes, chaining values of 32 bytes.
+ *
+ * To the extent possible under law, the implementer has waived all copyright
+ * and related or neighboring rights to the source code in this file.
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+#ifndef SACK_CONTRIB_K12_INCLUDED
+#define SACK_CONTRIB_K12_INCLUDED
+#ifdef __cplusplus
+extern "C" {
 #endif
-#if defined(_MSC_VER )
-#define ROL64(a, offset) ((((UINT64)a) << offset) | (((UINT64)a) >> (64-offset)))
-//#define ROL64(a, offset) ( ( offset == 1 ) ? ( ( (a) & 0x8000000000000000ULL ) ? ((a) = (((a) << 1)|1)) : ( (a)<<1)  ) : ( _rotl64(a, offset) ) )
-//#define ROL64(a, offset)  _rotl64(a, offset)
-#elif defined(KeccakP1600_useSHLD)
-    #define ROL64(x,N) ({     register UINT64 __out;     register UINT64 __in = x;     __asm__ ("shld %2,%0,%0" : "=r"(__out) : "0"(__in), "i"(N));     __out;     })
-#else
-#define ROL64(a, offset) ((((UINT64)a) << offset) | (((UINT64)a) >> (64-offset)))
-#endif
-#ifdef KeccakP1600_fullUnrolling
-#define FullUnrolling
-#else
-#define Unrolling KeccakP1600_unrolling
-#endif
-static const UINT64 KeccakF1600RoundConstants[24] = {
-    0x0000000000000001ULL,
-    0x0000000000008082ULL,
-    0x800000000000808aULL,
-    0x8000000080008000ULL,
-    0x000000000000808bULL,
-    0x0000000080000001ULL,
-    0x8000000080008081ULL,
-    0x8000000000008009ULL,
-    0x000000000000008aULL,
-    0x0000000000000088ULL,
-    0x0000000080008009ULL,
-    0x000000008000000aULL,
-    0x000000008000808bULL,
-    0x800000000000008bULL,
-    0x8000000000008089ULL,
-    0x8000000000008003ULL,
-    0x8000000000008002ULL,
-    0x8000000000000080ULL,
-    0x000000000000800aULL,
-    0x800000008000000aULL,
-    0x8000000080008081ULL,
-    0x8000000000008080ULL,
-    0x0000000080000001ULL,
-    0x8000000080008008ULL };
-/* ---------------------------------------------------------------- */
-void KeccakP1600_Initialize(void *state)
-{
-    memset(state, 0, 200);
-#ifdef KeccakP1600_useLaneComplementing
-    ((UINT64*)state)[ 1] = ~(UINT64)0;
-    ((UINT64*)state)[ 2] = ~(UINT64)0;
-    ((UINT64*)state)[ 8] = ~(UINT64)0;
-    ((UINT64*)state)[12] = ~(UINT64)0;
-    ((UINT64*)state)[17] = ~(UINT64)0;
-    ((UINT64*)state)[20] = ~(UINT64)0;
-#endif
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_AddBytesInLane(void *state, unsigned int lanePosition, const unsigned char *data, unsigned int offset, unsigned int length)
-{
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    UINT64 lane;
-    if (length == 0)
-        return;
-    if (length == 1)
-        lane = data[0];
-    else {
-        lane = 0;
-        memcpy(&lane, data, length);
-    }
-    lane <<= offset*8;
-#else
-    UINT64 lane = 0;
-    unsigned int i;
-    for(i=0; i<length; i++)
-        lane |= ((UINT64)data[i]) << ((i+offset)*8);
-#endif
-    ((UINT64*)state)[lanePosition] ^= lane;
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_AddLanes(void *state, const unsigned char *data, unsigned int laneCount)
-{
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    unsigned int i = 0;
-#ifdef NO_MISALIGNED_ACCESSES
-    /* If either pointer is misaligned, fall back to byte-wise xor. */
-    if (((((uintptr_t)state) & 7) != 0) || ((((uintptr_t)data) & 7) != 0)) {
-      for (i = 0; i < laneCount * 8; i++) {
-        ((unsigned char*)state)[i] ^= data[i];
-      }
-    }
-    else
-#endif
-    {
-      /* Otherwise... */
-      for( ; (i+8)<=laneCount; i+=8) {
-          ((UINT64*)state)[i+0] ^= ((UINT64*)data)[i+0];
-          ((UINT64*)state)[i+1] ^= ((UINT64*)data)[i+1];
-          ((UINT64*)state)[i+2] ^= ((UINT64*)data)[i+2];
-          ((UINT64*)state)[i+3] ^= ((UINT64*)data)[i+3];
-          ((UINT64*)state)[i+4] ^= ((UINT64*)data)[i+4];
-          ((UINT64*)state)[i+5] ^= ((UINT64*)data)[i+5];
-          ((UINT64*)state)[i+6] ^= ((UINT64*)data)[i+6];
-          ((UINT64*)state)[i+7] ^= ((UINT64*)data)[i+7];
-      }
-      for( ; (i+4)<=laneCount; i+=4) {
-          ((UINT64*)state)[i+0] ^= ((UINT64*)data)[i+0];
-          ((UINT64*)state)[i+1] ^= ((UINT64*)data)[i+1];
-          ((UINT64*)state)[i+2] ^= ((UINT64*)data)[i+2];
-          ((UINT64*)state)[i+3] ^= ((UINT64*)data)[i+3];
-      }
-      for( ; (i+2)<=laneCount; i+=2) {
-          ((UINT64*)state)[i+0] ^= ((UINT64*)data)[i+0];
-          ((UINT64*)state)[i+1] ^= ((UINT64*)data)[i+1];
-      }
-      if (i<laneCount) {
-          ((UINT64*)state)[i+0] ^= ((UINT64*)data)[i+0];
-      }
-    }
-#else
-    unsigned int i;
-    const UINT8 *curData = data;
-    for(i=0; i<laneCount; i++, curData+=8) {
-        UINT64 lane = (UINT64)curData[0]
-            | ((UINT64)curData[1] <<  8)
-            | ((UINT64)curData[2] << 16)
-            | ((UINT64)curData[3] << 24)
-            | ((UINT64)curData[4] << 32)
-            | ((UINT64)curData[5] << 40)
-            | ((UINT64)curData[6] << 48)
-            | ((UINT64)curData[7] << 56);
-        ((UINT64*)state)[i] ^= lane;
-    }
-#endif
-}
-/* ---------------------------------------------------------------- */
-#if (PLATFORM_BYTE_ORDER != IS_LITTLE_ENDIAN)
-void KeccakP1600_AddByte(void *state, unsigned char byte, unsigned int offset)
-{
-    UINT64 lane = byte;
-    lane <<= (offset%8)*8;
-    ((UINT64*)state)[offset/8] ^= lane;
+#define K12_SECURITY         128
+#define K12_CAPACITY         ( 2 * K12_SECURITY )
+#define K12_CAPACITY_BYTES   ( K12_CAPACITY / 8 )
+#define K12_RATE             ( 1600 - K12_CAPACITY )
+#define K12_RATE_BYTES       ( K12_RATE / 8 )
+#define K12_CHUNK_SIZE       8192
+typedef enum {
+	NOT_INITIALIZED,
+	ABSORBING,
+	FINAL,
+	SQUEEZING
+} KCP_Phases;
+typedef KCP_Phases KangarooTwelve_Phases;
+/* one Keccak-p[1600,12] sponge; rate is always K12_RATE_BYTES.
+   `state' is kept in little endian lane order at all times, so extracting
+   output is a plain copy on every host. */
+typedef struct KeccakWidth1600_12rounds_SpongeInstanceStruct {
+	union {
+		uint8_t  b[200];
+		uint64_t q[25];
+	} state;
+	unsigned int byteIOIndex;
+	int          squeezing;
+} KeccakWidth1600_12rounds_SpongeInstance;
+typedef struct {
+	KeccakWidth1600_12rounds_SpongeInstance queueNode;
+	KeccakWidth1600_12rounds_SpongeInstance finalNode;
+	size_t       fixedOutputLength;
+	size_t       blockNumber;
+	unsigned int queueAbsorbedLen;
+	KangarooTwelve_Phases phase;
+} KangarooTwelve_Instance;
+/** Extendable output function KangarooTwelve.
+  * @param  input           Pointer to the input message (M).
+  * @param  inputByteLen    The length of the input message in bytes.
+  * @param  output          Pointer to the output buffer.
+  * @param  outputByteLen   The desired number of output bytes.
+  * @param  customization   Pointer to the customization string (C).
+  * @param  customByteLen   The length of the customization string in bytes.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve( const unsigned char *input, size_t inputByteLen, unsigned char *output, size_t outputByteLen, const unsigned char *customization, size_t customByteLen );
+/**
+  * Function to initialize a KangarooTwelve instance.
+  * @param  ktInstance      Pointer to the instance to be initialized.
+  * @param  outputByteLen   The desired number of output bytes,
+  *                         or 0 for an arbitrarily-long output.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve_Initialize( KangarooTwelve_Instance *ktInstance, size_t outputByteLen );
+/**
+  * Function to give input data to be absorbed.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve_Update( KangarooTwelve_Instance *ktInstance, const unsigned char *input, size_t inputByteLen );
+/**
+  * Function to call after all the input message has been input, and to get
+  * output bytes if the length was specified when calling KangarooTwelve_Initialize().
+  * If @a outputByteLen was 0 there, the output bytes must be extracted using
+  * KangarooTwelve_Squeeze().
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve_Final( KangarooTwelve_Instance *ktInstance, unsigned char *output, const unsigned char *customization, size_t customByteLen );
+/**
+  * Function to squeeze output data; KangarooTwelve_Final() must have been called.
+  * May be called repeatedly, the output continues the same stream.
+  * @return 0 if successful, 1 otherwise.
+  */
+int KangarooTwelve_Squeeze( KangarooTwelve_Instance *ktInstance, unsigned char *output, size_t outputByteLen );
+#ifdef __cplusplus
 }
 #endif
-/* ---------------------------------------------------------------- */
-#define SnP_AddBytes(state, data, offset, length, SnP_AddLanes, SnP_AddBytesInLane, SnP_laneLengthInBytes)     {         if ((offset) == 0) {             SnP_AddLanes(state, data, (length)/SnP_laneLengthInBytes);             SnP_AddBytesInLane(state,                 (length)/SnP_laneLengthInBytes,                 (data)+((length)/SnP_laneLengthInBytes)*SnP_laneLengthInBytes,                 0,                 (length)%SnP_laneLengthInBytes);         }         else {             unsigned int _sizeLeft = (length);             unsigned int _lanePosition = (offset)/SnP_laneLengthInBytes;             unsigned int _offsetInLane = (offset)%SnP_laneLengthInBytes;             const unsigned char *_curData = (data);             while(_sizeLeft > 0) {                 unsigned int _bytesInLane = SnP_laneLengthInBytes - _offsetInLane;                 if (_bytesInLane > _sizeLeft)                     _bytesInLane = _sizeLeft;                 SnP_AddBytesInLane(state, _lanePosition, _curData, _offsetInLane, _bytesInLane);                 _sizeLeft -= _bytesInLane;                 _lanePosition++;                 _offsetInLane = 0;                 _curData += _bytesInLane;             }         }     }
-void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length)
-{
-    SnP_AddBytes(state, data, offset, length, KeccakP1600_AddLanes, KeccakP1600_AddBytesInLane, 8);
-}
-/* ---------------------------------------------------------------- */
-#define declareABCDE     UINT64 Aba, Abe, Abi, Abo, Abu;     UINT64 Aga, Age, Agi, Ago, Agu;     UINT64 Aka, Ake, Aki, Ako, Aku;     UINT64 Ama, Ame, Ami, Amo, Amu;     UINT64 Asa, Ase, Asi, Aso, Asu;     UINT64 Bba, Bbe, Bbi, Bbo, Bbu;     UINT64 Bga, Bge, Bgi, Bgo, Bgu;     UINT64 Bka, Bke, Bki, Bko, Bku;     UINT64 Bma, Bme, Bmi, Bmo, Bmu;     UINT64 Bsa, Bse, Bsi, Bso, Bsu;     UINT64 Ca, Ce, Ci, Co, Cu;     UINT64 Da, De, Di, Do, Du;     UINT64 Eba, Ebe, Ebi, Ebo, Ebu;     UINT64 Ega, Ege, Egi, Ego, Egu;     UINT64 Eka, Eke, Eki, Eko, Eku;     UINT64 Ema, Eme, Emi, Emo, Emu;     UINT64 Esa, Ese, Esi, Eso, Esu;
-#define prepareTheta     Ca = Aba^Aga^Aka^Ama^Asa;     Ce = Abe^Age^Ake^Ame^Ase;     Ci = Abi^Agi^Aki^Ami^Asi;     Co = Abo^Ago^Ako^Amo^Aso;     Cu = Abu^Agu^Aku^Amu^Asu;
-#ifdef UseBebigokimisa
-/* --- Code for round, with prepare-theta (lane complementing pattern 'bebigokimisa') */
-/* --- 64-bit lanes mapped to 64-bit words */
-#define thetaRhoPiChiIotaPrepareTheta(i, A, E)     Da = Cu^ROL64(Ce, 1);     De = Ca^ROL64(Ci, 1);     Di = Ce^ROL64(Co, 1);     Do = Ci^ROL64(Cu, 1);     Du = Co^ROL64(Ca, 1);     A##ba ^= Da;     Bba = A##ba;     A##ge ^= De;     Bbe = ROL64(A##ge, 44);     A##ki ^= Di;     Bbi = ROL64(A##ki, 43);     A##mo ^= Do;     Bbo = ROL64(A##mo, 21);     A##su ^= Du;     Bbu = ROL64(A##su, 14);     E##ba =   Bba ^(  Bbe |  Bbi );     E##ba ^= KeccakF1600RoundConstants[i];     Ca = E##ba;     E##be =   Bbe ^((~Bbi)|  Bbo );     Ce = E##be;     E##bi =   Bbi ^(  Bbo &  Bbu );     Ci = E##bi;     E##bo =   Bbo ^(  Bbu |  Bba );     Co = E##bo;     E##bu =   Bbu ^(  Bba &  Bbe );     Cu = E##bu;     A##bo ^= Do;     Bga = ROL64(A##bo, 28);     A##gu ^= Du;     Bge = ROL64(A##gu, 20);     A##ka ^= Da;     Bgi = ROL64(A##ka, 3);     A##me ^= De;     Bgo = ROL64(A##me, 45);     A##si ^= Di;     Bgu = ROL64(A##si, 61);     E##ga =   Bga ^(  Bge |  Bgi );     Ca ^= E##ga;     E##ge =   Bge ^(  Bgi &  Bgo );     Ce ^= E##ge;     E##gi =   Bgi ^(  Bgo |(~Bgu));     Ci ^= E##gi;     E##go =   Bgo ^(  Bgu |  Bga );     Co ^= E##go;     E##gu =   Bgu ^(  Bga &  Bge );     Cu ^= E##gu;     A##be ^= De;     Bka = ROL64(A##be, 1);     A##gi ^= Di;     Bke = ROL64(A##gi, 6);     A##ko ^= Do;     Bki = ROL64(A##ko, 25);     A##mu ^= Du;     Bko = ROL64(A##mu, 8);     A##sa ^= Da;     Bku = ROL64(A##sa, 18);     E##ka =   Bka ^(  Bke |  Bki );     Ca ^= E##ka;     E##ke =   Bke ^(  Bki &  Bko );     Ce ^= E##ke;     E##ki =   Bki ^((~Bko)&  Bku );     Ci ^= E##ki;     E##ko = (~Bko)^(  Bku |  Bka );     Co ^= E##ko;     E##ku =   Bku ^(  Bka &  Bke );     Cu ^= E##ku;     A##bu ^= Du;     Bma = ROL64(A##bu, 27);     A##ga ^= Da;     Bme = ROL64(A##ga, 36);     A##ke ^= De;     Bmi = ROL64(A##ke, 10);     A##mi ^= Di;     Bmo = ROL64(A##mi, 15);     A##so ^= Do;     Bmu = ROL64(A##so, 56);     E##ma =   Bma ^(  Bme &  Bmi );     Ca ^= E##ma;     E##me =   Bme ^(  Bmi |  Bmo );     Ce ^= E##me;     E##mi =   Bmi ^((~Bmo)|  Bmu );     Ci ^= E##mi;     E##mo = (~Bmo)^(  Bmu &  Bma );     Co ^= E##mo;     E##mu =   Bmu ^(  Bma |  Bme );     Cu ^= E##mu;     A##bi ^= Di;     Bsa = ROL64(A##bi, 62);     A##go ^= Do;     Bse = ROL64(A##go, 55);     A##ku ^= Du;     Bsi = ROL64(A##ku, 39);     A##ma ^= Da;     Bso = ROL64(A##ma, 41);     A##se ^= De;     Bsu = ROL64(A##se, 2);     E##sa =   Bsa ^((~Bse)&  Bsi );     Ca ^= E##sa;     E##se = (~Bse)^(  Bsi |  Bso );     Ce ^= E##se;     E##si =   Bsi ^(  Bso &  Bsu );     Ci ^= E##si;     E##so =   Bso ^(  Bsu |  Bsa );     Co ^= E##so;     E##su =   Bsu ^(  Bsa &  Bse );     Cu ^= E##su;
-/* --- Code for round (lane complementing pattern 'bebigokimisa') */
-/* --- 64-bit lanes mapped to 64-bit words */
-#define thetaRhoPiChiIota(i, A, E)     Da = Cu^ROL64(Ce, 1);     De = Ca^ROL64(Ci, 1);     Di = Ce^ROL64(Co, 1);     Do = Ci^ROL64(Cu, 1);     Du = Co^ROL64(Ca, 1);     A##ba ^= Da;     Bba = A##ba;     A##ge ^= De;     Bbe = ROL64(A##ge, 44);     A##ki ^= Di;     Bbi = ROL64(A##ki, 43);     A##mo ^= Do;     Bbo = ROL64(A##mo, 21);     A##su ^= Du;     Bbu = ROL64(A##su, 14);     E##ba =   Bba ^(  Bbe |  Bbi );     E##ba ^= KeccakF1600RoundConstants[i];     E##be =   Bbe ^((~Bbi)|  Bbo );     E##bi =   Bbi ^(  Bbo &  Bbu );     E##bo =   Bbo ^(  Bbu |  Bba );     E##bu =   Bbu ^(  Bba &  Bbe );     A##bo ^= Do;     Bga = ROL64(A##bo, 28);     A##gu ^= Du;     Bge = ROL64(A##gu, 20);     A##ka ^= Da;     Bgi = ROL64(A##ka, 3);     A##me ^= De;     Bgo = ROL64(A##me, 45);     A##si ^= Di;     Bgu = ROL64(A##si, 61);     E##ga =   Bga ^(  Bge |  Bgi );     E##ge =   Bge ^(  Bgi &  Bgo );     E##gi =   Bgi ^(  Bgo |(~Bgu));     E##go =   Bgo ^(  Bgu |  Bga );     E##gu =   Bgu ^(  Bga &  Bge );     A##be ^= De;     Bka = ROL64(A##be, 1);     A##gi ^= Di;     Bke = ROL64(A##gi, 6);     A##ko ^= Do;     Bki = ROL64(A##ko, 25);     A##mu ^= Du;     Bko = ROL64(A##mu, 8);     A##sa ^= Da;     Bku = ROL64(A##sa, 18);     E##ka =   Bka ^(  Bke |  Bki );     E##ke =   Bke ^(  Bki &  Bko );     E##ki =   Bki ^((~Bko)&  Bku );     E##ko = (~Bko)^(  Bku |  Bka );     E##ku =   Bku ^(  Bka &  Bke );     A##bu ^= Du;     Bma = ROL64(A##bu, 27);     A##ga ^= Da;     Bme = ROL64(A##ga, 36);     A##ke ^= De;     Bmi = ROL64(A##ke, 10);     A##mi ^= Di;     Bmo = ROL64(A##mi, 15);     A##so ^= Do;     Bmu = ROL64(A##so, 56);     E##ma =   Bma ^(  Bme &  Bmi );     E##me =   Bme ^(  Bmi |  Bmo );     E##mi =   Bmi ^((~Bmo)|  Bmu );     E##mo = (~Bmo)^(  Bmu &  Bma );     E##mu =   Bmu ^(  Bma |  Bme );     A##bi ^= Di;     Bsa = ROL64(A##bi, 62);     A##go ^= Do;     Bse = ROL64(A##go, 55);     A##ku ^= Du;     Bsi = ROL64(A##ku, 39);     A##ma ^= Da;     Bso = ROL64(A##ma, 41);     A##se ^= De;     Bsu = ROL64(A##se, 2);     E##sa =   Bsa ^((~Bse)&  Bsi );     E##se = (~Bse)^(  Bsi |  Bso );     E##si =   Bsi ^(  Bso &  Bsu );     E##so =   Bso ^(  Bsu |  Bsa );     E##su =   Bsu ^(  Bsa &  Bse );
-#else
-/* --- Code for round, with prepare-theta */
-/* --- 64-bit lanes mapped to 64-bit words */
-#define thetaRhoPiChiIotaPrepareTheta(i, A, E)     Da = Cu^ROL64(Ce, 1);     De = Ca^ROL64(Ci, 1);     Di = Ce^ROL64(Co, 1);     Do = Ci^ROL64(Cu, 1);     Du = Co^ROL64(Ca, 1);     A##ba ^= Da;     Bba = A##ba;     A##ge ^= De;     Bbe = ROL64(A##ge, 44);     A##ki ^= Di;     Bbi = ROL64(A##ki, 43);     A##mo ^= Do;     Bbo = ROL64(A##mo, 21);     A##su ^= Du;     Bbu = ROL64(A##su, 14);     E##ba =   Bba ^((~Bbe)&  Bbi );     E##ba ^= KeccakF1600RoundConstants[i];     Ca = E##ba;     E##be =   Bbe ^((~Bbi)&  Bbo );     Ce = E##be;     E##bi =   Bbi ^((~Bbo)&  Bbu );     Ci = E##bi;     E##bo =   Bbo ^((~Bbu)&  Bba );     Co = E##bo;     E##bu =   Bbu ^((~Bba)&  Bbe );     Cu = E##bu;     A##bo ^= Do;     Bga = ROL64(A##bo, 28);     A##gu ^= Du;     Bge = ROL64(A##gu, 20);     A##ka ^= Da;     Bgi = ROL64(A##ka, 3);     A##me ^= De;     Bgo = ROL64(A##me, 45);     A##si ^= Di;     Bgu = ROL64(A##si, 61);     E##ga =   Bga ^((~Bge)&  Bgi );     Ca ^= E##ga;     E##ge =   Bge ^((~Bgi)&  Bgo );     Ce ^= E##ge;     E##gi =   Bgi ^((~Bgo)&  Bgu );     Ci ^= E##gi;     E##go =   Bgo ^((~Bgu)&  Bga );     Co ^= E##go;     E##gu =   Bgu ^((~Bga)&  Bge );     Cu ^= E##gu;     A##be ^= De;     Bka = ROL64(A##be, 1);     A##gi ^= Di;     Bke = ROL64(A##gi, 6);     A##ko ^= Do;     Bki = ROL64(A##ko, 25);     A##mu ^= Du;     Bko = ROL64(A##mu, 8);     A##sa ^= Da;     Bku = ROL64(A##sa, 18);     E##ka =   Bka ^((~Bke)&  Bki );     Ca ^= E##ka;     E##ke =   Bke ^((~Bki)&  Bko );     Ce ^= E##ke;     E##ki =   Bki ^((~Bko)&  Bku );     Ci ^= E##ki;     E##ko =   Bko ^((~Bku)&  Bka );     Co ^= E##ko;     E##ku =   Bku ^((~Bka)&  Bke );     Cu ^= E##ku;     A##bu ^= Du;     Bma = ROL64(A##bu, 27);     A##ga ^= Da;     Bme = ROL64(A##ga, 36);     A##ke ^= De;     Bmi = ROL64(A##ke, 10);     A##mi ^= Di;     Bmo = ROL64(A##mi, 15);     A##so ^= Do;     Bmu = ROL64(A##so, 56);     E##ma =   Bma ^((~Bme)&  Bmi );     Ca ^= E##ma;     E##me =   Bme ^((~Bmi)&  Bmo );     Ce ^= E##me;     E##mi =   Bmi ^((~Bmo)&  Bmu );     Ci ^= E##mi;     E##mo =   Bmo ^((~Bmu)&  Bma );     Co ^= E##mo;     E##mu =   Bmu ^((~Bma)&  Bme );     Cu ^= E##mu;     A##bi ^= Di;     Bsa = ROL64(A##bi, 62);     A##go ^= Do;     Bse = ROL64(A##go, 55);     A##ku ^= Du;     Bsi = ROL64(A##ku, 39);     A##ma ^= Da;     Bso = ROL64(A##ma, 41);     A##se ^= De;     Bsu = ROL64(A##se, 2);     E##sa =   Bsa ^((~Bse)&  Bsi );     Ca ^= E##sa;     E##se =   Bse ^((~Bsi)&  Bso );     Ce ^= E##se;     E##si =   Bsi ^((~Bso)&  Bsu );     Ci ^= E##si;     E##so =   Bso ^((~Bsu)&  Bsa );     Co ^= E##so;     E##su =   Bsu ^((~Bsa)&  Bse );     Cu ^= E##su;
-/* --- Code for round */
-/* --- 64-bit lanes mapped to 64-bit words */
-#define thetaRhoPiChiIota(i, A, E)     Da = Cu^ROL64(Ce, 1);     De = Ca^ROL64(Ci, 1);     Di = Ce^ROL64(Co, 1);     Do = Ci^ROL64(Cu, 1);     Du = Co^ROL64(Ca, 1);     A##ba ^= Da;     Bba = A##ba;     A##ge ^= De;     Bbe = ROL64(A##ge, 44);     A##ki ^= Di;     Bbi = ROL64(A##ki, 43);     A##mo ^= Do;     Bbo = ROL64(A##mo, 21);     A##su ^= Du;     Bbu = ROL64(A##su, 14);     E##ba =   Bba ^((~Bbe)&  Bbi );     E##ba ^= KeccakF1600RoundConstants[i];     E##be =   Bbe ^((~Bbi)&  Bbo );     E##bi =   Bbi ^((~Bbo)&  Bbu );     E##bo =   Bbo ^((~Bbu)&  Bba );     E##bu =   Bbu ^((~Bba)&  Bbe );     A##bo ^= Do;     Bga = ROL64(A##bo, 28);     A##gu ^= Du;     Bge = ROL64(A##gu, 20);     A##ka ^= Da;     Bgi = ROL64(A##ka, 3);     A##me ^= De;     Bgo = ROL64(A##me, 45);     A##si ^= Di;     Bgu = ROL64(A##si, 61);     E##ga =   Bga ^((~Bge)&  Bgi );     E##ge =   Bge ^((~Bgi)&  Bgo );     E##gi =   Bgi ^((~Bgo)&  Bgu );     E##go =   Bgo ^((~Bgu)&  Bga );     E##gu =   Bgu ^((~Bga)&  Bge );     A##be ^= De;     Bka = ROL64(A##be, 1);     A##gi ^= Di;     Bke = ROL64(A##gi, 6);     A##ko ^= Do;     Bki = ROL64(A##ko, 25);     A##mu ^= Du;     Bko = ROL64(A##mu, 8);     A##sa ^= Da;     Bku = ROL64(A##sa, 18);     E##ka =   Bka ^((~Bke)&  Bki );     E##ke =   Bke ^((~Bki)&  Bko );     E##ki =   Bki ^((~Bko)&  Bku );     E##ko =   Bko ^((~Bku)&  Bka );     E##ku =   Bku ^((~Bka)&  Bke );     A##bu ^= Du;     Bma = ROL64(A##bu, 27);     A##ga ^= Da;     Bme = ROL64(A##ga, 36);     A##ke ^= De;     Bmi = ROL64(A##ke, 10);     A##mi ^= Di;     Bmo = ROL64(A##mi, 15);     A##so ^= Do;     Bmu = ROL64(A##so, 56);     E##ma =   Bma ^((~Bme)&  Bmi );     E##me =   Bme ^((~Bmi)&  Bmo );     E##mi =   Bmi ^((~Bmo)&  Bmu );     E##mo =   Bmo ^((~Bmu)&  Bma );     E##mu =   Bmu ^((~Bma)&  Bme );     A##bi ^= Di;     Bsa = ROL64(A##bi, 62);     A##go ^= Do;     Bse = ROL64(A##go, 55);     A##ku ^= Du;     Bsi = ROL64(A##ku, 39);     A##ma ^= Da;     Bso = ROL64(A##ma, 41);     A##se ^= De;     Bsu = ROL64(A##se, 2);     E##sa =   Bsa ^((~Bse)&  Bsi );     E##se =   Bse ^((~Bsi)&  Bso );     E##si =   Bsi ^((~Bso)&  Bsu );     E##so =   Bso ^((~Bsu)&  Bsa );     E##su =   Bsu ^((~Bsa)&  Bse );
 #endif
-#define copyFromState(X, state)     X##ba = state[ 0];     X##be = state[ 1];     X##bi = state[ 2];     X##bo = state[ 3];     X##bu = state[ 4];     X##ga = state[ 5];     X##ge = state[ 6];     X##gi = state[ 7];     X##go = state[ 8];     X##gu = state[ 9];     X##ka = state[10];     X##ke = state[11];     X##ki = state[12];     X##ko = state[13];     X##ku = state[14];     X##ma = state[15];     X##me = state[16];     X##mi = state[17];     X##mo = state[18];     X##mu = state[19];     X##sa = state[20];     X##se = state[21];     X##si = state[22];     X##so = state[23];     X##su = state[24];
-#define copyToState(state, X)     state[ 0] = X##ba;     state[ 1] = X##be;     state[ 2] = X##bi;     state[ 3] = X##bo;     state[ 4] = X##bu;     state[ 5] = X##ga;     state[ 6] = X##ge;     state[ 7] = X##gi;     state[ 8] = X##go;     state[ 9] = X##gu;     state[10] = X##ka;     state[11] = X##ke;     state[12] = X##ki;     state[13] = X##ko;     state[14] = X##ku;     state[15] = X##ma;     state[16] = X##me;     state[17] = X##mi;     state[18] = X##mo;     state[19] = X##mu;     state[20] = X##sa;     state[21] = X##se;     state[22] = X##si;     state[23] = X##so;     state[24] = X##su;
-#define copyStateVariables(X, Y)     X##ba = Y##ba;     X##be = Y##be;     X##bi = Y##bi;     X##bo = Y##bo;     X##bu = Y##bu;     X##ga = Y##ga;     X##ge = Y##ge;     X##gi = Y##gi;     X##go = Y##go;     X##gu = Y##gu;     X##ka = Y##ka;     X##ke = Y##ke;     X##ki = Y##ki;     X##ko = Y##ko;     X##ku = Y##ku;     X##ma = Y##ma;     X##me = Y##me;     X##mi = Y##mi;     X##mo = Y##mo;     X##mu = Y##mu;     X##sa = Y##sa;     X##se = Y##se;     X##si = Y##si;     X##so = Y##so;     X##su = Y##su;
-#if ((defined(FullUnrolling)) || (Unrolling == 12))
-#define rounds12     prepareTheta     thetaRhoPiChiIotaPrepareTheta(12, A, E)     thetaRhoPiChiIotaPrepareTheta(13, E, A)     thetaRhoPiChiIotaPrepareTheta(14, A, E)     thetaRhoPiChiIotaPrepareTheta(15, E, A)     thetaRhoPiChiIotaPrepareTheta(16, A, E)     thetaRhoPiChiIotaPrepareTheta(17, E, A)     thetaRhoPiChiIotaPrepareTheta(18, A, E)     thetaRhoPiChiIotaPrepareTheta(19, E, A)     thetaRhoPiChiIotaPrepareTheta(20, A, E)     thetaRhoPiChiIotaPrepareTheta(21, E, A)     thetaRhoPiChiIotaPrepareTheta(22, A, E)     thetaRhoPiChiIota(23, E, A)
-#elif (Unrolling == 6)
-#define rounds12     prepareTheta     for(i=12; i<24; i+=6) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         thetaRhoPiChiIotaPrepareTheta(i+1, E, A)         thetaRhoPiChiIotaPrepareTheta(i+2, A, E)         thetaRhoPiChiIotaPrepareTheta(i+3, E, A)         thetaRhoPiChiIotaPrepareTheta(i+4, A, E)         thetaRhoPiChiIotaPrepareTheta(i+5, E, A)     }
-#elif (Unrolling == 4)
-#define rounds12     prepareTheta     for(i=12; i<24; i+=4) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         thetaRhoPiChiIotaPrepareTheta(i+1, E, A)         thetaRhoPiChiIotaPrepareTheta(i+2, A, E)         thetaRhoPiChiIotaPrepareTheta(i+3, E, A)     }
-#elif (Unrolling == 3)
-#define rounds12     prepareTheta     for(i=12; i<24; i+=3) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         thetaRhoPiChiIotaPrepareTheta(i+1, E, A)         thetaRhoPiChiIotaPrepareTheta(i+2, A, E)         copyStateVariables(A, E)     }
-#elif (Unrolling == 2)
-#define rounds12     prepareTheta     for(i=12; i<24; i+=2) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         thetaRhoPiChiIotaPrepareTheta(i+1, E, A)     }
-#elif (Unrolling == 1)
-#define rounds12     prepareTheta     for(i=12; i<24; i++) {         thetaRhoPiChiIotaPrepareTheta(i  , A, E)         copyStateVariables(A, E)     }
-#else
-#error "Unrolling is not correctly specified!"
+#define K12_SUFFIX_LEAF   0x0B
+#define K12_SUFFIX_SINGLE 0x07
+#define K12_SUFFIX_TREE   0x06
+#define K12_ROTL64( x, y ) ( ( (uint64_t)( x ) << ( y ) ) | ( (uint64_t)( x ) >> ( 64 - ( y ) ) ) )
+/* the state lanes are stored little endian; on a big endian host they are
+   swapped in and out around the permutation. */
+#if defined( __BIG_ENDIAN__ )                                                            || ( defined( __BYTE_ORDER__ ) && defined( __ORDER_BIG_ENDIAN__ )                         && ( __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__ ) )                                 || ( defined( __BYTE_ORDER ) && defined( __BIG_ENDIAN )                                   && ( __BYTE_ORDER == __BIG_ENDIAN ) )
+#  define K12_BIG_ENDIAN 1
 #endif
-void KeccakP1600_Permute_12rounds(void *state)
-{
-    declareABCDE
-    #ifndef KeccakP1600_fullUnrolling
-    unsigned int i;
-    #endif
-    UINT64 *stateAsLanes = (UINT64*)state;
-    copyFromState(A, stateAsLanes)
-    rounds12
-    copyToState(stateAsLanes, A)
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_ExtractBytesInLane(const void *state, unsigned int lanePosition, unsigned char *data, unsigned int offset, unsigned int length)
-{
-    UINT64 lane = ((UINT64*)state)[lanePosition];
-#ifdef KeccakP1600_useLaneComplementing
-    if ((lanePosition == 1) || (lanePosition == 2) || (lanePosition == 8) || (lanePosition == 12) || (lanePosition == 17) || (lanePosition == 20))
-        lane = ~lane;
-#endif
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    {
-        UINT64 lane1[1];
-        lane1[0] = lane;
-        memcpy(data, (UINT8*)lane1+offset, length);
-    }
-#else
-    unsigned int i;
-    lane >>= offset*8;
-    for(i=0; i<length; i++) {
-        data[i] = lane & 0xFF;
-        lane >>= 8;
-    }
-#endif
-}
-/* ---------------------------------------------------------------- */
-#if (PLATFORM_BYTE_ORDER != IS_LITTLE_ENDIAN)
-static void fromWordToBytes(UINT8 *bytes, const UINT64 word)
-{
-    unsigned int i;
-    for(i=0; i<(64/8); i++)
-        bytes[i] = (word >> (8*i)) & 0xFF;
-}
-#endif
-void KeccakP1600_ExtractLanes(const void *state, unsigned char *data, unsigned int laneCount)
-{
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    memcpy(data, state, laneCount*8);
-#else
-    unsigned int i;
-    for(i=0; i<laneCount; i++)
-        fromWordToBytes(data+(i*8), ((const UINT64*)state)[i]);
-#endif
-#ifdef KeccakP1600_useLaneComplementing
-    if (laneCount > 1) {
-        ((UINT64*)data)[ 1] = ~((UINT64*)data)[ 1];
-        if (laneCount > 2) {
-            ((UINT64*)data)[ 2] = ~((UINT64*)data)[ 2];
-            if (laneCount > 8) {
-                ((UINT64*)data)[ 8] = ~((UINT64*)data)[ 8];
-                if (laneCount > 12) {
-                    ((UINT64*)data)[12] = ~((UINT64*)data)[12];
-                    if (laneCount > 17) {
-                        ((UINT64*)data)[17] = ~((UINT64*)data)[17];
-                        if (laneCount > 20) {
-                            ((UINT64*)data)[20] = ~((UINT64*)data)[20];
-                        }
-                    }
-                }
-            }
-        }
-    }
-#endif
-}
-/* ---------------------------------------------------------------- */
-#define SnP_ExtractBytes(state, data, offset, length, SnP_ExtractLanes, SnP_ExtractBytesInLane, SnP_laneLengthInBytes)     {         if ((offset) == 0) {             SnP_ExtractLanes(state, data, (length)/SnP_laneLengthInBytes);             SnP_ExtractBytesInLane(state,                 (length)/SnP_laneLengthInBytes,                 (data)+((length)/SnP_laneLengthInBytes)*SnP_laneLengthInBytes,                 0,                 (length)%SnP_laneLengthInBytes);         }         else {             unsigned int _sizeLeft = (length);             unsigned int _lanePosition = (offset)/SnP_laneLengthInBytes;             unsigned int _offsetInLane = (offset)%SnP_laneLengthInBytes;             unsigned char *_curData = (data);             while(_sizeLeft > 0) {                 unsigned int _bytesInLane = SnP_laneLengthInBytes - _offsetInLane;                 if (_bytesInLane > _sizeLeft)                     _bytesInLane = _sizeLeft;                 SnP_ExtractBytesInLane(state, _lanePosition, _curData, _offsetInLane, _bytesInLane);                 _sizeLeft -= _bytesInLane;                 _lanePosition++;                 _offsetInLane = 0;                 _curData += _bytesInLane;             }         }     }
-void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length)
-{
-    SnP_ExtractBytes(state, data, offset, length, KeccakP1600_ExtractLanes, KeccakP1600_ExtractBytesInLane, 8);
-}
-/* ---------------------------------------------------------------- */
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-#define HTOLE64(x) (x)
-#else
-#define HTOLE64(x) (  ((x & 0xff00000000000000ull) >> 56) |   ((x & 0x00ff000000000000ull) >> 40) |   ((x & 0x0000ff0000000000ull) >> 24) |   ((x & 0x000000ff00000000ull) >> 8)  |   ((x & 0x00000000ff000000ull) << 8)  |   ((x & 0x0000000000ff0000ull) << 24) |   ((x & 0x000000000000ff00ull) << 40) |   ((x & 0x00000000000000ffull) << 56))
-#endif
-#define addInput(X, input, laneCount)     if (laneCount == 21) {         X##ba ^= HTOLE64(input[ 0]);         X##be ^= HTOLE64(input[ 1]);         X##bi ^= HTOLE64(input[ 2]);         X##bo ^= HTOLE64(input[ 3]);         X##bu ^= HTOLE64(input[ 4]);         X##ga ^= HTOLE64(input[ 5]);         X##ge ^= HTOLE64(input[ 6]);         X##gi ^= HTOLE64(input[ 7]);         X##go ^= HTOLE64(input[ 8]);         X##gu ^= HTOLE64(input[ 9]);         X##ka ^= HTOLE64(input[10]);         X##ke ^= HTOLE64(input[11]);         X##ki ^= HTOLE64(input[12]);         X##ko ^= HTOLE64(input[13]);         X##ku ^= HTOLE64(input[14]);         X##ma ^= HTOLE64(input[15]);         X##me ^= HTOLE64(input[16]);         X##mi ^= HTOLE64(input[17]);         X##mo ^= HTOLE64(input[18]);         X##mu ^= HTOLE64(input[19]);         X##sa ^= HTOLE64(input[20]);     }     else if (laneCount < 16) {         if (laneCount < 8) {             if (laneCount < 4) {                 if (laneCount < 2) {                     if (laneCount < 1) {                     }                     else {                         X##ba ^= HTOLE64(input[ 0]);                     }                 }                 else {                     X##ba ^= HTOLE64(input[ 0]);                     X##be ^= HTOLE64(input[ 1]);                     if (laneCount < 3) {                     }                     else {                         X##bi ^= HTOLE64(input[ 2]);                     }                 }             }             else {                 X##ba ^= HTOLE64(input[ 0]);                 X##be ^= HTOLE64(input[ 1]);                 X##bi ^= HTOLE64(input[ 2]);                 X##bo ^= HTOLE64(input[ 3]);                 if (laneCount < 6) {                     if (laneCount < 5) {                     }                     else {                         X##bu ^= HTOLE64(input[ 4]);                     }                 }                 else {                     X##bu ^= HTOLE64(input[ 4]);                     X##ga ^= HTOLE64(input[ 5]);                     if (laneCount < 7) {                     }                     else {                         X##ge ^= HTOLE64(input[ 6]);                     }                 }             }         }         else {             X##ba ^= HTOLE64(input[ 0]);             X##be ^= HTOLE64(input[ 1]);             X##bi ^= HTOLE64(input[ 2]);             X##bo ^= HTOLE64(input[ 3]);             X##bu ^= HTOLE64(input[ 4]);             X##ga ^= HTOLE64(input[ 5]);             X##ge ^= HTOLE64(input[ 6]);             X##gi ^= HTOLE64(input[ 7]);             if (laneCount < 12) {                 if (laneCount < 10) {                     if (laneCount < 9) {                     }                     else {                         X##go ^= HTOLE64(input[ 8]);                     }                 }                 else {                     X##go ^= HTOLE64(input[ 8]);                     X##gu ^= HTOLE64(input[ 9]);                     if (laneCount < 11) {                     }                     else {                         X##ka ^= HTOLE64(input[10]);                     }                 }             }             else {                 X##go ^= HTOLE64(input[ 8]);                 X##gu ^= HTOLE64(input[ 9]);                 X##ka ^= HTOLE64(input[10]);                 X##ke ^= HTOLE64(input[11]);                 if (laneCount < 14) {                     if (laneCount < 13) {                     }                     else {                         X##ki ^= HTOLE64(input[12]);                     }                 }                 else {                     X##ki ^= HTOLE64(input[12]);                     X##ko ^= HTOLE64(input[13]);                     if (laneCount < 15) {                     }                     else {                         X##ku ^= HTOLE64(input[14]);                     }                 }             }         }     }     else {         X##ba ^= HTOLE64(input[ 0]);         X##be ^= HTOLE64(input[ 1]);         X##bi ^= HTOLE64(input[ 2]);         X##bo ^= HTOLE64(input[ 3]);         X##bu ^= HTOLE64(input[ 4]);         X##ga ^= HTOLE64(input[ 5]);         X##ge ^= HTOLE64(input[ 6]);         X##gi ^= HTOLE64(input[ 7]);         X##go ^= HTOLE64(input[ 8]);         X##gu ^= HTOLE64(input[ 9]);         X##ka ^= HTOLE64(input[10]);         X##ke ^= HTOLE64(input[11]);         X##ki ^= HTOLE64(input[12]);         X##ko ^= HTOLE64(input[13]);         X##ku ^= HTOLE64(input[14]);         X##ma ^= HTOLE64(input[15]);         if (laneCount < 24) {             if (laneCount < 20) {                 if (laneCount < 18) {                     if (laneCount < 17) {                     }                     else {                         X##me ^= HTOLE64(input[16]);                     }                 }                 else {                     X##me ^= HTOLE64(input[16]);                     X##mi ^= HTOLE64(input[17]);                     if (laneCount < 19) {                     }                     else {                         X##mo ^= HTOLE64(input[18]);                     }                 }             }             else {                 X##me ^= HTOLE64(input[16]);                 X##mi ^= HTOLE64(input[17]);                 X##mo ^= HTOLE64(input[18]);                 X##mu ^= HTOLE64(input[19]);                 if (laneCount < 22) {                     if (laneCount < 21) {                     }                     else {                         X##sa ^= HTOLE64(input[20]);                     }                 }                 else {                     X##sa ^= HTOLE64(input[20]);                     X##se ^= HTOLE64(input[21]);                     if (laneCount < 23) {                     }                     else {                         X##si ^= HTOLE64(input[22]);                     }                 }             }         }         else {             X##me ^= HTOLE64(input[16]);             X##mi ^= HTOLE64(input[17]);             X##mo ^= HTOLE64(input[18]);             X##mu ^= HTOLE64(input[19]);             X##sa ^= HTOLE64(input[20]);             X##se ^= HTOLE64(input[21]);             X##si ^= HTOLE64(input[22]);             X##so ^= HTOLE64(input[23]);             if (laneCount < 25) {             }             else {                 X##su ^= HTOLE64(input[24]);             }         }     }
-size_t KeccakP1600_12rounds_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen)
-{
-    size_t originalDataByteLen = dataByteLen;
-    declareABCDE
-    #ifndef KeccakP1600_fullUnrolling
-    unsigned int i;
-    #endif
-    UINT64 *stateAsLanes = (UINT64*)state;
-    UINT64 *inDataAsLanes = (UINT64*)data;
-    copyFromState(A, stateAsLanes)
-    while(dataByteLen >= laneCount*8) {
-        addInput(A, inDataAsLanes, laneCount)
-        rounds12
-        inDataAsLanes += laneCount;
-        dataByteLen -= laneCount*8;
-    }
-    copyToState(stateAsLanes, A)
-    return originalDataByteLen - dataByteLen;
-}
-#else
-/*
-Implementation by Ronny Van Keer, hereby denoted as "the implementer".
-For more information, feedback or questions, please refer to our website:
-https://keccak.team/
-To the extent possible under law, the implementer has waived all copyright
-and related or neighboring rights to the source code in this file.
-http://creativecommons.org/publicdomain/zero/1.0/
----
-Please refer to the XKCP for more details.
-*/
-/*
-Implementation by Ronny Van Keer, hereby denoted as "the implementer".
-For more information, feedback or questions, please refer to our website:
-https://keccak.team/
-To the extent possible under law, the implementer has waived all copyright
-and related or neighboring rights to the source code in this file.
-http://creativecommons.org/publicdomain/zero/1.0/
----
-Please refer to the XKCP for more details.
-*/
-#ifndef _KeccakP_1600_SnP_h_
-#define _KeccakP_1600_SnP_h_
-#define KeccakP1600_implementation      "in-place 32-bit optimized implementation"
-#define KeccakP1600_stateSizeInBytes    200
-#define KeccakP1600_stateAlignment      8
-#define KeccakP1600_StaticInitialize()
-void KeccakP1600_Initialize(void *state);
-void KeccakP1600_AddByte(void *state, unsigned char data, unsigned int offset);
-void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length);
-void KeccakP1600_Permute_12rounds(void *state);
-void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length);
-#endif
-typedef unsigned char UINT8;
-typedef unsigned int UINT32;
-/* WARNING: on 8-bit and 16-bit platforms, this should be replaced by: */
-/* typedef unsigned long       UINT32; */
-#define ROL32(a, offset) ((((UINT32)a) << (offset)) ^ (((UINT32)a) >> (32-(offset))))
-/* Credit to Henry S. Warren, Hacker's Delight, Addison-Wesley, 2002 */
-#define prepareToBitInterleaving(low, high, temp, temp0, temp1)         temp0 = (low);         temp = (temp0 ^ (temp0 >>  1)) & 0x22222222UL;  temp0 = temp0 ^ temp ^ (temp <<  1);         temp = (temp0 ^ (temp0 >>  2)) & 0x0C0C0C0CUL;  temp0 = temp0 ^ temp ^ (temp <<  2);         temp = (temp0 ^ (temp0 >>  4)) & 0x00F000F0UL;  temp0 = temp0 ^ temp ^ (temp <<  4);         temp = (temp0 ^ (temp0 >>  8)) & 0x0000FF00UL;  temp0 = temp0 ^ temp ^ (temp <<  8);         temp1 = (high);         temp = (temp1 ^ (temp1 >>  1)) & 0x22222222UL;  temp1 = temp1 ^ temp ^ (temp <<  1);         temp = (temp1 ^ (temp1 >>  2)) & 0x0C0C0C0CUL;  temp1 = temp1 ^ temp ^ (temp <<  2);         temp = (temp1 ^ (temp1 >>  4)) & 0x00F000F0UL;  temp1 = temp1 ^ temp ^ (temp <<  4);         temp = (temp1 ^ (temp1 >>  8)) & 0x0000FF00UL;  temp1 = temp1 ^ temp ^ (temp <<  8);
-#define toBitInterleavingAndXOR(low, high, even, odd, temp, temp0, temp1)         prepareToBitInterleaving(low, high, temp, temp0, temp1)         even ^= (temp0 & 0x0000FFFF) | (temp1 << 16);         odd ^= (temp0 >> 16) | (temp1 & 0xFFFF0000);
-#define toBitInterleavingAndAND(low, high, even, odd, temp, temp0, temp1)         prepareToBitInterleaving(low, high, temp, temp0, temp1)         even &= (temp0 & 0x0000FFFF) | (temp1 << 16);         odd &= (temp0 >> 16) | (temp1 & 0xFFFF0000);
-#define toBitInterleavingAndSet(low, high, even, odd, temp, temp0, temp1)         prepareToBitInterleaving(low, high, temp, temp0, temp1)         even = (temp0 & 0x0000FFFF) | (temp1 << 16);         odd = (temp0 >> 16) | (temp1 & 0xFFFF0000);
-/* Credit to Henry S. Warren, Hacker's Delight, Addison-Wesley, 2002 */
-#define prepareFromBitInterleaving(even, odd, temp, temp0, temp1)         temp0 = (even);         temp1 = (odd);         temp = (temp0 & 0x0000FFFF) | (temp1 << 16);         temp1 = (temp0 >> 16) | (temp1 & 0xFFFF0000);         temp0 = temp;         temp = (temp0 ^ (temp0 >>  8)) & 0x0000FF00UL;  temp0 = temp0 ^ temp ^ (temp <<  8);         temp = (temp0 ^ (temp0 >>  4)) & 0x00F000F0UL;  temp0 = temp0 ^ temp ^ (temp <<  4);         temp = (temp0 ^ (temp0 >>  2)) & 0x0C0C0C0CUL;  temp0 = temp0 ^ temp ^ (temp <<  2);         temp = (temp0 ^ (temp0 >>  1)) & 0x22222222UL;  temp0 = temp0 ^ temp ^ (temp <<  1);         temp = (temp1 ^ (temp1 >>  8)) & 0x0000FF00UL;  temp1 = temp1 ^ temp ^ (temp <<  8);         temp = (temp1 ^ (temp1 >>  4)) & 0x00F000F0UL;  temp1 = temp1 ^ temp ^ (temp <<  4);         temp = (temp1 ^ (temp1 >>  2)) & 0x0C0C0C0CUL;  temp1 = temp1 ^ temp ^ (temp <<  2);         temp = (temp1 ^ (temp1 >>  1)) & 0x22222222UL;  temp1 = temp1 ^ temp ^ (temp <<  1);
-#define fromBitInterleaving(even, odd, low, high, temp, temp0, temp1)         prepareFromBitInterleaving(even, odd, temp, temp0, temp1)         low = temp0;         high = temp1;
-#define fromBitInterleavingAndXOR(even, odd, lowIn, highIn, lowOut, highOut, temp, temp0, temp1)         prepareFromBitInterleaving(even, odd, temp, temp0, temp1)         lowOut = lowIn ^ temp0;         highOut = highIn ^ temp1;
-void KeccakP1600_SetBytesInLaneToZero(void *state, unsigned int lanePosition, unsigned int offset, unsigned int length)
-{
-    UINT8 laneAsBytes[8];
-    UINT32 low, high;
-    UINT32 temp, temp0, temp1;
-    UINT32 *stateAsHalfLanes = (UINT32*)state;
-    memset(laneAsBytes, 0xFF, offset);
-    memset(laneAsBytes+offset, 0x00, length);
-    memset(laneAsBytes+offset+length, 0xFF, 8-offset-length);
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    low = *((UINT32*)(laneAsBytes+0));
-    high = *((UINT32*)(laneAsBytes+4));
-#else
-    low = laneAsBytes[0]
-        | ((UINT32)(laneAsBytes[1]) << 8)
-        | ((UINT32)(laneAsBytes[2]) << 16)
-        | ((UINT32)(laneAsBytes[3]) << 24);
-    high = laneAsBytes[4]
-        | ((UINT32)(laneAsBytes[5]) << 8)
-        | ((UINT32)(laneAsBytes[6]) << 16)
-        | ((UINT32)(laneAsBytes[7]) << 24);
-#endif
-    toBitInterleavingAndAND(low, high, stateAsHalfLanes[lanePosition*2+0], stateAsHalfLanes[lanePosition*2+1], temp, temp0, temp1);
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_Initialize(void *state)
-{
-    memset(state, 0, 200);
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_AddByte(void *state, unsigned char byte, unsigned int offset)
-{
-    unsigned int lanePosition = offset/8;
-    unsigned int offsetInLane = offset%8;
-    UINT32 low, high;
-    UINT32 temp, temp0, temp1;
-    UINT32 *stateAsHalfLanes = (UINT32*)state;
-    if (offsetInLane < 4) {
-        low = (UINT32)byte << (offsetInLane*8);
-        high = 0;
-    }
-    else {
-        low = 0;
-        high = (UINT32)byte << ((offsetInLane-4)*8);
-    }
-    toBitInterleavingAndXOR(low, high, stateAsHalfLanes[lanePosition*2+0], stateAsHalfLanes[lanePosition*2+1], temp, temp0, temp1);
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_AddBytesInLane(void *state, unsigned int lanePosition, const unsigned char *data, unsigned int offset, unsigned int length)
-{
-    UINT8 laneAsBytes[8];
-    UINT32 low, high;
-    UINT32 temp, temp0, temp1;
-    UINT32 *stateAsHalfLanes = (UINT32*)state;
-    memset(laneAsBytes, 0, 8);
-    memcpy(laneAsBytes+offset, data, length);
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    low = *((UINT32*)(laneAsBytes+0));
-    high = *((UINT32*)(laneAsBytes+4));
-#else
-    low = laneAsBytes[0]
-        | ((UINT32)(laneAsBytes[1]) << 8)
-        | ((UINT32)(laneAsBytes[2]) << 16)
-        | ((UINT32)(laneAsBytes[3]) << 24);
-    high = laneAsBytes[4]
-        | ((UINT32)(laneAsBytes[5]) << 8)
-        | ((UINT32)(laneAsBytes[6]) << 16)
-        | ((UINT32)(laneAsBytes[7]) << 24);
-#endif
-    toBitInterleavingAndXOR(low, high, stateAsHalfLanes[lanePosition*2+0], stateAsHalfLanes[lanePosition*2+1], temp, temp0, temp1);
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_AddLanes(void *state, const unsigned char *data, unsigned int laneCount)
-{
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    const UINT32 * pI = (const UINT32 *)data;
-    UINT32 * pS = (UINT32*)state;
-    UINT32 t, x0, x1;
-    int i;
-    for (i = laneCount-1; i >= 0; --i) {
-#ifdef NO_MISALIGNED_ACCESSES
-        UINT32 low;
-        UINT32 high;
-        memcpy(&low, pI++, 4);
-        memcpy(&high, pI++, 4);
-        toBitInterleavingAndXOR(low, high, *(pS++), *(pS++), t, x0, x1);
-#else
-        toBitInterleavingAndXOR(*(pI++), *(pI++), *(pS++), *(pS++), t, x0, x1)
-#endif
-    }
-#else
-    unsigned int lanePosition;
-    for(lanePosition=0; lanePosition<laneCount; lanePosition++) {
-        UINT8 laneAsBytes[8];
-        memcpy(laneAsBytes, data+lanePosition*8, 8);
-        UINT32 low = laneAsBytes[0]
-            | ((UINT32)(laneAsBytes[1]) << 8)
-            | ((UINT32)(laneAsBytes[2]) << 16)
-            | ((UINT32)(laneAsBytes[3]) << 24);
-        UINT32 high = laneAsBytes[4]
-            | ((UINT32)(laneAsBytes[5]) << 8)
-            | ((UINT32)(laneAsBytes[6]) << 16)
-            | ((UINT32)(laneAsBytes[7]) << 24);
-        UINT32 even, odd, temp, temp0, temp1;
-        UINT32 *stateAsHalfLanes = (UINT32*)state;
-        toBitInterleavingAndXOR(low, high, stateAsHalfLanes[lanePosition*2+0], stateAsHalfLanes[lanePosition*2+1], temp, temp0, temp1);
-    }
-#endif
-}
-/* ---------------------------------------------------------------- */
-#define SnP_AddBytes(state, data, offset, length, SnP_AddLanes, SnP_AddBytesInLane, SnP_laneLengthInBytes)     {         if ((offset) == 0) {             SnP_AddLanes(state, data, (length)/SnP_laneLengthInBytes);             SnP_AddBytesInLane(state,                 (length)/SnP_laneLengthInBytes,                 (data)+((length)/SnP_laneLengthInBytes)*SnP_laneLengthInBytes,                 0,                 (length)%SnP_laneLengthInBytes);         }         else {             unsigned int _sizeLeft = (length);             unsigned int _lanePosition = (offset)/SnP_laneLengthInBytes;             unsigned int _offsetInLane = (offset)%SnP_laneLengthInBytes;             const unsigned char *_curData = (data);             while(_sizeLeft > 0) {                 unsigned int _bytesInLane = SnP_laneLengthInBytes - _offsetInLane;                 if (_bytesInLane > _sizeLeft)                     _bytesInLane = _sizeLeft;                 SnP_AddBytesInLane(state, _lanePosition, _curData, _offsetInLane, _bytesInLane);                 _sizeLeft -= _bytesInLane;                 _lanePosition++;                 _offsetInLane = 0;                 _curData += _bytesInLane;             }         }     }
-void KeccakP1600_AddBytes(void *state, const unsigned char *data, unsigned int offset, unsigned int length)
-{
-    SnP_AddBytes(state, data, offset, length, KeccakP1600_AddLanes, KeccakP1600_AddBytesInLane, 8);
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_ExtractBytesInLane(const void *state, unsigned int lanePosition, unsigned char *data, unsigned int offset, unsigned int length)
-{
-    UINT32 *stateAsHalfLanes = (UINT32*)state;
-    UINT32 low, high, temp, temp0, temp1;
-    UINT8 laneAsBytes[8];
-    fromBitInterleaving(stateAsHalfLanes[lanePosition*2], stateAsHalfLanes[lanePosition*2+1], low, high, temp, temp0, temp1);
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    *((UINT32*)(laneAsBytes+0)) = low;
-    *((UINT32*)(laneAsBytes+4)) = high;
-#else
-    laneAsBytes[0] = low & 0xFF;
-    laneAsBytes[1] = (low >> 8) & 0xFF;
-    laneAsBytes[2] = (low >> 16) & 0xFF;
-    laneAsBytes[3] = (low >> 24) & 0xFF;
-    laneAsBytes[4] = high & 0xFF;
-    laneAsBytes[5] = (high >> 8) & 0xFF;
-    laneAsBytes[6] = (high >> 16) & 0xFF;
-    laneAsBytes[7] = (high >> 24) & 0xFF;
-#endif
-    memcpy(data, laneAsBytes+offset, length);
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_ExtractLanes(const void *state, unsigned char *data, unsigned int laneCount)
-{
-#if (PLATFORM_BYTE_ORDER == IS_LITTLE_ENDIAN)
-    UINT32 * pI = (UINT32 *)data;
-    const UINT32 * pS = ( const UINT32 *)state;
-    UINT32 t, x0, x1;
-    int i;
-    for (i = laneCount-1; i >= 0; --i) {
-#ifdef NO_MISALIGNED_ACCESSES
-        UINT32 low;
-        UINT32 high;
-        fromBitInterleaving(*(pS++), *(pS++), low, high, t, x0, x1);
-        memcpy(pI++, &low, 4);
-        memcpy(pI++, &high, 4);
-#else
-        fromBitInterleaving(*(pS++), *(pS++), *(pI++), *(pI++), t, x0, x1)
-#endif
-    }
-#else
-    unsigned int lanePosition;
-    for(lanePosition=0; lanePosition<laneCount; lanePosition++) {
-        UINT32 *stateAsHalfLanes = (UINT32*)state;
-        UINT32 low, high, temp, temp0, temp1;
-        fromBitInterleaving(stateAsHalfLanes[lanePosition*2], stateAsHalfLanes[lanePosition*2+1], low, high, temp, temp0, temp1);
-        UINT8 laneAsBytes[8];
-        laneAsBytes[0] = low & 0xFF;
-        laneAsBytes[1] = (low >> 8) & 0xFF;
-        laneAsBytes[2] = (low >> 16) & 0xFF;
-        laneAsBytes[3] = (low >> 24) & 0xFF;
-        laneAsBytes[4] = high & 0xFF;
-        laneAsBytes[5] = (high >> 8) & 0xFF;
-        laneAsBytes[6] = (high >> 16) & 0xFF;
-        laneAsBytes[7] = (high >> 24) & 0xFF;
-        memcpy(data+lanePosition*8, laneAsBytes, 8);
-    }
-#endif
-}
-/* ---------------------------------------------------------------- */
-#define SnP_ExtractBytes(state, data, offset, length, SnP_ExtractLanes, SnP_ExtractBytesInLane, SnP_laneLengthInBytes)     {         if ((offset) == 0) {             SnP_ExtractLanes(state, data, (length)/SnP_laneLengthInBytes);             SnP_ExtractBytesInLane(state,                 (length)/SnP_laneLengthInBytes,                 (data)+((length)/SnP_laneLengthInBytes)*SnP_laneLengthInBytes,                 0,                 (length)%SnP_laneLengthInBytes);         }         else {             unsigned int _sizeLeft = (length);             unsigned int _lanePosition = (offset)/SnP_laneLengthInBytes;             unsigned int _offsetInLane = (offset)%SnP_laneLengthInBytes;             unsigned char *_curData = (data);             while(_sizeLeft > 0) {                 unsigned int _bytesInLane = SnP_laneLengthInBytes - _offsetInLane;                 if (_bytesInLane > _sizeLeft)                     _bytesInLane = _sizeLeft;                 SnP_ExtractBytesInLane(state, _lanePosition, _curData, _offsetInLane, _bytesInLane);                 _sizeLeft -= _bytesInLane;                 _lanePosition++;                 _offsetInLane = 0;                 _curData += _bytesInLane;             }         }     }
-void KeccakP1600_ExtractBytes(const void *state, unsigned char *data, unsigned int offset, unsigned int length)
-{
-    SnP_ExtractBytes(state, data, offset, length, KeccakP1600_ExtractLanes, KeccakP1600_ExtractBytesInLane, 8);
-}
-/* ---------------------------------------------------------------- */
-static const UINT32 KeccakF1600RoundConstants_int2[2*24+1] =
-{
-    0x00000001UL,    0x00000000UL,
-    0x00000000UL,    0x00000089UL,
-    0x00000000UL,    0x8000008bUL,
-    0x00000000UL,    0x80008080UL,
-    0x00000001UL,    0x0000008bUL,
-    0x00000001UL,    0x00008000UL,
-    0x00000001UL,    0x80008088UL,
-    0x00000001UL,    0x80000082UL,
-    0x00000000UL,    0x0000000bUL,
-    0x00000000UL,    0x0000000aUL,
-    0x00000001UL,    0x00008082UL,
-    0x00000000UL,    0x00008003UL,
-    0x00000001UL,    0x0000808bUL,
-    0x00000001UL,    0x8000000bUL,
-    0x00000001UL,    0x8000008aUL,
-    0x00000001UL,    0x80000081UL,
-    0x00000000UL,    0x80000081UL,
-    0x00000000UL,    0x80000008UL,
-    0x00000000UL,    0x00000083UL,
-    0x00000000UL,    0x80008003UL,
-    0x00000001UL,    0x80008088UL,
-    0x00000000UL,    0x80000088UL,
-    0x00000001UL,    0x00008000UL,
-    0x00000000UL,    0x80008082UL,
-    0x000000FFUL
+/* Keccak-f[1600] round constants; K12 uses the last 12 of the 24 rounds. */
+static const uint64_t k12_rndc[24] = {
+	0x0000000000000001ULL, 0x0000000000008082ULL, 0x800000000000808aULL,
+	0x8000000080008000ULL, 0x000000000000808bULL, 0x0000000080000001ULL,
+	0x8000000080008081ULL, 0x8000000000008009ULL, 0x000000000000008aULL,
+	0x0000000000000088ULL, 0x0000000080008009ULL, 0x000000008000000aULL,
+	0x000000008000808bULL, 0x800000000000008bULL, 0x8000000000008089ULL,
+	0x8000000000008003ULL, 0x8000000000008002ULL, 0x8000000000000080ULL,
+	0x000000000000800aULL, 0x800000008000000aULL, 0x8000000080008081ULL,
+	0x8000000000008080ULL, 0x0000000080000001ULL, 0x8000000080008008ULL
 };
-#define KeccakRound0()         Cx = Abu0^Agu0^Aku0^Amu0^Asu0;         Du1 = Abe1^Age1^Ake1^Ame1^Ase1;         Da0 = Cx^ROL32(Du1, 1);         Cz = Abu1^Agu1^Aku1^Amu1^Asu1;         Du0 = Abe0^Age0^Ake0^Ame0^Ase0;         Da1 = Cz^Du0;         Cw = Abi0^Agi0^Aki0^Ami0^Asi0;         Do0 = Cw^ROL32(Cz, 1);         Cy = Abi1^Agi1^Aki1^Ami1^Asi1;         Do1 = Cy^Cx;         Cx = Aba0^Aga0^Aka0^Ama0^Asa0;         De0 = Cx^ROL32(Cy, 1);         Cz = Aba1^Aga1^Aka1^Ama1^Asa1;         De1 = Cz^Cw;         Cy = Abo1^Ago1^Ako1^Amo1^Aso1;         Di0 = Du0^ROL32(Cy, 1);         Cw = Abo0^Ago0^Ako0^Amo0^Aso0;         Di1 = Du1^Cw;         Du0 = Cw^ROL32(Cz, 1);         Du1 = Cy^Cx;         Ba = (Aba0^Da0);         Be = ROL32((Age0^De0), 22);         Bi = ROL32((Aki1^Di1), 22);         Bo = ROL32((Amo1^Do1), 11);         Bu = ROL32((Asu0^Du0),  7);         Aba0 =   Ba ^((~Be)&  Bi );         Aba0 ^= *(pRoundConstants++);         Age0 =   Be ^((~Bi)&  Bo );         Aki1 =   Bi ^((~Bo)&  Bu );         Amo1 =   Bo ^((~Bu)&  Ba );         Asu0 =   Bu ^((~Ba)&  Be );         Ba = (Aba1^Da1);         Be = ROL32((Age1^De1), 22);         Bi = ROL32((Aki0^Di0), 21);         Bo = ROL32((Amo0^Do0), 10);         Bu = ROL32((Asu1^Du1),  7);         Aba1 =   Ba ^((~Be)&  Bi );         Aba1 ^= *(pRoundConstants++);         Age1 =   Be ^((~Bi)&  Bo );         Aki0 =   Bi ^((~Bo)&  Bu );         Amo0 =   Bo ^((~Bu)&  Ba );         Asu1 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Aka1^Da1),  2);         Bo = ROL32((Ame1^De1), 23);         Bu = ROL32((Asi1^Di1), 31);         Ba = ROL32((Abo0^Do0), 14);         Be = ROL32((Agu0^Du0), 10);         Aka1 =   Ba ^((~Be)&  Bi );         Ame1 =   Be ^((~Bi)&  Bo );         Asi1 =   Bi ^((~Bo)&  Bu );         Abo0 =   Bo ^((~Bu)&  Ba );         Agu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Aka0^Da0),  1);         Bo = ROL32((Ame0^De0), 22);         Bu = ROL32((Asi0^Di0), 30);         Ba = ROL32((Abo1^Do1), 14);         Be = ROL32((Agu1^Du1), 10);         Aka0 =   Ba ^((~Be)&  Bi );         Ame0 =   Be ^((~Bi)&  Bo );         Asi0 =   Bi ^((~Bo)&  Bu );         Abo1 =   Bo ^((~Bu)&  Ba );         Agu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Asa0^Da0),  9);         Ba = ROL32((Abe1^De1),  1);         Be = ROL32((Agi0^Di0),  3);         Bi = ROL32((Ako1^Do1), 13);         Bo = ROL32((Amu0^Du0),  4);         Asa0 =   Ba ^((~Be)&  Bi );         Abe1 =   Be ^((~Bi)&  Bo );         Agi0 =   Bi ^((~Bo)&  Bu );         Ako1 =   Bo ^((~Bu)&  Ba );         Amu0 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Asa1^Da1),  9);         Ba = (Abe0^De0);         Be = ROL32((Agi1^Di1),  3);         Bi = ROL32((Ako0^Do0), 12);         Bo = ROL32((Amu1^Du1),  4);         Asa1 =   Ba ^((~Be)&  Bi );         Abe0 =   Be ^((~Bi)&  Bo );         Agi1 =   Bi ^((~Bo)&  Bu );         Ako0 =   Bo ^((~Bu)&  Ba );         Amu1 =   Bu ^((~Ba)&  Be );         Be = ROL32((Aga0^Da0), 18);         Bi = ROL32((Ake0^De0),  5);         Bo = ROL32((Ami1^Di1),  8);         Bu = ROL32((Aso0^Do0), 28);         Ba = ROL32((Abu1^Du1), 14);         Aga0 =   Ba ^((~Be)&  Bi );         Ake0 =   Be ^((~Bi)&  Bo );         Ami1 =   Bi ^((~Bo)&  Bu );         Aso0 =   Bo ^((~Bu)&  Ba );         Abu1 =   Bu ^((~Ba)&  Be );         Be = ROL32((Aga1^Da1), 18);         Bi = ROL32((Ake1^De1),  5);         Bo = ROL32((Ami0^Di0),  7);         Bu = ROL32((Aso1^Do1), 28);         Ba = ROL32((Abu0^Du0), 13);         Aga1 =   Ba ^((~Be)&  Bi );         Ake1 =   Be ^((~Bi)&  Bo );         Ami0 =   Bi ^((~Bo)&  Bu );         Aso1 =   Bo ^((~Bu)&  Ba );         Abu0 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Ama1^Da1), 21);         Bu = ROL32((Ase0^De0),  1);         Ba = ROL32((Abi0^Di0), 31);         Be = ROL32((Ago1^Do1), 28);         Bi = ROL32((Aku1^Du1), 20);         Ama1 =   Ba ^((~Be)&  Bi );         Ase0 =   Be ^((~Bi)&  Bo );         Abi0 =   Bi ^((~Bo)&  Bu );         Ago1 =   Bo ^((~Bu)&  Ba );         Aku1 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Ama0^Da0), 20);         Bu = ROL32((Ase1^De1),  1);         Ba = ROL32((Abi1^Di1), 31);         Be = ROL32((Ago0^Do0), 27);         Bi = ROL32((Aku0^Du0), 19);         Ama0 =   Ba ^((~Be)&  Bi );         Ase1 =   Be ^((~Bi)&  Bo );         Abi1 =   Bi ^((~Bo)&  Bu );         Ago0 =   Bo ^((~Bu)&  Ba );         Aku0 =   Bu ^((~Ba)&  Be )
-#define KeccakRound1()         Cx = Asu0^Agu0^Amu0^Abu1^Aku1;         Du1 = Age1^Ame0^Abe0^Ake1^Ase1;         Da0 = Cx^ROL32(Du1, 1);         Cz = Asu1^Agu1^Amu1^Abu0^Aku0;         Du0 = Age0^Ame1^Abe1^Ake0^Ase0;         Da1 = Cz^Du0;         Cw = Aki1^Asi1^Agi0^Ami1^Abi0;         Do0 = Cw^ROL32(Cz, 1);         Cy = Aki0^Asi0^Agi1^Ami0^Abi1;         Do1 = Cy^Cx;         Cx = Aba0^Aka1^Asa0^Aga0^Ama1;         De0 = Cx^ROL32(Cy, 1);         Cz = Aba1^Aka0^Asa1^Aga1^Ama0;         De1 = Cz^Cw;         Cy = Amo0^Abo1^Ako0^Aso1^Ago0;         Di0 = Du0^ROL32(Cy, 1);         Cw = Amo1^Abo0^Ako1^Aso0^Ago1;         Di1 = Du1^Cw;         Du0 = Cw^ROL32(Cz, 1);         Du1 = Cy^Cx;         Ba = (Aba0^Da0);         Be = ROL32((Ame1^De0), 22);         Bi = ROL32((Agi1^Di1), 22);         Bo = ROL32((Aso1^Do1), 11);         Bu = ROL32((Aku1^Du0),  7);         Aba0 =   Ba ^((~Be)&  Bi );         Aba0 ^= *(pRoundConstants++);         Ame1 =   Be ^((~Bi)&  Bo );         Agi1 =   Bi ^((~Bo)&  Bu );         Aso1 =   Bo ^((~Bu)&  Ba );         Aku1 =   Bu ^((~Ba)&  Be );         Ba = (Aba1^Da1);         Be = ROL32((Ame0^De1), 22);         Bi = ROL32((Agi0^Di0), 21);         Bo = ROL32((Aso0^Do0), 10);         Bu = ROL32((Aku0^Du1),  7);         Aba1 =   Ba ^((~Be)&  Bi );         Aba1 ^= *(pRoundConstants++);         Ame0 =   Be ^((~Bi)&  Bo );         Agi0 =   Bi ^((~Bo)&  Bu );         Aso0 =   Bo ^((~Bu)&  Ba );         Aku0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Asa1^Da1),  2);         Bo = ROL32((Ake1^De1), 23);         Bu = ROL32((Abi1^Di1), 31);         Ba = ROL32((Amo1^Do0), 14);         Be = ROL32((Agu0^Du0), 10);         Asa1 =   Ba ^((~Be)&  Bi );         Ake1 =   Be ^((~Bi)&  Bo );         Abi1 =   Bi ^((~Bo)&  Bu );         Amo1 =   Bo ^((~Bu)&  Ba );         Agu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Asa0^Da0),  1);         Bo = ROL32((Ake0^De0), 22);         Bu = ROL32((Abi0^Di0), 30);         Ba = ROL32((Amo0^Do1), 14);         Be = ROL32((Agu1^Du1), 10);         Asa0 =   Ba ^((~Be)&  Bi );         Ake0 =   Be ^((~Bi)&  Bo );         Abi0 =   Bi ^((~Bo)&  Bu );         Amo0 =   Bo ^((~Bu)&  Ba );         Agu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Ama1^Da0),  9);         Ba = ROL32((Age1^De1),  1);         Be = ROL32((Asi1^Di0),  3);         Bi = ROL32((Ako0^Do1), 13);         Bo = ROL32((Abu1^Du0),  4);         Ama1 =   Ba ^((~Be)&  Bi );         Age1 =   Be ^((~Bi)&  Bo );         Asi1 =   Bi ^((~Bo)&  Bu );         Ako0 =   Bo ^((~Bu)&  Ba );         Abu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Ama0^Da1),  9);         Ba = (Age0^De0);         Be = ROL32((Asi0^Di1),  3);         Bi = ROL32((Ako1^Do0), 12);         Bo = ROL32((Abu0^Du1),  4);         Ama0 =   Ba ^((~Be)&  Bi );         Age0 =   Be ^((~Bi)&  Bo );         Asi0 =   Bi ^((~Bo)&  Bu );         Ako1 =   Bo ^((~Bu)&  Ba );         Abu0 =   Bu ^((~Ba)&  Be );         Be = ROL32((Aka1^Da0), 18);         Bi = ROL32((Abe1^De0),  5);         Bo = ROL32((Ami0^Di1),  8);         Bu = ROL32((Ago1^Do0), 28);         Ba = ROL32((Asu1^Du1), 14);         Aka1 =   Ba ^((~Be)&  Bi );         Abe1 =   Be ^((~Bi)&  Bo );         Ami0 =   Bi ^((~Bo)&  Bu );         Ago1 =   Bo ^((~Bu)&  Ba );         Asu1 =   Bu ^((~Ba)&  Be );         Be = ROL32((Aka0^Da1), 18);         Bi = ROL32((Abe0^De1),  5);         Bo = ROL32((Ami1^Di0),  7);         Bu = ROL32((Ago0^Do1), 28);         Ba = ROL32((Asu0^Du0), 13);         Aka0 =   Ba ^((~Be)&  Bi );         Abe0 =   Be ^((~Bi)&  Bo );         Ami1 =   Bi ^((~Bo)&  Bu );         Ago0 =   Bo ^((~Bu)&  Ba );         Asu0 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Aga1^Da1), 21);         Bu = ROL32((Ase0^De0),  1);         Ba = ROL32((Aki1^Di0), 31);         Be = ROL32((Abo1^Do1), 28);         Bi = ROL32((Amu1^Du1), 20);         Aga1 =   Ba ^((~Be)&  Bi );         Ase0 =   Be ^((~Bi)&  Bo );         Aki1 =   Bi ^((~Bo)&  Bu );         Abo1 =   Bo ^((~Bu)&  Ba );         Amu1 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Aga0^Da0), 20);         Bu = ROL32((Ase1^De1),  1);         Ba = ROL32((Aki0^Di1), 31);         Be = ROL32((Abo0^Do0), 27);         Bi = ROL32((Amu0^Du0), 19);         Aga0 =   Ba ^((~Be)&  Bi );         Ase1 =   Be ^((~Bi)&  Bo );         Aki0 =   Bi ^((~Bo)&  Bu );         Abo0 =   Bo ^((~Bu)&  Ba );         Amu0 =   Bu ^((~Ba)&  Be );
-#define KeccakRound2()         Cx = Aku1^Agu0^Abu1^Asu1^Amu1;         Du1 = Ame0^Ake0^Age0^Abe0^Ase1;         Da0 = Cx^ROL32(Du1, 1);         Cz = Aku0^Agu1^Abu0^Asu0^Amu0;         Du0 = Ame1^Ake1^Age1^Abe1^Ase0;         Da1 = Cz^Du0;         Cw = Agi1^Abi1^Asi1^Ami0^Aki1;         Do0 = Cw^ROL32(Cz, 1);         Cy = Agi0^Abi0^Asi0^Ami1^Aki0;         Do1 = Cy^Cx;         Cx = Aba0^Asa1^Ama1^Aka1^Aga1;         De0 = Cx^ROL32(Cy, 1);         Cz = Aba1^Asa0^Ama0^Aka0^Aga0;         De1 = Cz^Cw;         Cy = Aso0^Amo0^Ako1^Ago0^Abo0;         Di0 = Du0^ROL32(Cy, 1);         Cw = Aso1^Amo1^Ako0^Ago1^Abo1;         Di1 = Du1^Cw;         Du0 = Cw^ROL32(Cz, 1);         Du1 = Cy^Cx;         Ba = (Aba0^Da0);         Be = ROL32((Ake1^De0), 22);         Bi = ROL32((Asi0^Di1), 22);         Bo = ROL32((Ago0^Do1), 11);         Bu = ROL32((Amu1^Du0),  7);         Aba0 =   Ba ^((~Be)&  Bi );         Aba0 ^= *(pRoundConstants++);         Ake1 =   Be ^((~Bi)&  Bo );         Asi0 =   Bi ^((~Bo)&  Bu );         Ago0 =   Bo ^((~Bu)&  Ba );         Amu1 =   Bu ^((~Ba)&  Be );         Ba = (Aba1^Da1);         Be = ROL32((Ake0^De1), 22);         Bi = ROL32((Asi1^Di0), 21);         Bo = ROL32((Ago1^Do0), 10);         Bu = ROL32((Amu0^Du1),  7);         Aba1 =   Ba ^((~Be)&  Bi );         Aba1 ^= *(pRoundConstants++);         Ake0 =   Be ^((~Bi)&  Bo );         Asi1 =   Bi ^((~Bo)&  Bu );         Ago1 =   Bo ^((~Bu)&  Ba );         Amu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Ama0^Da1),  2);         Bo = ROL32((Abe0^De1), 23);         Bu = ROL32((Aki0^Di1), 31);         Ba = ROL32((Aso1^Do0), 14);         Be = ROL32((Agu0^Du0), 10);         Ama0 =   Ba ^((~Be)&  Bi );         Abe0 =   Be ^((~Bi)&  Bo );         Aki0 =   Bi ^((~Bo)&  Bu );         Aso1 =   Bo ^((~Bu)&  Ba );         Agu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Ama1^Da0),  1);         Bo = ROL32((Abe1^De0), 22);         Bu = ROL32((Aki1^Di0), 30);         Ba = ROL32((Aso0^Do1), 14);         Be = ROL32((Agu1^Du1), 10);         Ama1 =   Ba ^((~Be)&  Bi );         Abe1 =   Be ^((~Bi)&  Bo );         Aki1 =   Bi ^((~Bo)&  Bu );         Aso0 =   Bo ^((~Bu)&  Ba );         Agu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Aga1^Da0),  9);         Ba = ROL32((Ame0^De1),  1);         Be = ROL32((Abi1^Di0),  3);         Bi = ROL32((Ako1^Do1), 13);         Bo = ROL32((Asu1^Du0),  4);         Aga1 =   Ba ^((~Be)&  Bi );         Ame0 =   Be ^((~Bi)&  Bo );         Abi1 =   Bi ^((~Bo)&  Bu );         Ako1 =   Bo ^((~Bu)&  Ba );         Asu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Aga0^Da1),  9);         Ba = (Ame1^De0);         Be = ROL32((Abi0^Di1),  3);         Bi = ROL32((Ako0^Do0), 12);         Bo = ROL32((Asu0^Du1),  4);         Aga0 =   Ba ^((~Be)&  Bi );         Ame1 =   Be ^((~Bi)&  Bo );         Abi0 =   Bi ^((~Bo)&  Bu );         Ako0 =   Bo ^((~Bu)&  Ba );         Asu0 =   Bu ^((~Ba)&  Be );         Be = ROL32((Asa1^Da0), 18);         Bi = ROL32((Age1^De0),  5);         Bo = ROL32((Ami1^Di1),  8);         Bu = ROL32((Abo1^Do0), 28);         Ba = ROL32((Aku0^Du1), 14);         Asa1 =   Ba ^((~Be)&  Bi );         Age1 =   Be ^((~Bi)&  Bo );         Ami1 =   Bi ^((~Bo)&  Bu );         Abo1 =   Bo ^((~Bu)&  Ba );         Aku0 =   Bu ^((~Ba)&  Be );         Be = ROL32((Asa0^Da1), 18);         Bi = ROL32((Age0^De1),  5);         Bo = ROL32((Ami0^Di0),  7);         Bu = ROL32((Abo0^Do1), 28);         Ba = ROL32((Aku1^Du0), 13);         Asa0 =   Ba ^((~Be)&  Bi );         Age0 =   Be ^((~Bi)&  Bo );         Ami0 =   Bi ^((~Bo)&  Bu );         Abo0 =   Bo ^((~Bu)&  Ba );         Aku1 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Aka0^Da1), 21);         Bu = ROL32((Ase0^De0),  1);         Ba = ROL32((Agi1^Di0), 31);         Be = ROL32((Amo0^Do1), 28);         Bi = ROL32((Abu0^Du1), 20);         Aka0 =   Ba ^((~Be)&  Bi );         Ase0 =   Be ^((~Bi)&  Bo );         Agi1 =   Bi ^((~Bo)&  Bu );         Amo0 =   Bo ^((~Bu)&  Ba );         Abu0 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Aka1^Da0), 20);         Bu = ROL32((Ase1^De1),  1);         Ba = ROL32((Agi0^Di1), 31);         Be = ROL32((Amo1^Do0), 27);         Bi = ROL32((Abu1^Du0), 19);         Aka1 =   Ba ^((~Be)&  Bi );         Ase1 =   Be ^((~Bi)&  Bo );         Agi0 =   Bi ^((~Bo)&  Bu );         Amo1 =   Bo ^((~Bu)&  Ba );         Abu1 =   Bu ^((~Ba)&  Be );
-#define KeccakRound3()         Cx = Amu1^Agu0^Asu1^Aku0^Abu0;         Du1 = Ake0^Abe1^Ame1^Age0^Ase1;         Da0 = Cx^ROL32(Du1, 1);         Cz = Amu0^Agu1^Asu0^Aku1^Abu1;         Du0 = Ake1^Abe0^Ame0^Age1^Ase0;         Da1 = Cz^Du0;         Cw = Asi0^Aki0^Abi1^Ami1^Agi1;         Do0 = Cw^ROL32(Cz, 1);         Cy = Asi1^Aki1^Abi0^Ami0^Agi0;         Do1 = Cy^Cx;         Cx = Aba0^Ama0^Aga1^Asa1^Aka0;         De0 = Cx^ROL32(Cy, 1);         Cz = Aba1^Ama1^Aga0^Asa0^Aka1;         De1 = Cz^Cw;         Cy = Ago1^Aso0^Ako0^Abo0^Amo1;         Di0 = Du0^ROL32(Cy, 1);         Cw = Ago0^Aso1^Ako1^Abo1^Amo0;         Di1 = Du1^Cw;         Du0 = Cw^ROL32(Cz, 1);         Du1 = Cy^Cx;         Ba = (Aba0^Da0);         Be = ROL32((Abe0^De0), 22);         Bi = ROL32((Abi0^Di1), 22);         Bo = ROL32((Abo0^Do1), 11);         Bu = ROL32((Abu0^Du0),  7);         Aba0 =   Ba ^((~Be)&  Bi );         Aba0 ^= *(pRoundConstants++);         Abe0 =   Be ^((~Bi)&  Bo );         Abi0 =   Bi ^((~Bo)&  Bu );         Abo0 =   Bo ^((~Bu)&  Ba );         Abu0 =   Bu ^((~Ba)&  Be );         Ba = (Aba1^Da1);         Be = ROL32((Abe1^De1), 22);         Bi = ROL32((Abi1^Di0), 21);         Bo = ROL32((Abo1^Do0), 10);         Bu = ROL32((Abu1^Du1),  7);         Aba1 =   Ba ^((~Be)&  Bi );         Aba1 ^= *(pRoundConstants++);         Abe1 =   Be ^((~Bi)&  Bo );         Abi1 =   Bi ^((~Bo)&  Bu );         Abo1 =   Bo ^((~Bu)&  Ba );         Abu1 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Aga0^Da1),  2);         Bo = ROL32((Age0^De1), 23);         Bu = ROL32((Agi0^Di1), 31);         Ba = ROL32((Ago0^Do0), 14);         Be = ROL32((Agu0^Du0), 10);         Aga0 =   Ba ^((~Be)&  Bi );         Age0 =   Be ^((~Bi)&  Bo );         Agi0 =   Bi ^((~Bo)&  Bu );         Ago0 =   Bo ^((~Bu)&  Ba );         Agu0 =   Bu ^((~Ba)&  Be );         Bi = ROL32((Aga1^Da0),  1);         Bo = ROL32((Age1^De0), 22);         Bu = ROL32((Agi1^Di0), 30);         Ba = ROL32((Ago1^Do1), 14);         Be = ROL32((Agu1^Du1), 10);         Aga1 =   Ba ^((~Be)&  Bi );         Age1 =   Be ^((~Bi)&  Bo );         Agi1 =   Bi ^((~Bo)&  Bu );         Ago1 =   Bo ^((~Bu)&  Ba );         Agu1 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Aka0^Da0),  9);         Ba = ROL32((Ake0^De1),  1);         Be = ROL32((Aki0^Di0),  3);         Bi = ROL32((Ako0^Do1), 13);         Bo = ROL32((Aku0^Du0),  4);         Aka0 =   Ba ^((~Be)&  Bi );         Ake0 =   Be ^((~Bi)&  Bo );         Aki0 =   Bi ^((~Bo)&  Bu );         Ako0 =   Bo ^((~Bu)&  Ba );         Aku0 =   Bu ^((~Ba)&  Be );         Bu = ROL32((Aka1^Da1),  9);         Ba = (Ake1^De0);         Be = ROL32((Aki1^Di1),  3);         Bi = ROL32((Ako1^Do0), 12);         Bo = ROL32((Aku1^Du1),  4);         Aka1 =   Ba ^((~Be)&  Bi );         Ake1 =   Be ^((~Bi)&  Bo );         Aki1 =   Bi ^((~Bo)&  Bu );         Ako1 =   Bo ^((~Bu)&  Ba );         Aku1 =   Bu ^((~Ba)&  Be );         Be = ROL32((Ama0^Da0), 18);         Bi = ROL32((Ame0^De0),  5);         Bo = ROL32((Ami0^Di1),  8);         Bu = ROL32((Amo0^Do0), 28);         Ba = ROL32((Amu0^Du1), 14);         Ama0 =   Ba ^((~Be)&  Bi );         Ame0 =   Be ^((~Bi)&  Bo );         Ami0 =   Bi ^((~Bo)&  Bu );         Amo0 =   Bo ^((~Bu)&  Ba );         Amu0 =   Bu ^((~Ba)&  Be );         Be = ROL32((Ama1^Da1), 18);         Bi = ROL32((Ame1^De1),  5);         Bo = ROL32((Ami1^Di0),  7);         Bu = ROL32((Amo1^Do1), 28);         Ba = ROL32((Amu1^Du0), 13);         Ama1 =   Ba ^((~Be)&  Bi );         Ame1 =   Be ^((~Bi)&  Bo );         Ami1 =   Bi ^((~Bo)&  Bu );         Amo1 =   Bo ^((~Bu)&  Ba );         Amu1 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Asa0^Da1), 21);         Bu = ROL32((Ase0^De0),  1);         Ba = ROL32((Asi0^Di0), 31);         Be = ROL32((Aso0^Do1), 28);         Bi = ROL32((Asu0^Du1), 20);         Asa0 =   Ba ^((~Be)&  Bi );         Ase0 =   Be ^((~Bi)&  Bo );         Asi0 =   Bi ^((~Bo)&  Bu );         Aso0 =   Bo ^((~Bu)&  Ba );         Asu0 =   Bu ^((~Ba)&  Be );         Bo = ROL32((Asa1^Da0), 20);         Bu = ROL32((Ase1^De1),  1);         Ba = ROL32((Asi1^Di1), 31);         Be = ROL32((Aso1^Do0), 27);         Bi = ROL32((Asu1^Du0), 19);         Asa1 =   Ba ^((~Be)&  Bi );         Ase1 =   Be ^((~Bi)&  Bo );         Asi1 =   Bi ^((~Bo)&  Bu );         Aso1 =   Bo ^((~Bu)&  Ba );         Asu1 =   Bu ^((~Ba)&  Be );
-void KeccakP1600_Permute_Nrounds(void *state, unsigned int nRounds)
-{
-    UINT32 Da0, De0, Di0, Do0, Du0;
-    UINT32 Da1, De1, Di1, Do1, Du1;
-    UINT32 Ba, Be, Bi, Bo, Bu;
-    UINT32 Cx, Cy, Cz, Cw;
-    const UINT32 *pRoundConstants = KeccakF1600RoundConstants_int2+(24-nRounds)*2;
-    UINT32 *stateAsHalfLanes = (UINT32*)state;
-    #define Aba0 stateAsHalfLanes[ 0]
-    #define Aba1 stateAsHalfLanes[ 1]
-    #define Abe0 stateAsHalfLanes[ 2]
-    #define Abe1 stateAsHalfLanes[ 3]
-    #define Abi0 stateAsHalfLanes[ 4]
-    #define Abi1 stateAsHalfLanes[ 5]
-    #define Abo0 stateAsHalfLanes[ 6]
-    #define Abo1 stateAsHalfLanes[ 7]
-    #define Abu0 stateAsHalfLanes[ 8]
-    #define Abu1 stateAsHalfLanes[ 9]
-    #define Aga0 stateAsHalfLanes[10]
-    #define Aga1 stateAsHalfLanes[11]
-    #define Age0 stateAsHalfLanes[12]
-    #define Age1 stateAsHalfLanes[13]
-    #define Agi0 stateAsHalfLanes[14]
-    #define Agi1 stateAsHalfLanes[15]
-    #define Ago0 stateAsHalfLanes[16]
-    #define Ago1 stateAsHalfLanes[17]
-    #define Agu0 stateAsHalfLanes[18]
-    #define Agu1 stateAsHalfLanes[19]
-    #define Aka0 stateAsHalfLanes[20]
-    #define Aka1 stateAsHalfLanes[21]
-    #define Ake0 stateAsHalfLanes[22]
-    #define Ake1 stateAsHalfLanes[23]
-    #define Aki0 stateAsHalfLanes[24]
-    #define Aki1 stateAsHalfLanes[25]
-    #define Ako0 stateAsHalfLanes[26]
-    #define Ako1 stateAsHalfLanes[27]
-    #define Aku0 stateAsHalfLanes[28]
-    #define Aku1 stateAsHalfLanes[29]
-    #define Ama0 stateAsHalfLanes[30]
-    #define Ama1 stateAsHalfLanes[31]
-    #define Ame0 stateAsHalfLanes[32]
-    #define Ame1 stateAsHalfLanes[33]
-    #define Ami0 stateAsHalfLanes[34]
-    #define Ami1 stateAsHalfLanes[35]
-    #define Amo0 stateAsHalfLanes[36]
-    #define Amo1 stateAsHalfLanes[37]
-    #define Amu0 stateAsHalfLanes[38]
-    #define Amu1 stateAsHalfLanes[39]
-    #define Asa0 stateAsHalfLanes[40]
-    #define Asa1 stateAsHalfLanes[41]
-    #define Ase0 stateAsHalfLanes[42]
-    #define Ase1 stateAsHalfLanes[43]
-    #define Asi0 stateAsHalfLanes[44]
-    #define Asi1 stateAsHalfLanes[45]
-    #define Aso0 stateAsHalfLanes[46]
-    #define Aso1 stateAsHalfLanes[47]
-    #define Asu0 stateAsHalfLanes[48]
-    #define Asu1 stateAsHalfLanes[49]
-    nRounds &= 3;
-    switch ( nRounds )
-    {
-        #define I0 Ba
-        #define I1 Be
-        #define T0 Bi
-        #define T1 Bo
-        #define SwapPI13( in0,in1,in2,in3,eo0,eo1,eo2,eo3 )             I0 = (in0)[0]; I1 = (in0)[1];                   T0 = (in1)[0]; T1 = (in1)[1];                   (in0)[eo0] = T0; (in0)[eo0^1] = T1;             T0 = (in2)[0]; T1 = (in2)[1];                   (in1)[eo1] = T0; (in1)[eo1^1] = T1;             T0 = (in3)[0]; T1 = (in3)[1];                   (in2)[eo2] = T0; (in2)[eo2^1] = T1;             (in3)[eo3] = I0; (in3)[eo3^1] = I1
-        #define SwapPI2( in0,in1,in2,in3 )             I0 = (in0)[0]; I1 = (in0)[1];             T0 = (in1)[0]; T1 = (in1)[1];             (in0)[1] = T0; (in0)[0] = T1;             (in1)[1] = I0; (in1)[0] = I1;             I0 = (in2)[0]; I1 = (in2)[1];             T0 = (in3)[0]; T1 = (in3)[1];             (in2)[1] = T0; (in2)[0] = T1;             (in3)[1] = I0; (in3)[0] = I1
-        #define SwapEO( even,odd ) T0 = even; even = odd; odd = T0
-        case 1:
-            SwapPI13( &Aga0, &Aka0, &Asa0, &Ama0, 1, 0, 1, 0 );
-            SwapPI13( &Abe0, &Age0, &Ame0, &Ake0, 0, 1, 0, 1 );
-            SwapPI13( &Abi0, &Aki0, &Agi0, &Asi0, 1, 0, 1, 0 );
-            SwapEO( Ami0, Ami1 );
-            SwapPI13( &Abo0, &Amo0, &Aso0, &Ago0, 1, 0, 1, 0 );
-            SwapEO( Ako0, Ako1 );
-            SwapPI13( &Abu0, &Asu0, &Aku0, &Amu0, 0, 1, 0, 1 );
-            break;
-        case 2:
-            SwapPI2( &Aga0, &Asa0, &Aka0, &Ama0 );
-            SwapPI2( &Abe0, &Ame0, &Age0, &Ake0 );
-            SwapPI2( &Abi0, &Agi0, &Aki0, &Asi0 );
-            SwapPI2( &Abo0, &Aso0, &Ago0, &Amo0 );
-            SwapPI2( &Abu0, &Aku0, &Amu0, &Asu0 );
-            break;
-        case 3:
-            SwapPI13( &Aga0, &Ama0, &Asa0, &Aka0, 0, 1, 0, 1 );
-            SwapPI13( &Abe0, &Ake0, &Ame0, &Age0, 1, 0, 1, 0 );
-            SwapPI13( &Abi0, &Asi0, &Agi0, &Aki0, 0, 1, 0, 1 );
-            SwapEO( Ami0, Ami1 );
-            SwapPI13( &Abo0, &Ago0, &Aso0, &Amo0, 0, 1, 0, 1 );
-            SwapEO( Ako0, Ako1 );
-            SwapPI13( &Abu0, &Amu0, &Aku0, &Asu0, 1, 0, 1, 0 );
-            break;
-        #undef I0
-        #undef I1
-        #undef T0
-        #undef T1
-        #undef SwapPI13
-        #undef SwapPI2
-        #undef SwapEO
-    }
-    do
-    {
-        /* Code for 4 rounds, using factor 2 interleaving, 64-bit lanes mapped to 32-bit words */
-        switch ( nRounds )
-        {
-            case 0: KeccakRound0();
-            case 3: KeccakRound1();
-            case 2: KeccakRound2();
-            case 1: KeccakRound3();
-        }
-        nRounds = 0;
-    }
-    while ( *pRoundConstants != 0xFF );
-    #undef Aba0
-    #undef Aba1
-    #undef Abe0
-    #undef Abe1
-    #undef Abi0
-    #undef Abi1
-    #undef Abo0
-    #undef Abo1
-    #undef Abu0
-    #undef Abu1
-    #undef Aga0
-    #undef Aga1
-    #undef Age0
-    #undef Age1
-    #undef Agi0
-    #undef Agi1
-    #undef Ago0
-    #undef Ago1
-    #undef Agu0
-    #undef Agu1
-    #undef Aka0
-    #undef Aka1
-    #undef Ake0
-    #undef Ake1
-    #undef Aki0
-    #undef Aki1
-    #undef Ako0
-    #undef Ako1
-    #undef Aku0
-    #undef Aku1
-    #undef Ama0
-    #undef Ama1
-    #undef Ame0
-    #undef Ame1
-    #undef Ami0
-    #undef Ami1
-    #undef Amo0
-    #undef Amo1
-    #undef Amu0
-    #undef Amu1
-    #undef Asa0
-    #undef Asa1
-    #undef Ase0
-    #undef Ase1
-    #undef Asi0
-    #undef Asi1
-    #undef Aso0
-    #undef Aso1
-    #undef Asu0
-    #undef Asu1
-}
-/* ---------------------------------------------------------------- */
-void KeccakP1600_Permute_12rounds(void *state)
-{
-     KeccakP1600_Permute_Nrounds(state, 12);
-}
+/* rho offsets, in the rho/pi lane walk order */
+static const unsigned k12_rotc[24] = {
+	 1,  3,  6, 10, 15, 21, 28, 36, 45, 55,  2, 14,
+	27, 41, 56,  8, 25, 43, 62, 18, 39, 61, 20, 44
+};
+/* pi lane walk: lane index visited at each step */
+static const unsigned k12_piln[24] = {
+	10,  7, 11, 17, 18,  3,  5, 16,  8, 21, 24,  4,
+	15, 23, 19, 13, 12,  2, 20, 14, 22,  9,  6,  1
+};
+#define K12_ROUNDS 12
+static void k12_permute( KeccakWidth1600_12rounds_SpongeInstance *sponge ) {
+	uint64_t *st = sponge->state.q;
+	uint64_t  bc[5], t;
+	unsigned  r, i, j;
+#ifdef K12_BIG_ENDIAN
+	for( i = 0; i < 25; i++ ) {
+		uint8_t *p = sponge->state.b + i * 8;
+		st[i] = (uint64_t)p[0] | ( (uint64_t)p[1] << 8 ) | ( (uint64_t)p[2] << 16 ) | ( (uint64_t)p[3] << 24 )
+		      | ( (uint64_t)p[4] << 32 ) | ( (uint64_t)p[5] << 40 ) | ( (uint64_t)p[6] << 48 ) | ( (uint64_t)p[7] << 56 );
+	}
 #endif
-int KeccakWidth1600_12rounds_SpongeInitialize(KeccakWidth1600_12rounds_SpongeInstance *spongeInstance, unsigned int rate, unsigned int capacity);
-int KeccakWidth1600_12rounds_SpongeAbsorb(KeccakWidth1600_12rounds_SpongeInstance *spongeInstance, const unsigned char *data, size_t dataByteLen);
-int KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(KeccakWidth1600_12rounds_SpongeInstance *spongeInstance, unsigned char delimitedData);
-int KeccakWidth1600_12rounds_SpongeSqueeze(KeccakWidth1600_12rounds_SpongeInstance *spongeInstance, unsigned char *data, size_t dataByteLen);
-int KeccakWidth1600_12rounds_SpongeInitialize(KeccakWidth1600_12rounds_SpongeInstance *instance, unsigned int rate, unsigned int capacity)
-{
-    if (rate+capacity != 1600)
-        return 1;
-    if ((rate <= 0) || (rate > 1600) || ((rate % 8) != 0))
-        return 1;
-    KeccakP1600_StaticInitialize();
-    KeccakP1600_Initialize(instance->state);
-    instance->rate = rate;
-    instance->byteIOIndex = 0;
-    instance->squeezing = 0;
-    return 0;
-}
-/* ---------------------------------------------------------------- */
-int KeccakWidth1600_12rounds_SpongeAbsorb(KeccakWidth1600_12rounds_SpongeInstance *instance, const unsigned char *data, size_t dataByteLen)
-{
-    size_t i, j;
-    unsigned int partialBlock;
-    const unsigned char *curData;
-    unsigned int rateInBytes = instance->rate/8;
-    if (instance->squeezing)
-        return 1;
-    i = 0;
-    curData = data;
-    while(i < dataByteLen) {
-        if ((instance->byteIOIndex == 0) && (dataByteLen >= (i + rateInBytes))) {
-#ifdef KeccakP1600_12rounds_FastLoop_supported
-            /* processing full blocks first */
-            if ((rateInBytes % (1600/200)) == 0) {
-                /* fast lane: whole lane rate */
-                j = KeccakP1600_12rounds_FastLoop_Absorb(instance->state, rateInBytes/(1600/200), curData, dataByteLen - i);
-                i += j;
-                curData += j;
-            }
-            else {
+	for( r = 24 - K12_ROUNDS; r < 24; r++ ) {
+		/* theta */
+		for( i = 0; i < 5; i++ )
+			bc[i] = st[i] ^ st[i + 5] ^ st[i + 10] ^ st[i + 15] ^ st[i + 20];
+		for( i = 0; i < 5; i++ ) {
+			t = bc[( i + 4 ) % 5] ^ K12_ROTL64( bc[( i + 1 ) % 5], 1 );
+			for( j = 0; j < 25; j += 5 )
+				st[j + i] ^= t;
+		}
+		/* rho and pi */
+		t = st[1];
+		for( i = 0; i < 24; i++ ) {
+			j     = k12_piln[i];
+			bc[0] = st[j];
+			st[j] = K12_ROTL64( t, k12_rotc[i] );
+			t     = bc[0];
+		}
+		/* chi */
+		for( j = 0; j < 25; j += 5 ) {
+			for( i = 0; i < 5; i++ )
+				bc[i] = st[j + i];
+			for( i = 0; i < 5; i++ )
+				st[j + i] ^= ( ~bc[( i + 1 ) % 5] ) & bc[( i + 2 ) % 5];
+		}
+		/* iota */
+		st[0] ^= k12_rndc[r];
+	}
+#ifdef K12_BIG_ENDIAN
+	for( i = 0; i < 25; i++ ) {
+		uint8_t *p = sponge->state.b + i * 8;
+		uint64_t v = st[i];
+		p[0] = (uint8_t)v;         p[1] = (uint8_t)( v >> 8 );
+		p[2] = (uint8_t)( v >> 16 ); p[3] = (uint8_t)( v >> 24 );
+		p[4] = (uint8_t)( v >> 32 ); p[5] = (uint8_t)( v >> 40 );
+		p[6] = (uint8_t)( v >> 48 ); p[7] = (uint8_t)( v >> 56 );
+	}
 #endif
-                for(j=dataByteLen-i; j>=rateInBytes; j-=rateInBytes) {
-                    KeccakP1600_AddBytes(instance->state, curData, 0, rateInBytes);
-                    KeccakP1600_Permute_12rounds(instance->state);
-                    curData+=rateInBytes;
-                }
-                i = dataByteLen - j;
-#ifdef KeccakP1600_12rounds_FastLoop_supported
-            }
-#endif
-        }
-        else {
-            /* normal lane: using the message queue */
-            partialBlock = (unsigned int)(dataByteLen - i);
-            if (partialBlock+instance->byteIOIndex > rateInBytes)
-                partialBlock = rateInBytes-instance->byteIOIndex;
-            i += partialBlock;
-            KeccakP1600_AddBytes(instance->state, curData, instance->byteIOIndex, partialBlock);
-            curData += partialBlock;
-            instance->byteIOIndex += partialBlock;
-            if (instance->byteIOIndex == rateInBytes) {
-                KeccakP1600_Permute_12rounds(instance->state);
-                instance->byteIOIndex = 0;
-            }
-        }
-    }
-    return 0;
 }
 /* ---------------------------------------------------------------- */
-int KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(KeccakWidth1600_12rounds_SpongeInstance *instance, unsigned char delimitedData)
-{
-    unsigned int rateInBytes = instance->rate/8;
-    if (delimitedData == 0)
-        return 1;
-    if (instance->squeezing)
-        return 1;
-    /* Last few bits, whose delimiter coincides with first bit of padding */
-    KeccakP1600_AddByte(instance->state, delimitedData, instance->byteIOIndex);
-    /* If the first bit of padding is at position rate-1, we need a whole new block for the second bit of padding */
-    if ((delimitedData >= 0x80) && (instance->byteIOIndex == (rateInBytes-1)))
-        KeccakP1600_Permute_12rounds(instance->state);
-    /* Second bit of padding */
-    KeccakP1600_AddByte(instance->state, 0x80, rateInBytes-1);
-    KeccakP1600_Permute_12rounds(instance->state);
-    instance->byteIOIndex = 0;
-    instance->squeezing = 1;
-    return 0;
+/* sponge, rate fixed at K12_RATE_BYTES                             */
+static void K12_SpongeInitialize( KeccakWidth1600_12rounds_SpongeInstance *sponge ) {
+	memset( sponge->state.b, 0, sizeof( sponge->state.b ) );
+	sponge->byteIOIndex = 0;
+	sponge->squeezing   = 0;
+}
+static int K12_SpongeAbsorb( KeccakWidth1600_12rounds_SpongeInstance *sponge, const unsigned char *data, size_t dataByteLen ) {
+	if( sponge->squeezing )
+		return 1;
+	while( dataByteLen ) {
+		size_t   take = K12_RATE_BYTES - sponge->byteIOIndex;
+		unsigned n;
+		if( take > dataByteLen )
+			take = dataByteLen;
+		for( n = 0; n < take; n++ )
+			sponge->state.b[sponge->byteIOIndex + n] ^= data[n];
+		sponge->byteIOIndex += (unsigned)take;
+		data += take;
+		dataByteLen -= take;
+		if( sponge->byteIOIndex == K12_RATE_BYTES ) {
+			k12_permute( sponge );
+			sponge->byteIOIndex = 0;
+		}
+	}
+	return 0;
+}
+static int K12_SpongeAbsorbLastFewBits( KeccakWidth1600_12rounds_SpongeInstance *sponge, unsigned char delimitedData ) {
+	if( delimitedData == 0 )
+		return 1;
+	if( sponge->squeezing )
+		return 1;
+	/* last few bits, whose delimiter coincides with first bit of padding */
+	sponge->state.b[sponge->byteIOIndex] ^= delimitedData;
+	/* if the first bit of padding is at position rate-1, a whole new block is
+	   needed for the second bit of padding */
+	if( ( delimitedData >= 0x80 ) && ( sponge->byteIOIndex == ( K12_RATE_BYTES - 1 ) ) )
+		k12_permute( sponge );
+	/* second bit of padding */
+	sponge->state.b[K12_RATE_BYTES - 1] ^= 0x80;
+	k12_permute( sponge );
+	sponge->byteIOIndex = 0;
+	sponge->squeezing   = 1;
+	return 0;
+}
+static int K12_SpongeSqueeze( KeccakWidth1600_12rounds_SpongeInstance *sponge, unsigned char *data, size_t dataByteLen ) {
+	if( !sponge->squeezing )
+		K12_SpongeAbsorbLastFewBits( sponge, 0x01 );
+	while( dataByteLen ) {
+		size_t take;
+		if( sponge->byteIOIndex == K12_RATE_BYTES ) {
+			k12_permute( sponge );
+			sponge->byteIOIndex = 0;
+		}
+		take = K12_RATE_BYTES - sponge->byteIOIndex;
+		if( take > dataByteLen )
+			take = dataByteLen;
+		memcpy( data, sponge->state.b + sponge->byteIOIndex, take );
+		sponge->byteIOIndex += (unsigned)take;
+		data += take;
+		dataByteLen -= take;
+	}
+	return 0;
 }
 /* ---------------------------------------------------------------- */
-int KeccakWidth1600_12rounds_SpongeSqueeze(KeccakWidth1600_12rounds_SpongeInstance *instance, unsigned char *data, size_t dataByteLen)
-{
-    size_t i, j;
-    unsigned int partialBlock;
-    unsigned int rateInBytes = instance->rate/8;
-    unsigned char *curData;
-    if (!instance->squeezing)
-        KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(instance, 0x01);
-    i = 0;
-    curData = data;
-    while(i < dataByteLen) {
-        if ((instance->byteIOIndex == rateInBytes) && (dataByteLen >= (i + rateInBytes))) {
-            for(j=dataByteLen-i; j>=rateInBytes; j-=rateInBytes) {
-                KeccakP1600_Permute_12rounds(instance->state);
-                KeccakP1600_ExtractBytes(instance->state, curData, 0, rateInBytes);
-                curData+=rateInBytes;
-            }
-            i = dataByteLen - j;
-        }
-        else {
-            /* normal lane: using the message queue */
-            if (instance->byteIOIndex == rateInBytes) {
-                KeccakP1600_Permute_12rounds(instance->state);
-                instance->byteIOIndex = 0;
-            }
-            partialBlock = (unsigned int)(dataByteLen - i);
-            if (partialBlock+instance->byteIOIndex > rateInBytes)
-                partialBlock = rateInBytes-instance->byteIOIndex;
-            i += partialBlock;
-            KeccakP1600_ExtractBytes(instance->state, curData, instance->byteIOIndex, partialBlock);
-            curData += partialBlock;
-            instance->byteIOIndex += partialBlock;
-        }
-    }
-    return 0;
+static unsigned int k12_right_encode( unsigned char *encbuf, size_t value ) {
+	unsigned int n, i;
+	size_t       v;
+	for( v = value, n = 0; v && ( n < sizeof( size_t ) ); ++n, v >>= 8 )
+		;
+	for( i = 1; i <= n; ++i )
+		encbuf[i - 1] = (unsigned char)( value >> ( 8 * ( n - i ) ) );
+	encbuf[n] = (unsigned char)n;
+	return n + 1;
 }
-/* ---------------------------------------------------------------- */
-#define chunkSize       8192
-#define laneSize        8
-#define suffixLeaf      0x0B
-#define security        128
-#define capacity        (2*security)
-#define capacityInBytes (capacity/8)
-#define capacityInLanes (capacityInBytes/laneSize)
-#define rate            (1600-capacity)
-#define rateInBytes     (rate/8)
-#define rateInLanes     (rateInBytes/laneSize)
-#define ParallelSpongeFastLoop( Parallellism )     while ( inLen >= Parallellism * chunkSize ) {         ALIGN(KeccakP1600times##Parallellism##_statesAlignment) unsigned char states[KeccakP1600times##Parallellism##_statesSizeInBytes];         unsigned char intermediate[Parallellism*capacityInBytes];         unsigned int localBlockLen = chunkSize;         const unsigned char * localInput = input;         unsigned int i;         unsigned int fastLoopOffset;                 KeccakP1600times##Parallellism##_StaticInitialize();         KeccakP1600times##Parallellism##_InitializeAll(states);         fastLoopOffset = KeccakP1600times##Parallellism##_12rounds_FastLoop_Absorb(states, rateInLanes, chunkSize / laneSize, rateInLanes, localInput, Parallellism * chunkSize);         localBlockLen -= fastLoopOffset;         localInput += fastLoopOffset;         for ( i = 0; i < Parallellism; ++i, localInput += chunkSize ) {             KeccakP1600times##Parallellism##_AddBytes(states, i, localInput, 0, localBlockLen);             KeccakP1600times##Parallellism##_AddByte(states, i, suffixLeaf, localBlockLen);             KeccakP1600times##Parallellism##_AddByte(states, i, 0x80, rateInBytes-1);         }         KeccakP1600times##Parallellism##_PermuteAll_12rounds(states);         input += Parallellism * chunkSize;         inLen -= Parallellism * chunkSize;         ktInstance->blockNumber += Parallellism;         KeccakP1600times##Parallellism##_ExtractLanesAll(states, intermediate, capacityInLanes, capacityInLanes );         if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, Parallellism * capacityInBytes) != 0) return 1;     }
-#define ParallelSpongeLoop( Parallellism )     while ( inLen >= Parallellism * chunkSize ) {         ALIGN(KeccakP1600times##Parallellism##_statesAlignment) unsigned char states[KeccakP1600times##Parallellism##_statesSizeInBytes];         unsigned char intermediate[Parallellism*capacityInBytes];         unsigned int localBlockLen = chunkSize;         const unsigned char * localInput = input;         unsigned int i;                 KeccakP1600times##Parallellism##_StaticInitialize();         KeccakP1600times##Parallellism##_InitializeAll(states);         while(localBlockLen >= rateInBytes) {             KeccakP1600times##Parallellism##_AddLanesAll(states, localInput, rateInLanes, chunkSize / laneSize);             KeccakP1600times##Parallellism##_PermuteAll_12rounds(states);             localBlockLen -= rateInBytes;             localInput += rateInBytes;            }         for ( i = 0; i < Parallellism; ++i, localInput += chunkSize ) {             KeccakP1600times##Parallellism##_AddBytes(states, i, localInput, 0, localBlockLen);             KeccakP1600times##Parallellism##_AddByte(states, i, suffixLeaf, localBlockLen);             KeccakP1600times##Parallellism##_AddByte(states, i, 0x80, rateInBytes-1);         }         KeccakP1600times##Parallellism##_PermuteAll_12rounds(states);         input += Parallellism * chunkSize;         inLen -= Parallellism * chunkSize;         ktInstance->blockNumber += Parallellism;         KeccakP1600times##Parallellism##_ExtractLanesAll(states, intermediate, capacityInLanes, capacityInLanes );         if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, Parallellism * capacityInBytes) != 0) return 1;     }
-static unsigned int right_encode( unsigned char * encbuf, size_t value )
-{
-    unsigned int n, i;
-    size_t v;
-    for ( v = value, n = 0; v && (n < sizeof(size_t)); ++n, v >>= 8 )
-        ;
-    for ( i = 1; i <= n; ++i )
-        encbuf[i-1] = (unsigned char)(value >> (8 * (n-i)));
-    encbuf[n] = (unsigned char)n;
-    return n + 1;
+int KangarooTwelve_Initialize( KangarooTwelve_Instance *ktInstance, size_t outputByteLen ) {
+	ktInstance->fixedOutputLength = outputByteLen;
+	ktInstance->queueAbsorbedLen  = 0;
+	ktInstance->blockNumber       = 0;
+	ktInstance->phase             = ABSORBING;
+	K12_SpongeInitialize( &ktInstance->finalNode );
+	K12_SpongeInitialize( &ktInstance->queueNode );
+	return 0;
 }
-int KangarooTwelve_Initialize(KangarooTwelve_Instance *ktInstance, size_t outputLen)
-{
-    ktInstance->fixedOutputLength = outputLen;
-    ktInstance->queueAbsorbedLen = 0;
-    ktInstance->blockNumber = 0;
-    ktInstance->phase = ABSORBING;
-    return KeccakWidth1600_12rounds_SpongeInitialize(&ktInstance->finalNode, rate, capacity);
+int KangarooTwelve_Update( KangarooTwelve_Instance *ktInstance, const unsigned char *input, size_t inLen ) {
+	if( ktInstance->phase != ABSORBING )
+		return 1;
+	if( ktInstance->blockNumber == 0 ) {
+		/* first chunk, absorbed directly in the final (root) node */
+		unsigned int len = (unsigned int)( ( inLen < ( K12_CHUNK_SIZE - ktInstance->queueAbsorbedLen ) )
+		                                       ? inLen
+		                                       : ( K12_CHUNK_SIZE - ktInstance->queueAbsorbedLen ) );
+		if( K12_SpongeAbsorb( &ktInstance->finalNode, input, len ) != 0 )
+			return 1;
+		input += len;
+		inLen -= len;
+		ktInstance->queueAbsorbedLen += len;
+		if( ( ktInstance->queueAbsorbedLen == K12_CHUNK_SIZE ) && ( inLen != 0 ) ) {
+			/* first chunk complete and more input available, finalize it */
+			const unsigned char padding = 0x03;
+			ktInstance->queueAbsorbedLen = 0;
+			ktInstance->blockNumber      = 1;
+			if( K12_SpongeAbsorb( &ktInstance->finalNode, &padding, 1 ) != 0 )
+				return 1;
+			/* zero padding up to 64 bits */
+			ktInstance->finalNode.byteIOIndex = ( ktInstance->finalNode.byteIOIndex + 7 ) & ~7u;
+		}
+	} else if( ktInstance->queueAbsorbedLen != 0 ) {
+		/* there is data in the queue node, fill it up to a complete chunk */
+		unsigned int len = (unsigned int)( ( inLen < ( K12_CHUNK_SIZE - ktInstance->queueAbsorbedLen ) )
+		                                       ? inLen
+		                                       : ( K12_CHUNK_SIZE - ktInstance->queueAbsorbedLen ) );
+		if( K12_SpongeAbsorb( &ktInstance->queueNode, input, len ) != 0 )
+			return 1;
+		input += len;
+		inLen -= len;
+		ktInstance->queueAbsorbedLen += len;
+		if( ktInstance->queueAbsorbedLen == K12_CHUNK_SIZE ) {
+			unsigned char intermediate[K12_CAPACITY_BYTES];
+			ktInstance->queueAbsorbedLen = 0;
+			++ktInstance->blockNumber;
+			if( K12_SpongeAbsorbLastFewBits( &ktInstance->queueNode, K12_SUFFIX_LEAF ) != 0 )
+				return 1;
+			if( K12_SpongeSqueeze( &ktInstance->queueNode, intermediate, K12_CAPACITY_BYTES ) != 0 )
+				return 1;
+			if( K12_SpongeAbsorb( &ktInstance->finalNode, intermediate, K12_CAPACITY_BYTES ) != 0 )
+				return 1;
+		}
+	}
+	while( inLen > 0 ) {
+		unsigned int len = (unsigned int)( ( inLen < K12_CHUNK_SIZE ) ? inLen : K12_CHUNK_SIZE );
+		K12_SpongeInitialize( &ktInstance->queueNode );
+		if( K12_SpongeAbsorb( &ktInstance->queueNode, input, len ) != 0 )
+			return 1;
+		input += len;
+		inLen -= len;
+		if( len == K12_CHUNK_SIZE ) {
+			unsigned char intermediate[K12_CAPACITY_BYTES];
+			++ktInstance->blockNumber;
+			if( K12_SpongeAbsorbLastFewBits( &ktInstance->queueNode, K12_SUFFIX_LEAF ) != 0 )
+				return 1;
+			if( K12_SpongeSqueeze( &ktInstance->queueNode, intermediate, K12_CAPACITY_BYTES ) != 0 )
+				return 1;
+			if( K12_SpongeAbsorb( &ktInstance->finalNode, intermediate, K12_CAPACITY_BYTES ) != 0 )
+				return 1;
+		} else
+			ktInstance->queueAbsorbedLen = len;
+	}
+	return 0;
 }
-int KangarooTwelve_Update(KangarooTwelve_Instance *ktInstance, const unsigned char *input, size_t inLen)
-{
-    if (ktInstance->phase != ABSORBING)
-        return 1;
-    if ( ktInstance->blockNumber == 0 ) {
-        /* First block, absorb in final node */
-        unsigned int len = (unsigned int)((inLen < (chunkSize - ktInstance->queueAbsorbedLen)) ? inLen : (chunkSize - ktInstance->queueAbsorbedLen));
-        if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, input, len) != 0)
-            return 1;
-        input += len;
-        inLen -= len;
-        ktInstance->queueAbsorbedLen += len;
-        if ( (ktInstance->queueAbsorbedLen == chunkSize) && (inLen != 0) ) {
-            /* First block complete and more input data available, finalize it */
-            const unsigned char padding = 0x03;
-            ktInstance->queueAbsorbedLen = 0;
-            ktInstance->blockNumber = 1;
-            if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, &padding, 1) != 0)
-                return 1;
-            ktInstance->finalNode.byteIOIndex = (ktInstance->finalNode.byteIOIndex + 7) & ~7;
-        }
-    }
-    else if ( ktInstance->queueAbsorbedLen != 0 ) {
-        /* There is data in the queue, absorb further in queue until block complete */
-        unsigned int len = (unsigned int)((inLen < (chunkSize - ktInstance->queueAbsorbedLen)) ? inLen : (chunkSize - ktInstance->queueAbsorbedLen));
-        if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->queueNode, input, len) != 0)
-            return 1;
-        input += len;
-        inLen -= len;
-        ktInstance->queueAbsorbedLen += len;
-        if ( ktInstance->queueAbsorbedLen == chunkSize ) {
-            unsigned char intermediate[capacityInBytes];
-            ktInstance->queueAbsorbedLen = 0;
-            ++ktInstance->blockNumber;
-            if (KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(&ktInstance->queueNode, suffixLeaf) != 0)
-                return 1;
-            if (KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->queueNode, intermediate, capacityInBytes) != 0)
-                return 1;
-            if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, capacityInBytes) != 0)
-                return 1;
-        }
-    }
-    #if defined(KeccakP1600times8_implementation) && !defined(KeccakP1600times8_isFallback)
-    #if defined(KeccakP1600times8_12rounds_FastLoop_supported)
-    ParallelSpongeFastLoop( 8 )
-    #else
-    ParallelSpongeLoop( 8 )
-    #endif
-    #endif
-    #if defined(KeccakP1600times4_implementation) && !defined(KeccakP1600times4_isFallback)
-    #if defined(KeccakP1600times4_12rounds_FastLoop_supported)
-    ParallelSpongeFastLoop( 4 )
-    #else
-    ParallelSpongeLoop( 4 )
-    #endif
-    #endif
-    #if defined(KeccakP1600times2_implementation) && !defined(KeccakP1600times2_isFallback)
-    #if defined(KeccakP1600times2_12rounds_FastLoop_supported)
-    ParallelSpongeFastLoop( 2 )
-    #else
-    ParallelSpongeLoop( 2 )
-    #endif
-    #endif
-    while ( inLen > 0 ) {
-        unsigned int len = (unsigned int)((inLen < chunkSize) ? inLen : chunkSize);
-        if (KeccakWidth1600_12rounds_SpongeInitialize(&ktInstance->queueNode, rate, capacity) != 0)
-            return 1;
-        if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->queueNode, input, len) != 0)
-            return 1;
-        input += len;
-        inLen -= len;
-        if ( len == chunkSize ) {
-            unsigned char intermediate[capacityInBytes];
-            ++ktInstance->blockNumber;
-            if (KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(&ktInstance->queueNode, suffixLeaf) != 0)
-                return 1;
-            if (KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->queueNode, intermediate, capacityInBytes) != 0)
-                return 1;
-            if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, capacityInBytes) != 0)
-                return 1;
-        }
-        else
-            ktInstance->queueAbsorbedLen = len;
-    }
-    return 0;
+int KangarooTwelve_Final( KangarooTwelve_Instance *ktInstance, unsigned char *output, const unsigned char *customization, size_t customLen ) {
+	unsigned char encbuf[sizeof( size_t ) + 1 + 2];
+	unsigned char padding;
+	if( ktInstance->phase != ABSORBING )
+		return 1;
+	/* absorb customization | k12_right_encode(customLen) */
+	if( ( customLen != 0 ) && ( KangarooTwelve_Update( ktInstance, customization, customLen ) != 0 ) )
+		return 1;
+	if( KangarooTwelve_Update( ktInstance, encbuf, k12_right_encode( encbuf, customLen ) ) != 0 )
+		return 1;
+	if( ktInstance->blockNumber == 0 ) {
+		/* incomplete first chunk in the final node, pad it */
+		padding = K12_SUFFIX_SINGLE;
+	} else {
+		unsigned int n;
+		if( ktInstance->queueAbsorbedLen != 0 ) {
+			/* there is data in the queue node */
+			unsigned char intermediate[K12_CAPACITY_BYTES];
+			++ktInstance->blockNumber;
+			if( K12_SpongeAbsorbLastFewBits( &ktInstance->queueNode, K12_SUFFIX_LEAF ) != 0 )
+				return 1;
+			if( K12_SpongeSqueeze( &ktInstance->queueNode, intermediate, K12_CAPACITY_BYTES ) != 0 )
+				return 1;
+			if( K12_SpongeAbsorb( &ktInstance->finalNode, intermediate, K12_CAPACITY_BYTES ) != 0 )
+				return 1;
+		}
+		/* absorb k12_right_encode(number of chaining values) || 0xFF || 0xFF */
+		--ktInstance->blockNumber;
+		n          = k12_right_encode( encbuf, ktInstance->blockNumber );
+		encbuf[n++] = 0xFF;
+		encbuf[n++] = 0xFF;
+		if( K12_SpongeAbsorb( &ktInstance->finalNode, encbuf, n ) != 0 )
+			return 1;
+		padding = K12_SUFFIX_TREE;
+	}
+	if( K12_SpongeAbsorbLastFewBits( &ktInstance->finalNode, padding ) != 0 )
+		return 1;
+	if( ktInstance->fixedOutputLength != 0 ) {
+		ktInstance->phase = FINAL;
+		return K12_SpongeSqueeze( &ktInstance->finalNode, output, ktInstance->fixedOutputLength );
+	}
+	ktInstance->phase = SQUEEZING;
+	return 0;
 }
-int KangarooTwelve_Final(KangarooTwelve_Instance *ktInstance, unsigned char * output, const unsigned char * customization, size_t customLen)
-{
-    unsigned char encbuf[sizeof(size_t)+1+2];
-    unsigned char padding;
-    if (ktInstance->phase != ABSORBING)
-        return 1;
-    /* Absorb customization | right_encode(customLen) */
-    if ((customLen != 0) && (KangarooTwelve_Update(ktInstance, customization, customLen) != 0))
-        return 1;
-    if (KangarooTwelve_Update(ktInstance, encbuf, right_encode(encbuf, customLen)) != 0)
-        return 1;
-    if ( ktInstance->blockNumber == 0 ) {
-        /* Non complete first block in final node, pad it */
-        padding = 0x07;
-    }
-    else {
-        unsigned int n;
-        if ( ktInstance->queueAbsorbedLen != 0 ) {
-            /* There is data in the queue node */
-            unsigned char intermediate[capacityInBytes];
-            ++ktInstance->blockNumber;
-            if (KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(&ktInstance->queueNode, suffixLeaf) != 0)
-                return 1;
-            if (KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->queueNode, intermediate, capacityInBytes) != 0)
-                return 1;
-            if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, intermediate, capacityInBytes) != 0)
-                return 1;
-        }
-        --ktInstance->blockNumber;
-        n = right_encode(encbuf, ktInstance->blockNumber);
-        encbuf[n++] = 0xFF;
-        encbuf[n++] = 0xFF;
-        if (KeccakWidth1600_12rounds_SpongeAbsorb(&ktInstance->finalNode, encbuf, n) != 0)
-            return 1;
-        padding = 0x06;
-    }
-    if (KeccakWidth1600_12rounds_SpongeAbsorbLastFewBits(&ktInstance->finalNode, padding) != 0)
-        return 1;
-    if ( ktInstance->fixedOutputLength != 0 ) {
-        ktInstance->phase = FINAL;
-        return KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->finalNode, output, ktInstance->fixedOutputLength);
-    }
-    ktInstance->phase = SQUEEZING;
-    return 0;
+int KangarooTwelve_Squeeze( KangarooTwelve_Instance *ktInstance, unsigned char *output, size_t outputByteLen ) {
+	if( ktInstance->phase != SQUEEZING )
+		return 1;
+	return K12_SpongeSqueeze( &ktInstance->finalNode, output, outputByteLen );
 }
-int KangarooTwelve_Squeeze(KangarooTwelve_Instance *ktInstance, unsigned char * output, size_t outputLen)
-{
-    if (ktInstance->phase != SQUEEZING)
-        return 1;
-    return KeccakWidth1600_12rounds_SpongeSqueeze(&ktInstance->finalNode, output, outputLen);
-}
-int KangarooTwelve( const unsigned char * input, size_t inLen, unsigned char * output, size_t outLen, const unsigned char * customization, size_t customLen )
-{
-    KangarooTwelve_Instance ktInstance;
-    if (outLen == 0)
-        return 1;
-    if (KangarooTwelve_Initialize(&ktInstance, outLen) != 0)
-        return 1;
-    if (KangarooTwelve_Update(&ktInstance, input, inLen) != 0)
-        return 1;
-    return KangarooTwelve_Final(&ktInstance, output, customization, customLen);
+int KangarooTwelve( const unsigned char *input, size_t inLen, unsigned char *output, size_t outLen, const unsigned char *customization, size_t customLen ) {
+	KangarooTwelve_Instance ktInstance;
+	if( outLen == 0 )
+		return 1;
+	if( KangarooTwelve_Initialize( &ktInstance, outLen ) != 0 )
+		return 1;
+	if( KangarooTwelve_Update( &ktInstance, input, inLen ) != 0 )
+		return 1;
+	return KangarooTwelve_Final( &ktInstance, output, customization, customLen );
 }
 #define NO_UNICODE_C
 #ifdef __WATCOMC__
