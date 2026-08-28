@@ -166,6 +166,8 @@ export class TaskInfoEditor extends Popup {
 		c.tooltip = "Run this task in a new process group";
 		c = new Checkbox( this.groupOpts, task, "newConsole", "New Console" );
 		c.tooltip = "Run this task in a new console";
+		c = new Checkbox( this.groupOpts, task, "usePty", "Use PTY (WIN32)" );
+		c.tooltip = "Run this task through a pseudo terminal instead of plain pipes";
 		c = new Checkbox( this.groupOpts, task, "useBreak", "Use Break (WIN32)" );
 		c.tooltip = "Use a break signal to stop this task";
 		c = new Checkbox( this.groupOpts, task, "noInheritStdio", "No Inherit Standard IO" );
