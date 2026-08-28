@@ -137,6 +137,14 @@ function logRequests() {
 	console.log( "Requests:", log );
 }
 
+function decodeRequestURI( uri ) {
+	try {
+		return decodeURI( uri );
+	} catch( err ) {
+		return uri;
+	}
+}
+
 
 //exports.getRequestHandler = getRequestHandler;
 export function getRequestHandler( serverOpts ) {
@@ -181,8 +189,7 @@ export function getRequestHandler( serverOpts ) {
 		lastFilePath = '';
 		for( let rpath of paths ) {
 
-			let filePath = rpath + unescape(req.url);
-	   
+			let filePath = rpath + decodeRequestURI(req.url);
 			let extname = path.extname(filePath);		
 			let contentEncoding = encMap[extname];
 			if( contentEncoding ) {
@@ -223,7 +230,7 @@ export function getRequestHandler( serverOpts ) {
 			lastFilePath = (lastFilePath?lastFilePath+" or ":"") + filePath;
 		}
 		{
-			const foundModule = findModule( unescape(req.url), req, res );
+			const foundModule = findModule( decodeRequestURI(req.url), req, res );
 			if( foundModule ) {
 				if( "object" === typeof  foundModule ) {
 					const headers = { 'Content-Type': foundModule.contentType
@@ -295,7 +302,7 @@ function hookJSOX( serverOpts, server ) {
 		for( let rpath of paths ) {
 			let filePath;
 			if( req.url.startsWith( "/common/" ) ) {
-				filePath = commonPath + decodeURI(req.url).replace( "/common", "" );
+				filePath = commonPath + decodeRequestURI(req.url).replace( "/common", "" );
 				paths.length =0;
 			}else {
 				filePath = rpath + req.url;
@@ -447,4 +454,3 @@ export function openServer( opts, cbAccept, cbConnect )
 	hookJSOX( serverOpts, srvr );
 	return srvr;
 }
-

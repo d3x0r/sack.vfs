@@ -1,6 +1,14 @@
 
 
 export function uExpress() {
+	function decodeRequestURI( uri ) {
+		try {
+			return decodeURI( uri );
+		} catch( err ) {
+			return uri;
+		}
+	}
+
 	/* router really */
 	function makeRouter() {
 		return {
@@ -48,7 +56,7 @@ export function uExpress() {
 				return false;
 			}
 			const parts = req.url.split("?");
-			const url = unescape(parts[0]);
+			const url = decodeRequestURI(parts[0]);
 			const filepath = url;//path.dirname(url)+((path.dirname(url)&&path.basename(url))?"/":"")+path.basename(url);
                         
 			let cb;
