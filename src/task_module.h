@@ -53,6 +53,7 @@ public:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void Write( const v8::FunctionCallbackInfo<Value>& args );
 	static void Print( const v8::FunctionCallbackInfo<Value>& args );
+	static void SetPtySize( const v8::FunctionCallbackInfo<Value>& args );
 	static void End( const v8::FunctionCallbackInfo<Value>& args );
 	static void Terminate( const v8::FunctionCallbackInfo<Value>& args );
 	static void isRunning( const v8::FunctionCallbackInfo<Value>& args );
@@ -74,4 +75,3 @@ public:
 	static void getProcessWindowStyles( const FunctionCallbackInfo<Value>& args );  // get task window styles (direct)
 #endif
 };
-

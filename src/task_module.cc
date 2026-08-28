@@ -218,6 +218,8 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Print );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "log", TaskObject::Print );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "print", TaskObject::Print );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "setPtySize", TaskObject::SetPtySize );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "resizePty", TaskObject::SetPtySize );
 #if _WIN32
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getStyles", TaskObject::getProcessWindowStyles );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getPosition", TaskObject::getProcessWindowPos );
@@ -896,8 +898,8 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( detach ? LPP_OPTION_DETACH : 0 )
 				| ( asAdmin ? LPP_OPTION_ELEVATE : 0 )
 				| ( usePty? LPP_OPTION_INTERACTIVE : 0 )
-				, input ? getTaskInput : NULL
-				, input2 ? getTaskInput2 : NULL
+				, input ? getTaskInput : ( usePty && input2 ) ? getTaskInput2 : NULL
+				, usePty ? NULL : input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
 				, (uintptr_t)newTask 
 				, newTask->envList
@@ -1035,6 +1037,20 @@ void TaskObject::Print( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 		pprintf( task->task, "%s", *s );
 	}
+}
+
+void TaskObject::SetPtySize( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	int cols = args.Length() > 0 ? (int)args[0]->IntegerValue( context ).FromMaybe( 80 ) : 80;
+	int rows = args.Length() > 1 ? (int)args[1]->IntegerValue( context ).FromMaybe( 30 ) : 30;
+	int width = args.Length() > 2 ? (int)args[2]->IntegerValue( context ).FromMaybe( 0 ) : 0;
+	int height = args.Length() > 3 ? (int)args[3]->IntegerValue( context ).FromMaybe( 0 ) : 0;
+	if( task->task )
+		args.GetReturnValue().Set( Integer::New( isolate, SetProcessConsoleSize( task->task, cols, rows, width, height ) ) );
+	else
+		args.GetReturnValue().Set( Integer::New( isolate, -1 ) );
 }
 
 void TaskObject::End( const v8::FunctionCallbackInfo<Value>& args ) {

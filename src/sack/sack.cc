@@ -35462,7 +35462,7 @@ static BOOL _CreateProcess(
 	BOOL status = CreateProcessW( wAppName, wCmdLine
 		, lpProcessAttributes, lpThreadAttributes
 		, bInheritHandles, dwCreationFlags
-		, lpEnvironment, wWorkDir, &si.StartupInfo, lpProcessInformation );
+		, envBlock, wWorkDir, &si.StartupInfo, lpProcessInformation );
 	dwLastError = GetLastError();
 	if( si.StartupInfo.lpDesktop ) Deallocate( LPWSTR, si.StartupInfo.lpDesktop );
 	if( si.StartupInfo.lpTitle ) Deallocate( LPWSTR, si.StartupInfo.lpTitle );
@@ -35631,6 +35631,14 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 		task->psvEnd = psv;
 		task->flags.runas_root = (flags & LPP_OPTION_ELEVATE) != 0;
 		task->EndNotice = EndNotice;
+		if( flags & LPP_OPTION_INTERACTIVE ) {
+			// ConPTY exposes one merged terminal output stream.  A caller may still
+			// provide the stderr-style callback, but it must not create a separate
+			// stderr pipe or affect handle inheritance.
+			if( !OutputHandler && OutputHandler2 )
+				OutputHandler = OutputHandler2;
+			OutputHandler2 = NULL;
+		}
 		if( l.ExternalFindProgram ) {
 			new_path = l.ExternalFindProgram( expanded_path );
 			if( new_path ) {
@@ -35685,24 +35693,14 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 			args++;
 		}
 		cmdline = VarTextGet( pvt );
+		// while I have the cmdline and an empty pvt about the same size as cmdline
+		// , build the final fallback too...
 		vtprintf( pvt, "cmd.exe /c %s", GetText( cmdline ) );
 		final_cmdline = VarTextGet( pvt );
 		VarTextDestroy( &pvt );
 		MemSet( &task->si, 0, sizeof( STARTUPINFOEX ) );
 		task->si.StartupInfo.cb = sizeof( STARTUPINFOEX );
 		launch_flags |= EXTENDED_STARTUPINFO_PRESENT;
-#ifdef _DEBUG
-		//xlprintf(LOG_NOISE)( "quotes?%s path [%s] program [%s]  [cmd.exe (%s)]", needs_quotes?"yes":"no", expanded_working_path, expanded_path, GetText( final_cmdline ) );
-#endif
-		/*
-		if( path )
-		{
-			GetCurrentPath( saved_path, sizeof( saved_path ) );
-			SetCurrentPath( path );
-		}
-		*/
-		task->OutputEvent = OutputHandler;
-		task->OutputEvent2 = OutputHandler2;
 		if( OutputHandler || OutputHandler2 )
 		{
 			SECURITY_ATTRIBUTES sa;
@@ -35710,33 +35708,36 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 			sa.bInheritHandle = TRUE;
 			sa.lpSecurityDescriptor = NULL;
 			sa.nLength = sizeof( sa );
-			if( OutputHandler )
+			if( OutputHandler ) {
 				CreatePipe( &task->hReadOut, &task->hWriteOut, &sa, 0 );
-			if( OutputHandler2 )
-				CreatePipe( &task->hReadErr, &task->hWriteErr, &sa, 0 );
+				task->OutputEvent = OutputHandler;
+			}
 			CreatePipe( &task->hReadIn, &task->hWriteIn, &sa, 0 );
 			// For an interactive pseudoconsole the child's console I/O is provided by the pty
 			// (PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE below); it must NOT also be given redirected
 			// std handles, or cmd treats stdin as a non-interactive pipe (no echo / no line input)
 			// and hReadIn ends up double-consumed by both conpty and the child.  Only wire the std
 			// handles for the plain-pipe (non-pty) case.
+			// ConPTY exposes one terminal byte stream in each direction.
+			// stdout, stderr, and terminal control sequences all come back through hReadOut;
+			// do not create/start a separate stderr reader in interactive mode.
 			if( !( flags & LPP_OPTION_INTERACTIVE ) ) {
+				if( OutputHandler2 ) {
+					CreatePipe( &task->hReadErr, &task->hWriteErr, &sa, 0 );
+					task->OutputEvent2 = OutputHandler2;
+				}
 				task->si.StartupInfo.hStdInput = task->hReadIn;
-				if( OutputHandler2 )
-					task->si.StartupInfo.hStdError = task->hWriteErr;
 				if( OutputHandler )
 					task->si.StartupInfo.hStdOutput = task->hWriteOut;
+				if( OutputHandler2 )
+					task->si.StartupInfo.hStdError = task->hWriteErr;
 				if( OutputHandler && !OutputHandler2 ) {
  // if this is not set, then stderr gets inherited.
 					task->si.StartupInfo.hStdError = task->hWriteOut;
 				}
 				task->si.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
-			}
-			task->si.StartupInfo.dwFlags |= STARTF_USESHOWWINDOW;
-			if( !( flags & LPP_OPTION_DO_NOT_HIDE ) )
-				task->si.StartupInfo.wShowWindow = SW_HIDE;
-			else
-				task->si.StartupInfo.wShowWindow = SW_SHOW;
+			} else
+				task->hWriteErr = task->hReadErr = INVALID_HANDLE_VALUE;
 #ifndef PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE
 #   define PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE 0x20016
 #endif
@@ -35869,11 +35870,10 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 #ifdef _DEBUG
 				//xlprintf(LOG_NOISE)( "Success running %s[%s] in %s (%p): %d", program, GetText( cmdline ), expanded_working_path, task->pi.hProcess, GetLastError() );
 #endif
-				if( !shellExec && ( OutputHandler || OutputHandler2 ) )
+				if( !shellExec && ( task->OutputEvent || task->OutputEvent2 ) )
 				{
-					task->hStdIn.handle	  = task->hWriteIn;
-					task->hStdIn.pLine	  = NULL;
-					//task->hStdIn.pdp		 = pdp;
+					task->hStdIn.handle   = task->hWriteIn;
+					task->hStdIn.pLine    = NULL;
 					task->hStdIn.hThread  = 0;
 					task->hStdIn.bNextNew = TRUE;
 					// NOTE: win32-input-mode ( ESC[?9001h ) was tried to let SendPTYKeyEvent deliver
@@ -35886,35 +35886,32 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 					//}
 					if( task->OutputEvent ) {
 						task->hStdOut.handle   = task->hReadOut;
-						task->hStdOut.pLine	   = NULL;
-						//task->hStdOut.pdp		  = pdp;
+						task->hStdOut.pLine    = NULL;
 						task->hStdOut.bNextNew = TRUE;
 						task->args1.task       = task;
 						task->args1.stdErr     = FALSE;
 						task->hStdOut.hThread  = ThreadTo( HandleTaskOutput, (uintptr_t)&task->args1 );
 					}
-					if( task->OutputEvent2 )
+					if( task->OutputEvent2 && task->hReadErr != INVALID_HANDLE_VALUE)
 					{
 						task->hStdErr.handle   = task->hReadErr;
-						task->hStdErr.pLine	   = NULL;
-						//task->hStdOut.pdp		  = pdp;
+						task->hStdErr.pLine    = NULL;
 						task->hStdErr.bNextNew = TRUE;
 						task->args2.task       = task;
 						task->args2.stdErr     = TRUE;
 						task->hStdErr.hThread  = ThreadTo( HandleTaskOutput, (uintptr_t)&task->args2 );
 					}
-					ThreadTo( WaitForTaskEnd, (uintptr_t)task );
 				}
 				else
 				{
 					if( shellExec ) {
 						// shell exec doesn't get any of this specified... it doesn't use any of it.
-						if( OutputHandler2 ) {
+						if( task->OutputEvent2 ) {
 							CloseHandle( task->hWriteErr );
 							CloseHandle( task->hReadErr );
 							task->hReadErr = task->hWriteErr = INVALID_HANDLE_VALUE;
 						}
-						if( OutputHandler ) {
+						if( task->OutputEvent ) {
 							CloseHandle( task->hWriteOut );
 							CloseHandle( task->hReadOut );
 							task->hReadOut = task->hWriteOut = INVALID_HANDLE_VALUE;
@@ -35923,9 +35920,8 @@ SYSTEM_PROC( PTASK_INFO, LaunchPeerProgram_v2 )( CTEXTSTR program, CTEXTSTR path
 						CloseHandle( task->hReadIn );
 						task->hReadIn = task->hWriteIn = INVALID_HANDLE_VALUE;
 					}
-					//task->hThread =
-					ThreadTo( WaitForTaskEnd, (uintptr_t)task );
 				}
+				ThreadTo( WaitForTaskEnd, (uintptr_t)task );
 				// close my side of the pipes...
 				if( task->hWriteOut != INVALID_HANDLE_VALUE ) {
 					CloseHandle( task->hWriteOut );

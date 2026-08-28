@@ -57,6 +57,16 @@ function resolveTaskBin( task, bin ) {
 	return bin;
 }
 
+function getPtySize( task ) {
+	const ptySize = task.ptySize || task.pty || {};
+	return {
+		cols: ptySize.cols || ptySize.columns || 80,
+		rows: ptySize.rows || ptySize.lines || 30,
+		width: ptySize.width || 0,
+		height: ptySize.height || 0,
+	};
+}
+
 export class Task {
 	started = new Date(0);
 	starting = false;
@@ -332,10 +342,11 @@ export class Task {
 		  work:this.#task.work,
 		  bin:bin,
 		  args:this.#task.args,
+		  firstArgIsArg: this.#task.firstArgIsArg ?? true,
 		  end: stop,
 		  env,
 		  input: log,
-		  errorInput: log2,
+		  errorInput: this.#task.usePty ? undefined : log2,
 		hidden: this.#task.hidden,
 		minimized: this.#task.minimized,
 		maximized: this.#task.maximized,
@@ -353,6 +364,10 @@ export class Task {
 		} );
 		//console.log( "Task:", this.#task );
 		if( this.#run ) {
+			if( this.#task.usePty && ( this.#task.ptySize || this.#task.pty ) && typeof this.#run.setPtySize === "function" ) {
+				const ptySize = getPtySize( this.#task );
+				this.#run.setPtySize( ptySize.cols, ptySize.rows, ptySize.width, ptySize.height );
+			}
 			this.running = true;
 			this.starting = false; // is running, not just starting.
 			this.started = new Date();
