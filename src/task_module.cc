@@ -59,9 +59,7 @@ struct optionStrings {
 	Eternal<String>* deviceString;
 	Eternal<String>* connectorString;
 #endif
-#if defined( __LINUX__ )
 	Eternal<String>* usePtyString;
-#endif
 
 };
 
@@ -160,10 +158,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->connectorString = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "connector"));
 		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
 #endif
-#if defined( __LINUX__ )
 		check->usePtyString =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "usePty" ) );
-
-#endif
 	}
 	return check;
 }
@@ -710,13 +705,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					noWait = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
-#if defined( __LINUX__ )
 			if( opts->Has( context, optName = strings->usePtyString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					usePty = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
-#endif
 			if( opts->Has( context, optName = strings->detachedString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					detach = GETV( opts, optName )->TOBOOL( isolate );
