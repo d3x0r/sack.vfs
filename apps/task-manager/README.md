@@ -63,6 +63,7 @@ Tasks to run are defined with a few fields.
 |			noKill | bool | don't kill the task on exit.  Child tasks that are started will normally be killed when the launcher exits. |
 |			noWait | bool | don't wait on the task (when exiting?)  |
 |			newConsole | bool | (WIN32) Starts task with a new console window.  |
+|			usePty | bool | (WIN32) Starts task through a pseudo terminal instead of plain pipes.  |
 |			useSignal |bool| (WIN32) A end task signal can be registered by children, this option enables using the signal to trigger an exit instead of ctrl-c, ctrl-break. |
 |			useBreak |bool| (WIN32) Stop task with ctrl-break instead of ctrl-C effective signal.  |
 |			moveTo | object | (WIN32) specifies where to move the main window of the task to when it launches,  |
