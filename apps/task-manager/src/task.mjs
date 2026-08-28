@@ -343,6 +343,7 @@ export class Task {
 			noKill: this.#task.noKill,
 			noWait: this.#task.noWait,
 			newConsole : this.#task.newConsole,
+			usePty : this.#task.usePty,
 			useSignal : this.#task.useSignal,
 			useBreak : this.#task.useBreak,
 			moveTo : this.#task.moveTo,
