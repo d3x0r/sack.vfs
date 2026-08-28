@@ -178,6 +178,8 @@ connect();
 Includes a simple router which can be applied to a server mentioned above.
 
 Supports only most basic express-like interface.  Route matching can be done by String or RexExp.
+`use()` handlers match a path prefix and `all()` handlers match a route for any HTTP method.
+When a matching handler calls `next()`, routing falls through to the next matching handler or the static resource handler.
 
 ``` js
 import {uExpress} from "sack.vfs/http-ws/uexpress.mjs"

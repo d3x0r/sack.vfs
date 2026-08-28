@@ -290,7 +290,7 @@ function hookJSOX( serverOpts, server ) {
 	server.addHandler( app.handle );
 
 	server.app = app;
-	app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
+	app.get( /.*\.jsox|.*\.json6/, (req,res,next)=>{
 
 		const headers = {
 			'Content-Type': "text/javascript",
@@ -313,10 +313,10 @@ function hookJSOX( serverOpts, server ) {
 				res.writeHead( 200, headers );
 				const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
 				res.end( resultContent );
-				return true;
+				return;
 			}
 		}
-		return false;
+		return next();
 	} ) 
 }
 
