@@ -149,5 +149,18 @@ Http Response methods
   | Method | Parameters | Description |
   |----|----|-----|
   | writeHead | (resultCode [,extraHeadersObject]) | setup the return code of the socket.  Second parameter is an object which is used to specify additional headers. |
-  | end | ( content [,unused]) | sends specified content.  String, Buffer, uint8Array, ArrayBuffer area all accpeted.  (sack.vfs.File?) |
+  | end | ( content [,extraHeadersObject]) | sends specified content.  String, Buffer, uint8Array, ArrayBuffer area all accpeted.  (sack.vfs.File?)  With no content (or `null`) it sends just the head, with `Content-Length: 0`.  With a NUMBER it is a shorthand for `writeHead` - `res.end( 302, {Location:"/x/"} )` is the same as `writeHead(302,{...}); end()`. |
+
+  | Property | Type | Description |
+  |----|----|-----|
+  | statusCode | number | The status to send; defaults to 200, and `writeHead` sets it.  Assign it instead of calling `writeHead` when there are no headers to add - `res.statusCode = 404; res.end();`.  Assignment after the head is written is ignored, so reading it back always tells you what was actually sent. |
+
+  A response always begins with a status line: if a handler never calls `writeHead`, `end()`
+  writes one from `statusCode`.  The reason phrase comes from the same table node exposes as
+  `http.STATUS_CODES` (`404 Not Found`, `303 See Other`), and is `unknown` for a code that is
+  not in it.
+
+  There is no `write()`: the response is accumulated and sent once, by `end()`.  Nothing emits
+  a chunked response, and passing a `sack.vfs.File` to `end()` is an unimplemented stub that
+  sends nothing at all.
 

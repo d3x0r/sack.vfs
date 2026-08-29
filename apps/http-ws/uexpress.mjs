@@ -13,8 +13,9 @@
 /**
  * @typedef {Object<string, unknown> & {
  *   headersSent?: boolean,
+ *   statusCode?: number,
  *   writeHead: (statusCode: number, headers?: Object<string, string>) => void,
- *   end: (body?: unknown) => void
+ *   end: (body?: unknown, headers?: Object<string, string>) => void
  * }} UExpressResponse
  */
 

@@ -19,10 +19,13 @@ export type UExpressRequest = {
 export type UExpressResponse = {
     [x: string]: unknown;
     headersSent?: boolean;
+    statusCode?: number;
     writeHead: (statusCode: number, headers?: {
         [x: string]: string;
     }) => void;
-    end: (body?: unknown) => void;
+    end: (body?: unknown, headers?: {
+        [x: string]: string;
+    }) => void;
 };
 export type UExpressNext = () => void;
 export type UExpressHandler = (req: UExpressRequest, res: UExpressResponse, next: UExpressNext) => unknown | Promise<unknown>;

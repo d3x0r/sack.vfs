@@ -262,6 +262,10 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
    - Implemented HTTP 1.1 streaming request API.
    - Improved performance; enabled TCP no delay on websocket connections; cache alignment and spin lock scheduling improvements on concurrent HTTP requests.
    - Fixed task manager failure to kill a second time on windows.
+   - Fixed HTTP responses with no body (a bare `res.end()`, including redirects) never completing on a keep-alive connection; they now send `Content-Length: 0`.
+   - Fixed `res.end( statusCode )` throwing "Headers have already been set" on keep-alive connections; the implicit head is now written before any other header.
+   - HTTP responses now carry the real reason phrase (`404 Not Found`) instead of `OK` for every status.
+   - Added `res.statusCode`, settable; a response whose handler never called `writeHead()` now gets a status line from it instead of going out with none.
 - 1.3.133
    - Added `getRoot` export utility that can find the root package.json.
    - Added program name to task information in task manager.  Program name support is used for process exit signal generation.
