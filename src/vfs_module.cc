@@ -4,6 +4,7 @@
 #  include <node_binding.h>
 #endif
 #include "global.h"
+#include <atomic>
 
 //#define DEBUG_EXIT
 
@@ -1112,11 +1113,36 @@ void dontReleaseBufferBackingStore(void* data, size_t length, void* deleter_data
 	(void)deleter_data;;
 }
 
+// V8 sizes an ArrayBuffer by the little JS object, not by the backing store, so a
+// buffer this library owns - a file read into memory, a mapped file, a query blob -
+// looked like a few dozen bytes to the collector.  Nothing here ever reported the
+// real size, so no amount of held-and-dropped file content created any pressure to
+// collect, and the memory only became visible outside the process.
+//
+// The allocate side reports it (makeReleasableBackingStore, always on the isolate
+// thread).  The free side CANNOT: V8 sweeps array buffers on background threads -
+// which is why this deleter has to MakeThread() at all - and neither
+// AdjustAmountOfExternalAllocatedMemory nor Isolate::GetCurrent() is usable from
+// there.  So a release just accumulates here and the next allocation on the isolate
+// thread hands the total back.  Bounded drift, no cross-thread V8 calls.
+static std::atomic<int64_t> externalPendingFreed{ 0 };
+
 void releaseBufferBackingStore( void* data, size_t length, void* deleter_data ) {
-	(void)length;
 	(void)deleter_data;;
 	MakeThread();
+	externalPendingFreed.fetch_add( (int64_t)length, std::memory_order_relaxed );
 	Deallocate( void*, data );
+}
+
+std::shared_ptr<BackingStore> makeReleasableBackingStore( void* data, size_t length ) {
+	Isolate *isolate = Isolate::GetCurrent();
+	if( isolate ) {
+		int64_t freed = externalPendingFreed.exchange( 0, std::memory_order_relaxed );
+		// may collect, which can run the deleter above for other buffers; those land in
+		// externalPendingFreed and are reported by the next call, not lost.
+		isolate->AdjustAmountOfExternalAllocatedMemory( (int64_t)length - freed );
+	}
+	return ArrayBuffer::NewBackingStore( data, length, releaseBufferBackingStore, NULL );
 }
 
 
@@ -1188,7 +1214,7 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 					return;
 				}
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buf, len );
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs);
 #else
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
@@ -1215,7 +1241,7 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 					len = sack_fread( buf, len, 1, file );
 
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buf, len );
 					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 
 #else
@@ -1343,7 +1369,7 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		POINTER data = OpenSpace( NULL, *fName, &len );
 		if( data && len ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( data, len, releaseBufferBackingStore, NULL );
+			std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( data, len );
 			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, bs );
 			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
 #else
@@ -1901,7 +1927,7 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		}
 		{
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( file->buf, file->size, releaseBufferBackingStore, NULL );
+			std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( file->buf, file->size );
 			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, file->buf, file->size );

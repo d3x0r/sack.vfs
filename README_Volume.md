@@ -39,6 +39,12 @@ new Volume() = {
 Volume  // function has these methods.
     readAsString( filename ) - read a local system file as a string; used to quick-read for require( "*.[jsox/json6]")
     mapFile( filename ) - return an ArrayBuffer that is the memory mapped file on the disk.
+        The mapping is read-WRITE (writing into the ArrayBuffer writes the file), and it
+        lives until the ArrayBuffer is collected - so the file stays mapped for an
+        indeterminate time after the last use.  On Windows a live mapping does not stop
+        another process opening, writing or renaming the file, but it does stop the file
+        from being resized, so an editor that saves by truncating in place will fail while
+        it is mapped.  Prefer read() for files that change under you.
     cwd - getter that results with current working directory (may later be isolate-local).
     chdir - set the application's current working path
     mkdir(path) - recursively creates the desired path; parts are can be separated with `\` or `/`.

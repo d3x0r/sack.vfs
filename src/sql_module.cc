@@ -1155,7 +1155,7 @@ static void buildQueryResult( struct query_thread_params* params ) {
 						//lprintf( "Should result with a binary thing" );
 
 #if ( NODE_MAJOR_VERSION >= 14 )
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( Hold( jsval->string ), jsval->stringLen, releaseBufferBackingStore, NULL );
+						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( Hold( jsval->string ), jsval->stringLen );
 						Local<Object> ab = ArrayBuffer::New( isolate, bs );
 						//Local<ArrayBuffer> ab =
 						//	ArrayBuffer::New( isolate, (char*)Hold( jsval->string ), jsval->stringLen );
@@ -2366,7 +2366,7 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 				memcpy( _data, data, len );
 
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( _data, len, releaseBufferBackingStore, NULL );
+				std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( _data, len );
 				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, bs );
 #else
 				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, _data, len );
@@ -2552,7 +2552,7 @@ void callAggStep( struct sqlite3_context*onwhat, int argc, struct sqlite3_value*
 				_data = NewArray( char, len );
 				memcpy( _data, data, len );
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( _data, len, releaseBufferBackingStore, NULL );
+				std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( _data, len );
 				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, bs );
 #else
 				Local<Object> arrayBuffer = ArrayBuffer::New( userData->isolate, _data, len );

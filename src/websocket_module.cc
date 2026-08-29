@@ -1064,8 +1064,8 @@ static Local<Value> makeRequest(struct HttpState* pHttpState, Isolate *isolate, 
 		SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
 		void* newBuf = NewArray(uint8_t, GetTextSize(content));
 		MemCpy(newBuf, GetText(content), GetTextSize(content));
-		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
-			GetTextSize(content), releaseBufferBackingStore, NULL);
+		std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( newBuf,
+			GetTextSize(content) );
 
 		SETV( req, strings->bytesString->Get(isolate), ArrayBuffer::New(isolate, bs));
 	} else
@@ -1186,8 +1186,8 @@ static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, htt
 							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
 						void* newBuf = NewArray(uint8_t, GetTextSize(content));
 						MemCpy(newBuf, GetText(content), GetTextSize(content));
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
-							GetTextSize( content ), releaseBufferBackingStore, NULL);
+						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( newBuf,
+							GetTextSize( content ) );
 						
 						SET(result, "bytes", ArrayBuffer::New(isolate, bs)  );
 					}
@@ -1266,7 +1266,7 @@ static void wssiAsyncMsg__( Isolate *isolate, Local<Context> context, wssiObject
 					//if( !myself->messageCallback.IsEmpty() ) {
 					if( eventMessage->binary ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen );
 						ab = ArrayBuffer::New( isolate, bs );
 #else
 						ab =
@@ -1396,8 +1396,8 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 					 || eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) {
 						if( eventMessage->data.error.jsBuffer ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.jsBuffer,
-								eventMessage->data.error.buflen, releaseBufferBackingStore, NULL );
+							std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (void*)eventMessage->data.error.jsBuffer,
+								eventMessage->data.error.buflen );
 							argv[2] = ArrayBuffer::New( isolate, bs );
 							// the ArrayBuffer's deleter owns the copy from here; the
 							// poster frees only what is left behind.
@@ -1809,7 +1809,7 @@ static void wscAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wscObje
 			case WS_EVENT_READ:
 				if( eventMessage->binary ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen );
 					ab = ArrayBuffer::New( isolate,bs );
 #else
 					ab =
@@ -5231,8 +5231,8 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
 						void* newBuf = NewArray(uint8_t, GetTextSize(content));
 						MemCpy(newBuf, GetText(content), GetTextSize(content));
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
-							GetTextSize( content ), releaseBufferBackingStore, NULL);
+						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( newBuf,
+							GetTextSize( content ) );
 						SET(result, "bytes", ArrayBuffer::New(isolate, bs));
 					}
 					SET( result, "statusCode"
@@ -5434,8 +5434,8 @@ static void httpConnAsyncMsg__( Isolate *isolate, Local<Context> context, httpCo
 						, String::NewFromUtf8( isolate, (const char*)evt->response.content
 							, NewStringType::kNormal, (int)evt->response.contentLen ).ToLocalChecked() );
 					// hand the copy we already made to V8 rather than copying again
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( evt->response.content
-						, evt->response.contentLen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( evt->response.content
+						, evt->response.contentLen );
 					SET( result, "bytes", ArrayBuffer::New( isolate, bs ) );
 					evt->response.content = NULL; // owned by the backing store now
 				}

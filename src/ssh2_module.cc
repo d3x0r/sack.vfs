@@ -298,7 +298,7 @@ static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Objec
 					SSH2_Channel*channel = (SSH2_Channel*)event->data2;
 					if( channel->binary ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( event->data, event->length, releaseBufferBackingStore, NULL );
+						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( event->data, event->length );
 						Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 						Local<Object> arrayBuffer = ArrayBuffer::New( isolate, event->data, event->length );

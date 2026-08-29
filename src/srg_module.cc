@@ -233,8 +233,8 @@ private:
 			SRG_GetEntropyBuffer( obj->entropy, buffer, bits );
 
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buffer,
-				(bits+7)/8, releaseBufferBackingStore, NULL );
+			std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buffer,
+				(bits+7)/8 );
 			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, bs );
 #else
 			Local<Object> arrayBuffer = ArrayBuffer::New( obj->isolate, buffer, (bits+7)/8 );
@@ -834,7 +834,7 @@ private:
 		
 		Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)bytes, 16, releaseBufferBackingStore, NULL );
+		std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)bytes, 16 );
 		ab = ArrayBuffer::New( isolate, bs );
 #else
 						ab =
@@ -897,7 +897,7 @@ private:
 
 		Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)bytes, SHA1HashSize, releaseBufferBackingStore, NULL );
+		std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)bytes, SHA1HashSize );
 		ab = ArrayBuffer::New( isolate, bs );
 #else
 		ab =
@@ -960,7 +960,7 @@ private:
 
 		Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)bytes, SHA256_DIGEST_SIZE, releaseBufferBackingStore, NULL );
+		std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)bytes, SHA256_DIGEST_SIZE );
 		ab = ArrayBuffer::New( isolate, bs );
 #else
 		ab =

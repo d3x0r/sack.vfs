@@ -266,6 +266,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
    - Fixed `res.end( statusCode )` throwing "Headers have already been set" on keep-alive connections; the implicit head is now written before any other header.
    - HTTP responses now carry the real reason phrase (`404 Not Found`) instead of `OK` for every status.
    - Added `res.statusCode`, settable; a response whose handler never called `writeHead()` now gets a status line from it instead of going out with none.
+   - Report the size of library-owned ArrayBuffers to V8 (`AdjustAmountOfExternalAllocatedMemory`), so file reads, mapped files, query blobs and socket messages create collection pressure instead of accumulating invisibly.  New `makeReleasableBackingStore()` replaces every `NewBackingStore(...,releaseBufferBackingStore,NULL)`.
 - 1.3.133
    - Added `getRoot` export utility that can find the root package.json.
    - Added program name to task information in task manager.  Program name support is used for process exit signal generation.

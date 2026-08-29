@@ -719,6 +719,9 @@ typedef struct arrayBufferHolder ARRAY_BUFFER_HOLDER, *PARRAY_BUFFER_HOLDER;
 DeclareSet( ARRAY_BUFFER_HOLDER );
 
 void releaseBufferBackingStore( void* data, size_t length, void* deleter_data );
+// ArrayBuffer over memory this library owns, with V8 told how big it really is.
+// Use this instead of ArrayBuffer::NewBackingStore(...,releaseBufferBackingStore,NULL).
+std::shared_ptr<BackingStore> makeReleasableBackingStore( void* data, size_t length );
 void dontReleaseBufferBackingStore(void* data, size_t length, void* deleter_data);
 void releaseBuffer( const WeakCallbackInfo<ARRAY_BUFFER_HOLDER> &info );
 void freeBuffer(const WeakCallbackInfo<ARRAY_BUFFER_HOLDER>& info);

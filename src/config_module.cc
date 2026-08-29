@@ -136,7 +136,7 @@ static uintptr_t CPROC handler( uintptr_t psv, uintptr_t psvRule, arg_list args 
 					arglen = my_va_arg( args, size_t );
 					Local<ArrayBuffer> ab;
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)arg, arglen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)arg, arglen );
 					ab = ArrayBuffer::New( config->isolate, bs );
 #else
 					ab = ArrayBuffer::New( isolate, (void*)arg, arglen );

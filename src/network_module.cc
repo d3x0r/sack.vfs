@@ -497,7 +497,7 @@ static void udpAsyncMsg_( Isolate *isolate, Local<Context> context, udpObject*ob
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen );
 					ab = ArrayBuffer::New( isolate, bs );
 #else
 					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
@@ -916,7 +916,7 @@ static void tcpAsyncMsg_( Isolate *isolate, Local<Context> context, tcpObject * 
 				//argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen );
 					ab = ArrayBuffer::New( isolate, bs );
 #else
 					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
