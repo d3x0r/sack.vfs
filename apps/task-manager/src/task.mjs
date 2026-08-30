@@ -535,6 +535,10 @@ export class Task {
 			}
 		}
 		this.noAutoRun = task.noAutoRun;
+		// `name` is a public field of the Task itself - that is what gets
+		// serialized into the client's task list - so writing it into #task
+		// alone would leave every display on the old name until a restart.
+		if( "name" in task ) this.name = task.name;
 		//if( ( task.work[0] !== '/' && task.work[1] !== ':' )  )
 		//	this.work = config.pwdBare + "/" + task.work;
 		//else this.work = task.work;

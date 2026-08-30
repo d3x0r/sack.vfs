@@ -8,6 +8,7 @@ export const local = {
 	statusDisplay : null,
 	fillStatusDisplay : false,
 	pendingShowTasks : [],
+	pendingSystems : [], // systems that arrived before the Display existed
 	statusTimer: 0,
 	systems: [],
 	refresh : null,

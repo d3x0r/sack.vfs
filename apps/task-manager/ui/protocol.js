@@ -100,9 +100,14 @@ export class Protocol extends Events {
 		this.ws.send( JSOX.stringify( {op:"updateTask",id, task} ) );
 	}
 
-	deleteTask( id ) {
+	deleteTask( group, task ) {
 		// delete comes back as deleteTask
-		this.ws.send( `{op:deleteTask,id:"${id}"}` );
+		if( !task ) return;
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"deleteTask", system:system.id, id:task.id } ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"deleteTask", id:task.id } ) );
 	}
 
  	connect( to ) {
@@ -165,6 +170,16 @@ export class Protocol extends Events {
 				protocol.on( "updateTask", [msg.id, msg.task] );
 				break;
 			case "deleteTask":
+				// route it the way addTask is routed - a remote task lives in
+				// that system's own list and grid, not in the master's.
+				if( msg.system && msg.system !== config.local.system ) {
+					for( let system of config.local.systems ) {
+						if( system.id === msg.system ) {
+							system.deleteTask( msg.id );
+							break;
+						}
+					}
+				}
 				protocol.on( "deleteTask", msg.id );
 				break;
 			case "extern.tasks":
@@ -227,7 +242,11 @@ export class Protocol extends Events {
 						config.local.refresh();
 						//console.log( "Replacing status?  need to update statuses" );
 						return;
-					} else {
+					} else if( system ) {
+						// no system means the task is gone - stopping a task as
+						// part of deleting it reports its status after the
+						// delete was broadcast, so this arrives for a row that
+						// has already been dropped.
 						{
 							let task = null;
 							for( task of system.tasks ) {

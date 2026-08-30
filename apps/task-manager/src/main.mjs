@@ -423,9 +423,11 @@ function connect( ws ) {
 		break;
 		case "deleteTask": {
 			// received from deleting a remote task
-			connection.system.deleteTask( msg.task );
+			// System.deleteTask() keys off the task id; `msg.task` is not sent
+			// on a delete at all, so the mirror never dropped the row.
+			connection.system.deleteTask( msg.id );
 			if( local.upstreamWS ) local.upstreamWS.send( msg_ );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			send( {op:msg.op, system:connection.system.id, id:msg.id});
 		}
 		break;
 		case "status": {
@@ -529,16 +531,16 @@ function connect( ws ) {
 }
 
 
+	// send() already relays to local.upstreamWS, and it stringifies first; the
+	// extra send of the raw object each of these used to do reached upstream as
+	// "Unhandled message format", so an upstream master never saw these at all.
 	function addTask( id, task ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"addTask", system:local.id, id, task } );
 		send( {op:"addTask", system:local.id, id, task } );
 	}
 	function updateTask( id, task ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"updateTask", system:local.id, id, task } );
 		send( {op:"updateTask", system:local.id, id, task } );
 	}
 	function deleteTask( id ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"deleteTask", system:local.id, id } );
 		send( {op:"deleteTask", system:local.id, id } );
 	}
 
@@ -594,13 +596,16 @@ function handleMessage( ws, msg_ ) {
 			handleInput( ws, msg, msg_ );
 			break;
 		case "createTask": {
-			if( local.system === msg.system || !msg.system ) {
+			// same as the delete case: the local system's identity is local.id,
+			// so a create addressed to this system by name fell through to the
+			// remote lookup and was dropped.
+			if( local.id === msg.system || !msg.system ) {
 				const task = loadTask( msg.task );
 				if( !msg.task.temporary )
 					saveRunConfig();
 				addTask( task.id, task ); // sends new task
 				if( !task.noAutoRun ) task.start();
-			} else if( msg.system && msg.system != local.system ) {
+			} else if( msg.system && msg.system != local.id ) {
 				local.systems.find( system=>{
 					if( system.id === msg.system ) {
 						system.createTask( msg_ );
@@ -646,31 +651,32 @@ function handleMessage( ws, msg_ ) {
 		}
 			break;
 		case "deleteTask": {
-			if( !msg.system || msg.system ===local.system ) {
+			// `local.system` is not a field - the local system is `local.id`,
+			// so a delete that named the local system never matched here.
+			if( !msg.system || msg.system === local.id ) {
 				const task = local.taskMap[msg.id];
 				if( task ) {
 					const taskInfo = task.task;
-					for( let t = 0; t < config.tasks.length; t++ ) {
-						if( config.tasks[t] === taskInfo ) {
-							config.tasks.splice( t, 1 );
-							for( let t2 = 0; t2 < local.tasks.length; t2++ ) {
-								if( local.tasks[t2] === task ) {
-									local.tasks.splice( t2, 1 );
-									break;
-								}
-							}
-							delete local.taskMap[msg.id];
-							if( task.running )
-								task.stop();
-							if( !taskInfo.temporary )
-								saveRunConfig();
-							break;
-						}
-					}
-					send( msg_ );
+					// all of this used to be conditional on finding the task in
+					// config.tasks, so a task that wasn't in the saved config
+					// stayed in local.tasks and came back on the next task list.
+					const cfgIdx = config.tasks.indexOf( taskInfo );
+					if( cfgIdx >= 0 ) config.tasks.splice( cfgIdx, 1 );
+					const taskIdx = local.tasks.indexOf( task );
+					if( taskIdx >= 0 ) local.tasks.splice( taskIdx, 1 );
+					delete local.taskMap[msg.id];
+					if( task.running )
+						task.stop();
+					if( !taskInfo.temporary )
+						saveRunConfig();
+					deleteTask( msg.id );
 				}
 			} else {
-				// send to remote system...
+				// forward to the system that owns it, the same way
+				// handleStart/handleStop do.
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 			}
 			}
 			break;

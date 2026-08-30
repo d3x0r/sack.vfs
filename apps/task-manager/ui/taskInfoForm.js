@@ -116,8 +116,22 @@ export class TaskInfoEditor extends Popup {
 			this.create.tooltip = "Update this current task with the new settings";
 		}
 
-		this.saveAs = new Button( buttonFrame, "Save As", ()=>{
-			const form = createSimpleForm( "Save As", "Name", task.name, (name)=>{
+		// The Name field on the form is the name now, so there is normally
+		// nothing left to ask for - only fall back to the prompt when the name
+		// would still collide with the task this editor opened on, or when a
+		// new task hasn't been given one.  A new task has nothing to save "as",
+		// so its button is just Save.
+		const originalName = task_ ? task_.name : null;
+		this.saveAs = new Button( buttonFrame, task_ ? "Save As" : "Save", ()=>{
+			if( task.name && task.name !== originalName ) {
+				processForm(true);
+				this.on( "close", true );
+				this.remove();
+				return;
+			}
+			// getter, not a value: the Name field above may have been edited
+			// since this editor opened.
+			const form = createSimpleForm( "Save As", "Name", ()=>task.name, (name)=>{
 				task.name = name;
 				processForm(true);
 				this.on( "close", true );
@@ -126,7 +140,8 @@ export class TaskInfoEditor extends Popup {
 			} );
 			form.show();
 		} )
-		this.saveAs.tooltip = "Pick a new name to save as a new task";
+		this.saveAs.tooltip = task_ ? "Save these settings as a new task, under the name above"
+		                            : "Create this task with these settings";
 
 		if( !task ) {
 			return;
@@ -134,8 +149,14 @@ export class TaskInfoEditor extends Popup {
 		this.group1 = document.createElement( "div" );
 		this.group1.className = "task-config-group1"
 		page1.appendChild( this.group1 );
-		//this.name = popups.makeTextField( this.group1, task, "name", "Name" );
-		//this.name.tooltip = "Name of the task";
+		// the name is what the task list shows and what loadTask() matches on,
+		// so editing it here and saving is a rename; without this field the only
+		// way to change a name was Save As, which leaves the original behind.
+		this.taskName = new TextInput( this.group1, task, "name", "Name" );
+		this.taskName.tooltip = "Name of the task; changing this renames the task";
+		this.taskName.on( "change", ()=>{
+			headerTitle.textContent = task.name || "New Task";
+		} );
 		this.bin = new TextInput( this.group1, task, "bin", 'Program');
 		this.bin.tooltip = "Program to run for this task";
 		this.altbin = new TextInput( this.group1, task, "altbin", 'Alternate Program');

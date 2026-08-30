@@ -21,6 +21,7 @@ document.head.insertBefore( style, document.head.childNodes[0] || null );
 import {local} from "./local.js"
 
 import {TaskInfoEditor} from "./taskInfoForm.js"
+import {SimpleNotice} from "/node_modules/@d3x0r/popups2/forms/simple-notice.js"
 
 protocolConfig.local = local;
 protocol.on( "insertBackLog", insertBackLog );
@@ -28,6 +29,7 @@ protocol.on( "addTaskList", AddTaskList )
 protocol.on( "addSystem", AddSystem );
 protocol.on( "addTask", addTask );
 protocol.on( "addTaskLog", addTaskLog );
+protocol.on( "updateTask", updateTask );
 protocol.on( "deleteTask", deleteTask );
 protocol.on( "extern.task", addNewSystem );
 protocol.on( "deleteSystem", deleteSystem );
@@ -39,6 +41,13 @@ function showForm() {
 		local.display = new Display();
 	else
 		local.display.show();
+
+	// systems are dispatched before the master task list, so replay them in
+	// that order; both queues exist because the Display is not built until the
+	// login resolves, which can land after the first `tasks` message.
+	if( local.pendingSystems.length ) {
+		local.pendingSystems.splice( 0 ).forEach( AddSystem );
+	}
 
 	if( local.pendingShowTasks.length ) {
 		local.pendingShowTasks.forEach( task => {
@@ -102,6 +111,29 @@ function showLogClick(taskList,task) {
 	}
 	else
 		protocol.showLog( taskList, task )
+}
+
+// the server echoes the stored task definition, which has none of the live
+// status fields (running/started/ended/id) - only merge what the list shows,
+// or the row loses its status until the next status message.
+function updateTask( taskId, task ) {
+	const row = local.tasks[taskId];
+	if( !row || !task ) return;
+	if( "name" in task ) row.name = task.name;
+	if( local.refresh ) local.refresh();
+	else if( local.statusDisplay ) local.statusDisplay.refresh();
+}
+
+// Okay/Cancel before a delete: it stops the task and drops it out of the
+// saved configuration, and there is no undo.
+function confirmDeleteTask( group, task ) {
+	const notice = new SimpleNotice( "Delete Task"
+		, "Delete \"" + ( task.name || "" ) + "\"?  It is stopped if running, and removed from the saved configuration."
+		, ()=>{ protocol.deleteTask( group, task ); notice.remove(); }
+		// SimpleNotice runs its cancel callback for any dismissal, Okay
+		// included, so this only tidies up - it must not undo anything.
+		, ()=>{ notice.remove(); } );
+	notice.show();
 }
 
 function deleteTask( taskId ) {
@@ -182,6 +214,10 @@ function AddTaskList(display, object, field) {
 			editor.on( "close", ()=>{ delete editing[task.id] } );
 
     }, text: "✎"} } );
+	if( local.login )
+		columns.push( { name:"Delete"  , className: "-delete", type:{suffix:" red", click(gridRow){
+			confirmDeleteTask( object, gridRow.rowData );
+		}, text: "🗑"} } );
 
 
 	const dataGrid = new DataGrid( display, object, field, {//suffix:'-browse'
@@ -228,7 +264,8 @@ function AddTaskList(display, object, field) {
 }
 
 function deleteSystem( system ) {
-	let oldsystem = local.systems.findIndex( testsystem=>testsystem.id=system );
+	// `=` here assigned the id to every system it walked, and matched the first
+	let oldsystem = local.systems.findIndex( testsystem=>testsystem.id===system );
 	if( oldsystem>=0 ) {
 		if( local.systems[oldsystem].page === local.activePage )
 			local.pageFrame.activate( local.firstPage );
@@ -242,6 +279,12 @@ function addNewSystem( system ) {
 }
 
 function AddSystem( system ) {
+	if( !local.pageFrame ) {
+		// the Display owns the page frame and is not built until the login
+		// resolves; the first `tasks` message can carry systems before that.
+		local.pendingSystems.push( system );
+		return;
+	}
 
 	let oldsystem = local.systems.find( testsystem=>testsystem.id===system.id );
 	if( oldsystem ){
