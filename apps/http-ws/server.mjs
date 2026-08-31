@@ -400,7 +400,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	server.onrequest = srvr.handleEvent.bind( srvr );
 
 	server.on( "lowError",function (error, address, buffer) {
-        	console.log( "Low error:", error, address );
+		//console.log( "Low error:", error, address );
 		if( error !== 1 && error != 6 ) 
 			if( error === 7 ) {
 				console.log( "Requested host not found:", address.remoteAddress, "requested:", buffer );
