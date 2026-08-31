@@ -273,6 +273,7 @@ select{
 
 .task-config-group-opts .selectInput-task-config {
 	max-width: 8rem;
+	font-size:1rem;
 }
 
 .task-config-footer {
