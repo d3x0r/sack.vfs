@@ -14,7 +14,10 @@ export class TaskInfoEditor extends Popup {
 	argVal = [];
 	envKeys = [];
 	page = 0;
-	constructor( taskId, task_ ) {
+	// `group` is the task list this editor was opened from - `local` for this
+	// service manager, or a System for one of the upstreamed ones.  Without it
+	// a create or an update always landed on the local system.
+	constructor( taskId, task_, group ) {
 		super( "Task Config Editor", document.body, { suffix:"-task-config", shadowFrame: true, enableClose: true });
 		this.on("captionClose", ()=>{
 			//console.log( "This sort of close? turn into remove?" );
@@ -326,8 +329,8 @@ export class TaskInfoEditor extends Popup {
 				task.env[key.key] = key.val;
 			}
 			if( create)
-				protocol.createTask( task );
-			else protocol.updateTask( taskId, task );
+				protocol.createTask( group, task );
+			else protocol.updateTask( group, taskId, task );
 		}
 		function showPage() {
 			console.log("showPage", this_.page);

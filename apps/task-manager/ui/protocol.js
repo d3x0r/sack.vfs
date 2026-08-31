@@ -5,6 +5,7 @@ import {Events} from "/events/events.mjs"
 import {System} from "./system.mjs"
 
 
+
 export const config = {
 	local : { tasks: {},
 			refresh : ()=>{},
@@ -21,6 +22,11 @@ export class MySystem extends System {
 	}
 
 	addTask( id, task ) {
+		// keep the id->system map in step the way AddSystem does for the initial
+		// list; getTaskInfo() addresses the owning system through it, so without
+		// this a task added after load was asked for from the master instead.
+		config.local.tasks[id] = task;
+		config.local.systemMap[id] = this;
 		super.addTask( id, task );
 	}
 	updateTasks( tasks ) {
@@ -48,8 +54,6 @@ export class Protocol extends Events {
 			this.ws.send( JSOX.stringify( {op:"start", system:system.id, id:task.id } ) );
 		else			
 			this.ws.send( JSOX.stringify( {op:"start", id:task.id } ) );
-	}
-	editTask( ) {
 	}
 	restartTask( group, task ) {
 		const system = config.local.systems.find( system=>system === group );
@@ -90,14 +94,22 @@ export class Protocol extends Events {
 		return p;
 	}
 
-	createTask( task ) {
+	createTask( group, task ) {
 		// event comes back as an addTask
-		this.ws.send( JSOX.stringify( {op:"createTask",task} ) );
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"createTask", system:system.id, task} ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"createTask", task} ) );
 	}
 
-	updateTask( id, task ) {
+	updateTask( group, id, task ) {
 		// event comes back as updateTask
-		this.ws.send( JSOX.stringify( {op:"updateTask",id, task} ) );
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"updateTask", system:system.id, id, task} ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"updateTask", id, task} ) );
 	}
 
 	deleteTask( group, task ) {
@@ -203,7 +215,7 @@ export class Protocol extends Events {
 			case "backlog":
 				{
 					const log = config.local.logs[msg.id];
-					protocol.on( "insertBackLog", [log,msg.backlog]);
+					protocol.on( "insertBackLog", [log, msg.backlog] );
 				}
 				break;
 			case "log":

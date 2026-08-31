@@ -2,6 +2,13 @@
 	float:right;
 }
 
+/* holds the floated Add Task above each page's grid instead of letting it
+   escape over the rows */
+.task-list-add {
+	overflow: hidden;
+	margin-bottom: 2px;
+}
+
 .task-log-listbox {
     /* make scrollable */
     height: 80vh;

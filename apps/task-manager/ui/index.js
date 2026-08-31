@@ -61,11 +61,9 @@ class Display extends Popup {
 		super("Service Manager", document.body, { suffix: "-service-manager" });
 
 
-		if( local.login )
-			popups.makeButton( this.divCaption, "Add Task", ()=>{
-				new TaskInfoEditor( null, null );
-			}, {suffix:"add-task"} );
-		
+		// "Add Task" now lives on each page (see AddTaskList) so that it can
+		// target the system whose tab you are looking at; from the caption it
+		// could only ever add to this service manager.
 		local.pageFrame = new PagedFrame( this, {suffix:"-system"} );
 		local.pageFrame.on( "activate", (page)=>{ local.activePage = page; } );
 		local.firstPage = local.pageFrame.addPage( "Master");
@@ -173,6 +171,16 @@ function AddTaskList(display, object, field) {
 		local.pendingShowTasks.push( { object, field } );
 		return;
 	}
+	if( local.login ) {
+		const addFrame = document.createElement( "div" );
+		addFrame.className = "task-list-add";
+		display.appendChild( addFrame );
+		popups.makeButton( addFrame, "Add Task", ()=>{
+			// `object` is this page's group: `local` for the master list, or the
+			// System for an upstreamed one.
+			new TaskInfoEditor( null, null, object );
+		}, {suffix:"add-task"} );
+	}
 	const editing = {
 
 	}
@@ -210,7 +218,7 @@ function AddTaskList(display, object, field) {
 
 			const taskInfo = await protocol.getTaskInfo(task.id)
 			editing[task.id] = true;
-			const editor = new TaskInfoEditor( task.id, taskInfo.task );
+			const editor = new TaskInfoEditor( task.id, taskInfo.task, object );
 			editor.on( "close", ()=>{ delete editing[task.id] } );
 
     }, text: "✎"} } );

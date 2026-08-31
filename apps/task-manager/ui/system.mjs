@@ -35,7 +35,13 @@ export class System {
 	addTask( id, task ) {
 		this.tasks.push( task );
 		this.#taskMap[id] = task;
-
+		// same as deleteTask: the grid has to be rebuilt to gain a row.  Without
+		// this the next refresh() walks a data row that has no rendered row and
+		// dies on `cells`.
+		if( this.dataGrid ) {
+			this.dataGrid.reinit();
+			this.dataGrid.fill();
+		}
 	}
 	updateTask( id, task ) {
 		const checkTask = this.#taskMap[id];
