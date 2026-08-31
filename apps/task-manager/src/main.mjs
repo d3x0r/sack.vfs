@@ -224,7 +224,10 @@ function handleTaskInfo( ws, msg, msg_ ) {
 		if( task ){
 			ws.send( JSOX.stringify( {op:"taskInfo", id:task.id, task:task.task, title:task.title }));
 		}else
-			ws.send( JSOX.stringify( {op:"taskInfo", id:task.id, task:null }));
+			// `task` is what was just found to be missing - reading its .id threw
+			// out of the message handler, so the request never got any reply and
+			// the editor sat waiting on the promise forever.
+			ws.send( JSOX.stringify( {op:"taskInfo", id:msg.id, task:null }));
 	} else {
 		const remote = local.systems.find( system=>system.id === msg.system );
 		if( remote ) {
@@ -407,26 +410,25 @@ function connect( ws ) {
 				//ws.send( JSOX.stringify( {op:"remote disappeared?"}))
 			}
 		}break;
+		// These three relay a remote system's own change on to this system's
+		// clients.  They all used to drop `id` on the way out, which is what
+		// every one of those clients keys the task off; and send() already
+		// relays upstream, so the extra upstreamWS.send was a duplicate.
 		case "addTask": {
 			// received from creating a remote task
 			connection.system.addTask( msg.id, msg.task );
-			if( local.upstreamWS ) local.upstreamWS.send( JSOX.stringify( {op:msg.op, system:connection.system.id, task:msg.task } ) );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			send( {op:msg.op, system:connection.system.id, id:msg.id, task:msg.task});
 		}
 		break;
 		case "updateTask": {
 			// received from updating a remote task
-			connection.system.updateTask( msg.task );
-			if( local.upstreamWS ) local.upstreamWS.send( JSOX.stringify( {op:msg.op, system:connection.system.id, task:msg.task } ) );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			connection.system.updateTask( msg.id, msg.task );
+			send( {op:msg.op, system:connection.system.id, id:msg.id, task:msg.task});
 		}
 		break;
 		case "deleteTask": {
 			// received from deleting a remote task
-			// System.deleteTask() keys off the task id; `msg.task` is not sent
-			// on a delete at all, so the mirror never dropped the row.
 			connection.system.deleteTask( msg.id );
-			if( local.upstreamWS ) local.upstreamWS.send( msg_ );
 			send( {op:msg.op, system:connection.system.id, id:msg.id});
 		}
 		break;
@@ -599,26 +601,19 @@ function handleMessage( ws, msg_ ) {
 			// same as the delete case: the local system's identity is local.id,
 			// so a create addressed to this system by name fell through to the
 			// remote lookup and was dropped.
-			if( local.id === msg.system || !msg.system ) {
+			if( !msg.system || msg.system === local.id ) {
 				const task = loadTask( msg.task );
 				if( !msg.task.temporary )
 					saveRunConfig();
 				addTask( task.id, task ); // sends new task
 				if( !task.noAutoRun ) task.start();
-			} else if( msg.system && msg.system != local.id ) {
-				local.systems.find( system=>{
-					if( system.id === msg.system ) {
-						system.createTask( msg_ );
-						return true;
-					} 
-					return false;
-				});
-			}else {
-				const task = loadTask( msg.task );
-				if( !msg.task.temporary )
-					saveRunConfig();
-				addTask( task.id, task );
-				if( !task.noAutoRun ) task.start();
+			} else {
+				// forward to the system that owns it, the same way
+				// handleStart/handleStop do.  (System.createTask() sends through
+				// the Connection itself, which has no send().)
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to create a task on a system I can't reach:", msg );
 			}
 			}
 			break;
@@ -643,10 +638,12 @@ function handleMessage( ws, msg_ ) {
 					updateTask( msg.id, task.task );
 				}
 			}else {
-				if( connection.system )
-					connection.system.updateTask( msg.id, msg.task );
-				else
-					console.log( "Told to update a task I don't know, and can't reach?", msg );
+				// `connection` is the browser asking for the change, and its
+				// .system is null - the update has to go to the system that
+				// owns the task.
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to update a task I don't know, and can't reach?", msg );
 			}
 		}
 			break;

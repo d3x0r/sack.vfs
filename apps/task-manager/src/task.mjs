@@ -337,6 +337,14 @@ export class Task {
 		//console.log( "Starting:", bin, this );
 		const env = Object.assign( {}, this.#task.env );
 		if( this.#path ) env.PATH = this.#path;
+		// Passing input/errorInput is what makes the launcher hand the child
+		// pipes for stdout and stderr - so a `newConsole` task got a console
+		// window with nothing routed to it, and cmd.exe's own banner and prompt
+		// went to the log instead of the screen.  `noInheritStdio` is the switch
+		// for "this task owns its stdio"; honour it by not capturing at all.
+		// The cost is real and unavoidable: such a task has no Show Log output,
+		// because output can go to the console or to us, not both.
+		const ownStdio = !!this.#task.noInheritStdio;
 		//env.PATH = this.#path;
 		this.#run = sack.Task( {
 		  work:this.#task.work,
@@ -345,8 +353,8 @@ export class Task {
 		  firstArgIsArg: this.#task.firstArgIsArg ?? true,
 		  end: stop,
 		  env,
-		  input: log,
-		  errorInput: this.#task.usePty ? undefined : log2,
+		  input: ownStdio ? undefined : log,
+		  errorInput: ( ownStdio || this.#task.usePty ) ? undefined : log2,
 		hidden: this.#task.hidden,
 		minimized: this.#task.minimized,
 		maximized: this.#task.maximized,
