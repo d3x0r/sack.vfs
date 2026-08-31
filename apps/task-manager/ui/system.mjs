@@ -6,6 +6,10 @@ export class System {
 	port = 0; // system:port should be able to be connected to...
 	page = null; // used for the GUI to associate the datagrid
 	upstream = null; // tracks which system owns this system by upstream relation 
+	// set from the peer's extern.tasks: it refuses task edits from whoever it
+	// reports to, so the controls for it are hidden rather than offered and
+	// silently dropped.  Public so it rides along when systems are serialized.
+	disallowUpstreamTaskManagment = false;
 	#connection = null; // websocket connection to this system(saves IP address)
 	#taskMap = {};
 	#systems = []; // systems beyond this system that were upstreamed to this

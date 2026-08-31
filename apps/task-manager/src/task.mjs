@@ -19,6 +19,12 @@ const DEFAULT_MAX_MASTER_LOG_LINES = 5000;
 // trim in chunks - splicing the front on every line is O(n) per line.
 const LOG_TRIM_SLACK = 1024;
 
+// how long a task gets to exit on its own before it is force-killed, and the
+// hard cap after which a shutdown stops waiting for it at all rather than
+// hanging the whole process on one task that will not die.
+const TASK_STOP_KILL_MS = 1500;
+const TASK_STOP_GIVEUP_MS = 15000;
+
 function getLogPage( log, logBase, from = logBase + log.length, length = 20 ) {
 	const lineCount = Math.max( 0, Math.floor( length ) || 0 );
 	const start = Math.max( from - lineCount, logBase );
@@ -92,6 +98,7 @@ export class Task {
 	#killed = false;
 	#path = null;
 	#stopTimer = null;
+	#stopWaiters = []; // resolvers waiting for this task to actually stop
 
 	constructor(task) {
 		this.#task = task;
@@ -291,6 +298,8 @@ export class Task {
 
 	set stopTimer( val ) { this.#stopTimer = val; }
 	get stopTimer() { return this.#stopTimer; }
+	// timeoutTaskStop() lives outside the class and needs to register itself
+	get stopWaiters() { return this.#stopWaiters; }
 
 	start() {
 		this.stopped = false;
@@ -433,6 +442,11 @@ export class Task {
 				clearTimeout ( this_.#stopTimer )
 				this_.#stopTimer = 0;
 			} 
+			// Settle everyone waiting on this task from the end event itself.
+			// There is only one #stopTimer slot, so with more than one wait
+			// outstanding the clearTimeout above would cancel the only armed
+			// tick and orphan the promise a shutdown was waiting on.
+			this_.#stopWaiters.splice( 0 ).forEach( resolve=>resolve( true ) );
 			this_.stopping = false;
 			/*
 			if( this_.#stopTimer !== null ) {
@@ -507,7 +521,11 @@ export class Task {
 	}
 	stop() {
 		//console.log( "Stop command: ", this.stopped, this.#run, this.stopped );
-		if( this.stopped ) return;
+		if( this.stopped )
+			// already asked to stop once - the caller still needs something to
+			// wait on, and returning undefined here made closeAllTasks() fall
+			// back to starting a second, competing wait loop.
+			return this.running ? timeoutTaskStop( this ) : Promise.resolve( true );
 		//console.trace( "STOPPED?", this.stopped, this.#run );
 		if( this.#run )
 			this.#run.end();
@@ -612,8 +630,13 @@ export function closeAllTasks( ws ) {
 		if( task.noKill ) return;
 		if (task.running){
 			task.restart = false;
-			task.stop()
-			waits.push( timeoutTaskStop( task ) );
+			// wait on the promise stop() already returns.  Pushing a second
+			// timeoutTaskStop() here ran two tick loops per task through one
+			// shared stopTimer slot: the first killed the task, the second only
+			// ever logged "waiting for end", and the end callback then cancelled
+			// the one armed tick - so this Promise.all never settled and the
+			// shutdown hung with every task already reporting "Task ended:".
+			waits.push( task.stop() );
 		} } );
 
 	return Promise.all( waits ).then( (waits)=>{
@@ -641,31 +664,39 @@ function timeoutTaskStop( task ) {
 			else console.log( "Connection is still in list but closed:", conn );
 		});
 
-	function tick( resolve, reject ) {
-		let del;
-		//console.log( "Clearing stop in tick:", task.name );
-		task.stopTimer = null;
-		if( (del=Date.now()-started) > 1500 ) {
-			if( task.running ) {
-				//console.log( "Still waiting for task...", task.running, task.name, Date.now() -started);
-				//console.log( "Task is stubborn - forcing kill:", task.name );
-				if( !task.killed ) {
-					console.log( "Task is stubborn - forcing kill:", task.name );
-					task.kill();
-					resolve( false );
-				} else console.log( "Task is stubborn - forced kill (waiting for end):", task.name );
-				//config.local.connections.forEach( (conn)=>
-				//	conn.ws.send( JSOX.stringify( {op:"stop", task } ) ));
+	return new Promise( ( resolve )=>{
+		// The end event is what really settles this - see Task's end callback.
+		// The tick below only escalates to a kill and enforces the hard cap.
+		task.stopWaiters.push( resolve );
+		tick();
+
+		function settle( stopped ) {
+			const waiting = task.stopWaiters.indexOf( resolve );
+			if( waiting >= 0 ) task.stopWaiters.splice( waiting, 1 );
+			if( task.stopTimer ) {
+				clearTimeout( task.stopTimer );
+				task.stopTimer = null;
 			}
+			resolve( stopped );
 		}
 
-		if( task.running ) {
-			console.log( "Still running...", task.name, del );
-			task.stopTimer = setTimeout( ()=>tick(resolve, reject), 300 );
-		} else {
-			resolve( true );
+		function tick() {
+			task.stopTimer = null;
+			if( !task.running ) return settle( true );
+
+			const del = Date.now() - started;
+			if( del > TASK_STOP_KILL_MS && !task.killed ) {
+				console.log( "Task is stubborn - forcing kill:", task.name );
+				task.kill();
+			}
+			if( del > TASK_STOP_GIVEUP_MS ) {
+				// it was killed and still has not gone; stop holding the
+				// shutdown hostage to it.
+				console.log( "Task will not end; stopped waiting for it:", task.name );
+				return settle( false );
+			}
+			task.stopTimer = setTimeout( tick, 300 );
 		}
-	}
-	return new Promise( tick );
+	} );
 
 }

@@ -19,6 +19,9 @@ export class TaskInfoEditor extends Popup {
 	// a create or an update always landed on the local system.
 	constructor( taskId, task_, group ) {
 		super( "Task Config Editor", document.body, { suffix:"-task-config", shadowFrame: true, enableClose: true });
+		// so a dropped connection can close this - the task id it is editing does
+		// not survive the reconnect.
+		local.dialogs.add( this );
 		this.on("captionClose", ()=>{
 			//console.log( "This sort of close? turn into remove?" );
 			this.on( "close", true );
@@ -194,8 +197,8 @@ export class TaskInfoEditor extends Popup {
 		c.tooltip = "Run this task through a pseudo terminal instead of plain pipes";
 		c = new Checkbox( this.groupOpts, task, "useBreak", "Use Break (WIN32)" );
 		c.tooltip = "Use a break signal to stop this task";
-		c = new Checkbox( this.groupOpts, task, "noInheritStdio", "No Inherit Standard IO" );
-		c.tooltip = "Do not inherit standard IO (stdin,stdout,stderr, handles 0,1,2,...";
+		c = new Checkbox( this.groupOpts, task, "noInheritStdio", "Own Standard IO" );
+		c.tooltip = "The task keeps its own stdin/stdout/stderr - required for 'New Console' to show anything, but its output will not appear in Show Log";
 		c = new ChoiceInput( this.groupOpts, taskOpts, "showState", showStates, "Window State"
 		                   , { change: ()=>setShowState( task, taskOpts.showState ) } );
 		// ChoiceInput has no tooltip setter; match what the other controls render.
@@ -359,6 +362,11 @@ export class TaskInfoEditor extends Popup {
 		}
 		showPage();
 	};
+
+	remove() {
+		local.dialogs.delete( this );
+		super.remove();
+	}
 
 	positionEditor() {
 		const frame = this.divShadow || this.divFrame;

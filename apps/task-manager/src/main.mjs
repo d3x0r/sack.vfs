@@ -30,6 +30,9 @@ local.addTask = addTask;
 const JSOX = sack.JSOX;
 import {config} from "./config.mjs"
 
+// Plugins.  An ordered list of { name, function, options }, run in sequence:
+// with a `function` the next one waits for it, without one the module is just
+// imported for its side effects and the list moves straight on.
 if( config.extraModules ) {	
 	await new Promise( (res,rej)=>{
 		loadModules( 0 );
@@ -38,16 +41,26 @@ if( config.extraModules ) {
 			if( n >= config.extraModules.length ) {
 				return res();
 			}
-			return import( "file://"+pwdBare+"/"+config.extraModules[n].name ).then( (module)=>{
-				return module[config.extraModules[n].function](config.extraModules[n].options).then( ()=>{
-					return loadModules( n+1 );
-				} ).catch( (err)=>{
-					console.log( "Error running:", config.extraModules[n].name, config.extraModules[n].function, err );
-					return loadModules( n+1 );
-				} )
+			const plugin = config.extraModules[n];
+			const next = ()=>loadModules( n+1 );
+			return import( "file://"+pwdBare+"/"+plugin.name ).then( (module)=>{
+				// no function named: importing it was the whole point
+				if( !plugin.function ) return next();
+				const entry = module[plugin.function];
+				if( "function" !== typeof entry ) {
+					console.log( "Plugin has no such export:", plugin.name, plugin.function );
+					return next();
+				}
+				// a plugin that returns nothing is not an error - only wait when
+				// there is something to wait on.  Calling .then() on whatever it
+				// returned used to throw straight into the "Error loading" catch.
+				return Promise.resolve( entry( plugin.options ) ).then( next, (err)=>{
+					console.log( "Error running:", plugin.name, plugin.function, err );
+					return next();
+				} );
 			} ).catch( (err)=>{
-					console.log( "Error loading:", config.extraModules[n].name, err );
-					return loadModules( n+1 );
+					console.log( "Error loading:", plugin.name, err );
+					return next();
 				} );
 		}
 	} );
@@ -249,6 +262,8 @@ function connectToCore() {
 		      , system:config.hostname || os.hostname()
 		      , id : local.id
 		      , port:serverOpts.port
+		      // tell upstream not to offer controls it will not be allowed to use
+		      , disallowUpstreamTaskManagment: !!config.disallowUpstreamTaskManagment
 		      }
 		))
 		local.upstreamWS = ws;
@@ -295,16 +310,25 @@ function loadTask( task ) {
 function onStopAll( n ) {
 	if( !config.onStopAll || n >= config.onStopAll.length )
 		return;
-	return import( config.onStopAll[n].name ).then( (module)=>{
-		module[config.onStopAll[n].function](config.onStopAll[n].options).then( ()=>{
-			return loadModules( n+1 );
-		} ).catch( (err)=>{
-			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
-			return loadModules( n+1 );
-		} )
+	// this used to chain to loadModules(), which is local to the extraModules
+	// block above and not in scope here - so the second hook onward never ran,
+	// and the ReferenceError went nowhere.
+	const hook = config.onStopAll[n];
+	const next = ()=>onStopAll( n+1 );
+	return import( hook.name ).then( (module)=>{
+		if( !hook.function ) return next();
+		const entry = module[hook.function];
+		if( "function" !== typeof entry ) {
+			console.log( "Stop hook has no such export:", hook.name, hook.function );
+			return next();
+		}
+		return Promise.resolve( entry( hook.options ) ).then( next, (err)=>{
+			console.log( "Error running stop hook:", hook.name, hook.function, err );
+			return next();
+		} );
 	} ).catch( (err)=>{
-			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
-			return loadModules( n+1 );
+			console.log( "Error loading stop hook:", hook.name, err );
+			return next();
 		} );
 }
 
@@ -474,6 +498,7 @@ function connect( ws ) {
 					//console.log( "Found existing system to replace tasks." );
 					system.connection = connection;
 					system.tasks = msg.tasks;
+					system.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
 					// the create path below sets this; reconnects need it too or
 					// later addTask/updateTask deref a null connection.system.
 					if( !connection.system ) connection.system = system;
@@ -482,6 +507,7 @@ function connect( ws ) {
 					//console.log( "Make a new system", msg.tasks );
 					// this is the connection that the system can be reached on...
 					system = new System( connection, msg.id, msg.port, msg.system, msg.tasks);
+					system.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
 					// if this already heard tasks, this is probably a chlid system of the remote
 					// which will go under that system's systems.
 					if( connection.system ){
@@ -550,8 +576,27 @@ function handleMessage( ws, msg_ ) {
 	try {
 		const msg = JSOX.parse( msg_ );
 		const connection = local.connections.find( (c)=>c.ws===ws );
+		// `disallowUpstreamTaskManagment` in the config makes this system refuse
+		// to have its task list edited by whoever it reports to.  Upstream is
+		// told about the setting when we connect, so its UI hides the controls;
+		// this is the enforcement behind that, for anything that gets sent
+		// anyway.  It deliberately covers only the task edits - shutdown and
+		// stopAll/startAll are still honoured.
+		if( config.disallowUpstreamTaskManagment
+		 && local.upstreamWS && ws === local.upstreamWS
+		 && ( msg.op === "createTask" || msg.op === "updateTask" || msg.op === "deleteTask" ) ) {
+			console.log( "Refused upstream task management:", msg.op, msg.id || (msg.task && msg.task.name) );
+			return;
+		}
 		switch( msg.op ) {
 		case "shutdown": {
+			if( msg.system && msg.system !== local.id ) {
+				// aimed at one of the systems reporting to this one
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to shut down a system I can't reach:", msg.system );
+				break;
+			}
 			console.log( "received shutdown request" );
 			closeAllTasks(msg.close?ws:null).then( ()=>{
 				console.log( "Close resulted, and we're exiting now." );
@@ -677,6 +722,33 @@ function handleMessage( ws, msg_ ) {
 			}
 			}
 			break;
+		case "getPlugins": {
+			if( msg.system && msg.system !== local.id ) {
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to list plugins on a system I can't reach:", msg.system );
+				break;
+			}
+			ws.send( JSOX.stringify( { op:"plugins", system:local.id
+			                         , plugins: config.extraModules || [] } ) );
+			break;
+		}
+		case "setPlugins": {
+			if( msg.system && msg.system !== local.id ) {
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to set plugins on a system I can't reach:", msg.system );
+				break;
+			}
+			// only entries with a module name are worth keeping; `function` is
+			// optional - such a plugin is imported and not waited on.
+			config.extraModules = ( msg.plugins || [] ).filter( plugin=>plugin && plugin.name );
+			saveRunConfig();
+			console.log( "Plugin list updated;", config.extraModules.length
+			           , "plugin(s) - they load on the next start of this service manager." );
+			send( { op:"plugins", system:local.id, plugins: config.extraModules } );
+			break;
+		}
 		case "getDisplays": {
 				const displays = sack.Task.getDisplays();
 				for( let device of displays.device ) {

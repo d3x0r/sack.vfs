@@ -19,6 +19,7 @@ export const config = {
 export class MySystem extends System {
 	constructor(msg) {
 		super( {address:""}, msg.id, msg.port, msg.system, msg.tasks )
+		this.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
 	}
 
 	addTask( id, task ) {
@@ -37,6 +38,7 @@ export class MySystem extends System {
 export class Protocol extends Events {
 	static displayRequests = [];
 	static taskRequests = [];
+	static pluginRequests = [];
 	ws = null;
 
 	stopTask( group, task ) {
@@ -110,6 +112,31 @@ export class Protocol extends Events {
 			this.ws.send( JSOX.stringify( {op:"updateTask", system:system.id, id, task} ) );
 		else
 			this.ws.send( JSOX.stringify( {op:"updateTask", id, task} ) );
+	}
+
+	async getPlugins( group ) {
+		const system = config.local.systems.find( system=>system === group );
+		const id = system ? system.id : config.local.system;
+		const p = new Promise( (res,rej)=>{
+			Protocol.pluginRequests.push( { id, res } );
+			this.ws.send( JSOX.stringify( { op:"getPlugins", system:id } ) );
+		} );
+		return p;
+	}
+
+	setPlugins( group, plugins ) {
+		const system = config.local.systems.find( system=>system === group );
+		const id = system ? system.id : config.local.system;
+		this.ws.send( JSOX.stringify( { op:"setPlugins", system:id, plugins } ) );
+	}
+
+	// stop the service manager itself (and everything it launched)
+	shutdownLauncher( group ) {
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"shutdown", system:system.id } ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"shutdown" } ) );
 	}
 
 	deleteTask( group, task ) {
@@ -281,6 +308,19 @@ export class Protocol extends Events {
 				{
 					const request = Protocol.displayRequests.shift();
 					request( msg.displays );
+				}
+				break;
+			case "plugins":
+				{
+					// a broadcast after someone saved has no request waiting
+					for( let r = 0; r < Protocol.pluginRequests.length; r++ ) {
+						const request = Protocol.pluginRequests[r];
+						if( request.id === msg.system ) {
+							request.res( msg.plugins );
+							Protocol.pluginRequests.splice( r, 1 );
+							break;
+						}
+					}
 				}
 				break;
 			case "taskInfo":

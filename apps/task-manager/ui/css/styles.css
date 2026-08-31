@@ -1,5 +1,21 @@
-.button-service-manageradd-task {
+.button-service-manageradd-task,
+.button-service-managerstop-launcher,
+.button-service-managerplugins {
 	float:right;
+}
+
+.plugins-note {
+	max-width: 46em;
+	margin: 4px 0 8px 0;
+	opacity: 0.8;
+	font-size: 90%;
+}
+.plugins-grid {
+	min-width: 40em;
+}
+
+.button-service-managerstop-launcher {
+	margin-right: 6px;
 }
 
 /* holds the floated Add Task above each page's grid instead of letting it

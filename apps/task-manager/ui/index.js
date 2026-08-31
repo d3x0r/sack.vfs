@@ -22,6 +22,7 @@ import {local} from "./local.js"
 
 import {TaskInfoEditor} from "./taskInfoForm.js"
 import {SimpleNotice} from "/node_modules/@d3x0r/popups2/forms/simple-notice.js"
+import {PluginsEditor} from "./pluginsForm.js"
 
 protocolConfig.local = local;
 protocol.on( "insertBackLog", insertBackLog );
@@ -134,6 +135,26 @@ function confirmDeleteTask( group, task ) {
 	notice.show();
 }
 
+async function showPlugins( group ) {
+	const plugins = await protocol.getPlugins( group );
+	new PluginsEditor( group, plugins );
+}
+
+// Stopping a launcher takes down every task it owns and exits it - from here
+// there is then no way to start it again, so it asks first.
+function confirmShutdown( group ) {
+	// A System's `system` is its hostname, but local.system is this manager's
+	// own id - an opaque string, not something to show anyone.
+	const remote = local.systems.indexOf( group ) >= 0;
+	const notice = new SimpleNotice( "Stop Launcher"
+		, ( remote ? "Stop all tasks on \"" + group.system + "\" and exit its service manager?"
+		           : "Stop all tasks and exit this service manager?" )
+		  + "  It cannot be restarted from here."
+		, ()=>{ protocol.shutdownLauncher( group ); notice.remove(); }
+		, ()=>{ notice.remove(); } );
+	notice.show();
+}
+
 function deleteTask( taskId ) {
 	console.log( "Deleting task..." );
 	const task = local.tasks[taskId];
@@ -171,15 +192,35 @@ function AddTaskList(display, object, field) {
 		local.pendingShowTasks.push( { object, field } );
 		return;
 	}
+	// a system can refuse to be managed from here; then it gets no task editing
+	// controls at all, rather than ones whose changes it would drop.
+	const managed = !object.disallowUpstreamTaskManagment;
 	if( local.login ) {
+		// a reconnect refills this same page, so drop the button the previous
+		// connection left on it rather than stacking another one.  `display` is
+		// a PagedFrame page as often as an element, so hang it off the page
+		// object rather than querying the DOM for it.
+		if( display.taskListAdd ) display.taskListAdd.remove();
 		const addFrame = document.createElement( "div" );
 		addFrame.className = "task-list-add";
 		display.appendChild( addFrame );
-		popups.makeButton( addFrame, "Add Task", ()=>{
-			// `object` is this page's group: `local` for the master list, or the
-			// System for an upstreamed one.
-			new TaskInfoEditor( null, null, object );
-		}, {suffix:"add-task"} );
+		display.taskListAdd = addFrame;
+		if( managed )
+			popups.makeButton( addFrame, "Add Task", ()=>{
+				// `object` is this page's group: `local` for the master list, or
+				// the System for an upstreamed one.
+				new TaskInfoEditor( null, null, object );
+			}, {suffix:"add-task"} );
+		const stop = popups.makeButton( addFrame, "Stop Launcher", ()=>{
+			confirmShutdown( object );
+		}, {suffix:"stop-launcher"} );
+		stop.tooltip = "Stop every task on this system and exit its service manager";
+		if( managed ) {
+			const plugins = popups.makeButton( addFrame, "Plugins", ()=>{
+				showPlugins( object );
+			}, {suffix:"plugins"} );
+			plugins.tooltip = "Modules this service manager loads at start-up";
+		}
 	}
 	const editing = {
 
@@ -210,7 +251,7 @@ function AddTaskList(display, object, field) {
 		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click(gridRow){protocol.restartTask(object,gridRow.rowData)}, text: "↻"} }
 		//, { name:"Edit"    , className: "edit", type:{click:protocol.editTask.bind( protocol,object), text: "Edit ✎"} }
 	];
-	if( local.login )
+	if( local.login && managed )
 		columns.push( { name:"Edit"    , className: "-edit", type:{suffix:" purple", click: async function(gridRow) {
 			const task = gridRow.rowData;
       // Define the new action or function here
@@ -222,7 +263,7 @@ function AddTaskList(display, object, field) {
 			editor.on( "close", ()=>{ delete editing[task.id] } );
 
     }, text: "✎"} } );
-	if( local.login )
+	if( local.login && managed )
 		columns.push( { name:"Delete"  , className: "-delete", type:{suffix:" red", click(gridRow){
 			confirmDeleteTask( object, gridRow.rowData );
 		}, text: "🗑"} } );
@@ -322,7 +363,12 @@ function AddSystem( system ) {
 }
 
 function showTaskAdmin( object, task ) {
-	const config = new TaskConfiguration( local.display, task );
+	const dialog = new TaskConfiguration( local.display, task );
+	// "Done" only hides it, so without this every open leaves another dialog in
+	// the document; registering it also lets a dropped connection close the one
+	// that is showing, along with the task editors.
+	local.dialogs.add( dialog );
+	dialog.on( "hide", ()=>{ local.dialogs.delete( dialog ); dialog.remove(); } );
 }
 
 function formatLogTimestamp( time ) {
