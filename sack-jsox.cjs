@@ -136,7 +136,7 @@ function initPrototypes()
 	pushToProto( Uint8Array.prototype, { external:true, name:"u8"
 		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
-	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"uc8"
+	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"cu8"
 		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int8Array.prototype, { external:true, name:"s8"
