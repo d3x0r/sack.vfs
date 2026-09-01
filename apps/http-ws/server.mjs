@@ -152,6 +152,26 @@ export function getRequestHandler( serverOpts ) {
 	const resourcePath = serverOpts.resourcePath || process.env.RESOURCE_PATH || ".";
 	const commonPath = serverOpts?.commonPath || process.env.COMMON_PATH || ".";
 	const npm_path = serverOpts.npmPath || process.env.NPM_PATH || ".";
+	// Which packages under npmPath may be served over /node_modules/.  The three
+	// defaults are what this server has always allowed; `allowModules` (an array
+	// of module names, or ALLOW_MODULES as a comma separated list) adds to them,
+	// so an app can publish e.g. "simple-keyboard" to its pages without every
+	// http-ws server having to.  Scoped names ("@scope") and subpaths
+	// ("sack.vfs/apps") both work.
+	const allowedModules = [ "@d3x0r", "jsox", "sack.vfs/apps" ].concat(
+		  serverOpts.allowModules
+		|| ( process.env.ALLOW_MODULES ? process.env.ALLOW_MODULES.split( "," ) : [] ) );
+	const allowedModulePaths = allowedModules
+		.map( name=>String(name).trim().replace( /^\/+|\/+$/g, "" ) )
+		.filter( name=>name.length )
+		.map( name=>"/node_modules/" + name );
+	// match whole path segments, so "simple-keyboard" does not also allow
+	// "simple-keyboard-something-else"
+	function moduleAllowed( url ) {
+		return allowedModulePaths.some( allowed=>
+			   url === allowed
+			|| url.startsWith( allowed + "/" ) );
+	}
 	//console.log( "basic handler:", resourcePath, npm_path );
 	return function( req, res ) {
 
@@ -178,10 +198,7 @@ export function getRequestHandler( serverOpts ) {
 		if( req.url.startsWith( "/common/" ) ) {
 			paths.push( commonPath );
 			req.url = req.url.replace("/common", "" );
-		} else if( req.url.startsWith( "/node_modules/" ) 
-			   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
-			      || req.url.startsWith( "/node_modules/jsox" )
-		   	   || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) ) {
+		} else if( req.url.startsWith( "/node_modules/" ) && moduleAllowed( req.url ) ) {
 				if( npm_path instanceof Array ) paths.push( ...npm_path );
 				else paths.push( npm_path );
 		} else if( resourcePath instanceof Array ) paths.push(...resourcePath);

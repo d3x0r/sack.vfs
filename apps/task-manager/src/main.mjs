@@ -73,6 +73,10 @@ config.tasks.forEach( loadTask );
 
 const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
 	, npmPath:process.env.NPM_PATH || (parentRoot+"/..")
+	// extra packages this manager's pages may load from /node_modules/ (the
+	// server always allows @d3x0r, jsox and sack.vfs/apps).  e.g. the login
+	// form's on-screen keyboard needs allowModules:["simple-keyboard"].
+	, allowModules: config.allowModules
 	, port:Number(process.env.PORT) || config.port || 8080};
 // start server...
 console.log( "Serve on port:", serverOpts.port );
