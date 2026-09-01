@@ -205,6 +205,47 @@ using namespace v8;
 #define NewFromUtf8Literal(a,b,...)  NewFromUtf8(a,b, v8::NewStringType::kNormal ).ToLocalChecked()
 #endif
 
+//------------------ typed array / buffer bytes ----------------
+
+// Get the bytes a Uint8Array or ArrayBuffer actually refers to.
+//
+// A typed array is a *view*.  Node allocates Buffers under 4k out of a shared
+// 8k pool, so byteOffset is routinely non-zero and the backing store is much
+// larger than the view - as are subarray() and slice() results.  Reading from
+// the backing store's origin for its full length therefore returns the wrong
+// bytes, and on a send path returns whatever else is sharing that pool.
+//
+// The offset and the view's own length are one invariant: applying either
+// without the other is what this helper exists to prevent.  Use it rather than
+// unwrapping ->Buffer() at a call site.
+static inline bool GetBufferBytes( Local<Value> value, char** data, size_t* length ) {
+	// ArrayBufferView covers every typed array (Uint8Array, Int16Array, ...)
+	// and DataView; they all carry their own byteOffset and byteLength.
+	if( value->IsArrayBufferView() ) {
+		Local<ArrayBufferView> view = value.As<ArrayBufferView>();
+		Local<ArrayBuffer> ab = view->Buffer();
+#if ( NODE_MAJOR_VERSION >= 14 )
+		(*data) = ((char*)ab->GetBackingStore()->Data()) + view->ByteOffset();
+#else
+		(*data) = ((char*)ab->GetContents().Data()) + view->ByteOffset();
+#endif
+		(*length) = view->ByteLength();
+		return true;
+	}
+	if( value->IsArrayBuffer() ) {
+		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( value );
+#if ( NODE_MAJOR_VERSION >= 14 )
+		(*data) = (char*)ab->GetBackingStore()->Data();
+#else
+		(*data) = (char*)ab->GetContents().Data();
+#endif
+		(*length) = ab->ByteLength();
+		return true;
+	}
+	(*data) = NULL;
+	(*length) = 0;
+	return false;
+}
 
 
 void InitJSOX( Isolate *isolate, Local<Object> exports );

@@ -28,7 +28,8 @@ private:
 		Isolate* isolate = args.GetIsolate();
 		if( args.Length() ) {
 			int version = -1;
-			if( args[0]->IsString() ) {
+			int argType = 0;
+			if( args[0]->IsString() || ((argType=1),args[0]->IsUint8Array()) || ((argType = 2), args[0]->IsArrayBuffer()) ) {
 				char *r;
 				struct random_context *ctx;
 				if( args.Length() > 1 && args[1]->IsNumber() )
@@ -49,14 +50,22 @@ private:
 					ctx = SRG_CreateEntropy4( NULL, 0 );
 					break;
 				}
-				String::Utf8Value val( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
+				char* content = NULL;
+				size_t contentLen = 0;
 
-				/* Regenerator version 0 */
-				uint32_t buf[256 / 32];
-				//SRG_FeedEntropy( ctx, (uint8_t*)"\0\0\0\0", 4 );
-				//SRG_StepEntropy( ctx );
-				SRG_FeedEntropy( ctx, (uint8_t*)* val, val.length() );
+				if (argType == 0) {
+					String::Utf8Value val(USE_ISOLATE(isolate) args[0]->ToString(isolate->GetCurrentContext()).ToLocalChecked());
+					/* Regenerator version 0 */
+					//SRG_FeedEntropy( ctx, (uint8_t*)"\0\0\0\0", 4 );
+					//SRG_StepEntropy( ctx );
+					SRG_FeedEntropy(ctx, (uint8_t*)*val, val.length());
+				}
+				else if( GetBufferBytes( args[0], &content, &contentLen ) ) {
+					SRG_FeedEntropy(ctx, (uint8_t*)content, contentLen);
+				}
+
 				SRG_StepEntropy( ctx );
+				uint32_t buf[256 / 32];
 				SRG_GetEntropyBuffer( ctx, buf, 256 );
 
 				size_t outlen;
@@ -794,41 +803,20 @@ private:
 
 		char* content = NULL;
 		size_t contentLen = 0;
+		MD5_CTX ctx;
+		MD5Init(&ctx);
 
 		if( args[0]->IsString() ) {
 			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
 			content = *buf;
 			contentLen = buf.length();
-			
-		} else if( args[0]->IsUint8Array() ) {
-			Local<Uint8Array> body = args[0].As<Uint8Array>();
-			Local<ArrayBuffer> bodybuf = body->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-			content = (char*)bodybuf->GetBackingStore()->Data();
-			contentLen = bodybuf->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
-#else
-			content = (char*)bodybuf->GetContents().Data();
-			contentLen = bodybuf->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
-#endif
-		} else if( args[0]->IsArrayBuffer() ) {
-			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-#if ( NODE_MAJOR_VERSION >= 14 )
-			content = (char*)ab->GetBackingStore()->Data();
-			contentLen = ab->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			content = (char*)ab->GetContents().Data();
-			contentLen = ab->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			MD5Update(&ctx, (unsigned char*)content, contentLen);
+
+		} else if( GetBufferBytes( args[0], &content, &contentLen ) ) {
+			MD5Update(&ctx, (unsigned char*)content, contentLen);
 		}
 		
-		MD5_CTX ctx;
-		uint8_t *bytes = NewArray( uint8_t, 16 );
-		MD5Init( &ctx );
-		MD5Update( &ctx, (unsigned char*)content, contentLen );
+		uint8_t* bytes = NewArray(uint8_t, 16);
 		MD5Final( bytes, &ctx );
 
 		
@@ -857,41 +845,19 @@ private:
 
 		char* content = NULL;
 		size_t contentLen = 0;
+		sha1_ctx ctx;
+		SHA1Reset(&ctx);
 
 		if( args[0]->IsString() ) {
 			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
 			content = *buf;
 			contentLen = buf.length();
-
-		} else if( args[0]->IsUint8Array() ) {
-			Local<Uint8Array> body = args[0].As<Uint8Array>();
-			Local<ArrayBuffer> bodybuf = body->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-			content = (char*)bodybuf->GetBackingStore()->Data();
-			contentLen = bodybuf->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
-#else
-			content = (char*)bodybuf->GetContents().Data();
-			contentLen = bodybuf->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
-#endif
-		} else if( args[0]->IsArrayBuffer() ) {
-			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-#if ( NODE_MAJOR_VERSION >= 14 )
-			content = (char*)ab->GetBackingStore()->Data();
-			contentLen = ab->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			content = (char*)ab->GetContents().Data();
-			contentLen = ab->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			SHA1Input(&ctx, (const uint8_t*)content, contentLen);
+		} else if( GetBufferBytes( args[0], &content, &contentLen ) ) {
+			SHA1Input(&ctx, (const uint8_t*)content, contentLen);
 		}
 
-		sha1_ctx ctx;
-		uint8_t* bytes = NewArray( uint8_t, SHA1HashSize );
-		SHA1Reset( &ctx );
-		SHA1Input( &ctx, (const uint8_t*)content, contentLen );
+		uint8_t* bytes = NewArray(uint8_t, SHA1HashSize);
 		SHA1Result( &ctx, bytes );
 
 
@@ -920,41 +886,19 @@ private:
 
 		char* content = NULL;
 		size_t contentLen = 0;
+		sha256_ctx ctx;
+		sha256_init(&ctx);
 
 		if( args[0]->IsString() ) {
 			String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( context ).ToLocalChecked() );
 			content = *buf;
 			contentLen = buf.length();
-
-		} else if( args[0]->IsUint8Array() ) {
-			Local<Uint8Array> body = args[0].As<Uint8Array>();
-			Local<ArrayBuffer> bodybuf = body->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-			content = (char*)bodybuf->GetBackingStore()->Data();
-			contentLen = bodybuf->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
-#else
-			content = (char*)bodybuf->GetContents().Data();
-			contentLen = bodybuf->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
-#endif
-		} else if( args[0]->IsArrayBuffer() ) {
-			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-#if ( NODE_MAJOR_VERSION >= 14 )
-			content = (char*)ab->GetBackingStore()->Data();
-			contentLen = ab->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			content = (char*)ab->GetContents().Data();
-			contentLen = ab->ByteLength();
-			//VarTextAddData( obj->pvtResult, (CTEXTSTR)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			sha256_update(&ctx, (const uint8_t*)content, contentLen);
+		} else if( GetBufferBytes( args[0], &content, &contentLen ) ) {
+			sha256_update(&ctx, (const uint8_t*)content, contentLen);
 		}
 
-		sha256_ctx ctx;
-		uint8_t* bytes = NewArray( uint8_t, SHA256_DIGEST_SIZE );
-		sha256_init( &ctx );
-		sha256_update( &ctx, (const uint8_t*)content, contentLen );
+		uint8_t* bytes = NewArray(uint8_t, SHA256_DIGEST_SIZE);
 		sha256_final( &ctx, bytes );
 
 

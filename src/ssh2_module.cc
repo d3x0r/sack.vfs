@@ -1076,9 +1076,11 @@ static Local<Promise::Resolver> doLogin( SSH2_Object *ssh, Isolate* isolate, Loc
 		privKeyBuf = (uint8_t*)privKey_ab->GetBackingStore()->Data();
 		privkeylen = privKey_ab->ByteLength();
 	} else if( !privKey_ta.IsEmpty() ) {
-		Local<ArrayBuffer> ab = privKey_ta->Buffer();
-		privKeyBuf = (uint8_t*)ab->GetBackingStore()->Data();
-		privkeylen = ab->ByteLength();
+		char* viewData;
+		size_t viewLen;
+		GetBufferBytes( privKey_ta, &viewData, &viewLen );
+		privKeyBuf = (uint8_t*)viewData;
+		privkeylen = viewLen;
 	} else
 		privKeyBuf = NULL;
 	if( pubKey ) {
@@ -1088,9 +1090,11 @@ static Local<Promise::Resolver> doLogin( SSH2_Object *ssh, Isolate* isolate, Loc
 		pubKeyBuf = (uint8_t*)pubKey_ab->GetBackingStore()->Data();
 		pubkeylen = pubKey_ab->ByteLength();
 	} else if( !pubKey_ta.IsEmpty() ) {
-		Local<ArrayBuffer> ab = pubKey_ta->Buffer();
-		pubKeyBuf = (uint8_t*)ab->GetBackingStore()->Data();
-		pubkeylen = ab->ByteLength();
+		char* viewData;
+		size_t viewLen;
+		GetBufferBytes( pubKey_ta, &viewData, &viewLen );
+		pubKeyBuf = (uint8_t*)viewData;
+		pubkeylen = viewLen;
 	} else pubKeyBuf = NULL;
 
 	if( privKeyBuf )

@@ -998,29 +998,10 @@ void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	if( task->task ) {
-		if( args[0]->IsTypedArray() ) {
-			Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
-			Local<ArrayBuffer> ab = ta->Buffer();
-	#if ( NODE_MAJOR_VERSION >= 14 )
-			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-	#else
-			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-	#endif
-		} else if( args[0]->IsUint8Array() ) {
-			Local<Uint8Array> body = args[0].As<Uint8Array>();
-			Local<ArrayBuffer> ab = body->Buffer();
-	#if ( NODE_MAJOR_VERSION >= 14 )
-			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-	#else
-			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-	#endif
-		} else if( args[0]->IsArrayBuffer() ) {
-			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-	#if ( NODE_MAJOR_VERSION >= 14 )
-			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-	#else
-			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-	#endif
+		char* sendData;
+		size_t sendLen;
+		if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
+			task_send( task->task, (const uint8_t*)sendData, sendLen );
 		}
 		else {
 			String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );

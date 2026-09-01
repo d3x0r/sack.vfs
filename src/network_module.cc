@@ -820,22 +820,10 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 	}
-	if( args[0]->IsArrayBuffer() ) {
-		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-#if ( NODE_MAJOR_VERSION >= 14 )
-		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
-#else
-		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
-	}
-	else if( args[0]->IsUint8Array() ) {
-		Local<Uint8Array> body = args[0].As<Uint8Array>();
-		Local<ArrayBuffer> ab = body->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
-#else
-		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
+	char* sendData;
+	size_t sendLen;
+	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
+		SendUDPEx( obj->pc, sendData, sendLen, dest );
 	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		SendUDPEx( obj->pc, *buf, buf.length(), dest );
@@ -1548,37 +1536,13 @@ void tcpObject::send( const FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
-	if( args[0]->IsArrayBuffer() ) {
-		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+	char* sendData;
+	size_t sendLen;
+	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
 		if( obj->ssl ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			ssl_Send( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			ssl_Send( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
+			ssl_Send( obj->pc, sendData, sendLen );
 		} else {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
-		}
-	}
-	else if( args[0]->IsUint8Array() ) {
-		Local<Uint8Array> body = args[0].As<Uint8Array>();
-		Local<ArrayBuffer> ab = body->Buffer();
-		if( obj->ssl ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			ssl_Send( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			ssl_Send( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
-		} else {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			SendTCP( obj->pc, sendData, sendLen );
 		}
 	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );

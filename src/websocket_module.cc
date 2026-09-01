@@ -2865,19 +2865,15 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			else if( args[0]->IsUint8Array() ) {
 				Local<Uint8Array> body = args[0].As<Uint8Array>();
+				// The write below is async: write->data is a raw pointer into
+				// these bytes, so the persistent has to root the *backing*
+				// ArrayBuffer that owns them, even though the data pointer and
+				// length come from the view.
 				Local<ArrayBuffer> bodybuf = body->Buffer();
 				if( !obj->found_content_length )
 					vtprintf( obj->pvtResult, "Content-Length: %d\r\n", body->ByteLength() );
 				vtprintf( obj->pvtResult, "\r\n" );
-#if ( NODE_MAJOR_VERSION >= 14 )
-				content = (char*)bodybuf->GetBackingStore()->Data();
-				contentLen = bodybuf->ByteLength();
-				//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
-#else
-				content = (char*)bodybuf->GetContents().Data();
-				contentLen = bodybuf->ByteLength();
-				//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
-#endif
+				GetBufferBytes( args[0], &content, &contentLen );
 				if( obj->pc && !obj->ssl ) {
 					struct pendingWrite* write = new struct pendingWrite();
 					write->wss = obj->wss;
@@ -4170,53 +4166,13 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	while( obj->readyState == wsReadyStates::CONNECTING )
 		Relinquish();
 
-	if( args[0]->IsTypedArray() ) {
-		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
-		Local<ArrayBuffer> ab = ta->Buffer();
+	char* sendData;
+	size_t sendLen;
+	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
 		if( obj->pc ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			WebSocketSendBinary( obj->pc, (const uint8_t*)sendData, sendLen );
 		} else if( obj->wsPipe ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-
-		}
-	} else if( args[0]->IsUint8Array() ) {
-		Local<Uint8Array> body = args[0].As<Uint8Array>();
-		Local<ArrayBuffer> ab = body->Buffer();
-		if( obj->pc ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-		} else if( obj->wsPipe ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-		}
-	} else if( args[0]->IsArrayBuffer() ) {
-		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-		if( obj->pc ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-		} else if( obj->wsPipe ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)sendData, sendLen );
 		}
 	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -4830,21 +4786,10 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 			String::NewFromUtf8( isolate, msg, v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
-	if( args[0]->IsTypedArray() ) {
-		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
-		Local<ArrayBuffer> ab = ta->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-	} else if( args[0]->IsArrayBuffer() ) {
-		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-#if ( NODE_MAJOR_VERSION >= 14 )
-		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+	char* sendData;
+	size_t sendLen;
+	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
+		WebSocketSendBinary( obj->pc, (const uint8_t*)sendData, sendLen );
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );

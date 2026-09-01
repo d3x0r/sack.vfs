@@ -798,27 +798,12 @@ static LOGICAL PushValue( Isolate *isolate, PDATALIST *pdlParams, Local<Value> a
 		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
 	}
-	else if( arg->IsUint8Array() ) {
-		Local<Uint8Array> _myarr = arg.As<Uint8Array>();
-		Local<ArrayBuffer> buffer = _myarr->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-		val.string = (char*)buffer->GetBackingStore()->Data();
-#else
-		val.string = (char*)buffer->GetContents().Data();
-#endif
-		val.stringLen = buffer->ByteLength();
-		val.value_type = JSOX_VALUE_TYPED_ARRAY;
-		AddDataItem( pdlParams, &val );
-	}
-	else if( arg->IsTypedArray() ) {
-		Local<TypedArray> _myarr = arg.As<TypedArray>();
-		Local<ArrayBuffer> buffer = _myarr->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-		val.string = (char*)buffer->GetBackingStore()->Data();
-#else
-		val.string = (char*)buffer->GetContents().Data();
-#endif
-		val.stringLen = buffer->ByteLength();
+	else if( arg->IsArrayBufferView() ) {
+		char* viewData;
+		size_t viewLen;
+		GetBufferBytes( arg, &viewData, &viewLen );
+		val.string = viewData;
+		val.stringLen = viewLen;
 		val.value_type = JSOX_VALUE_TYPED_ARRAY;
 		AddDataItem( pdlParams, &val );
 	}
@@ -2406,14 +2391,11 @@ void callUserFunction( struct sqlite3_context*onwhat, int argc, struct sqlite3_v
 #endif
 			length = myarr->ByteLength();
 		} else if( type == 2 ) {
-			Local<Uint8Array> _myarr = str.As<Uint8Array>();
-			Local<ArrayBuffer> buffer = _myarr->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-			buf = (uint8_t*)buffer->GetBackingStore()->Data();
-#else
-			buf = (uint8_t*)buffer->GetContents().Data();
-#endif
-			length = buffer->ByteLength();
+			char* viewData;
+			size_t viewLen;
+			GetBufferBytes( str, &viewData, &viewLen );
+			buf = (uint8_t*)viewData;
+			length = viewLen;
 		}
 		if( buf )
 			PSSQL_ResultSqliteBlob( onwhat, (const char *)buf, (int)length, NULL );
@@ -2638,14 +2620,11 @@ void callAggFinal( struct sqlite3_context*onwhat ) {
 #endif
 			length = myarr->ByteLength();
 		} else if( type == 2 ) {
-			Local<Uint8Array> _myarr = str.As<Uint8Array>();
-			Local<ArrayBuffer> buffer = _myarr->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-			buf = (uint8_t*)buffer->GetBackingStore()->Data();
-#else
-			buf = (uint8_t*)buffer->GetContents().Data();
-#endif
-			length = buffer->ByteLength();
+			char* viewData;
+			size_t viewLen;
+			GetBufferBytes( str, &viewData, &viewLen );
+			buf = (uint8_t*)viewData;
+			length = viewLen;
 		}
 		if( buf )
 			PSSQL_ResultSqliteBlob( onwhat, (const char *)buf, (int)length, releaseBuffer );

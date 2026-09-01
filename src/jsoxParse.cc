@@ -175,15 +175,11 @@ void JSOXObject::write( const v8::FunctionCallbackInfo<Value>& args ) {
 	void* data;
 	size_t datalen;
 	if( argc > 0 ) {
-		if( args[0]->IsUint8Array() ) {
-			Local<Uint8Array> arr = Local<Uint8Array>::Cast( args[0] );
-			Local<ArrayBuffer> ab = arr->Buffer();
-			data = ab->GetBackingStore()->Data();
-			datalen = ab->ByteLength();
-		} else if( args[0]->IsArrayBuffer() ) {
-			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-			data = ab->GetBackingStore()->Data();
-			datalen = ab->ByteLength();
+		char* bufData;
+		size_t bufLen;
+		if( GetBufferBytes( args[0], &bufData, &bufLen ) ) {
+			data = bufData;
+			datalen = bufLen;
 		} else {
 			data_ = new String::Utf8Value( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 			data = *data_[0];
