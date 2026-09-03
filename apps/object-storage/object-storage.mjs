@@ -72,6 +72,47 @@ const defaultMapOpts = {depth:0};
 
 
 // manufacture a JS interface to _objectStorage.
+// A stored reference (`~or"id"`) revives as one of these.  It is a real Promise, so every
+// `instanceof Promise` check keeps working, but nothing is fetched until something awaits
+// it (or calls then/catch/finally): `await obj.ref` pages the record in on demand.
+// Code that only wants to be told when a reference happens to resolve -- revival-time
+// fixups that must not page the whole graph in -- uses whenLoaded() instead.
+class ReferencePromise extends Promise {
+	load = null;
+	then( onFulfilled, onRejected ) {
+		const load = this.load;
+		if( load ) {
+			this.load = null;
+			try { load(); } catch( err ) { console.log( "reference load failed to start:", err ); }
+		}
+		return super.then( onFulfilled, onRejected );
+	}
+	whenLoaded( onFulfilled, onRejected ) {
+		return Promise.prototype.then.call( this, onFulfilled, onRejected );
+	}
+	static adopt( promise, load ) {
+		const p = new ReferencePromise( ( res, rej )=>Promise.prototype.then.call( promise, res, rej ) );
+		p.load = load;
+		return p;
+	}
+}
+// Put a resolved reference where the program will look for it: on the object the class
+// reviver returned (if it accepts the field; a getter-only accessor means the reviver
+// keeps its own link through whenLoaded), and always on the accumulator it was parsed into.
+function writeBack( os, accumulator, field, value ) {
+	const mapped = os.revivedAs.get( accumulator );
+	if( mapped && mapped !== accumulator ) {
+		try { mapped[field] = value; } catch( err ) { /* read-only on the real object */ }
+	}
+	try { accumulator[field] = value; } catch( err ) { /* nothing else to update */ }
+}
+// call a fixup when a value resolves without starting a load; plain values run at once
+export function whenLoaded( v, cb ) {
+	if( v && v.whenLoaded ) return v.whenLoaded( cb );
+	if( v instanceof Promise ) return Promise.prototype.then.call( v, cb );
+	return cb( v );
+}
+
 class ObjectStorage {
 	storage = null; // old method
 	#stores = []; // all stores associated with this object-verse
@@ -171,6 +212,7 @@ class ObjectStorage {
 			//console.log( "this is mapping a directly referenced field; which means we have to resolve this at least.", rootId );
 			const loading = this.storedIn.get( o );
 			//console.log( "Get result:", loading );
+			if( loading && loading.startLoad ) return loading.startLoad();
 			return loadPending( this, loading );
 		}
 		//console.trace( "cached container on root ID check", rootId );
@@ -234,6 +276,7 @@ class ObjectStorage {
 	}
 
 	// define a class... to be handled by stringification
+	revivedAs = new WeakMap(); // reviver accumulator -> object the reviver returned
 	defineClasss (a,b) {
 		this.stringifier.defineClass(a,b);
 	}
@@ -330,8 +373,13 @@ class ObjectStorage {
 					if( !field && ( this instanceof StoredObject ) ) this.loaded( this_, currentReadId );
 					// call registered handler; handler can change what this object is.
 					if(f) {
-						if( !field ) { 
-							return f.call( this, field, this_ ); 
+						if( !field ) {
+							const r = f.call( this, field, this_ );
+							// The parser records reference locations against `this` (the accumulator).
+							// If the reviver hands back a different object, later reference write-backs
+							// must go to that object, or the program keeps holding the promise.
+							if( r && "object" === typeof r && r !== this ) this_.revivedAs.set( this, r );
+							return r;
 						} else return f.call(this,field,val );
 					}else {
 						if( !field ) return this;
@@ -665,7 +713,7 @@ class ObjectStorage {
 					console.log( "what is in pending?", key, opts.id, pending ); 
 					return pending.id === opts.id } );
 				if( found >= 0 ) {
-					os.pending[found].ref.o[os.pending[found].ref.f] = obj.data;
+					writeBack( os, os.pending[found].ref.o, os.pending[found].ref.f, obj.data );
 					os.pending.splice( found, 1 );
 				}
 			} while( found >= 0 );
@@ -706,7 +754,7 @@ class ObjectStorage {
 					_debug_dangling && console.log( "PUSHING DANGLING REFERNCE", this );
 					const requests = allDangling.get( this.d.id ) || [];
 					if( !requests.length ) allDangling.set( this.d.id, requests );
-					const p = this.d.p = new Promise( (res,rej)=>{
+					const chain = new Promise( (res,rej)=>{
 						_debug_dangling && console.log( "setting up pending promise to resolve:", s );
 						this.d.res = res;
 						this.d.rej = rej;
@@ -726,10 +774,17 @@ class ObjectStorage {
 							dangling.spice( inObject, 1 );
 						}
 						_debug_replace && console.log( "-------- REPLACE VALUE HERE:", this.d.r.o[this.d.r.f], this.d.r.o, this.d.r.f, obj );
-						return (this.d.r.o[this.d.r.f] = obj);
+						writeBack( os, this.d.r.o, this.d.r.f, obj );
+						return obj;
 					}).catch( (err)=>{
 						console.log( "CATCH UNCAUGHT PLEASE DO", err);
 					});
+					// one load per reference, whether it starts from await/then or from map()
+					this.startLoad = ()=>{
+						if( !this.d.loading ) this.d.loading = loadPending( os, this );
+						return this.d.loading;
+					};
+					const p = this.d.p = ReferencePromise.adopt( chain, this.startLoad );
 					os.storedIn.set( this.d.p, this );
 					//console.log( " *** SETTING ID HERE", s);
 					os.stored.set( this.d.p, '~or"'+s+'"' );
@@ -799,7 +854,7 @@ class ObjectStorage {
 						if( dangle )
 							dangle.d.n = field;
 						this_.data[field] = val
-						return val.then( (val)=>{
+						return Promise.prototype.then.call( val, (val)=>{
 							_debug_dangling && console.log( "(DOESN'T HAPPEN NOW?) THIS SHOULD BE WHAT REPLACES THE VALUE", field, val );
 							this_.data[field] = val 
 						});
@@ -873,7 +928,7 @@ export	function loadPending(store, load, opts) {
 			if( load.d.res ) {
 				load.d.res(obj); // result with real value.
 			} else {
-				load.d.p.then( o2=>{if( obj!==o2) throw new Error( "resolved and loaded object mismatch");return o2})
+				Promise.prototype.then.call( load.d.p, o2=>{if( obj!==o2) throw new Error( "resolved and loaded object mismatch");return o2})
 				return load.d.p;
 			}
 
