@@ -34,10 +34,10 @@ protocol.on( "updateTask", updateTask );
 protocol.on( "deleteTask", deleteTask );
 protocol.on( "extern.task", addNewSystem );
 protocol.on( "deleteSystem", deleteSystem );
-protocol.on( "login", showForm );
+protocol.on( "login", (arg)=>{ local.login = true; showForm() } );
 protocol.connect();
 
-function showForm() {
+function showForm(arg) {
 	if( !local.display )
 		local.display = new Display();
 	else
@@ -509,5 +509,3 @@ function insertBackLog( log, msg ) {
 			log.logList.scrollTop += (elTop - listTop) - (anchorEl.offsetHeight||0);
 		}
 }
-
-new Display();

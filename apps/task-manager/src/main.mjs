@@ -822,7 +822,21 @@ if( "enableExitSignal" in sack.system ) {
 	} );
 }
 
-//process.on( "SIGINT", ()=>{ process.stdout.write( "SIGINT\n" ); closeAllTasks().then( ()=>{ console.log( "sigint terminate finished" ); } ) } );
-
-//process.on( "uncaughtException", (err)=>{ process.stdout.write( "uncaught Exception" + err ); } );
-
+function enableDefaultLogin() {
+	let attempts =0;
+	function attemptEnableDefaultLoginService() {
+		return import( "@d3x0r/user-database-remote/enableLogin" ).then( udbr=>{
+		// serves additional login REST api... 
+			udbr.enableLogin( server, server.app, (user)=>{
+				console.log( "Need to at least get the user, right?", user );
+			} )  // extra argument is onExpect callback	
+		} ).catch( (err)=>{
+			if( ++attempts < 2 )
+				setTimeout( attemptEnableDefaultLoginService, 2000 );
+			else
+				console.log( "User login not enabled on the server", err );
+			// login = true?
+		} );
+	}
+}
+enableDefaultLogin();

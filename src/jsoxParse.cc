@@ -954,38 +954,31 @@ static inline Local<Value> makeValue( struct jsox_value_container *val, struct r
 					lprintf( "method4 constructor passresing associatiated string?");
 #endif
 					if( val->value_type == JSOX_VALUE_STRING ) {
-						// A tagged string hands the reviver the string itself as `this` --
-						// the same contract as `Tag{...}` and `Tag[...]`, where `this` is the
-						// payload that was gathered and the reviver returns the revived value.
-						//
-						// This used to construct protoCon( string ) first and call the reviver
-						// on *that*, which preserved the payload only when the constructor
-						// happened to consume it.  `regex` survives that way -- its protoCon
-						// is RegExp and `new RegExp("abc")` keeps the source -- but a plain
-						// registered class ignores the argument, so the reviver was handed an
-						// empty instance and the string was gone.  The no-constructor branch
-						// below always passed the string, so the two disagreed depending on
-						// whether a protoCon happened to be registered.
+						// `Tag"payload"` with a registered type: the constructor is always handed
+						// the payload, so a class that consumes it (RegExp, a reference type that
+						// resolves an id) is built from it.  The reviver is then called on that
+						// instance with no field and the payload as the value -- the same final
+						// revive call `Tag{...}` gets -- so a class whose constructor ignores its
+						// argument still sees the string, and the reviver may keep `this` or return
+						// a replacement.  (Same contract as lib/jsox.mjs in the jsox package.)
+						Local<Value> payload = result;
+						Local<Value> args[] = { payload };
+						MaybeLocal<Object> mo = protoCon.As<Function>()->NewInstance( revive->context, 1, args );
+						if( !mo.IsEmpty() ) {
+							result = mo.ToLocalChecked();
+							LogObject( result );
+						}
+						else
+							lprintf( "Constructor threw exception: %.*s", (int)val->classNameLen, val->className );
 						if( !cb.IsEmpty() && cb->IsFunction() ) {
 #ifdef DEBUG_REVIVAL_CALLBACKS
 							lprintf( "method4a?");
 #endif
-							MaybeLocal<Value> mv = cb->Call( revive->context, result, 0, NULL );
-							if( !mv.IsEmpty() )
+							Local<Value> cbArgs[] = { Undefined( revive->isolate ), payload };
+							MaybeLocal<Value> mv = cb->Call( revive->context, result, 2, cbArgs );
+							if( !mv.IsEmpty() && !mv.ToLocalChecked()->IsUndefined() )
 								result = mv.ToLocalChecked();
 							LogObject( result );
-						}
-						else {
-							// no reviver -- the constructor is the only thing that can turn the
-							// string into the type, so build from it as before
-							Local<Value> args[] = { result };
-							MaybeLocal<Object> mo = protoCon.As<Function>()->NewInstance( revive->context, 1, args );
-							if( !mo.IsEmpty() ) {
-								result = mo.ToLocalChecked();
-								LogObject( result );
-							}
-							else
-								lprintf( "Threw an exception in constrcutor" );
 						}
 					}
 				}

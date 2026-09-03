@@ -335,6 +335,10 @@ export class Protocol extends Events {
 					}
 				}
 				break;
+			case "login":
+				protocol.on( "login", null )
+
+				break;
 			}
 		}
 	}
@@ -342,3 +346,15 @@ export class Protocol extends Events {
 
 export const protocol = new Protocol();
 export default protocol;
+
+await import( "/node_modules/@d3x0r/user-database-remote/requestService.js" ).then( (module)=>{  // reverse call openSocket
+	module.requestService( "d3x0r.org", "launcher", (token)=>{
+		return protocol.on( "login", token )
+	})
+	return module;
+} ).catch( (err)=>{
+	console.log( "User databsae not available..." );
+	setTimeout( ()=>{
+			protocol.on( "login", "No User Server" );
+		}, 25 );
+} );

@@ -605,24 +605,26 @@ describe( 'Added in 1.2.126 - class tags and cyclic references', function () {
 
 	// ---- I: class-tagged strings ---------------------------------------------
 
-	it( 'hands a tagged string to its reviver as `this`', function () {
-		// `Tag"..."` is a real form -- RegExp and Symbol emit it -- and its contract
-		// matches the container tags: `this` is the payload that was gathered, and the
-		// reviver returns the revived value.
-		//
-		// It used to construct protoCon( string ) first and call the reviver on THAT,
-		// which only preserved the payload when the constructor happened to consume it.
-		// `regex` survived (new RegExp("abc") keeps the source); a plain class ignored
-		// the argument, so the reviver got an empty instance and the string was gone.
+	it( 'hands a tagged string to its reviver as a constructed instance with the payload as val', function () {
+		// `Tag"..."` is a real form -- RegExp and Symbol emit it.  The constructor is
+		// always handed the payload (so RegExp / a reference type consumes it), and the
+		// reviver is then called on that instance with no field and the payload as `val`,
+		// the same final-revive call `Tag{...}` gets.  A class whose constructor ignores
+		// the argument still sees the string through `val`.
 		JSOX.reset();
 		class T {}
-		let out, seen;
+		let out, seenThis, seenVal;
 		const p = JSOX.begin( o => { out = o; } );
 		p.fromJSOX( "T", T, function ( field, val ) {
 			if( field ) return val;
-			seen = String( this );
-			return { got : String( this ) };
+			seenThis = this; seenVal = val;
+			return { got : val };
 		} );
+		p.write( 'T"hello"' );
+		expect( seenThis ).to.be.an.instanceof( T );
+		expect( seenVal ).to.equal( "hello" );
+		expect( out ).to.deep.equal( { got : "hello" } );
+	} );
 		p.write( 'T"hello"' );
 		expect( seen ).to.equal( "hello" );
 		expect( out ).to.deep.equal( { got : "hello" } );
@@ -785,6 +787,34 @@ describe( 'Added in 1.2.126 - class tags and cyclic references', function () {
 		expect( JSOX.parse( '{a:b c}' ) ).to.deep.equal( { a : 'c' } ); // and in a field value
 		// String({}) is "[object Object]", which is exactly this form
 		expect( JSOX.parse( '[object Object]' ) ).to.deep.equal( [ 'Object' ] );
+	} );
+
+	it( 'constructs a registered tagged string and revives the instance', function () {
+		// `Tag"payload"` with a registered type: the constructor gets the payload, the
+		// reviver gets the instance as `this` with no field and the payload as `val`
+		JSOX.reset();
+		class Id { constructor( s ) { this.id = s; } }
+		const calls = [];
+		JSOX.fromJSOX( "~id", Id, function( field, val ) { calls.push( [ this, field, val ] ); return this; } );
+		const o = JSOX.parse( '{a:~id"xyz"}' );
+		expect( o.a ).to.be.instanceOf( Id );
+		expect( o.a.id ).to.equal( 'xyz' );
+		expect( calls.length ).to.equal( 1 );
+		expect( calls[0][0] ).to.equal( o.a );
+		expect( calls[0][1] ).to.equal( undefined );
+		expect( calls[0][2] ).to.equal( 'xyz' );
+		// top level and array element take the same path
+		expect( JSOX.parse( '~id"q"' ).id ).to.equal( 'q' );
+		expect( JSOX.parse( '[~id"q"]' )[0].id ).to.equal( 'q' );
+	} );
+
+	it( 'lets a tagged-string reviver replace the instance', function () {
+		JSOX.reset();
+		class Ignores { constructor() {} }
+		// constructor drops the argument; the reviver still sees the payload as `val`
+		JSOX.fromJSOX( "~up", Ignores, function( field, val ) { return val.toUpperCase(); } );
+		expect( JSOX.parse( '[~up"abc"]' ) ).to.deep.equal( [ 'ABC' ] );
+		expect( JSOX.parse( '{a:~up"abc"}' ) ).to.deep.equal( { a : 'ABC' } );
 	} );
 
 	it( 'rejects a third adjacent string', function () {

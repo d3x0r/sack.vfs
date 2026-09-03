@@ -583,7 +583,7 @@ class ObjectStorage {
 			for( let f of this.decoders )
 				this.parser.fromJSOX( f.tag, f.p, f.f );
 		}
-		const parser = (opts.noParse)?null:this.parser;
+		let parser = (opts.noParse)?null:this.parser;
 
 		if( opts.extraDecoders ) {
 			parser = sack.JSOX.begin(  );
