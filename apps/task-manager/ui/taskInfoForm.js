@@ -60,6 +60,9 @@ export class TaskInfoEditor extends Popup {
 			moveToEnable : false,
 			showState : getShowState( task ),
 		}
+		// { name, checked } per selectable task; filled in on the Dependencies
+		// page below, read back by processForm().
+		const depRows = [];
 		const flexFrame = document.createElement( "div" );
 		flexFrame.className = "task-config-flex-frame";
 		const buttonFrame = document.createElement( "div" );
@@ -89,27 +92,17 @@ export class TaskInfoEditor extends Popup {
 		page3.tooltip = "Arguments to pass to the task";
 		const page4 = this.pageFrame.addPage( "Environment" );
 		page4.tooltip = "Environment variables to set for the task";
-		
+		const page5 = this.pageFrame.addPage( "Dependencies" );
+		page5.tooltip = "Other tasks this one needs started first";
+
+		// driven off the list rather than a branch per page, so adding one does
+		// not mean editing two parallel switches
+		const pages = [ page1, page2, page3, page4, page5 ];
 		this.pageFrame.on( "activate", (page)=>{
-			if( page === page1 ) {
-				prevButton.style.visibility = 'hidden';
-				nextButton.style.visibility = 'visible';
-				this.page = 0;
-			}
-			if( page === page2 ) {
-				prevButton.style.visibility = 'visible';
-				nextButton.style.visibility = 'visible';
-				this.page = 1;
-			}
-			if( page === page3 ) {
-				prevButton.style.visibility = 'visible';
-				nextButton.style.visibility = 'visible';
-				this.page = 2;
-			}
-			if( page === page4 ) {
-				prevButton.style.visibility = 'visible';
-				nextButton.style.visibility = 'hidden';
-				this.page = 3;
+			const at = pages.indexOf( page );
+			if( at >= 0 ) {
+				this.page = at;
+				updateNav();
 			}
 		})
 
@@ -309,6 +302,35 @@ export class TaskInfoEditor extends Popup {
 		
 		this.env.tooltip = "Click on a field below to set the environment variables";
 
+		// Dependencies are stored as task names - that is what the config and
+		// findTask() both key on - so the checkboxes are built from the names of
+		// the other tasks on the same system.
+		this.group4 = document.createElement( "div" );
+		this.group4.className = "task-config-group4"
+		page5.appendChild( this.group4 );
+		const siblings = ( group && local.systems.indexOf( group ) >= 0 )
+		               ? ( group.tasks || [] )
+		               : ( local.taskData || [] );
+		const already = Array.isArray( task.dependsOn ) ? task.dependsOn
+		              : task.dependsOn ? [ task.dependsOn ] : [];
+		for( const sibling of siblings ) {
+			if( !sibling.name ) continue;
+			if( taskId && sibling.id === taskId ) continue; // never itself
+			if( depRows.find( row=>row.name === sibling.name ) ) continue;
+			// bound on "checked" rather than on the name: a name with a dot in it
+			// would be read as a path by the control's value binding.
+			const row = { name: sibling.name, checked: already.indexOf( sibling.name ) >= 0 };
+			depRows.push( row );
+			const dep = new Checkbox( this.group4, row, "checked", sibling.name, {left:true} );
+			dep.tooltip = "Start \"" + sibling.name + "\" before this task";
+		}
+		if( !depRows.length ) {
+			const empty = document.createElement( "div" );
+			empty.className = "task-config-empty";
+			empty.textContent = "There are no other tasks on this system to depend on.";
+			this.group4.appendChild( empty );
+		}
+
 		const footer = document.createElement( "div" );
 		footer.className = "task-config-footer";
 		const prevButton = new Button( footer, "Prev", ()=>{
@@ -331,34 +353,20 @@ export class TaskInfoEditor extends Popup {
 			for( let key of this_.envKeys ){
 				task.env[key.key] = key.val;
 			}
+			// always sent, including as [] - Task.update() replaces the set, and
+			// an omitted key would leave the old dependencies in place.
+			task.dependsOn = depRows.filter( row=>row.checked ).map( row=>row.name );
 			if( create)
 				protocol.createTask( group, task );
 			else protocol.updateTask( group, taskId, task );
 		}
+		function updateNav() {
+			prevButton.style.visibility = this_.page > 0 ? 'visible' : 'hidden';
+			nextButton.style.visibility = this_.page < pages.length - 1 ? 'visible' : 'hidden';
+		}
 		function showPage() {
-			console.log("showPage", this_.page);
-			switch( this_.page ) {
-				case 0:
-					this_.pageFrame.activate( page1);
-					prevButton.style.visibility = 'hidden';
-					nextButton.style.visibility = 'visible';
-					break;
-				case 1:
-					this_.pageFrame.activate( page2);
-					prevButton.style.visibility = 'visible';
-					nextButton.style.visibility = 'visible';
-					break;
-				case 2:
-					this_.pageFrame.activate( page3);
-					prevButton.style.visibility = 'visible';
-					nextButton.style.visibility = 'visible';
-					break;
-				case 3:
-					this_.pageFrame.activate( page4);
-					prevButton.style.visibility = 'visible';
-					nextButton.style.visibility = 'hidden';
-					break;
-			}
+			this_.pageFrame.activate( pages[this_.page] );
+			updateNav();
 		}
 		showPage();
 	};
