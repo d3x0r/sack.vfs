@@ -570,16 +570,26 @@ export class Task {
 		//else this.work = task.work;
 
 		this.#restart = task.restart || false;
-		if( task.dependsOn ) {
-			if( ( "object" === typeof task.dependsOn )
-			   && task.dependsOn.length ){
-				// depends on more than one task...
-				for( let dep of task.dependsOn )
-					this.#addDep( dep );
-			}else {
-				this.#addDep( task.dependsOn );
-			}
+		// only when the caller actually said something about them - loadTask()
+		// re-runs update() for configs that never mention dependsOn.
+		if( "dependsOn" in task ) this.#setDeps( task.dependsOn );
+	}
+	// Replace the dependency set.  This used to only ever add: editing a task
+	// could not remove a dependency, and saving the same task twice pushed the
+	// same entry into #dependsOn again.
+	#setDeps( deps ) {
+		for( const old of this.#dependsOn ) {
+			const at = old.#dependants.indexOf( this );
+			if( at >= 0 ) old.#dependants.splice( at, 1 );
 		}
+		this.#dependsOn.length = 0;
+		// a task that no longer depends on anything is startable on its own
+		// again, so drop any queued lookups that would re-link it later.
+		for( let p = pendingDepends.length - 1; p >= 0; p-- )
+			if( pendingDepends[p].task === this ) pendingDepends.splice( p, 1 );
+		if( !deps ) return;
+		const list = ( "object" === typeof deps && deps.length !== undefined ) ? deps : [ deps ];
+		for( const dep of list ) this.#addDep( dep );
 	}
 	#addDep( dep ){
 		const oldTask = findTask( dep );
@@ -587,9 +597,12 @@ export class Task {
 			if( !oldTask.#dependants.find( t=>t === this )) {
 				oldTask.#dependants.push( this );
 			}
-			this.#dependsOn.push( oldTask );
+			if( !this.#dependsOn.find( t=>t === oldTask ) )
+				this.#dependsOn.push( oldTask );
 		} else {
+			// not loaded yet (or not any more); pick it up when it appears
 			console.log( "Dependant task is not found:", dep, "for", this.name );
+			pendingDepends.push( { task:this, dep } );
 		}
 	}
 
