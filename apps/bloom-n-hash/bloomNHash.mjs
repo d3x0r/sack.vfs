@@ -351,7 +351,7 @@ fromString (field,val){
 		const _this = this;
 		if( field === "root" ) {
 			if( val instanceof Promise ) {
-				val.then( (val)=>{
+				( val.whenLoaded ? val.whenLoaded.bind( val ) : val.then.bind( val ) )( (val)=>{
 					//console.log( "Filling root with promised hash block... do I get this back?", _this, val );
 					val.root = _this;
 					return val;
