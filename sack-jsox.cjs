@@ -175,11 +175,12 @@ function initPrototypes()
 
 	pushToProto( RegExp.prototype, { external:true, name:"regex"
 	    , cb:function(o,stringifier){
-			return "'"+escape(this.source)+"'";
+			return "'/"+escape(this.source)+'/'+escape(this.flags)+"'";
 		}
 	} );
 	fromProtoTypes.set( "regex", { protoCon:RegExp, cb:function (field,val){
-		return new RegExp( this );
+		const match = /^\/((?:\\.|[^\\/])*)\/([a-z]*)$/i.exec(val);
+		return new RegExp( match[1], match[2] );
 	} } );
 
 
