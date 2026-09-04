@@ -1,6 +1,7 @@
 
 import {local} from "./local.mjs"
 import {sack} from "sack.vfs"
+import net from "net"
 import path from "path"
 const JSOX = sack.JSOX;
 const disk = sack.Volume();
@@ -24,6 +25,29 @@ const LOG_TRIM_SLACK = 1024;
 // hanging the whole process on one task that will not die.
 const TASK_STOP_KILL_MS = 1500;
 const TASK_STOP_GIVEUP_MS = 15000;
+
+// Readiness.  A task is "ready" as soon as it is running unless it says
+// otherwise with readyPort (wait for something to accept a connection there) or
+// readyDelay (just wait).  Dependants hold off until then - without it,
+// dependsOn only ordered the launches, it did not space them.
+const READY_POLL_MS = 250;
+const READY_TIMEOUT_MS = 30000;
+
+function probePort( host, port ) {
+	return new Promise( ( resolve )=>{
+		let settled = false;
+		const done = ( open )=>{
+			if( settled ) return;
+			settled = true;
+			socket.destroy();
+			resolve( open );
+		};
+		const socket = net.connect( { host, port } );
+		socket.once( "connect", ()=>done( true ) );
+		socket.once( "error",   ()=>done( false ) );
+		socket.setTimeout( 1000, ()=>done( false ) );
+	} );
+}
 
 function getLogPage( log, logBase, from = logBase + log.length, length = 20 ) {
 	const lineCount = Math.max( 0, Math.floor( length ) || 0 );
@@ -83,6 +107,14 @@ export class Task {
 	name = null;
 	stopped = false;
 	stopping = false;
+	// serialized out to clients: the graph they need to spot dependency loops,
+	// and whether this task has satisfied its readiness check yet.
+	dependsOn = [];
+	ready = false;
+	// Stopped by hand, as opposed to stopped because something it needed went
+	// away.  A held task stays down: nothing may start it as a side effect of
+	// starting something else.  Cleared when it is started or restarted.
+	held = false;
 
 	#autoEndBatch = false;
 	#log = [];
@@ -99,6 +131,7 @@ export class Task {
 	#path = null;
 	#stopTimer = null;
 	#stopWaiters = []; // resolvers waiting for this task to actually stop
+	#readyRun = 0; // generation, so a restart abandons the previous probe
 
 	constructor(task) {
 		this.#task = task;
@@ -145,26 +178,12 @@ export class Task {
 				this.#path = process.env.PATH + ":" + task.postPath;
 		}
 
-		if( task.dependsOn ) {
-			for( let dep of task.dependsOn ) {
-				let found = false;
-				for( let testTask of config.local.tasks ) {
-					if( testTask.name === dep ){
-						testTask.#dependants.push( this );
-						this.#dependsOn.push( testTask );
-						found = true;
-						break;
-					}
-				}
-				if( !found ) {
-					pendingDepends.push( {task:this, dep} );
-				}
-			}
-		}
+		if( task.dependsOn ) this.#setDeps( task.dependsOn );
 		for( let p = 0; p < pendingDepends.length; p++ ) {
 			const pd = pendingDepends[p];
 			if( pd.dep === this.name ) {
-				pd.task.#dependsOn.push( this );
+				if( !pd.task.#dependsOn.find( t=>t === this ) )
+					pd.task.#dependsOn.push( this );
 				this.#dependants.push( pd.task );
 				pendingDepends.splice( p, 1 );
 				p--;
@@ -325,7 +344,26 @@ export class Task {
 		// set starting to prevent dependancies from starting dependants
 		this.starting = true;
 		for( let dep of this.#dependsOn ) {
-			if( !dep.running ) dep.start();
+			if( dep.running ) continue;
+			if( dep.held ) {
+				// somebody stopped this one deliberately; starting a dependant is
+				// not a reason to bring it back up behind their back.
+				console.log( "Not starting held dependency:", dep.name, "for", this.name );
+				continue;
+			}
+			dep.start();
+		}
+		// Anything not ready yet will start this task itself once it is (see
+		// #startDependants) - launching now would race ahead of it, which is how
+		// a restarting dependant used to come up before its dependency was
+		// listening.  A held dependency is not going to become ready, so an
+		// explicit start of this task still goes ahead without it.
+		const waiting = this.#dependsOn.filter( dep=>!dep.ready && !dep.held );
+		if( waiting.length ) {
+			console.log( "Holding", this.name, "until ready:"
+			           , waiting.map( dep=>dep.name ).join( ", " ) );
+			this.starting = false;
+			return;
 		}
 		let bin;
 		if( process.platform === "linux" ) {
@@ -390,14 +428,8 @@ export class Task {
 			this.started = new Date();
 			const msg = {op:"status", id:this_.id, running: true, ended: this_.ended, started: this_.started };
 			config.send( msg );
-			for( let dep of this.#dependants ) {
-				if( !dep.running && !dep.starting ) {
-					console.log( "Task Started, starting Dep:", dep.name );
-					dep.start();
-				} else {
-					console.log( "Dependant task is still running:", dep.name, dep.starting, dep.running );
-				}
-			}
+			// dependants wait for ready, not merely for launched
+			this.#beginReady();
 		}else { 
 			console.log( 'failed to start? try altbin?' );
 		}
@@ -438,6 +470,8 @@ export class Task {
 		function stop() {
 			this_.ended = new Date();
 			this_.running = false;
+			this_.ready = false;
+			this_.#readyRun++; // abandon any readiness probe still polling
 			if( this_.#stopTimer) { 
 				clearTimeout ( this_.#stopTimer )
 				this_.#stopTimer = 0;
@@ -468,7 +502,14 @@ export class Task {
 				dep.#ranOnce = false;
 			}
 			if( !this_.#stopTimer ) {
-				if( this_.#restart ) {
+				if( this_.#restart && this_.dependenciesHeld ) {
+					// this was torn down because something it depends on was
+					// stopped by hand.  Restarting now would run it without that
+					// dependency, and its start() would try to drag the held task
+					// back up.  Wait to be started when that one comes back.
+					console.log( "Not restarting", this_.name
+					           , "- a dependency is stopped:", this_.heldDependencies.join(", ") );
+				} else if( this_.#restart ) {
 					//console.log( "doing resume timeout", this_.#task.restartDelay)
 					console.log( "this should restart?" );
 					if( this_.#task.restartDelay )
@@ -578,6 +619,9 @@ export class Task {
 	// could not remove a dependency, and saving the same task twice pushed the
 	// same entry into #dependsOn again.
 	#setDeps( deps ) {
+		this.dependsOn = deps ? ( ( "object" === typeof deps && deps.length !== undefined )
+		                          ? deps.slice() : [ deps ] )
+		                      : [];
 		for( const old of this.#dependsOn ) {
 			const at = old.#dependants.indexOf( this );
 			if( at >= 0 ) old.#dependants.splice( at, 1 );
@@ -604,6 +648,80 @@ export class Task {
 			console.log( "Dependant task is not found:", dep, "for", this.name );
 			pendingDepends.push( { task:this, dep } );
 		}
+	}
+
+	// Every dependency satisfied?  A dependant can have more than one, and the
+	// one that just became ready is not necessarily the last.
+	get depsReady() {
+		return this.#dependsOn.every( dep=>dep.ready );
+	}
+
+	// something this task needs was stopped by hand
+	get dependenciesHeld() {
+		return this.#dependsOn.some( dep=>dep.held );
+	}
+	get heldDependencies() {
+		return this.#dependsOn.filter( dep=>dep.held ).map( dep=>dep.name );
+	}
+
+	#startDependants() {
+		for( let dep of this.#dependants ) {
+			if( dep.running || dep.starting ) {
+				console.log( "Dependant task is still running:", dep.name, dep.starting, dep.running );
+				continue;
+			}
+			if( !dep.depsReady ) {
+				console.log( "Dependant still waiting on another dependency:", dep.name );
+				continue;
+			}
+			console.log( "Task ready, starting Dep:", dep.name );
+			dep.start();
+		}
+	}
+
+	#setReady( run ) {
+		if( run !== this.#readyRun || !this.running ) return; // superseded, or gone
+		this.ready = true;
+		config.send( { op:"status", id:this.id, running:true, ready:true
+		             , ended:this.ended, started:this.started } );
+		this.#startDependants();
+	}
+
+	#beginReady() {
+		const run = ++this.#readyRun;
+		const port = Number( this.#task.readyPort ) || 0;
+		const delay = Number( this.#task.readyDelay ) || 0;
+		if( !port && !delay ) return this.#setReady( run ); // launched is ready
+
+		if( !port ) {
+			setTimeout( ()=>this.#setReady( run ), delay );
+			return;
+		}
+
+		const host = this.#task.readyHost || "localhost";
+		const limit = Number( this.#task.readyTimeout ) || READY_TIMEOUT_MS;
+		const started = Date.now();
+		console.log( "Waiting for", this.name, "to listen on", host + ":" + port );
+		const poll = ()=>{
+			if( run !== this.#readyRun || !this.running ) return; // restarted or stopped
+			probePort( host, port ).then( ( open )=>{
+				if( run !== this.#readyRun || !this.running ) return;
+				if( open ) {
+					console.log( "Task ready:", this.name, "-", host + ":" + port, "is listening" );
+					return this.#setReady( run );
+				}
+				if( Date.now() - started > limit ) {
+					// never block the chain outright - say so and let it through
+					console.log( "Task never listened on", host + ":" + port
+					           , "- continuing without it:", this.name );
+					return this.#setReady( run );
+				}
+				setTimeout( poll, READY_POLL_MS );
+			} );
+		};
+		// give it a moment before the first attempt; a just-spawned process has
+		// not had time to bind, and a refused connect is only noise.
+		setTimeout( poll, READY_POLL_MS );
 	}
 
 	move() {

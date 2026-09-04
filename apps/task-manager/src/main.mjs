@@ -121,7 +121,8 @@ function handleStart( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
-			//task.restart = true;
+			// an explicit start clears a hold, so its dependants may run again
+			task.held = false;
 			task.start();
 		}
 	} else {
@@ -140,6 +141,7 @@ function handleRestart( ws, msg, msg_ ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
 			console.log( "Set task restart:", task );
+			task.held = false;
 			task.restart = true;
 			console.log( "Task is running alrady?", task.running );
 		}
@@ -158,6 +160,10 @@ function handleStop( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
+			// asked for by hand: it means stop, and stay stopped.  Without this a
+			// dependant torn down by the cascade restarts from its own config and
+			// drags this one back up with it.
+			task.held = true;
 			task.restart = false;
 			task.stop();
 		}
@@ -294,6 +300,17 @@ export function beginScheduler() {
 }
 
 if( isTopLevel(import.meta.url) ) beginScheduler();
+
+// The form always sends the readiness fields, blank included, because
+// Task.update() only copies keys that are present - a missing one would leave
+// the old value set.  Blank means "not set", so drop them here instead of
+// writing readyPort:"" into every task that was ever saved.
+function tidyTask( task ) {
+	if( !task ) return task;
+	for( const key of [ "readyPort", "readyDelay", "readyTimeout", "readyHost" ] )
+		if( key in task && !task[key] ) delete task[key];
+	return task;
+}
 
 function loadTask( task ) {
 	const oldTask = local.tasks.find( oldTask=>oldTask.name === task.name );
@@ -651,7 +668,7 @@ function handleMessage( ws, msg_ ) {
 			// so a create addressed to this system by name fell through to the
 			// remote lookup and was dropped.
 			if( !msg.system || msg.system === local.id ) {
-				const task = loadTask( msg.task );
+				const task = loadTask( tidyTask( msg.task ) );
 				if( !msg.task.temporary )
 					saveRunConfig();
 				addTask( task.id, task ); // sends new task
@@ -673,6 +690,7 @@ function handleMessage( ws, msg_ ) {
 				{
 					const taskInfo = task.task;
 					task.update( msg.task );
+					tidyTask( taskInfo );
 					for( let t = 0; t < config.tasks; t++ ) {
 						if( config.task[t] === taskInfo ) {
 							const keys = Object.keys( msg.task );
