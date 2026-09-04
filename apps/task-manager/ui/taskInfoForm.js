@@ -305,14 +305,52 @@ export class TaskInfoEditor extends Popup {
 		// Dependencies are stored as task names - that is what the config and
 		// findTask() both key on - so the checkboxes are built from the names of
 		// the other tasks on the same system.
+		// "Ready" is what dependants actually wait for.  With neither of these set
+		// a task is ready the moment it launches - which is the old behaviour,
+		// where dependants started right behind it rather than after it was up.
+		this.readyGroup = document.createElement( "div" );
+		this.readyGroup.className = "task-config-ready"
+		page5.appendChild( this.readyGroup );
+		const readyLabel = document.createElement( "div" );
+		readyLabel.className = "task-config-group-label";
+		readyLabel.textContent = "Ready when";
+		this.readyGroup.appendChild( readyLabel );
+		c = new TextInput( this.readyGroup, task, "readyPort", "Listening on port", false, false, false, "" );
+		c.tooltip = "Wait until something accepts a connection on this port before starting anything that depends on this task; blank to skip the check";
+		c = new TextInput( this.readyGroup, task, "readyHost", "Probe host", false, false, false, "" );
+		c.tooltip = "Host to probe for that port (default localhost)";
+		c = new TextInput( this.readyGroup, task, "readyDelay", "Or after (ms)", false, false, false, "" );
+		c.tooltip = "With no port, wait this long after launching before this task counts as ready";
+		c = new TextInput( this.readyGroup, task, "readyTimeout", "Give up after (ms)", false, false, false, "" );
+		c.tooltip = "How long to keep probing before giving up and letting dependants start anyway (default 30000)";
+
 		this.group4 = document.createElement( "div" );
 		this.group4.className = "task-config-group4"
 		page5.appendChild( this.group4 );
+		const dependsLabel = document.createElement( "div" );
+		dependsLabel.className = "task-config-group-label";
+		dependsLabel.textContent = "Depends on";
+		this.group4.appendChild( dependsLabel );
 		const siblings = ( group && local.systems.indexOf( group ) >= 0 )
 		               ? ( group.tasks || [] )
 		               : ( local.taskData || [] );
 		const already = Array.isArray( task.dependsOn ) ? task.dependsOn
 		              : task.dependsOn ? [ task.dependsOn ] : [];
+
+		// Does `fromName` already reach the task being edited?  If so, depending
+		// on it would close a loop, and start() walks dependencies with nothing
+		// to break one.
+		function reaches( fromName, targetName, seen ) {
+			if( fromName === targetName ) return true;
+			if( seen.has( fromName ) ) return false;
+			seen.add( fromName );
+			const row = siblings.find( test=>test.name === fromName );
+			if( !row || !row.dependsOn ) return false;
+			for( const next of row.dependsOn )
+				if( reaches( next, targetName, seen ) ) return true;
+			return false;
+		}
+
 		for( const sibling of siblings ) {
 			if( !sibling.name ) continue;
 			if( taskId && sibling.id === taskId ) continue; // never itself
@@ -322,7 +360,22 @@ export class TaskInfoEditor extends Popup {
 			const row = { name: sibling.name, checked: already.indexOf( sibling.name ) >= 0 };
 			depRows.push( row );
 			const dep = new Checkbox( this.group4, row, "checked", sibling.name, {left:true} );
-			dep.tooltip = "Start \"" + sibling.name + "\" before this task";
+			if( originalName && reaches( sibling.name, originalName, new Set() ) ) {
+				row.checked = false;
+				dep.control.checked = false;
+				dep.control.disabled = true;
+				// it also toggles from its container's click handler, so the whole
+				// control has to stop taking pointer events - which means the
+				// reason has to go on a wrapper that still can.
+				const guard = document.createElement( "div" );
+				guard.className = "dependency-cycle";
+				guard.title = "\"" + sibling.name + "\" already depends on this task"
+				            + " - depending on it back would be a loop";
+				this.group4.insertBefore( guard, dep.el );
+				guard.appendChild( dep.el );
+				dep.el.style.pointerEvents = "none";
+			} else
+				dep.tooltip = "Start \"" + sibling.name + "\" before this task";
 		}
 		if( !depRows.length ) {
 			const empty = document.createElement( "div" );
