@@ -635,6 +635,9 @@ function handleMessage( ws, msg_ ) {
 		}
 		case "startAll": {
 			console.log( "Start all tasks" );
+			// explicit start-everything lifts the holds a stopAll left behind,
+			// the same way the per-task Start button does
+			local.tasks.forEach( task=>{ task.held = false; } );
 			startTasks();
 			if( msg.close )
 				ws.close( 1000, "Starting Tasks" );

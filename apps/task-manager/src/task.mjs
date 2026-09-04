@@ -13,6 +13,12 @@ export const config = {
 
 let pendingDepends = [];
 
+// True while closeAllTasks() is sweeping.  Stopping tasks one at a time races
+// its own cascade: a dependant torn down before the sweep reaches it still has
+// its own restart pending, fires it, and its start() drags the dependency back
+// up - which is how things came back just as the manager was exiting.
+let stoppingAll = false;
+
 // lines of output retained per task; a long lived service would otherwise grow
 // #log without bound.  Override per task with `maxLogLines` in the task config.
 const DEFAULT_MAX_LOG_LINES = 5000;
@@ -321,6 +327,10 @@ export class Task {
 	get stopWaiters() { return this.#stopWaiters; }
 
 	start() {
+		if( stoppingAll ) {
+			console.log( "Not starting", this.name, "- stopping all tasks" );
+			return;
+		}
 		this.stopped = false;
 		if( this.running ) {
 			console.log( "Already started:", this.#task.name );
@@ -665,7 +675,13 @@ export class Task {
 	}
 
 	#startDependants() {
+		if( stoppingAll ) return;
 		for( let dep of this.#dependants ) {
+			if( dep.held ) {
+				// stopped by hand; coming back up is not this task's call
+				console.log( "Dependant is stopped, leaving it down:", dep.name );
+				continue;
+			}
 			if( dep.running || dep.starting ) {
 				console.log( "Dependant task is still running:", dep.name, dep.starting, dep.running );
 				continue;
@@ -757,10 +773,18 @@ export function closeAllTasks( ws ) {
 	const local = config.local;
 	const waits = [];
 
+	// held first, and for every task rather than only the running ones: the
+	// sweep below stops them one at a time, and each stop cascades into
+	// dependants that the sweep has not reached yet.
+	stoppingAll = true;
+	local.tasks.forEach( task=>{
+		if( task.noKill ) return;
+		task.held = true;
+		task.restart = false;
+	} );
 	local.tasks.forEach( task=>{
 		if( task.noKill ) return;
 		if (task.running){
-			task.restart = false;
 			// wait on the promise stop() already returns.  Pushing a second
 			// timeoutTaskStop() here ran two tick loops per task through one
 			// shared stopTimer slot: the first killed the task, the second only
@@ -771,9 +795,15 @@ export function closeAllTasks( ws ) {
 		} } );
 
 	return Promise.all( waits ).then( (waits)=>{
+		// stopAll leaves the manager running, so this has to lift - the tasks
+		// stay held until something explicitly starts them.
+		stoppingAll = false;
 		//console.log( "Reply with a close?", ws );
 		if( ws ) ws.close( 1000, "Tasks Stopped" );
 		return waits;
+	}, (err)=>{
+		stoppingAll = false;
+		throw err;
 	} );
 
 
