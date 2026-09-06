@@ -53,6 +53,20 @@ static std::string xr_result_text( XrInstance instance, XrResult res ) {
 	}
 }
 
+static const char* xr_blend_mode_name( XrEnvironmentBlendMode m ) {
+	switch( m ) {
+	// VR: your image replaces the world entirely.
+	case XR_ENVIRONMENT_BLEND_MODE_OPAQUE:      return "OPAQUE";
+	// Additive displays (waveguide/see-through optics) — black is transparent,
+	// so there is no way to darken the real world.
+	case XR_ENVIRONMENT_BLEND_MODE_ADDITIVE:    return "ADDITIVE";
+	// Video passthrough — the alpha channel of your swapchain is what composites
+	// against the camera feed. This is the one that makes AR on a Quest work.
+	case XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND: return "ALPHA_BLEND";
+	default:                                    return "UNKNOWN";
+	}
+}
+
 static std::string xr_version_text( XrVersion v ) {
 	return std::to_string( (unsigned long long)XR_VERSION_MAJOR( v ) ) + "."
 	     + std::to_string( (unsigned long long)XR_VERSION_MINOR( v ) ) + "."
@@ -198,6 +212,25 @@ static void XR_probe( const FunctionCallbackInfo<Value>& args ) {
 				Boolean::New( isolate,
 					sprops.trackingProperties.positionTracking != XR_FALSE ) );
 			SET_READONLY( out, "system", sys );
+		}
+
+		// Environment blend modes — the core (extension-free) route to AR.
+		// Enumerated per view configuration, and only meaningful once a system
+		// exists, which is why this sits inside the system branch.
+		uint32_t blendCount = 0;
+		if( XR_SUCCEEDED( xrEnumerateEnvironmentBlendModes( instance, systemId,
+			XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &blendCount, NULL ) )
+		    && blendCount ) {
+			std::vector<XrEnvironmentBlendMode> modes( blendCount );
+			if( XR_SUCCEEDED( xrEnumerateEnvironmentBlendModes( instance, systemId,
+				XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, blendCount,
+				&blendCount, modes.data() ) ) ) {
+				Local<Array> arr = Array::New( isolate, (int)blendCount );
+				for( uint32_t i = 0; i < blendCount; i++ )
+					arr->Set( context, i, localStringExternal( isolate,
+						xr_blend_mode_name( modes[ i ] ) ) ).FromMaybe( false );
+				SET_READONLY( out, "blendModes", arr );
+			}
 		}
 	}
 

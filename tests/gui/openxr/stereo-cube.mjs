@@ -115,15 +115,19 @@ for( let i = 0; i < 12; i++ ) {
 	scene.add( post );
 }
 
-// Three cubes straight ahead at 1m, 2m and 4m. Depth ordering between these is
-// the stereo check: at 1m the disparity is obvious, at 4m nearly nil.
+// Three 30cm cubes at 1m, 2m and 4m. Depth ordering between these is the stereo
+// check: at 1m the disparity is obvious, at 4m nearly nil.
+//
+// They are fanned out sideways as well as in depth. At a common x=0 they line up
+// exactly on the view axis from the origin and the 1m cube hides the other two
+// completely, which makes the whole comparison invisible.
 const cubes = [];
-for( const [ z, colour ] of [ [ -1, 0x33cc66 ], [ -2, 0x3366cc ], [ -4, 0xcc9933 ] ] ) {
+for( const [ x, z, colour ] of [ [ 0, -1, 0x33cc66 ], [ 0.55, -2, 0x3366cc ], [ -0.85, -4, 0xcc9933 ] ] ) {
 	const cube = new THREE.Mesh(
 		new THREE.BoxGeometry( 0.3, 0.3, 0.3 ),
 		new THREE.MeshStandardMaterial( { color: colour } ) );
 	// -Z is forward, same convention as three's camera.
-	cube.position.set( 0, 0, z );
+	cube.position.set( x, 0, z );
 	scene.add( cube );
 	cubes.push( cube );
 }
@@ -221,6 +225,7 @@ function eyeTarget( eye, gpuTexture ) {
 // returns to libuv never lets them run.
 
 let frames = 0, rendered = 0, lastState = "", started = performance.now();
+let reportedSep = false;
 
 function tick() {
 	if( frames >= FRAMES ) return finish();
@@ -240,6 +245,17 @@ function tick() {
 	// Advance three's internal frame (nodeFrame/time uniforms) exactly once
 	// per XR frame, before anything is rendered with it.
 	pump( performance.now() );
+
+	// One-shot: the distance between the two eye poses. This is the only cheap
+	// check that separates real stereo from rendering the same view twice —
+	// perspective, occlusion and head tracking all look correct either way.
+	// Expect roughly 55-75mm; 0.0 means the views are not actually distinct.
+	if( !reportedSep && frame.posesValid && frame.views.length >= 2 ) {
+		const a = frame.views[ 0 ].position, b = frame.views[ 1 ].position;
+		const sep = Math.hypot( b.x - a.x, b.y - a.y, b.z - a.z );
+		console.log( `eye sep   : ${( sep * 1000 ).toFixed( 1 )}mm between view poses` );
+		reportedSep = true;
+	}
 
 	const t = ( performance.now() - started ) / 1000;
 	for( const cube of cubes ) {

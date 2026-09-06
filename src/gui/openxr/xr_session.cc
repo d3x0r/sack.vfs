@@ -173,6 +173,59 @@ public:
 	std::vector<XrView>                            views_;
 	std::vector<XrCompositionLayerProjectionView>  projViews_;
 
+	// ---- input ------------------------------------------------------
+	//
+	// One action set, created once in beginSession. OpenXR allows
+	// xrAttachSessionActionSets exactly once per session and it must precede
+	// the first xrSyncActions, so actions cannot be declared incrementally
+	// from JS after the frame loop starts — hence a fixed set sized to fit
+	// essentially any controller, with per-profile bindings below.
+	//
+	// State reaches JS through one buffer this object owns, exposed as
+	// session.input (Float32Array) and session.buttons (Uint32Array) over the
+	// same memory. Per-frame V8 objects would be ~14 allocations a frame, or
+	// 1260/s at 90Hz, for data that is fixed-size and fully overwritten each
+	// time; the buffer costs nothing after setup and JS can read straight into
+	// matrices.
+	static const uint32_t kHands = 2;
+	static const uint32_t kStride = 32;      // slots per hand, float or uint
+	enum {                                    // float slots
+		IN_GRIP_POS = 0,  IN_GRIP_ORI = 3,
+		IN_AIM_POS  = 7,  IN_AIM_ORI  = 10,
+		IN_TRIGGER  = 14, IN_SQUEEZE  = 15,
+		IN_AXIS_X   = 16, IN_AXIS_Y   = 17,
+		IN_AXIS2_X  = 18, IN_AXIS2_Y  = 19,
+		IN_FLAGS    = 24, IN_PROFILE  = 25,  // read through the uint view
+	};
+	enum {                                    // IN_FLAGS bits
+		HF_ACTIVE = 1u << 0, HF_AXIS_CLICK  = 1u << 1,
+		HF_BUTTON0 = 1u << 2, HF_BUTTON1    = 1u << 3,
+		HF_BUTTON2 = 1u << 4, HF_BUTTON3    = 1u << 5,
+		HF_MENU    = 1u << 6, HF_AXIS2_CLICK = 1u << 7,
+	};
+
+	float       inputData_[ kHands * kStride ] = {};
+	uint32_t*   inputBits() { return reinterpret_cast<uint32_t*>( inputData_ ); }
+
+	XrActionSet actionSet_ = XR_NULL_HANDLE;
+	XrPath      handPath_[ kHands ] = {};
+	XrSpace     gripSpace_[ kHands ] = {};
+	XrSpace     aimSpace_[ kHands ]  = {};
+
+	// Buttons are four slots on purpose: Touch fills two per hand plus menu,
+	// an Index fills more, a Vive wand leaves most zero. Fitting the union is
+	// cheaper for callers than branching per device.
+	XrAction aGrip_ = XR_NULL_HANDLE, aAim_ = XR_NULL_HANDLE;
+	XrAction aTrigger_ = XR_NULL_HANDLE, aSqueeze_ = XR_NULL_HANDLE;
+	XrAction aAxis_ = XR_NULL_HANDLE, aAxis2_ = XR_NULL_HANDLE;
+	XrAction aAxisClick_ = XR_NULL_HANDLE, aAxis2Click_ = XR_NULL_HANDLE;
+	XrAction aButton_[ 4 ] = {};
+	XrAction aMenu_ = XR_NULL_HANDLE, aHaptic_ = XR_NULL_HANDLE;
+
+	std::string setupInput();     // error message, empty on success
+	void        syncInput();      // called from waitFrame, once per frame
+	void        recordProfiles(); // on interaction-profile-changed events
+
 	static Persistent<Function> constructor;
 
 	XRSession() { frameState_.type = XR_TYPE_FRAME_STATE; }
@@ -198,6 +251,16 @@ public:
 		eyes_.clear();
 		for( auto& s : copyRing_ ) { s.list.Reset(); s.alloc.Reset(); s.fenceValue = 0; }
 		if( fenceEvent_ ) { CloseHandle( fenceEvent_ ); fenceEvent_ = NULL; }
+		// Action spaces before the action set that owns their actions, and both
+		// before the session they were created from.
+		for( uint32_t h = 0; h < kHands; h++ ) {
+			if( gripSpace_[ h ] ) { xrDestroySpace( gripSpace_[ h ] ); gripSpace_[ h ] = XR_NULL_HANDLE; }
+			if( aimSpace_[ h ]  ) { xrDestroySpace( aimSpace_[ h ]  ); aimSpace_[ h ]  = XR_NULL_HANDLE; }
+		}
+		if( actionSet_ != XR_NULL_HANDLE ) {
+			xrDestroyActionSet( actionSet_ );
+			actionSet_ = XR_NULL_HANDLE;
+		}
 		fence_.Reset();
 		d3dQueue_.Reset();
 		d3dDevice_.Reset();
@@ -216,6 +279,7 @@ public:
 	static void release  ( const FunctionCallbackInfo<Value>& args );
 	static void endFrame ( const FunctionCallbackInfo<Value>& args );
 	static void destroy  ( const FunctionCallbackInfo<Value>& args );
+	static void pulse    ( const FunctionCallbackInfo<Value>& args );
 };
 
 Persistent<Function> XRSession::constructor;
@@ -264,8 +328,15 @@ void XRSession::poll( const FunctionCallbackInfo<Value>& args ) {
 				self->running_ = false;
 			}
 		}
-		// Other events (instance loss, interaction profile changes) are not
-		// interesting until input lands.
+		else if( ev.type == XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED ) {
+			// This is how you learn what the runtime actually bound. It fires
+			// when controllers wake, sleep or get swapped mid-session, so a
+			// one-time query at startup would miss the common case of picking
+			// the controllers up after launching. Stored as an index into
+			// sack.xr.profiles, 0 meaning nothing bound.
+			self->recordProfiles();
+		}
+		// Instance loss surfaces through the state machine above.
 	}
 
 	Local<Object> out = Object::New( isolate );
@@ -355,6 +426,10 @@ void XRSession::waitFrame( const FunctionCallbackInfo<Value>& args ) {
 		views->Set( context, i, jv ).FromMaybe( false );
 	}
 	SET_READONLY( out, "views", views );
+
+	// Refresh controller state for this same predicted display time, so an
+	// update tick reading session.input is coherent with these view poses.
+	self->syncInput();
 
 	args.GetReturnValue().Set( out );
 }
@@ -495,6 +570,362 @@ void XRSession::blitToRuntime( Eye& e ) {
 	copySlot_ = ( copySlot_ + 1 ) % kCopySlots;
 }
 
+// ---- input: action set, bindings, per-frame sync ---------------------
+//
+// Bindings are per interaction profile and the runtime picks whichever matches
+// the hardware, so every profile we care about has to be suggested up front —
+// suggesting only Touch means a Vive reports no input at all rather than
+// falling back. Devices differ in kind, not just in labels: a Vive wand has a
+// trackpad and no stick, so its trackpad binds to the *primary* axis and JS
+// never has to know. Where a device has both (Index, WMR) the trackpad lands
+// on the secondary axis.
+//
+// Analog is preferred wherever the hardware has it. OpenXR will convert a
+// boolean source to a float action (false/true -> 0.0/1.0), which is what lets
+// khr/simple_controller's select/click drive the same trigger action as
+// Touch's trigger/value.
+
+namespace {
+	struct XrsBinding { int action; const char* path; };
+	// action ids for the table below
+	enum { A_GRIP, A_AIM, A_TRIGGER, A_SQUEEZE, A_AXIS, A_AXIS_CLICK,
+	       A_AXIS2, A_AXIS2_CLICK, A_BTN0, A_BTN1, A_BTN2, A_BTN3,
+	       A_MENU, A_HAPTIC };
+
+	struct XrsProfile {
+		const char* path;
+		const XrsBinding* left;  size_t leftCount;
+		const XrsBinding* right; size_t rightCount;
+	};
+
+	// Paths are relative to /user/hand/<side>.
+	const XrsBinding kSimple[] = {
+		{ A_GRIP, "/input/grip/pose" }, { A_AIM, "/input/aim/pose" },
+		{ A_TRIGGER, "/input/select/click" }, { A_MENU, "/input/menu/click" },
+		{ A_HAPTIC, "/output/haptic" },
+	};
+	// Touch splits its face buttons by hand (x/y left, a/b right) and only the
+	// left controller exposes menu — the right one's is reserved by the runtime.
+	const XrsBinding kTouchLeft[] = {
+		{ A_GRIP, "/input/grip/pose" }, { A_AIM, "/input/aim/pose" },
+		{ A_TRIGGER, "/input/trigger/value" }, { A_SQUEEZE, "/input/squeeze/value" },
+		{ A_AXIS, "/input/thumbstick" }, { A_AXIS_CLICK, "/input/thumbstick/click" },
+		{ A_BTN0, "/input/x/click" }, { A_BTN1, "/input/y/click" },
+		{ A_MENU, "/input/menu/click" }, { A_HAPTIC, "/output/haptic" },
+	};
+	const XrsBinding kTouchRight[] = {
+		{ A_GRIP, "/input/grip/pose" }, { A_AIM, "/input/aim/pose" },
+		{ A_TRIGGER, "/input/trigger/value" }, { A_SQUEEZE, "/input/squeeze/value" },
+		{ A_AXIS, "/input/thumbstick" }, { A_AXIS_CLICK, "/input/thumbstick/click" },
+		{ A_BTN0, "/input/a/click" }, { A_BTN1, "/input/b/click" },
+		{ A_HAPTIC, "/output/haptic" },
+	};
+	const XrsBinding kIndex[] = {
+		{ A_GRIP, "/input/grip/pose" }, { A_AIM, "/input/aim/pose" },
+		{ A_TRIGGER, "/input/trigger/value" }, { A_SQUEEZE, "/input/squeeze/force" },
+		{ A_AXIS, "/input/thumbstick" }, { A_AXIS_CLICK, "/input/thumbstick/click" },
+		{ A_AXIS2, "/input/trackpad" }, { A_AXIS2_CLICK, "/input/trackpad/force" },
+		{ A_BTN0, "/input/a/click" }, { A_BTN1, "/input/b/click" },
+		{ A_HAPTIC, "/output/haptic" },
+	};
+	// No stick at all; the trackpad *is* the primary axis.
+	const XrsBinding kVive[] = {
+		{ A_GRIP, "/input/grip/pose" }, { A_AIM, "/input/aim/pose" },
+		{ A_TRIGGER, "/input/trigger/value" }, { A_SQUEEZE, "/input/squeeze/click" },
+		{ A_AXIS, "/input/trackpad" }, { A_AXIS_CLICK, "/input/trackpad/click" },
+		{ A_MENU, "/input/menu/click" }, { A_HAPTIC, "/output/haptic" },
+	};
+	const XrsBinding kWmr[] = {
+		{ A_GRIP, "/input/grip/pose" }, { A_AIM, "/input/aim/pose" },
+		{ A_TRIGGER, "/input/trigger/value" }, { A_SQUEEZE, "/input/squeeze/click" },
+		{ A_AXIS, "/input/thumbstick" }, { A_AXIS_CLICK, "/input/thumbstick/click" },
+		{ A_AXIS2, "/input/trackpad" }, { A_AXIS2_CLICK, "/input/trackpad/click" },
+		{ A_MENU, "/input/menu/click" }, { A_HAPTIC, "/output/haptic" },
+	};
+
+#define XRS_ARR( a ) a, sizeof( a ) / sizeof( a[ 0 ] )
+	const XrsProfile kProfiles[] = {
+		{ "/interaction_profiles/khr/simple_controller",     XRS_ARR( kSimple ),     XRS_ARR( kSimple )     },
+		{ "/interaction_profiles/oculus/touch_controller",   XRS_ARR( kTouchLeft ),  XRS_ARR( kTouchRight ) },
+		{ "/interaction_profiles/valve/index_controller",    XRS_ARR( kIndex ),      XRS_ARR( kIndex )      },
+		{ "/interaction_profiles/htc/vive_controller",       XRS_ARR( kVive ),       XRS_ARR( kVive )       },
+		{ "/interaction_profiles/microsoft/motion_controller", XRS_ARR( kWmr ),      XRS_ARR( kWmr )        },
+	};
+#undef XRS_ARR
+	const size_t kProfileCount = sizeof( kProfiles ) / sizeof( kProfiles[ 0 ] );
+}
+
+std::string XRSession::setupInput() {
+	XrResult res;
+
+	XrActionSetCreateInfo asci = {};
+	asci.type = XR_TYPE_ACTION_SET_CREATE_INFO;
+	snprintf( asci.actionSetName, XR_MAX_ACTION_SET_NAME_SIZE, "gameplay" );
+	snprintf( asci.localizedActionSetName, XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE, "Gameplay" );
+	asci.priority = 0;
+	res = xrCreateActionSet( instance_, &asci, &actionSet_ );
+	if( XR_FAILED( res ) ) return "xrCreateActionSet: " + xrs_result( instance_, res );
+
+	xrStringToPath( instance_, "/user/hand/left",  &handPath_[ 0 ] );
+	xrStringToPath( instance_, "/user/hand/right", &handPath_[ 1 ] );
+
+	auto mkAction = [ & ]( XrAction* out, XrActionType type,
+	                       const char* name, const char* label ) -> std::string {
+		XrActionCreateInfo aci = {};
+		aci.type = XR_TYPE_ACTION_CREATE_INFO;
+		aci.actionType = type;
+		snprintf( aci.actionName, XR_MAX_ACTION_NAME_SIZE, "%s", name );
+		snprintf( aci.localizedActionName, XR_MAX_LOCALIZED_ACTION_NAME_SIZE, "%s", label );
+		// Every action is declared for both hands; the runtime resolves which
+		// physical device each subaction path refers to.
+		aci.countSubactionPaths = kHands;
+		aci.subactionPaths = handPath_;
+		XrResult r = xrCreateAction( actionSet_, &aci, out );
+		if( XR_FAILED( r ) )
+			return std::string( "xrCreateAction(" ) + name + "): " + xrs_result( instance_, r );
+		return "";
+	};
+
+	std::string err;
+	if( !( err = mkAction( &aGrip_,       XR_ACTION_TYPE_POSE_INPUT,     "grip_pose",   "Grip pose" ) ).empty() ) return err;
+	if( !( err = mkAction( &aAim_,        XR_ACTION_TYPE_POSE_INPUT,     "aim_pose",    "Aim pose" ) ).empty() ) return err;
+	if( !( err = mkAction( &aTrigger_,    XR_ACTION_TYPE_FLOAT_INPUT,    "trigger",     "Trigger" ) ).empty() ) return err;
+	if( !( err = mkAction( &aSqueeze_,    XR_ACTION_TYPE_FLOAT_INPUT,    "squeeze",     "Squeeze" ) ).empty() ) return err;
+	if( !( err = mkAction( &aAxis_,       XR_ACTION_TYPE_VECTOR2F_INPUT, "axis",        "Primary axis" ) ).empty() ) return err;
+	if( !( err = mkAction( &aAxis2_,      XR_ACTION_TYPE_VECTOR2F_INPUT, "axis2",       "Secondary axis" ) ).empty() ) return err;
+	if( !( err = mkAction( &aAxisClick_,  XR_ACTION_TYPE_BOOLEAN_INPUT,  "axis_click",  "Primary axis click" ) ).empty() ) return err;
+	if( !( err = mkAction( &aAxis2Click_, XR_ACTION_TYPE_BOOLEAN_INPUT,  "axis2_click", "Secondary axis click" ) ).empty() ) return err;
+	if( !( err = mkAction( &aMenu_,       XR_ACTION_TYPE_BOOLEAN_INPUT,  "menu",        "Menu" ) ).empty() ) return err;
+	if( !( err = mkAction( &aHaptic_,     XR_ACTION_TYPE_VIBRATION_OUTPUT, "haptic",    "Haptics" ) ).empty() ) return err;
+	for( int i = 0; i < 4; i++ ) {
+		char n[ 16 ], l[ 24 ];
+		snprintf( n, sizeof( n ), "button%d", i );
+		snprintf( l, sizeof( l ), "Button %d", i );
+		if( !( err = mkAction( &aButton_[ i ], XR_ACTION_TYPE_BOOLEAN_INPUT, n, l ) ).empty() ) return err;
+	}
+
+	XrAction byId[] = { aGrip_, aAim_, aTrigger_, aSqueeze_, aAxis_, aAxisClick_,
+	                    aAxis2_, aAxis2Click_, aButton_[ 0 ], aButton_[ 1 ],
+	                    aButton_[ 2 ], aButton_[ 3 ], aMenu_, aHaptic_ };
+
+	// Suggested bindings are advisory: a runtime that doesn't know a profile
+	// rejects the whole set for that profile, which is fine and not fatal —
+	// only the profiles it recognises need to work.
+	for( size_t p = 0; p < kProfileCount; p++ ) {
+		const XrsProfile& prof = kProfiles[ p ];
+		XrPath profPath;
+		if( XR_FAILED( xrStringToPath( instance_, prof.path, &profPath ) ) ) continue;
+
+		std::vector<XrActionSuggestedBinding> binds;
+		for( int hand = 0; hand < (int)kHands; hand++ ) {
+			const XrsBinding* tbl = hand ? prof.right : prof.left;
+			size_t n              = hand ? prof.rightCount : prof.leftCount;
+			const char* side      = hand ? "/user/hand/right" : "/user/hand/left";
+			for( size_t i = 0; i < n; i++ ) {
+				std::string full = std::string( side ) + tbl[ i ].path;
+				XrPath bp;
+				if( XR_FAILED( xrStringToPath( instance_, full.c_str(), &bp ) ) ) continue;
+				XrActionSuggestedBinding sb = { byId[ tbl[ i ].action ], bp };
+				binds.push_back( sb );
+			}
+		}
+		if( binds.empty() ) continue;
+
+		XrInteractionProfileSuggestedBinding sug = {};
+		sug.type = XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING;
+		sug.interactionProfile = profPath;
+		sug.countSuggestedBindings = (uint32_t)binds.size();
+		sug.suggestedBindings = binds.data();
+		res = xrSuggestInteractionProfileBindings( instance_, &sug );
+		if( XR_FAILED( res ) )
+			lprintf( "xr: profile %s rejected: %s", prof.path,
+				xrs_result( instance_, res ).c_str() );
+	}
+
+	// Once only, and necessarily before the first xrSyncActions.
+	XrSessionActionSetsAttachInfo ai = {};
+	ai.type = XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO;
+	ai.countActionSets = 1;
+	ai.actionSets = &actionSet_;
+	res = xrAttachSessionActionSets( session_, &ai );
+	if( XR_FAILED( res ) ) return "xrAttachSessionActionSets: " + xrs_result( instance_, res );
+
+	// Pose actions become spaces; those are what xrLocateSpace tracks.
+	for( uint32_t hand = 0; hand < kHands; hand++ ) {
+		XrActionSpaceCreateInfo si = {};
+		si.type = XR_TYPE_ACTION_SPACE_CREATE_INFO;
+		si.subactionPath = handPath_[ hand ];
+		si.poseInActionSpace.orientation.w = 1.0f;
+
+		si.action = aGrip_;
+		if( XR_FAILED( res = xrCreateActionSpace( session_, &si, &gripSpace_[ hand ] ) ) )
+			return "xrCreateActionSpace(grip): " + xrs_result( instance_, res );
+		si.action = aAim_;
+		if( XR_FAILED( res = xrCreateActionSpace( session_, &si, &aimSpace_[ hand ] ) ) )
+			return "xrCreateActionSpace(aim): " + xrs_result( instance_, res );
+	}
+	return "";
+}
+
+// Which profile the runtime bound, per hand, as a 1-based index into
+// kProfiles (0 = nothing bound). JS gets the matching name list as
+// sack.xr.profiles so it can report or branch on the device if it wants to.
+void XRSession::recordProfiles() {
+	if( actionSet_ == XR_NULL_HANDLE ) return;
+	for( uint32_t h = 0; h < kHands; h++ ) {
+		uint32_t id = 0;
+		XrInteractionProfileState ips = {};
+		ips.type = XR_TYPE_INTERACTION_PROFILE_STATE;
+		if( XR_SUCCEEDED( xrGetCurrentInteractionProfile( session_, handPath_[ h ], &ips ) )
+		 && ips.interactionProfile != XR_NULL_PATH ) {
+			for( size_t p = 0; p < kProfileCount; p++ ) {
+				XrPath pp;
+				if( XR_SUCCEEDED( xrStringToPath( instance_, kProfiles[ p ].path, &pp ) )
+				 && pp == ips.interactionProfile ) { id = (uint32_t)p + 1; break; }
+			}
+			if( !id ) id = 0xFFFFFFFF;   // bound, but not one we suggested
+		}
+		inputBits()[ h * kStride + IN_PROFILE ] = id;
+	}
+}
+
+// Refresh the shared buffer for this frame. Order is forced by the spec:
+// xrSyncActions only reports state while the session is focused, and controller
+// poses must be located against predictedDisplayTime — the same instant the
+// eyes were located — or hands lag the head.
+void XRSession::syncInput() {
+	if( actionSet_ == XR_NULL_HANDLE ) return;
+
+	// Not focused: report everything inactive rather than stale. A held
+	// trigger that never releases because the app lost focus is worse than
+	// a dropped frame of input.
+	if( state_ != XR_SESSION_STATE_FOCUSED ) {
+		for( uint32_t h = 0; h < kHands; h++ )
+			inputBits()[ h * kStride + IN_FLAGS ] &= ~HF_ACTIVE;
+		return;
+	}
+
+	XrActiveActionSet active = { actionSet_, XR_NULL_PATH };
+	XrActionsSyncInfo si = {};
+	si.type = XR_TYPE_ACTIONS_SYNC_INFO;
+	si.countActiveActionSets = 1;
+	si.activeActionSets = &active;
+	if( XR_FAILED( xrSyncActions( session_, &si ) ) ) return;
+
+	for( uint32_t h = 0; h < kHands; h++ ) {
+		float*    f = inputData_ + h * kStride;
+		uint32_t* u = inputBits() + h * kStride;
+		uint32_t  flags = 0;
+
+		XrActionStateGetInfo gi = {};
+		gi.type = XR_TYPE_ACTION_STATE_GET_INFO;
+		gi.subactionPath = handPath_[ h ];
+
+		// Poses. isActive on the pose action tells us the controller exists at
+		// all; the locate flags below tell us whether it is currently tracked.
+		gi.action = aGrip_;
+		XrActionStatePose pose = {}; pose.type = XR_TYPE_ACTION_STATE_POSE;
+		xrGetActionStatePose( session_, &gi, &pose );
+
+		auto locate = [ & ]( XrSpace space, int posSlot, int oriSlot ) -> bool {
+			XrSpaceLocation loc = {};
+			loc.type = XR_TYPE_SPACE_LOCATION;
+			if( XR_FAILED( xrLocateSpace( space, space_,
+			      frameState_.predictedDisplayTime, &loc ) ) ) return false;
+			const bool ok =
+				( loc.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT ) &&
+				( loc.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT );
+			if( !ok ) return false;
+			f[ posSlot + 0 ] = loc.pose.position.x;
+			f[ posSlot + 1 ] = loc.pose.position.y;
+			f[ posSlot + 2 ] = loc.pose.position.z;
+			f[ oriSlot + 0 ] = loc.pose.orientation.x;
+			f[ oriSlot + 1 ] = loc.pose.orientation.y;
+			f[ oriSlot + 2 ] = loc.pose.orientation.z;
+			f[ oriSlot + 3 ] = loc.pose.orientation.w;
+			return true;
+		};
+
+		bool tracked = false;
+		if( pose.isActive ) {
+			tracked  = locate( gripSpace_[ h ], IN_GRIP_POS, IN_GRIP_ORI );
+			locate( aimSpace_[ h ], IN_AIM_POS, IN_AIM_ORI );
+		}
+		if( tracked ) flags |= HF_ACTIVE;
+
+		auto getFloat = [ & ]( XrAction a, int slot ) {
+			if( a == XR_NULL_HANDLE ) return;
+			gi.action = a;
+			XrActionStateFloat s = {}; s.type = XR_TYPE_ACTION_STATE_FLOAT;
+			if( XR_SUCCEEDED( xrGetActionStateFloat( session_, &gi, &s ) ) && s.isActive )
+				f[ slot ] = s.currentState;
+			else
+				f[ slot ] = 0.f;
+		};
+		auto getBool = [ & ]( XrAction a, uint32_t bit ) {
+			if( a == XR_NULL_HANDLE ) return;
+			gi.action = a;
+			XrActionStateBoolean s = {}; s.type = XR_TYPE_ACTION_STATE_BOOLEAN;
+			if( XR_SUCCEEDED( xrGetActionStateBoolean( session_, &gi, &s ) )
+			 && s.isActive && s.currentState )
+				flags |= bit;
+		};
+		auto getAxis = [ & ]( XrAction a, int slotX ) {
+			if( a == XR_NULL_HANDLE ) return;
+			gi.action = a;
+			XrActionStateVector2f s = {}; s.type = XR_TYPE_ACTION_STATE_VECTOR2F;
+			if( XR_SUCCEEDED( xrGetActionStateVector2f( session_, &gi, &s ) ) && s.isActive ) {
+				f[ slotX + 0 ] = s.currentState.x;
+				f[ slotX + 1 ] = s.currentState.y;
+			} else {
+				f[ slotX + 0 ] = f[ slotX + 1 ] = 0.f;
+			}
+		};
+
+		getFloat( aTrigger_, IN_TRIGGER );
+		getFloat( aSqueeze_, IN_SQUEEZE );
+		getAxis ( aAxis_,    IN_AXIS_X );
+		getAxis ( aAxis2_,   IN_AXIS2_X );
+		getBool ( aAxisClick_,  HF_AXIS_CLICK );
+		getBool ( aAxis2Click_, HF_AXIS2_CLICK );
+		getBool ( aMenu_,       HF_MENU );
+		getBool ( aButton_[ 0 ], HF_BUTTON0 );
+		getBool ( aButton_[ 1 ], HF_BUTTON1 );
+		getBool ( aButton_[ 2 ], HF_BUTTON2 );
+		getBool ( aButton_[ 3 ], HF_BUTTON3 );
+
+		u[ IN_FLAGS ] = flags;
+	}
+}
+
+// ---- pulse: haptics --------------------------------------------------
+//
+// Worth having from the start rather than later: grab and release read as
+// mushy without a click, and it is one call.
+void XRSession::pulse( const FunctionCallbackInfo<Value>& args ) {
+	WGPU_THIS( XRSession );
+	if( self->aHaptic_ == XR_NULL_HANDLE || !self->running_ ) return;
+
+	uint32_t hand = args.Length() > 0 ? args[ 0 ]->Uint32Value( context ).FromMaybe( 0 ) : 0;
+	if( hand >= kHands ) return;
+	double amp = args.Length() > 1 ? args[ 1 ]->NumberValue( context ).FromMaybe( 0.5 ) : 0.5;
+	double ms  = args.Length() > 2 ? args[ 2 ]->NumberValue( context ).FromMaybe( 40.0 ) : 40.0;
+	if( amp < 0 ) amp = 0; if( amp > 1 ) amp = 1;
+
+	XrHapticVibration hv = {};
+	hv.type = XR_TYPE_HAPTIC_VIBRATION;
+	hv.amplitude = (float)amp;
+	hv.duration  = (XrDuration)( ms * 1000000.0 );   // nanoseconds
+	hv.frequency = XR_FREQUENCY_UNSPECIFIED;
+
+	XrHapticActionInfo hi = {};
+	hi.type = XR_TYPE_HAPTIC_ACTION_INFO;
+	hi.action = self->aHaptic_;
+	hi.subactionPath = self->handPath_[ hand ];
+	xrApplyHapticFeedback( self->session_, &hi,
+		reinterpret_cast<const XrHapticBaseHeader*>( &hv ) );
+}
+
 // ---- endFrame --------------------------------------------------------
 void XRSession::endFrame( const FunctionCallbackInfo<Value>& args ) {
 	WGPU_THIS( XRSession );
@@ -555,6 +986,7 @@ void XRSession::Init( Isolate* isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( tpl, "release",   XRSession::release );
 	NODE_SET_PROTOTYPE_METHOD( tpl, "endFrame",  XRSession::endFrame );
 	NODE_SET_PROTOTYPE_METHOD( tpl, "destroy",   XRSession::destroy );
+	NODE_SET_PROTOTYPE_METHOD( tpl, "pulse",     XRSession::pulse );
 
 	XRSession::constructor.Reset( isolate,
 		tpl->GetFunction( context ).ToLocalChecked() );
@@ -871,6 +1303,43 @@ void XR_beginSession( const FunctionCallbackInfo<Value>& args ) {
 	}
 	SET_READONLY( obj, "eyes", eyes );
 	SET_READONLY( obj, "dxgiFormat", Number::New( isolate, (double)s->dxgiFormat_ ) );
+
+	// ---- input -------------------------------------------------------
+	// Input failing is not a reason to lose the session — a headset with no
+	// controllers paired should still render — so report and carry on.
+	{
+		std::string ierr = s->setupInput();
+		if( !ierr.empty() )
+			lprintf( "xr: input unavailable: %s", ierr.c_str() );
+		else
+			// Controllers already awake won't necessarily generate an event, so
+			// take a reading now as well as on every change.
+			s->recordProfiles();
+	}
+
+	// Names matching the 1-based ids written into the profile slot.
+	{
+		Local<Array> profs = Array::New( isolate, (int)kProfileCount + 1 );
+		profs->Set( context, 0, localStringExternal( isolate, "none" ) ).FromMaybe( false );
+		for( size_t p = 0; p < kProfileCount; p++ )
+			profs->Set( context, (uint32_t)p + 1,
+				localStringExternal( isolate, kProfiles[ p ].path ) ).FromMaybe( false );
+		SET_READONLY( obj, "profiles", profs );
+	}
+
+	// Two views over one buffer this session owns. dontReleaseBufferBackingStore
+	// because the memory is a member of the C++ object, not V8's to free — the
+	// session outlives any GC of these views, and teardown outlives both.
+	{
+		const size_t bytes = sizeof( s->inputData_ );
+		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(
+			(void*)s->inputData_, bytes, dontReleaseBufferBackingStore, NULL );
+		Local<ArrayBuffer> ab = ArrayBuffer::New( isolate, bs );
+		SET_READONLY( obj, "input",   Float32Array::New( ab, 0, bytes / sizeof( float ) ) );
+		SET_READONLY( obj, "buttons", Uint32Array::New( ab, 0, bytes / sizeof( uint32_t ) ) );
+		SET_READONLY( obj, "handStride", Integer::NewFromUnsigned( isolate, XRSession::kStride ) );
+		SET_READONLY( obj, "hands",      Integer::NewFromUnsigned( isolate, XRSession::kHands ) );
+	}
 
 	args.GetReturnValue().Set( obj );
 }
