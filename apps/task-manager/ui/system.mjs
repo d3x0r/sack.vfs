@@ -6,6 +6,10 @@ export class System {
 	port = 0; // system:port should be able to be connected to...
 	page = null; // used for the GUI to associate the datagrid
 	upstream = null; // tracks which system owns this system by upstream relation 
+	// set from the peer's extern.tasks: it refuses task edits from whoever it
+	// reports to, so the controls for it are hidden rather than offered and
+	// silently dropped.  Public so it rides along when systems are serialized.
+	disallowUpstreamTaskManagment = false;
 	#connection = null; // websocket connection to this system(saves IP address)
 	#taskMap = {};
 	#systems = []; // systems beyond this system that were upstreamed to this
@@ -35,7 +39,13 @@ export class System {
 	addTask( id, task ) {
 		this.tasks.push( task );
 		this.#taskMap[id] = task;
-
+		// same as deleteTask: the grid has to be rebuilt to gain a row.  Without
+		// this the next refresh() walks a data row that has no rendered row and
+		// dies on `cells`.
+		if( this.dataGrid ) {
+			this.dataGrid.reinit();
+			this.dataGrid.fill();
+		}
 	}
 	updateTask( id, task ) {
 		const checkTask = this.#taskMap[id];
@@ -44,15 +54,22 @@ export class System {
 		if( this.dataGrid ) this.dataGrid.refresh();
 	}
 	deleteTask( id ) {
+		// #taskMap only holds tasks added after construction, so match on the
+		// id as well - otherwise nothing from the initial list could be found.
 		const task = this.#taskMap[id];
+		delete this.#taskMap[id];
 		for( let t = 0; t < this.tasks.length; t++ ){
 			const checkTask = this.tasks[t];
-			if( checkTask === task ) {
+			if( checkTask === task || checkTask.id === id ) {
 				this.tasks.splice( t, 1 ); 
-				return;
+				break;
 			}
 		}
-		if( this.dataGrid ) this.dataGrid.refresh();
-
+		// refresh() only re-renders the cells the grid already has; dropping a
+		// row needs the rebuild.  (This used to sit after an early return.)
+		if( this.dataGrid ) {
+			this.dataGrid.reinit();
+			this.dataGrid.fill();
+		}
 	}
 }

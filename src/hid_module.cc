@@ -751,7 +751,7 @@ void mouse_asyncmsg__( v8::Isolate *isolate, Local<Context> context, MouseObject
 				break;
 				//case WM_
 			default:
-				lprintf( "Unhandled op:%d", msg->msgid );
+				lprintf( "Unhandled op:%llu", msg->msgid );
 				break;
 				/*
 				case WM_LBUTTONDBLCLK:
@@ -1019,7 +1019,7 @@ static void generateEvents( Isolate *isolate, Local<Array> events ) {
 	if( 0 ) {
 		for( int i = 0; i < pdlInputs->Cnt; i++ ) {
 			INPUT* input = (INPUT*)GetDataItem( &pdlInputs, i );
-			lprintf( "Generating event: x:%d y:%d f:%d ex:%d md:%d t:%d", input->mi.dx, input->mi.dy, input->mi.dwFlags, input->mi.dwExtraInfo, input->mi.mouseData, input->mi.time );
+			lprintf( "Generating event: x:%ld y:%ld f:%lu ex:%zu md:%lu t:%lu", input->mi.dx, input->mi.dy, input->mi.dwFlags, input->mi.dwExtraInfo, input->mi.mouseData, input->mi.time );
 		}
 	}
 	

@@ -35,7 +35,7 @@ static void openMemory( const v8::FunctionCallbackInfo<Value>& args ) {
   POINTER p = OpenSpace( hasWhat ? *what : NULL, hasWhere ? *where : NULL, &size );
   if( p ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-    std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( p, size, releaseBufferBackingStore, NULL );
+    std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( p, size );
     Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
     Local<Object> arrayBuffer = ArrayBuffer::New( isolate, p, size );
@@ -62,7 +62,7 @@ static void createMemory( const v8::FunctionCallbackInfo<Value>& args ) {
   POINTER p = size ? OpenSpace( hasWhat ? *what : NULL, hasWhere ? *where : NULL, &size ) : NULL;
   if( p ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-    std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( p, size, releaseBufferBackingStore, NULL );
+    std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( p, size );
     Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
     Local<Object> arrayBuffer = ArrayBuffer::New( isolate, p, size );

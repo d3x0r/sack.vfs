@@ -16,7 +16,6 @@ import {sack} from "sack.vfs"
 const disk = sack.Volume();
 export const pwdBare = process.cwd();
 let firstLoad = true;
-let config = await reloadConfig();
 
 import {openServer} from "../../http-ws/server.mjs"
 import {setupRest} from "./main.rest.mjs"
@@ -29,29 +28,55 @@ taskConfig.local = local;
 local.addTask = addTask;
 
 const JSOX = sack.JSOX;
+import {config} from "./config.mjs"
 
-async function reloadConfig() {
-	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
-	const config_tasks = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_TASK_CONFIG||"config.tasks.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
-	const config = config_run
-			|| config_tasks
-	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_CONFIG||"config.jsox") ).catch( err=>({default:null}) )).default 
-	      || { extraModules:[]
-	         , hostname:""
-	         , useUpstream: false
-	         , upstreamServer: ""
-	         , port:0
-	         , tasks:[] 
-	         };
-
-	if( !firstLoad )
-		config.tasks.forEach( loadTask );
-	firstLoad = false;
-	return config;
+// Plugins.  An ordered list of { name, function, options }, run in sequence:
+// with a `function` the next one waits for it, without one the module is just
+// imported for its side effects and the list moves straight on.
+if( config.extraModules ) {	
+	await new Promise( (res,rej)=>{
+		loadModules( 0 );
+	
+		function loadModules( n ) {
+			if( n >= config.extraModules.length ) {
+				return res();
+			}
+			const plugin = config.extraModules[n];
+			const next = ()=>loadModules( n+1 );
+			return import( "file://"+pwdBare+"/"+plugin.name ).then( (module)=>{
+				// no function named: importing it was the whole point
+				if( !plugin.function ) return next();
+				const entry = module[plugin.function];
+				if( "function" !== typeof entry ) {
+					console.log( "Plugin has no such export:", plugin.name, plugin.function );
+					return next();
+				}
+				// a plugin that returns nothing is not an error - only wait when
+				// there is something to wait on.  Calling .then() on whatever it
+				// returned used to throw straight into the "Error loading" catch.
+				return Promise.resolve( entry( plugin.options ) ).then( next, (err)=>{
+					console.log( "Error running:", plugin.name, plugin.function, err );
+					return next();
+				} );
+			} ).catch( (err)=>{
+					console.log( "Error loading:", plugin.name, err );
+					return next();
+				} );
+		}
+	} );
 }
+
+
+config.tasks.forEach( loadTask );
+
+
 
 const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
 	, npmPath:process.env.NPM_PATH || (parentRoot+"/..")
+	// extra packages this manager's pages may load from /node_modules/ (the
+	// server always allows @d3x0r, jsox and sack.vfs/apps).  e.g. the login
+	// form's on-screen keyboard needs allowModules:["simple-keyboard"].
+	, allowModules: config.allowModules
 	, port:Number(process.env.PORT) || config.port || 8080};
 // start server...
 console.log( "Serve on port:", serverOpts.port );
@@ -96,7 +121,8 @@ function handleStart( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
-			//task.restart = true;
+			// an explicit start clears a hold, so its dependants may run again
+			task.held = false;
 			task.start();
 		}
 	} else {
@@ -115,6 +141,7 @@ function handleRestart( ws, msg, msg_ ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
 			console.log( "Set task restart:", task );
+			task.held = false;
 			task.restart = true;
 			console.log( "Task is running alrady?", task.running );
 		}
@@ -133,6 +160,10 @@ function handleStop( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
+			// asked for by hand: it means stop, and stay stopped.  Without this a
+			// dependant torn down by the cascade restarts from its own config and
+			// drags this one back up with it.
+			task.held = true;
 			task.restart = false;
 			task.stop();
 		}
@@ -216,7 +247,10 @@ function handleTaskInfo( ws, msg, msg_ ) {
 		if( task ){
 			ws.send( JSOX.stringify( {op:"taskInfo", id:task.id, task:task.task, title:task.title }));
 		}else
-			ws.send( JSOX.stringify( {op:"taskInfo", id:task.id, task:null }));
+			// `task` is what was just found to be missing - reading its .id threw
+			// out of the message handler, so the request never got any reply and
+			// the editor sat waiting on the promise forever.
+			ws.send( JSOX.stringify( {op:"taskInfo", id:msg.id, task:null }));
 	} else {
 		const remote = local.systems.find( system=>system.id === msg.system );
 		if( remote ) {
@@ -238,6 +272,8 @@ function connectToCore() {
 		      , system:config.hostname || os.hostname()
 		      , id : local.id
 		      , port:serverOpts.port
+		      // tell upstream not to offer controls it will not be allowed to use
+		      , disallowUpstreamTaskManagment: !!config.disallowUpstreamTaskManagment
 		      }
 		))
 		local.upstreamWS = ws;
@@ -259,14 +295,22 @@ export function beginScheduler() {
 	//console.log( "Loading tasks?", config.tasks, local.tasks );
 	config.tasks.forEach( loadTask );
 
-	if( config.extraModules ) {
-		loadModules( 0 );
-	}
-	else startTasks();
+	startTasks();
 
 }
 
 if( isTopLevel(import.meta.url) ) beginScheduler();
+
+// The form always sends the readiness fields, blank included, because
+// Task.update() only copies keys that are present - a missing one would leave
+// the old value set.  Blank means "not set", so drop them here instead of
+// writing readyPort:"" into every task that was ever saved.
+function tidyTask( task ) {
+	if( !task ) return task;
+	for( const key of [ "readyPort", "readyDelay", "readyTimeout", "readyHost" ] )
+		if( key in task && !task[key] ) delete task[key];
+	return task;
+}
 
 function loadTask( task ) {
 	const oldTask = local.tasks.find( oldTask=>oldTask.name === task.name );
@@ -284,35 +328,28 @@ function loadTask( task ) {
 	}
 }
 
-function loadModules( n ) {
-	if( n >= config.extraModules.length )
-		return startTasks();
-	import( config.extraModules[n].name ).then( (module)=>{
-		module[config.extraModules[n].function](config.extraModules[n].options).then( ()=>{
-			loadModules( n+1 );
-		} ).catch( (err)=>{
-			console.log( "Error loading:", config.extraModules[n].name, config.extraModules[n].function );
-			loadModules( n+1 );
-		} )
-	} ).catch( (err)=>{
-			console.log( "Error loading:", config.extraModules[n].name, config.extraModules[n].function );
-			loadModules( n+1 );
-		} );
-}
-
 function onStopAll( n ) {
 	if( !config.onStopAll || n >= config.onStopAll.length )
 		return;
-	return import( config.onStopAll[n].name ).then( (module)=>{
-		module[config.onStopAll[n].function](config.onStopAll[n].options).then( ()=>{
-			return loadModules( n+1 );
-		} ).catch( (err)=>{
-			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
-			return loadModules( n+1 );
-		} )
+	// this used to chain to loadModules(), which is local to the extraModules
+	// block above and not in scope here - so the second hook onward never ran,
+	// and the ReferenceError went nowhere.
+	const hook = config.onStopAll[n];
+	const next = ()=>onStopAll( n+1 );
+	return import( hook.name ).then( (module)=>{
+		if( !hook.function ) return next();
+		const entry = module[hook.function];
+		if( "function" !== typeof entry ) {
+			console.log( "Stop hook has no such export:", hook.name, hook.function );
+			return next();
+		}
+		return Promise.resolve( entry( hook.options ) ).then( next, (err)=>{
+			console.log( "Error running stop hook:", hook.name, hook.function, err );
+			return next();
+		} );
 	} ).catch( (err)=>{
-			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
-			return loadModules( n+1 );
+			console.log( "Error loading stop hook:", hook.name, err );
+			return next();
 		} );
 }
 
@@ -418,25 +455,26 @@ function connect( ws ) {
 				//ws.send( JSOX.stringify( {op:"remote disappeared?"}))
 			}
 		}break;
+		// These three relay a remote system's own change on to this system's
+		// clients.  They all used to drop `id` on the way out, which is what
+		// every one of those clients keys the task off; and send() already
+		// relays upstream, so the extra upstreamWS.send was a duplicate.
 		case "addTask": {
 			// received from creating a remote task
 			connection.system.addTask( msg.id, msg.task );
-			if( local.upstreamWS ) local.upstreamWS.send( JSOX.stringify( {op:msg.op, system:connection.system.id, task:msg.task } ) );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			send( {op:msg.op, system:connection.system.id, id:msg.id, task:msg.task});
 		}
 		break;
 		case "updateTask": {
 			// received from updating a remote task
-			connection.system.updateTask( msg.task );
-			if( local.upstreamWS ) local.upstreamWS.send( JSOX.stringify( {op:msg.op, system:connection.system.id, task:msg.task } ) );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			connection.system.updateTask( msg.id, msg.task );
+			send( {op:msg.op, system:connection.system.id, id:msg.id, task:msg.task});
 		}
 		break;
 		case "deleteTask": {
 			// received from deleting a remote task
-			connection.system.deleteTask( msg.task );
-			if( local.upstreamWS ) local.upstreamWS.send( msg_ );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			connection.system.deleteTask( msg.id );
+			send( {op:msg.op, system:connection.system.id, id:msg.id});
 		}
 		break;
 		case "status": {
@@ -481,6 +519,7 @@ function connect( ws ) {
 					//console.log( "Found existing system to replace tasks." );
 					system.connection = connection;
 					system.tasks = msg.tasks;
+					system.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
 					// the create path below sets this; reconnects need it too or
 					// later addTask/updateTask deref a null connection.system.
 					if( !connection.system ) connection.system = system;
@@ -489,6 +528,7 @@ function connect( ws ) {
 					//console.log( "Make a new system", msg.tasks );
 					// this is the connection that the system can be reached on...
 					system = new System( connection, msg.id, msg.port, msg.system, msg.tasks);
+					system.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
 					// if this already heard tasks, this is probably a chlid system of the remote
 					// which will go under that system's systems.
 					if( connection.system ){
@@ -540,16 +580,16 @@ function connect( ws ) {
 }
 
 
+	// send() already relays to local.upstreamWS, and it stringifies first; the
+	// extra send of the raw object each of these used to do reached upstream as
+	// "Unhandled message format", so an upstream master never saw these at all.
 	function addTask( id, task ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"addTask", system:local.id, id, task } );
 		send( {op:"addTask", system:local.id, id, task } );
 	}
 	function updateTask( id, task ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"updateTask", system:local.id, id, task } );
 		send( {op:"updateTask", system:local.id, id, task } );
 	}
 	function deleteTask( id ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"deleteTask", system:local.id, id } );
 		send( {op:"deleteTask", system:local.id, id } );
 	}
 
@@ -557,8 +597,27 @@ function handleMessage( ws, msg_ ) {
 	try {
 		const msg = JSOX.parse( msg_ );
 		const connection = local.connections.find( (c)=>c.ws===ws );
+		// `disallowUpstreamTaskManagment` in the config makes this system refuse
+		// to have its task list edited by whoever it reports to.  Upstream is
+		// told about the setting when we connect, so its UI hides the controls;
+		// this is the enforcement behind that, for anything that gets sent
+		// anyway.  It deliberately covers only the task edits - shutdown and
+		// stopAll/startAll are still honoured.
+		if( config.disallowUpstreamTaskManagment
+		 && local.upstreamWS && ws === local.upstreamWS
+		 && ( msg.op === "createTask" || msg.op === "updateTask" || msg.op === "deleteTask" ) ) {
+			console.log( "Refused upstream task management:", msg.op, msg.id || (msg.task && msg.task.name) );
+			return;
+		}
 		switch( msg.op ) {
 		case "shutdown": {
+			if( msg.system && msg.system !== local.id ) {
+				// aimed at one of the systems reporting to this one
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to shut down a system I can't reach:", msg.system );
+				break;
+			}
 			console.log( "received shutdown request" );
 			closeAllTasks(msg.close?ws:null).then( ()=>{
 				console.log( "Close resulted, and we're exiting now." );
@@ -576,6 +635,9 @@ function handleMessage( ws, msg_ ) {
 		}
 		case "startAll": {
 			console.log( "Start all tasks" );
+			// explicit start-everything lifts the holds a stopAll left behind,
+			// the same way the per-task Start button does
+			local.tasks.forEach( task=>{ task.held = false; } );
 			startTasks();
 			if( msg.close )
 				ws.close( 1000, "Starting Tasks" );
@@ -605,26 +667,22 @@ function handleMessage( ws, msg_ ) {
 			handleInput( ws, msg, msg_ );
 			break;
 		case "createTask": {
-			if( local.system === msg.system || !msg.system ) {
-				const task = loadTask( msg.task );
+			// same as the delete case: the local system's identity is local.id,
+			// so a create addressed to this system by name fell through to the
+			// remote lookup and was dropped.
+			if( !msg.system || msg.system === local.id ) {
+				const task = loadTask( tidyTask( msg.task ) );
 				if( !msg.task.temporary )
 					saveRunConfig();
 				addTask( task.id, task ); // sends new task
 				if( !task.noAutoRun ) task.start();
-			} else if( msg.system && msg.system != local.system ) {
-				local.systems.find( system=>{
-					if( system.id === msg.system ) {
-						system.createTask( msg_ );
-						return true;
-					} 
-					return false;
-				});
-			}else {
-				const task = loadTask( msg.task );
-				if( !msg.task.temporary )
-					saveRunConfig();
-				addTask( task.id, task );
-				if( !task.noAutoRun ) task.start();
+			} else {
+				// forward to the system that owns it, the same way
+				// handleStart/handleStop do.  (System.createTask() sends through
+				// the Connection itself, which has no send().)
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to create a task on a system I can't reach:", msg );
 			}
 			}
 			break;
@@ -635,6 +693,7 @@ function handleMessage( ws, msg_ ) {
 				{
 					const taskInfo = task.task;
 					task.update( msg.task );
+					tidyTask( taskInfo );
 					for( let t = 0; t < config.tasks; t++ ) {
 						if( config.task[t] === taskInfo ) {
 							const keys = Object.keys( msg.task );
@@ -649,42 +708,72 @@ function handleMessage( ws, msg_ ) {
 					updateTask( msg.id, task.task );
 				}
 			}else {
-				if( connection.system )
-					connection.system.updateTask( msg.id, msg.task );
-				else
-					console.log( "Told to update a task I don't know, and can't reach?", msg );
+				// `connection` is the browser asking for the change, and its
+				// .system is null - the update has to go to the system that
+				// owns the task.
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to update a task I don't know, and can't reach?", msg );
 			}
 		}
 			break;
 		case "deleteTask": {
-			if( !msg.system || msg.system ===local.system ) {
+			// `local.system` is not a field - the local system is `local.id`,
+			// so a delete that named the local system never matched here.
+			if( !msg.system || msg.system === local.id ) {
 				const task = local.taskMap[msg.id];
 				if( task ) {
 					const taskInfo = task.task;
-					for( let t = 0; t < config.tasks.length; t++ ) {
-						if( config.tasks[t] === taskInfo ) {
-							config.tasks.splice( t, 1 );
-							for( let t2 = 0; t2 < local.tasks.length; t2++ ) {
-								if( local.tasks[t2] === task ) {
-									local.tasks.splice( t2, 1 );
-									break;
-								}
-							}
-							delete local.taskMap[msg.id];
-							if( task.running )
-								task.stop();
-							if( !taskInfo.temporary )
-								saveRunConfig();
-							break;
-						}
-					}
-					send( msg_ );
+					// all of this used to be conditional on finding the task in
+					// config.tasks, so a task that wasn't in the saved config
+					// stayed in local.tasks and came back on the next task list.
+					const cfgIdx = config.tasks.indexOf( taskInfo );
+					if( cfgIdx >= 0 ) config.tasks.splice( cfgIdx, 1 );
+					const taskIdx = local.tasks.indexOf( task );
+					if( taskIdx >= 0 ) local.tasks.splice( taskIdx, 1 );
+					delete local.taskMap[msg.id];
+					if( task.running )
+						task.stop();
+					if( !taskInfo.temporary )
+						saveRunConfig();
+					deleteTask( msg.id );
 				}
 			} else {
-				// send to remote system...
+				// forward to the system that owns it, the same way
+				// handleStart/handleStop do.
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 			}
 			}
 			break;
+		case "getPlugins": {
+			if( msg.system && msg.system !== local.id ) {
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to list plugins on a system I can't reach:", msg.system );
+				break;
+			}
+			ws.send( JSOX.stringify( { op:"plugins", system:local.id
+			                         , plugins: config.extraModules || [] } ) );
+			break;
+		}
+		case "setPlugins": {
+			if( msg.system && msg.system !== local.id ) {
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to set plugins on a system I can't reach:", msg.system );
+				break;
+			}
+			// only entries with a module name are worth keeping; `function` is
+			// optional - such a plugin is imported and not waited on.
+			config.extraModules = ( msg.plugins || [] ).filter( plugin=>plugin && plugin.name );
+			saveRunConfig();
+			console.log( "Plugin list updated;", config.extraModules.length
+			           , "plugin(s) - they load on the next start of this service manager." );
+			send( { op:"plugins", system:local.id, plugins: config.extraModules } );
+			break;
+		}
 		case "getDisplays": {
 				const displays = sack.Task.getDisplays();
 				for( let device of displays.device ) {
@@ -754,7 +843,21 @@ if( "enableExitSignal" in sack.system ) {
 	} );
 }
 
-//process.on( "SIGINT", ()=>{ process.stdout.write( "SIGINT\n" ); closeAllTasks().then( ()=>{ console.log( "sigint terminate finished" ); } ) } );
-
-//process.on( "uncaughtException", (err)=>{ process.stdout.write( "uncaught Exception" + err ); } );
-
+function enableDefaultLogin() {
+	let attempts =0;
+	function attemptEnableDefaultLoginService() {
+		return import( "@d3x0r/user-database-remote/enableLogin" ).then( udbr=>{
+		// serves additional login REST api... 
+			udbr.enableLogin( server, server.app, (user)=>{
+				console.log( "Need to at least get the user, right?", user );
+			} )  // extra argument is onExpect callback	
+		} ).catch( (err)=>{
+			if( ++attempts < 2 )
+				setTimeout( attemptEnableDefaultLoginService, 2000 );
+			else
+				console.log( "User login not enabled on the server", err );
+			// login = true?
+		} );
+	}
+}
+enableDefaultLogin();

@@ -50,6 +50,7 @@ export class Protocol extends Events {
 		ThisProtocol.ws = new WebSocket( this_.server, protocol );
 		ThisProtocol.ws.onmessage = (evt)=>Protocol.onmessage.call( this_, evt) ;
 		ThisProtocol.ws.onclose = (evt)=>Protocol.onclose.call( this_, evt) ;
+		ThisProtocol.ws.onerror = (evt)=>Protocol.onerror.call( this_, evt) ;
 		ThisProtocol.ws.onopen = (evt)=>Protocol.onopen.call( this_, evt) ;
 		return ThisProtocol.ws;
 	}
@@ -78,6 +79,15 @@ export class Protocol extends Events {
 		Protocol.ws = null;
 		if( evt.code === 1000 ) this.connect();
 		else setTimeout( this.connect.bind(this), 5000 );
+	}
+
+	static onerror( evt ){
+		const Protocol = Object.getPrototypeOf( this ).constructor;
+		Protocol.debug && console.log( "error?", this, evt );
+		//const event = this.on( "close", [evt.code, evt.reason] );
+		//Protocol.ws = null;
+		//if( evt.code === 1000 ) this.connect();
+		//else setTimeout( this.connect.bind(this), 5000 );
 	}
 
 	static onmessage( evt ) {

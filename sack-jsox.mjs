@@ -135,7 +135,7 @@ function initPrototypes()
 	pushToProto( Uint8Array.prototype, { external:true, name:"u8"
 		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
-	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"uc8"
+	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"cu8"
 		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int8Array.prototype, { external:true, name:"s8"
@@ -174,11 +174,12 @@ function initPrototypes()
 
 	pushToProto( RegExp.prototype, { external:true, name:"regex"
 	    , cb:function(o,stringifier){
-			return "'"+escape(this.source)+"'";
+			return "'/"+escape(this.source)+'/'+escape(this.flags)+"'";
 		}
 	} );
 	fromProtoTypes.set( "regex", { protoCon:RegExp, cb:function (field,val){
-		return new RegExp( this );
+		const match = /^\/((?:\\.|[^\\/])*)\/([a-z]*)$/i.exec(val);
+		return new RegExp( match[1], match[2] );
 	} } );
 
 

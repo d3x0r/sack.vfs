@@ -25,8 +25,10 @@ export class DbStorage extends ObjectStore {
 			this.#mysql = true;     
 		else if( db.provider === 5 )
 			this.#maria = true;  // really is mariadb   
-		if( db.provider === 1 )
-			this.#sqlite = true;     
+		if( db.provider === 1 ) {
+			db.autoTransact( true );
+			this.#sqlite = true;  
+		}   
 
 		{
 			if( this.#psql ) {

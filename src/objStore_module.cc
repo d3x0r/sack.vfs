@@ -1103,7 +1103,7 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 			objStore::sack_vfs_os_close( file );
 			if( !cb.IsEmpty() ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buf, len );
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
@@ -1136,7 +1136,7 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 			if( !cb.IsEmpty() ) {
 
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buf, len );
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );

@@ -5,6 +5,7 @@ import {Events} from "/events/events.mjs"
 import {System} from "./system.mjs"
 
 
+
 export const config = {
 	local : { tasks: {},
 			refresh : ()=>{},
@@ -18,9 +19,15 @@ export const config = {
 export class MySystem extends System {
 	constructor(msg) {
 		super( {address:""}, msg.id, msg.port, msg.system, msg.tasks )
+		this.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
 	}
 
 	addTask( id, task ) {
+		// keep the id->system map in step the way AddSystem does for the initial
+		// list; getTaskInfo() addresses the owning system through it, so without
+		// this a task added after load was asked for from the master instead.
+		config.local.tasks[id] = task;
+		config.local.systemMap[id] = this;
 		super.addTask( id, task );
 	}
 	updateTasks( tasks ) {
@@ -31,6 +38,7 @@ export class MySystem extends System {
 export class Protocol extends Events {
 	static displayRequests = [];
 	static taskRequests = [];
+	static pluginRequests = [];
 	ws = null;
 
 	stopTask( group, task ) {
@@ -48,8 +56,6 @@ export class Protocol extends Events {
 			this.ws.send( JSOX.stringify( {op:"start", system:system.id, id:task.id } ) );
 		else			
 			this.ws.send( JSOX.stringify( {op:"start", id:task.id } ) );
-	}
-	editTask( ) {
 	}
 	restartTask( group, task ) {
 		const system = config.local.systems.find( system=>system === group );
@@ -90,19 +96,57 @@ export class Protocol extends Events {
 		return p;
 	}
 
-	createTask( task ) {
+	createTask( group, task ) {
 		// event comes back as an addTask
-		this.ws.send( JSOX.stringify( {op:"createTask",task} ) );
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"createTask", system:system.id, task} ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"createTask", task} ) );
 	}
 
-	updateTask( id, task ) {
+	updateTask( group, id, task ) {
 		// event comes back as updateTask
-		this.ws.send( JSOX.stringify( {op:"updateTask",id, task} ) );
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"updateTask", system:system.id, id, task} ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"updateTask", id, task} ) );
 	}
 
-	deleteTask( id ) {
+	async getPlugins( group ) {
+		const system = config.local.systems.find( system=>system === group );
+		const id = system ? system.id : config.local.system;
+		const p = new Promise( (res,rej)=>{
+			Protocol.pluginRequests.push( { id, res } );
+			this.ws.send( JSOX.stringify( { op:"getPlugins", system:id } ) );
+		} );
+		return p;
+	}
+
+	setPlugins( group, plugins ) {
+		const system = config.local.systems.find( system=>system === group );
+		const id = system ? system.id : config.local.system;
+		this.ws.send( JSOX.stringify( { op:"setPlugins", system:id, plugins } ) );
+	}
+
+	// stop the service manager itself (and everything it launched)
+	shutdownLauncher( group ) {
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"shutdown", system:system.id } ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"shutdown" } ) );
+	}
+
+	deleteTask( group, task ) {
 		// delete comes back as deleteTask
-		this.ws.send( `{op:deleteTask,id:"${id}"}` );
+		if( !task ) return;
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"deleteTask", system:system.id, id:task.id } ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"deleteTask", id:task.id } ) );
 	}
 
  	connect( to ) {
@@ -165,6 +209,16 @@ export class Protocol extends Events {
 				protocol.on( "updateTask", [msg.id, msg.task] );
 				break;
 			case "deleteTask":
+				// route it the way addTask is routed - a remote task lives in
+				// that system's own list and grid, not in the master's.
+				if( msg.system && msg.system !== config.local.system ) {
+					for( let system of config.local.systems ) {
+						if( system.id === msg.system ) {
+							system.deleteTask( msg.id );
+							break;
+						}
+					}
+				}
 				protocol.on( "deleteTask", msg.id );
 				break;
 			case "extern.tasks":
@@ -188,7 +242,7 @@ export class Protocol extends Events {
 			case "backlog":
 				{
 					const log = config.local.logs[msg.id];
-					protocol.on( "insertBackLog", [log,msg.backlog]);
+					protocol.on( "insertBackLog", [log, msg.backlog] );
 				}
 				break;
 			case "log":
@@ -227,7 +281,11 @@ export class Protocol extends Events {
 						config.local.refresh();
 						//console.log( "Replacing status?  need to update statuses" );
 						return;
-					} else {
+					} else if( system ) {
+						// no system means the task is gone - stopping a task as
+						// part of deleting it reports its status after the
+						// delete was broadcast, so this arrives for a row that
+						// has already been dropped.
 						{
 							let task = null;
 							for( task of system.tasks ) {
@@ -252,6 +310,19 @@ export class Protocol extends Events {
 					request( msg.displays );
 				}
 				break;
+			case "plugins":
+				{
+					// a broadcast after someone saved has no request waiting
+					for( let r = 0; r < Protocol.pluginRequests.length; r++ ) {
+						const request = Protocol.pluginRequests[r];
+						if( request.id === msg.system ) {
+							request.res( msg.plugins );
+							Protocol.pluginRequests.splice( r, 1 );
+							break;
+						}
+					}
+				}
+				break;
 			case "taskInfo":
 				{
 					for( let r = 0; r < Protocol.taskRequests.length; r++ ) {
@@ -264,6 +335,10 @@ export class Protocol extends Events {
 					}
 				}
 				break;
+			case "login":
+				protocol.on( "login", null )
+
+				break;
 			}
 		}
 	}
@@ -271,3 +346,15 @@ export class Protocol extends Events {
 
 export const protocol = new Protocol();
 export default protocol;
+
+await import( "/node_modules/@d3x0r/user-database-remote/requestService.js" ).then( (module)=>{  // reverse call openSocket
+	module.requestService( "d3x0r.org", "launcher", (token)=>{
+		return protocol.on( "login", token )
+	})
+	return module;
+} ).catch( (err)=>{
+	console.log( "User databsae not available..." );
+	setTimeout( ()=>{
+			protocol.on( "login", "No User Server" );
+		}, 25 );
+} );

@@ -21,6 +21,8 @@ document.head.insertBefore( style, document.head.childNodes[0] || null );
 import {local} from "./local.js"
 
 import {TaskInfoEditor} from "./taskInfoForm.js"
+import {SimpleNotice} from "/node_modules/@d3x0r/popups2/forms/simple-notice.js"
+import {PluginsEditor} from "./pluginsForm.js"
 
 protocolConfig.local = local;
 protocol.on( "insertBackLog", insertBackLog );
@@ -28,17 +30,25 @@ protocol.on( "addTaskList", AddTaskList )
 protocol.on( "addSystem", AddSystem );
 protocol.on( "addTask", addTask );
 protocol.on( "addTaskLog", addTaskLog );
+protocol.on( "updateTask", updateTask );
 protocol.on( "deleteTask", deleteTask );
 protocol.on( "extern.task", addNewSystem );
 protocol.on( "deleteSystem", deleteSystem );
-protocol.on( "login", showForm );
+protocol.on( "login", (arg)=>{ local.login = true; showForm() } );
 protocol.connect();
 
-function showForm() {
+function showForm(arg) {
 	if( !local.display )
 		local.display = new Display();
 	else
 		local.display.show();
+
+	// systems are dispatched before the master task list, so replay them in
+	// that order; both queues exist because the Display is not built until the
+	// login resolves, which can land after the first `tasks` message.
+	if( local.pendingSystems.length ) {
+		local.pendingSystems.splice( 0 ).forEach( AddSystem );
+	}
 
 	if( local.pendingShowTasks.length ) {
 		local.pendingShowTasks.forEach( task => {
@@ -52,11 +62,9 @@ class Display extends Popup {
 		super("Service Manager", document.body, { suffix: "-service-manager" });
 
 
-		if( local.login )
-			popups.makeButton( this.divCaption, "Add Task", ()=>{
-				new TaskInfoEditor( null, null );
-			}, {suffix:"add-task"} );
-		
+		// "Add Task" now lives on each page (see AddTaskList) so that it can
+		// target the system whose tab you are looking at; from the caption it
+		// could only ever add to this service manager.
 		local.pageFrame = new PagedFrame( this, {suffix:"-system"} );
 		local.pageFrame.on( "activate", (page)=>{ local.activePage = page; } );
 		local.firstPage = local.pageFrame.addPage( "Master");
@@ -104,6 +112,49 @@ function showLogClick(taskList,task) {
 		protocol.showLog( taskList, task )
 }
 
+// the server echoes the stored task definition, which has none of the live
+// status fields (running/started/ended/id) - only merge what the list shows,
+// or the row loses its status until the next status message.
+function updateTask( taskId, task ) {
+	const row = local.tasks[taskId];
+	if( !row || !task ) return;
+	if( "name" in task ) row.name = task.name;
+	if( local.refresh ) local.refresh();
+	else if( local.statusDisplay ) local.statusDisplay.refresh();
+}
+
+// Okay/Cancel before a delete: it stops the task and drops it out of the
+// saved configuration, and there is no undo.
+function confirmDeleteTask( group, task ) {
+	const notice = new SimpleNotice( "Delete Task"
+		, "Delete \"" + ( task.name || "" ) + "\"?  It is stopped if running, and removed from the saved configuration."
+		, ()=>{ protocol.deleteTask( group, task ); notice.remove(); }
+		// SimpleNotice runs its cancel callback for any dismissal, Okay
+		// included, so this only tidies up - it must not undo anything.
+		, ()=>{ notice.remove(); } );
+	notice.show();
+}
+
+async function showPlugins( group ) {
+	const plugins = await protocol.getPlugins( group );
+	new PluginsEditor( group, plugins );
+}
+
+// Stopping a launcher takes down every task it owns and exits it - from here
+// there is then no way to start it again, so it asks first.
+function confirmShutdown( group ) {
+	// A System's `system` is its hostname, but local.system is this manager's
+	// own id - an opaque string, not something to show anyone.
+	const remote = local.systems.indexOf( group ) >= 0;
+	const notice = new SimpleNotice( "Stop Launcher"
+		, ( remote ? "Stop all tasks on \"" + group.system + "\" and exit its service manager?"
+		           : "Stop all tasks and exit this service manager?" )
+		  + "  It cannot be restarted from here."
+		, ()=>{ protocol.shutdownLauncher( group ); notice.remove(); }
+		, ()=>{ notice.remove(); } );
+	notice.show();
+}
+
 function deleteTask( taskId ) {
 	console.log( "Deleting task..." );
 	const task = local.tasks[taskId];
@@ -141,6 +192,36 @@ function AddTaskList(display, object, field) {
 		local.pendingShowTasks.push( { object, field } );
 		return;
 	}
+	// a system can refuse to be managed from here; then it gets no task editing
+	// controls at all, rather than ones whose changes it would drop.
+	const managed = !object.disallowUpstreamTaskManagment;
+	if( local.login ) {
+		// a reconnect refills this same page, so drop the button the previous
+		// connection left on it rather than stacking another one.  `display` is
+		// a PagedFrame page as often as an element, so hang it off the page
+		// object rather than querying the DOM for it.
+		if( display.taskListAdd ) display.taskListAdd.remove();
+		const addFrame = document.createElement( "div" );
+		addFrame.className = "task-list-add";
+		display.appendChild( addFrame );
+		display.taskListAdd = addFrame;
+		if( managed )
+			popups.makeButton( addFrame, "Add Task", ()=>{
+				// `object` is this page's group: `local` for the master list, or
+				// the System for an upstreamed one.
+				new TaskInfoEditor( null, null, object );
+			}, {suffix:"add-task"} );
+		const stop = popups.makeButton( addFrame, "Stop Launcher", ()=>{
+			confirmShutdown( object );
+		}, {suffix:"stop-launcher"} );
+		stop.tooltip = "Stop every task on this system and exit its service manager";
+		if( managed ) {
+			const plugins = popups.makeButton( addFrame, "Plugins", ()=>{
+				showPlugins( object );
+			}, {suffix:"plugins"} );
+			plugins.tooltip = "Modules this service manager loads at start-up";
+		}
+	}
 	const editing = {
 
 	}
@@ -170,7 +251,7 @@ function AddTaskList(display, object, field) {
 		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click(gridRow){protocol.restartTask(object,gridRow.rowData)}, text: "↻"} }
 		//, { name:"Edit"    , className: "edit", type:{click:protocol.editTask.bind( protocol,object), text: "Edit ✎"} }
 	];
-	if( local.login )
+	if( local.login && managed )
 		columns.push( { name:"Edit"    , className: "-edit", type:{suffix:" purple", click: async function(gridRow) {
 			const task = gridRow.rowData;
       // Define the new action or function here
@@ -178,10 +259,14 @@ function AddTaskList(display, object, field) {
 
 			const taskInfo = await protocol.getTaskInfo(task.id)
 			editing[task.id] = true;
-			const editor = new TaskInfoEditor( task.id, taskInfo.task );
+			const editor = new TaskInfoEditor( task.id, taskInfo.task, object );
 			editor.on( "close", ()=>{ delete editing[task.id] } );
 
     }, text: "✎"} } );
+	if( local.login && managed )
+		columns.push( { name:"Delete"  , className: "-delete", type:{suffix:" red", click(gridRow){
+			confirmDeleteTask( object, gridRow.rowData );
+		}, text: "🗑"} } );
 
 
 	const dataGrid = new DataGrid( display, object, field, {//suffix:'-browse'
@@ -228,7 +313,8 @@ function AddTaskList(display, object, field) {
 }
 
 function deleteSystem( system ) {
-	let oldsystem = local.systems.findIndex( testsystem=>testsystem.id=system );
+	// `=` here assigned the id to every system it walked, and matched the first
+	let oldsystem = local.systems.findIndex( testsystem=>testsystem.id===system );
 	if( oldsystem>=0 ) {
 		if( local.systems[oldsystem].page === local.activePage )
 			local.pageFrame.activate( local.firstPage );
@@ -242,6 +328,12 @@ function addNewSystem( system ) {
 }
 
 function AddSystem( system ) {
+	if( !local.pageFrame ) {
+		// the Display owns the page frame and is not built until the login
+		// resolves; the first `tasks` message can carry systems before that.
+		local.pendingSystems.push( system );
+		return;
+	}
 
 	let oldsystem = local.systems.find( testsystem=>testsystem.id===system.id );
 	if( oldsystem ){
@@ -271,7 +363,12 @@ function AddSystem( system ) {
 }
 
 function showTaskAdmin( object, task ) {
-	const config = new TaskConfiguration( local.display, task );
+	const dialog = new TaskConfiguration( local.display, task );
+	// "Done" only hides it, so without this every open leaves another dialog in
+	// the document; registering it also lets a dropped connection close the one
+	// that is showing, along with the task editors.
+	local.dialogs.add( dialog );
+	dialog.on( "hide", ()=>{ local.dialogs.delete( dialog ); dialog.remove(); } );
 }
 
 function formatLogTimestamp( time ) {
@@ -412,5 +509,3 @@ function insertBackLog( log, msg ) {
 			log.logList.scrollTop += (elTop - listTop) - (anchorEl.offsetHeight||0);
 		}
 }
-
-new Display();

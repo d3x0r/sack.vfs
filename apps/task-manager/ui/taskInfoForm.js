@@ -4,6 +4,7 @@ import {TextInput} from "/node_modules/@d3x0r/popups2/controls/text-input.js"
 import {Button} from "/node_modules/@d3x0r/popups2/controls/button.js"
 import {DataGrid} from "/node_modules/@d3x0r/popups2/controls/data-grid.js"
 import {Checkbox} from "/node_modules/@d3x0r/popups2/controls/checkbox.js"
+import {ChoiceInput} from "/node_modules/@d3x0r/popups2/controls/choice-input.js"
 import {createSimpleForm} from "/node_modules/@d3x0r/popups2/forms/simple-form.js"
 import {local} from "./local.js"
 import {config as protocolConfig, protocol} from "./protocol.js"
@@ -13,8 +14,14 @@ export class TaskInfoEditor extends Popup {
 	argVal = [];
 	envKeys = [];
 	page = 0;
-	constructor( taskId, task_ ) {
-		super( "Task Config Editor", local.display, { suffix:"-task-config", shadowFrame: true, enableClose: true });
+	// `group` is the task list this editor was opened from - `local` for this
+	// service manager, or a System for one of the upstreamed ones.  Without it
+	// a create or an update always landed on the local system.
+	constructor( taskId, task_, group ) {
+		super( "Task Config Editor", document.body, { suffix:"-task-config", shadowFrame: true, enableClose: true });
+		// so a dropped connection can close this - the task id it is editing does
+		// not survive the reconnect.
+		local.dialogs.add( this );
 		this.on("captionClose", ()=>{
 			//console.log( "This sort of close? turn into remove?" );
 			this.on( "close", true );
@@ -26,12 +33,36 @@ export class TaskInfoEditor extends Popup {
 		  ,popups.utils.addStyleSheetSrc( this, "/css/task-config.css" )];
 		Promise.all( styles ).then( ()=>{
 			this.show();
-			this.center();
+			this.positionEditor();
 		})
 		const task = Object.assign( {}, task_ );
+		// hidden/minimized/maximized are mutually exclusive on the launch side (they all end up
+		// as a single wShowWindow value), so the form drives them from one selection.
+		const showStates = [ { text:"Normal",    value:"normal" }
+		                   , { text:"Minimized", value:"minimized" }
+		                   , { text:"Maximized", value:"maximized" }
+		                   , { text:"Hidden",    value:"hidden" }
+		                   ];
+		function getShowState( t ) {
+			if( t.hidden ) return "hidden";
+			if( t.minimized ) return "minimized";
+			if( t.maximized ) return "maximized";
+			return "normal";
+		}
+		function setShowState( t, state ) {
+			// always write all three; task.update() only copies keys that are present, so a
+			// missing key would leave the previous state set in the stored config.
+			t.hidden    = state === "hidden";
+			t.minimized = state === "minimized";
+			t.maximized = state === "maximized";
+		}
 		const taskOpts = {
 			moveToEnable : false,
+			showState : getShowState( task ),
 		}
+		// { name, checked } per selectable task; filled in on the Dependencies
+		// page below, read back by processForm().
+		const depRows = [];
 		const flexFrame = document.createElement( "div" );
 		flexFrame.className = "task-config-flex-frame";
 		const buttonFrame = document.createElement( "div" );
@@ -61,27 +92,17 @@ export class TaskInfoEditor extends Popup {
 		page3.tooltip = "Arguments to pass to the task";
 		const page4 = this.pageFrame.addPage( "Environment" );
 		page4.tooltip = "Environment variables to set for the task";
-		
+		const page5 = this.pageFrame.addPage( "Dependencies" );
+		page5.tooltip = "Other tasks this one needs started first";
+
+		// driven off the list rather than a branch per page, so adding one does
+		// not mean editing two parallel switches
+		const pages = [ page1, page2, page3, page4, page5 ];
 		this.pageFrame.on( "activate", (page)=>{
-			if( page === page1 ) {
-				prevButton.style.visibility = 'hidden';
-				nextButton.style.visibility = 'visible';
-				this.page = 0;
-			}
-			if( page === page2 ) {
-				prevButton.style.visibility = 'visible';
-				nextButton.style.visibility = 'visible';
-				this.page = 1;
-			}
-			if( page === page3 ) {
-				prevButton.style.visibility = 'visible';
-				nextButton.style.visibility = 'visible';
-				this.page = 2;
-			}
-			if( page === page4 ) {
-				prevButton.style.visibility = 'visible';
-				nextButton.style.visibility = 'hidden';
-				this.page = 3;
+			const at = pages.indexOf( page );
+			if( at >= 0 ) {
+				this.page = at;
+				updateNav();
 			}
 		})
 
@@ -94,8 +115,22 @@ export class TaskInfoEditor extends Popup {
 			this.create.tooltip = "Update this current task with the new settings";
 		}
 
-		this.saveAs = new Button( buttonFrame, "Save As", ()=>{
-			const form = createSimpleForm( "Save As", "Name", task.name, (name)=>{
+		// The Name field on the form is the name now, so there is normally
+		// nothing left to ask for - only fall back to the prompt when the name
+		// would still collide with the task this editor opened on, or when a
+		// new task hasn't been given one.  A new task has nothing to save "as",
+		// so its button is just Save.
+		const originalName = task_ ? task_.name : null;
+		this.saveAs = new Button( buttonFrame, task_ ? "Save As" : "Save", ()=>{
+			if( task.name && task.name !== originalName ) {
+				processForm(true);
+				this.on( "close", true );
+				this.remove();
+				return;
+			}
+			// getter, not a value: the Name field above may have been edited
+			// since this editor opened.
+			const form = createSimpleForm( "Save As", "Name", ()=>task.name, (name)=>{
 				task.name = name;
 				processForm(true);
 				this.on( "close", true );
@@ -104,7 +139,8 @@ export class TaskInfoEditor extends Popup {
 			} );
 			form.show();
 		} )
-		this.saveAs.tooltip = "Pick a new name to save as a new task";
+		this.saveAs.tooltip = task_ ? "Save these settings as a new task, under the name above"
+		                            : "Create this task with these settings";
 
 		if( !task ) {
 			return;
@@ -112,14 +148,22 @@ export class TaskInfoEditor extends Popup {
 		this.group1 = document.createElement( "div" );
 		this.group1.className = "task-config-group1"
 		page1.appendChild( this.group1 );
-		//this.name = popups.makeTextField( this.group1, task, "name", "Name" );
-		//this.name.tooltip = "Name of the task";
+		// the name is what the task list shows and what loadTask() matches on,
+		// so editing it here and saving is a rename; without this field the only
+		// way to change a name was Save As, which leaves the original behind.
+		this.taskName = new TextInput( this.group1, task, "name", "Name" );
+		this.taskName.tooltip = "Name of the task; changing this renames the task";
+		this.taskName.on( "change", ()=>{
+			headerTitle.textContent = task.name || "New Task";
+		} );
 		this.bin = new TextInput( this.group1, task, "bin", 'Program');
 		this.bin.tooltip = "Program to run for this task";
 		this.altbin = new TextInput( this.group1, task, "altbin", 'Alternate Program');
 		this.altbin.tooltip = "Alternate Program to run for this task (if bin fails to run)";
 		this.work = new TextInput( this.group1, task, "work", "Start In Path" );
 		this.work.tooltip = "This is the directory this task starts in.";
+		this.programName = new TextInput( this.group1, task, "programName", "Program Name", false, false, false, "" );
+		this.programName.tooltip = "Program name used for 'use signal'";
 
 		this.groupContainer = document.createElement( "div" );
 		this.groupContainer.className = "task-config-group-container";
@@ -142,14 +186,24 @@ export class TaskInfoEditor extends Popup {
 		c.tooltip = "Run this task in a new process group";
 		c = new Checkbox( this.groupOpts, task, "newConsole", "New Console" );
 		c.tooltip = "Run this task in a new console";
+		c = new Checkbox( this.groupOpts, task, "usePty", "Use PTY (WIN32)" );
+		c.tooltip = "Run this task through a pseudo terminal instead of plain pipes";
 		c = new Checkbox( this.groupOpts, task, "useBreak", "Use Break (WIN32)" );
 		c.tooltip = "Use a break signal to stop this task";
-		c = new Checkbox( this.groupOpts, task, "noInheritStdio", "No Inherit Standard IO" );
-		c.tooltip = "Do not inherit standard IO (stdin,stdout,stderr, handles 0,1,2,...";
+		c = new Checkbox( this.groupOpts, task, "noInheritStdio", "Own Standard IO" );
+		c.tooltip = "The task keeps its own stdin/stdout/stderr - required for 'New Console' to show anything, but its output will not appear in Show Log";
+		c = new ChoiceInput( this.groupOpts, taskOpts, "showState", showStates, "Window State"
+		                   , { change: ()=>setShowState( task, taskOpts.showState ) } );
+		// ChoiceInput has no tooltip setter; match what the other controls render.
+		{
+			const tip = document.createElement( "span" );
+			tip.className = "tooltip-text";
+			tip.textContent = "How the task's window is shown when it starts (WIN32)";
+			c.el.appendChild( tip );
+			c.el.classList.add( "has-tooltip" );
+		}
 		c = new TextInput( this.groupOpts, task, "style", "Style", false, false, true, "" );
 		c.tooltip = "Style of the window (WIN32)"
-		c = new TextInput( this.groupOpts, task, "programName", "Program Name", false, false, false, "" );
-		c.tooltip = "Program name used for 'use signal'"
 		
 		const moveOpts = document.createElement( "div" );
 		moveOpts.className = "task-config-move-opts"
@@ -248,6 +302,88 @@ export class TaskInfoEditor extends Popup {
 		
 		this.env.tooltip = "Click on a field below to set the environment variables";
 
+		// Dependencies are stored as task names - that is what the config and
+		// findTask() both key on - so the checkboxes are built from the names of
+		// the other tasks on the same system.
+		// "Ready" is what dependants actually wait for.  With neither of these set
+		// a task is ready the moment it launches - which is the old behaviour,
+		// where dependants started right behind it rather than after it was up.
+		this.readyGroup = document.createElement( "div" );
+		this.readyGroup.className = "task-config-ready"
+		page5.appendChild( this.readyGroup );
+		const readyLabel = document.createElement( "div" );
+		readyLabel.className = "task-config-group-label";
+		readyLabel.textContent = "Ready when";
+		this.readyGroup.appendChild( readyLabel );
+		c = new TextInput( this.readyGroup, task, "readyPort", "Listening on port", false, false, false, "" );
+		c.tooltip = "Wait until something accepts a connection on this port before starting anything that depends on this task; blank to skip the check";
+		c = new TextInput( this.readyGroup, task, "readyHost", "Probe host", false, false, false, "" );
+		c.tooltip = "Host to probe for that port (default localhost)";
+		c = new TextInput( this.readyGroup, task, "readyDelay", "Or after (ms)", false, false, false, "" );
+		c.tooltip = "With no port, wait this long after launching before this task counts as ready";
+		c = new TextInput( this.readyGroup, task, "readyTimeout", "Give up after (ms)", false, false, false, "" );
+		c.tooltip = "How long to keep probing before giving up and letting dependants start anyway (default 30000)";
+
+		this.group4 = document.createElement( "div" );
+		this.group4.className = "task-config-group4"
+		page5.appendChild( this.group4 );
+		const dependsLabel = document.createElement( "div" );
+		dependsLabel.className = "task-config-group-label";
+		dependsLabel.textContent = "Depends on";
+		this.group4.appendChild( dependsLabel );
+		const siblings = ( group && local.systems.indexOf( group ) >= 0 )
+		               ? ( group.tasks || [] )
+		               : ( local.taskData || [] );
+		const already = Array.isArray( task.dependsOn ) ? task.dependsOn
+		              : task.dependsOn ? [ task.dependsOn ] : [];
+
+		// Does `fromName` already reach the task being edited?  If so, depending
+		// on it would close a loop, and start() walks dependencies with nothing
+		// to break one.
+		function reaches( fromName, targetName, seen ) {
+			if( fromName === targetName ) return true;
+			if( seen.has( fromName ) ) return false;
+			seen.add( fromName );
+			const row = siblings.find( test=>test.name === fromName );
+			if( !row || !row.dependsOn ) return false;
+			for( const next of row.dependsOn )
+				if( reaches( next, targetName, seen ) ) return true;
+			return false;
+		}
+
+		for( const sibling of siblings ) {
+			if( !sibling.name ) continue;
+			if( taskId && sibling.id === taskId ) continue; // never itself
+			if( depRows.find( row=>row.name === sibling.name ) ) continue;
+			// bound on "checked" rather than on the name: a name with a dot in it
+			// would be read as a path by the control's value binding.
+			const row = { name: sibling.name, checked: already.indexOf( sibling.name ) >= 0 };
+			depRows.push( row );
+			const dep = new Checkbox( this.group4, row, "checked", sibling.name, {left:true} );
+			if( originalName && reaches( sibling.name, originalName, new Set() ) ) {
+				row.checked = false;
+				dep.control.checked = false;
+				dep.control.disabled = true;
+				// it also toggles from its container's click handler, so the whole
+				// control has to stop taking pointer events - which means the
+				// reason has to go on a wrapper that still can.
+				const guard = document.createElement( "div" );
+				guard.className = "dependency-cycle";
+				guard.title = "\"" + sibling.name + "\" already depends on this task"
+				            + " - depending on it back would be a loop";
+				this.group4.insertBefore( guard, dep.el );
+				guard.appendChild( dep.el );
+				dep.el.style.pointerEvents = "none";
+			} else
+				dep.tooltip = "Start \"" + sibling.name + "\" before this task";
+		}
+		if( !depRows.length ) {
+			const empty = document.createElement( "div" );
+			empty.className = "task-config-empty";
+			empty.textContent = "There are no other tasks on this system to depend on.";
+			this.group4.appendChild( empty );
+		}
+
 		const footer = document.createElement( "div" );
 		footer.className = "task-config-footer";
 		const prevButton = new Button( footer, "Prev", ()=>{
@@ -265,34 +401,39 @@ export class TaskInfoEditor extends Popup {
 		function processForm(create) {
 			//Object.assign( task_, task );
 			task.args = this_.argVal.map( arg=>arg.arg );
+			setShowState( task, taskOpts.showState );
 			task.env = {};
 			for( let key of this_.envKeys ){
 				task.env[key.key] = key.val;
 			}
+			// always sent, including as [] - Task.update() replaces the set, and
+			// an omitted key would leave the old dependencies in place.
+			task.dependsOn = depRows.filter( row=>row.checked ).map( row=>row.name );
 			if( create)
-				protocol.createTask( task );
-			else protocol.updateTask( taskId, task );
+				protocol.createTask( group, task );
+			else protocol.updateTask( group, taskId, task );
+		}
+		function updateNav() {
+			prevButton.style.visibility = this_.page > 0 ? 'visible' : 'hidden';
+			nextButton.style.visibility = this_.page < pages.length - 1 ? 'visible' : 'hidden';
 		}
 		function showPage() {
-			console.log("showPage", this_.page);
-			switch( this_.page ) {
-				case 0:
-					this_.pageFrame.activate( page1);
-					prevButton.style.visibility = 'hidden';
-					nextButton.style.visibility = 'visible';
-					break;
-				case 1:
-					this_.pageFrame.activate( page2);
-					prevButton.style.visibility = 'visible';
-					nextButton.style.visibility = 'visible';
-					break;
-				case 2:
-					this_.pageFrame.activate( page3);
-					prevButton.style.visibility = 'visible';
-					nextButton.style.visibility = 'hidden';
-					break;
-			}
+			this_.pageFrame.activate( pages[this_.page] );
+			updateNav();
 		}
 		showPage();
 	};
+
+	remove() {
+		local.dialogs.delete( this );
+		super.remove();
+	}
+
+	positionEditor() {
+		const frame = this.divShadow || this.divFrame;
+		const rect = this.divFrame.getBoundingClientRect();
+		const left = Math.max( 16, Math.round( ( window.innerWidth - rect.width ) / 2 ) );
+		frame.style.left = left + "px";
+		frame.style.top = "96px";
+	}
 }

@@ -59,9 +59,7 @@ struct optionStrings {
 	Eternal<String>* deviceString;
 	Eternal<String>* connectorString;
 #endif
-#if defined( __LINUX__ )
 	Eternal<String>* usePtyString;
-#endif
 
 };
 
@@ -160,10 +158,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->connectorString = new Eternal<String>(isolate, String::NewFromUtf8Literal(isolate, "connector"));
 		check->monitorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "monitor" ) );
 #endif
-#if defined( __LINUX__ )
 		check->usePtyString =  new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "usePty" ) );
-
-#endif
 	}
 	return check;
 }
@@ -223,6 +218,8 @@ void InitTask( Isolate *isolate, Local<Object> exports ) {
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "write", TaskObject::Print );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "log", TaskObject::Print );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "print", TaskObject::Print );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "setPtySize", TaskObject::SetPtySize );
+	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "resizePty", TaskObject::SetPtySize );
 #if _WIN32
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getStyles", TaskObject::getProcessWindowStyles );
 	NODE_SET_PROTOTYPE_METHOD( taskTemplate, "getPosition", TaskObject::getProcessWindowPos );
@@ -710,13 +707,11 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 					noWait = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
-#if defined( __LINUX__ )
 			if( opts->Has( context, optName = strings->usePtyString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					usePty = GETV( opts, optName )->TOBOOL( isolate );
 				}
 			}
-#endif
 			if( opts->Has( context, optName = strings->detachedString->Get( isolate ) ).ToChecked() ) {
 				if( GETV( opts, optName )->IsBoolean() ) {
 					detach = GETV( opts, optName )->TOBOOL( isolate );
@@ -891,9 +886,9 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				, work?*work[0]:NULL
 				, newTask->argArray
 				, ( firstArgIsArg? LPP_OPTION_FIRST_ARG_IS_ARG:0 )
-				| ( hidden?0:LPP_OPTION_DO_NOT_HIDE)
-				| (minimized ? 0 : LPP_OPTION_MINIMIZED)
-				| (maximized ? 0 : LPP_OPTION_MAXIMIZED)
+				| ( hidden?0:LPP_OPTION_DO_NOT_HIDE )
+				| (minimized ? LPP_OPTION_MINIMIZED : 0)
+				| (maximized ? LPP_OPTION_MAXIMIZED : 0)
 				| (newGroup? LPP_OPTION_NEW_GROUP : 0)
 				| (newConsole ? LPP_OPTION_NEW_CONSOLE : 0)
 				| (suspend? LPP_OPTION_SUSPEND : 0)
@@ -903,8 +898,8 @@ void TaskObject::New( const v8::FunctionCallbackInfo<Value>& args ) {
 				| ( detach ? LPP_OPTION_DETACH : 0 )
 				| ( asAdmin ? LPP_OPTION_ELEVATE : 0 )
 				| ( usePty? LPP_OPTION_INTERACTIVE : 0 )
-				, input ? getTaskInput : NULL
-				, input2 ? getTaskInput2 : NULL
+				, input ? getTaskInput : ( usePty && input2 ) ? getTaskInput2 : NULL
+				, usePty ? NULL : input2 ? getTaskInput2 : NULL
 				, (end||input||input2||!noWait) ? getTaskEnd : NULL
 				, (uintptr_t)newTask 
 				, newTask->envList
@@ -1003,29 +998,10 @@ void TaskObject::Write( const v8::FunctionCallbackInfo<Value>& args ) {
 	//Isolate* isolate = args.GetIsolate();
 	TaskObject* task = Unwrap<TaskObject>( args.This() );
 	if( task->task ) {
-		if( args[0]->IsTypedArray() ) {
-			Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
-			Local<ArrayBuffer> ab = ta->Buffer();
-	#if ( NODE_MAJOR_VERSION >= 14 )
-			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-	#else
-			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-	#endif
-		} else if( args[0]->IsUint8Array() ) {
-			Local<Uint8Array> body = args[0].As<Uint8Array>();
-			Local<ArrayBuffer> ab = body->Buffer();
-	#if ( NODE_MAJOR_VERSION >= 14 )
-			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-	#else
-			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-	#endif
-		} else if( args[0]->IsArrayBuffer() ) {
-			Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-	#if ( NODE_MAJOR_VERSION >= 14 )
-			task_send( task->task, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-	#else
-			task_send( task->task, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-	#endif
+		char* sendData;
+		size_t sendLen;
+		if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
+			task_send( task->task, (const uint8_t*)sendData, sendLen );
 		}
 		else {
 			String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
@@ -1042,6 +1018,20 @@ void TaskObject::Print( const v8::FunctionCallbackInfo<Value>& args ) {
 		String::Utf8Value s( USE_ISOLATE( args.GetIsolate() ) args[0]->ToString( args.GetIsolate()->GetCurrentContext() ).ToLocalChecked() );
 		pprintf( task->task, "%s", *s );
 	}
+}
+
+void TaskObject::SetPtySize( const v8::FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	Local<Context> context = isolate->GetCurrentContext();
+	TaskObject* task = Unwrap<TaskObject>( args.This() );
+	int cols = args.Length() > 0 ? (int)args[0]->IntegerValue( context ).FromMaybe( 80 ) : 80;
+	int rows = args.Length() > 1 ? (int)args[1]->IntegerValue( context ).FromMaybe( 30 ) : 30;
+	int width = args.Length() > 2 ? (int)args[2]->IntegerValue( context ).FromMaybe( 0 ) : 0;
+	int height = args.Length() > 3 ? (int)args[3]->IntegerValue( context ).FromMaybe( 0 ) : 0;
+	if( task->task )
+		args.GetReturnValue().Set( Integer::New( isolate, SetProcessConsoleSize( task->task, cols, rows, width, height ) ) );
+	else
+		args.GetReturnValue().Set( Integer::New( isolate, -1 ) );
 }
 
 void TaskObject::End( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1427,7 +1417,7 @@ void TaskObject::getDisplays( const FunctionCallbackInfo<Value>& args ) {
 				DWORD result                                = DisplayConfigGetDeviceInfo( &sourceName.header );
 				if( result != ERROR_SUCCESS ) {
 					
-					lprintf( "error getting adapater! %d", result );
+					lprintf( "error getting adapater! %lu", result );
 					//return ;
 				}
 
@@ -1942,6 +1932,7 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 		char eventName[256];
 		HANDLE hEvent;
 		snprintf(eventName, 256, "Global\\%s(%d):exit", name, id);
+		//lprintf("Generating signal to: %s", eventName);
 		ReleaseEx(name DBG_SRC);
 		hEvent = OpenEvent(EVENT_MODIFY_STATE, FALSE, eventName);
 		//lprintf( "Signal process event: %s", eventName );
@@ -1966,17 +1957,17 @@ void TaskObject::StopProcess( const FunctionCallbackInfo<Value>& args ) {
 			BOOL a = AttachConsole( id );
 			if( !a ) {
 				DWORD dwError = GetLastError();
-				lprintf( "Failed to attachConsole %d %d %d", a, dwError, id );
+				lprintf( "Failed to attachConsole %d %lu %d", a, dwError, id );
 			}
 			if( code == 0 ) {
 				if( !GenerateConsoleCtrlEvent( CTRL_C_EVENT, id ) ) {
 					DWORD error = GetLastError();
-					lprintf( "Failed to send CTRL_C_EVENT %d %d", id, error );
+					lprintf( "Failed to send CTRL_C_EVENT %d %lu", id, error );
 				}// else lprintf( "Success sending ctrl C?" );
 			} else {
 				if( !GenerateConsoleCtrlEvent( CTRL_BREAK_EVENT, id ) ) {
 					DWORD error = GetLastError();
-					lprintf( "Failed to send CTRL_BREAK_EVENT %d %d", id, error );
+					lprintf( "Failed to send CTRL_BREAK_EVENT %d %lu", id, error );
 				}// else lprintf( "Success sending ctrl break?" );
 			}
 		}
@@ -2023,7 +2014,7 @@ void TaskObject::KillProcess( const FunctionCallbackInfo<Value>& args ) {
 		CloseHandle( hProcess );
 	} else {
 		DWORD dwError = GetLastError();
-		lprintf( "Failed to open process %d:%d", id, dwError );
+		lprintf( "Failed to open process %d:%lu", id, dwError );
 	}
 #else
 	kill( id, SIGKILL );
@@ -2158,7 +2149,7 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 			valueSize = valueBufferSize;
 		}
 		if( lastError != ERROR_NO_MORE_ITEMS )
-			lprintf( "Failed with %d", lastError );
+			lprintf( "Failed with %lu", lastError );
 		RegCloseKey( hKey );
 	}
 	//HKEY_CURRENT_USER\Environment
@@ -2206,7 +2197,7 @@ void getEnvironmentVariables( Local<Name> property, const PropertyCallbackInfo<V
 			valueSize = valueBufferSize;
 		}
 		if( lastError != ERROR_NO_MORE_ITEMS )
-			lprintf( "Failed with %d", lastError );
+			lprintf( "Failed with %lu", lastError );
 		RegCloseKey( hKey );
 	} else {
 		lprintf( "Failed to open user key?" );

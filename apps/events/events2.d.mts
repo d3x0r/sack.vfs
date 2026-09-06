@@ -1,10 +1,134 @@
+/**
+ * A subscription, returned by `on()`.
+ *
+ * It carries the list it lives in, so `off(handle)` can splice it out directly
+ * rather than searching by name and function.
+ */
+export class EventHandle {
+    /** @param {EventHandler} cb */
+    constructor(cb: EventHandler);
+    /** The handler list this registration belongs to. @type {EventHandle[]|null} */
+    list: EventHandle[] | null;
+    /** @type {EventHandler|null} */
+    cb: EventHandler | null;
+    /** Higher runs earlier; equal priorities keep registration order. @type {number} */
+    priority: number;
+}
 export class Events {
-    static set log(value: any);
-    static set usePriority(value: any);
-    static on(evt: any, d: any, extra: any): any;
-    static off(evt: any, d: any): void;
-    set usePriority(value: any);
-    on(evt: any, d: any, extra: any): any;
-    off(evt: any, d: any): void;
+    /**
+     * Enable debug logging for this class. Once enabled it cannot be disabled.
+     * @param {boolean} value
+     */
+    static set log(value: boolean);
+    /**
+     * Whether the argument after a handler is treated as a priority.
+     * @param {boolean} value
+     */
+    static set usePriority(value: boolean);
+    /**
+     * Subscribe to a static event.
+     * @overload
+     * @param {string} evt
+     * @param {EventHandler} d
+     * @param {number} [extra] priority; higher runs earlier, default 0
+     * @returns {EventHandle}
+     */
+    static on(evt: string, d: EventHandler, extra?: number): EventHandle;
+    /**
+     * Dispatch a static event. An array payload is spread across the handler's
+     * parameters, so an array passed AS one argument must be wrapped twice.
+     * @overload
+     * @param {string} evt
+     * @param {any[]|Record<string,any>|string|number|boolean} d
+     * @returns {any[]|undefined} every handler's return value, in call order
+     */
+    static on(evt: string, d: any[] | Record<string, any> | string | number | boolean): any[] | undefined;
+    /**
+     * Ask whether anything is listening.
+     * @overload
+     * @param {string} evt
+     * @returns {boolean|undefined}
+     */
+    static on(evt: string): boolean | undefined;
+    /**
+     * Remove a static subscription by its handle.
+     * @overload
+     * @param {EventHandle} evt
+     * @returns {void}
+     */
+    static off(evt: EventHandle): void;
+    /**
+     * Remove a static subscription by name and function.
+     * @overload
+     * @param {string} evt
+     * @param {EventHandler} d
+     * @returns {void}
+     */
+    static off(evt: string, d: EventHandler): void;
+    /**
+     * Whether the argument after a handler is treated as a priority.
+     * @param {boolean} value
+     */
+    set usePriority(value: boolean);
+    /**
+     * Subscribe.
+     * @overload
+     * @param {string} evt
+     * @param {EventHandler} d
+     * @param {number} [extra] priority; higher runs earlier, default 0
+     * @returns {EventHandle}
+     */
+    on(evt: string, d: EventHandler, extra?: number): EventHandle;
+    /**
+     * Dispatch. An array payload is spread across the handler's parameters, so
+     * an array passed AS one argument must be wrapped twice: `on("x",[[1,2]])`.
+     * @overload
+     * @param {string} evt
+     * @param {any[]|Record<string,any>|string|number|boolean} d
+     * @returns {any[]|undefined} every handler's return value, in call order
+     */
+    on(evt: string, d: any[] | Record<string, any> | string | number | boolean): any[] | undefined;
+    /**
+     * Ask whether anything is listening.
+     * @overload
+     * @param {string} evt
+     * @returns {boolean|undefined}
+     */
+    on(evt: string): boolean | undefined;
+    /**
+     * Remove a subscription by its handle — the cheap path, since the handle
+     * already knows which list it is in.
+     * @overload
+     * @param {EventHandle} evt
+     * @returns {void}
+     */
+    off(evt: EventHandle): void;
+    /**
+     * Remove a subscription by name and function.
+     * @overload
+     * @param {string} evt
+     * @param {EventHandler} d
+     * @returns {void}
+     */
+    off(evt: string, d: EventHandler): void;
     #private;
 }
+export default Events;
+/**
+ * A handler.
+ *
+ * Dispatch passes the payload followed by the array of results returned by the
+ * handlers that already ran, so a handler can see what came before it.  An
+ * array payload is spread, so `on("x",[1,2])` calls `cb(1,2,results)`.
+ */
+export type EventHandler = (...args: any[]) => any;
+/**
+ * Per-class state, keyed by constructor.
+ */
+export type EventTypeState = {
+    static_events: {
+        [x: string]: EventHandle[];
+    };
+    usePriority: boolean;
+    log: boolean;
+};
