@@ -1,0 +1,4 @@
+{
+	createGroup:{name:"Create groups", description:"Create top-level and nested forum groups."},
+	moderate:{name:"Moderate", description:"Edit group settings and moderate messages."}
+}

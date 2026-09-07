@@ -1,0 +1,6 @@
+{
+	org:"Freedom Collective",
+	domain:"d3x0r.org",
+	service:"Sack Forum",
+	description:"Nested discussion groups backed by sack.vfs object storage."
+}

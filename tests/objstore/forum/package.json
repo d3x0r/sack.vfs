@@ -1,0 +1,12 @@
+{
+	"name":"@d3x0r/sack-forum-example",
+	"private":true,
+	"type":"module",
+	"scripts":{
+		"start":"node --import sack.vfs/import forumServer.mjs",
+		"test":"node forumDb.test.mjs && node ui/markdown.test.mjs"
+	},
+	"dependencies":{
+		"katex":"^0.16.22"
+	}
+}
