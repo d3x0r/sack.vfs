@@ -174,12 +174,18 @@ function initPrototypes()
 
 	pushToProto( RegExp.prototype, { external:true, name:"regex"
 	    , cb:function(o,stringifier){
+			// No flags: emit the bare source (the pre-1.2.129 encoding, readable by
+			// older parsers).  With flags: /source/flags.  Unambiguous because
+			// RegExp.prototype.source always escapes '/', so a bare source can never
+			// begin with '/'.
+			if( !this.flags )
+				return "'"+escape(this.source)+"'";
 			return "'/"+escape(this.source)+'/'+escape(this.flags)+"'";
 		}
 	} );
 	fromProtoTypes.set( "regex", { protoCon:RegExp, cb:function (field,val){
 		const match = /^\/((?:\\.|[^\\/])*)\/([a-z]*)$/i.exec(val);
-		return new RegExp( match[1], match[2] );
+		return match?new RegExp( match[1], match[2] ):new RegExp( val );
 	} } );
 
 
