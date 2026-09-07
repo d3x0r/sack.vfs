@@ -106,6 +106,10 @@ function getPtySize( task ) {
 export class Task {
 	started = new Date(0);
 	starting = false;
+	// wants to run, but a dependency is not ready yet - #startDependants will
+	// start it when that clears.  Distinct from `starting`, which has to go back
+	// to false while waiting or the dependency-ready path refuses to start it.
+	waiting = false;
 	ended = new Date();
 	running = false;
 	failed = false;
@@ -238,6 +242,17 @@ export class Task {
 		sack.Mouse.clickAt( x, y );
 	}
 
+	// every status broadcast carries the same shape, so a client can tell a task
+	// that is coming up from one that is running from one that is going down.
+	sendStatus( extra ) {
+		config.send( Object.assign( { op:"status", id:this.id
+		    , running: this.running
+		    , started: this.started, ended: this.ended
+		    , starting: this.starting, waiting: this.waiting
+		    , stopping: this.stopping, failed: this.failed
+		    , ready: this.ready }, extra ) );
+	}
+
 	get task() {
 		// get the original task configuration
 		return this.#task;
@@ -346,13 +361,15 @@ export class Task {
 			console.log( "Task not available (working path doesn't exist", this.#task.work );
 			this.running = false;
 			this.failed = true;
-			const msg = {op:"status", id:this.id, running: false, ended: this.ended, started: this.started, failed:true };
-			config.send( msg );
+			this.starting = false;
+			this.waiting = false;
+			this.sendStatus();
 			return;
 		}
 
 		// set starting to prevent dependancies from starting dependants
 		this.starting = true;
+		this.sendStatus();
 		for( let dep of this.#dependsOn ) {
 			if( dep.running ) continue;
 			if( dep.held ) {
@@ -373,8 +390,11 @@ export class Task {
 			console.log( "Holding", this.name, "until ready:"
 			           , waiting.map( dep=>dep.name ).join( ", " ) );
 			this.starting = false;
+			this.waiting = true;
+			this.sendStatus();
 			return;
 		}
+		this.waiting = false;
 		let bin;
 		if( process.platform === "linux" ) {
 			bin = this.#task.bin; // linux will scan path for name
@@ -436,8 +456,7 @@ export class Task {
 			this.running = true;
 			this.starting = false; // is running, not just starting.
 			this.started = new Date();
-			const msg = {op:"status", id:this_.id, running: true, ended: this_.ended, started: this_.started };
-			config.send( msg );
+			this_.sendStatus();
 			// dependants wait for ready, not merely for launched
 			this.#beginReady();
 		}else { 
@@ -529,8 +548,8 @@ export class Task {
 				}
 			}
 			//console.log( "stopped:", this_.#task.name );
-			const msg = {op:"status", id:this_.id, running: false, ended: this_.ended, started: this_.started };
-			config.send( msg );
+			this_.waiting = false;
+			this_.sendStatus();
 			
 		}
 		if( this.#task.multiStart ) {
@@ -698,8 +717,7 @@ export class Task {
 	#setReady( run ) {
 		if( run !== this.#readyRun || !this.running ) return; // superseded, or gone
 		this.ready = true;
-		config.send( { op:"status", id:this.id, running:true, ready:true
-		             , ended:this.ended, started:this.started } );
+		this.sendStatus();
 		this.#startDependants();
 	}
 
@@ -812,6 +830,9 @@ export function closeAllTasks( ws ) {
 function timeoutTaskStop( task ) {
 	const started = Date.now();
 	task.stopping = true;
+	// the existing {op:"stopping"} below is a separate event with the whole task
+	// on it; the status broadcast is what drives the state column.
+	task.sendStatus();
 	//console.log( "A stop started... and now we wait on", task.name );
 	config.local.connections.forEach( (conn)=>
 		{

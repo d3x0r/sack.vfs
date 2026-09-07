@@ -121,9 +121,14 @@ export function setupRest( server ) {
 		const taskResult = resolveRequestedTask( req );
 		const task = taskResult.task;
 		if( task )  {
+			// same meaning as the UI's stop button (handleStop): asked for by
+			// hand means stop and stay stopped.  Without these a restart:true
+			// task came straight back and /stop looked like it did nothing.
+			task.held = true;
+			task.restart = false;
 			task.stop();
 			res.writeHead( 200 );
-			res.end( "" );
+			res.end( "stopped." );
 		} else  {
 			sendTaskLookupError( req, res, taskResult );
       }
@@ -131,24 +136,26 @@ export function setupRest( server ) {
    } );
 
 
+	// stop() resolves when the task has actually stopped.  Polling task.running
+	// instead raced the automatic restart: a task configured restart:true comes
+	// back up ~200ms after it ends, so a 250ms poll usually never saw the gap -
+	// the task restarted but the request hung forever waiting to observe it.
+	function whenStopped( task ) {
+		return Promise.resolve( task.running ? task.stop() : null );
+	}
+
 	server.app.get( "/start", (req,res)=>{
 		const taskResult = resolveRequestedTask( req );
 		const task = taskResult.task;
 		if( task )  {
-			if( task.running ) {
-				task.stop();	
-				function tick() {
-					if( task.running ) return setTimeout(tick, 250 );
-					task.start();
-					res.writeHead( 200 );
-					res.end( "started." );
-				}
-				tick();
-			}else {
+			whenStopped( task ).then( ()=>{
+				// as handleStart does: an explicit start clears a hold, so this
+				// task's dependants are allowed to run again too.
+				task.held = false;
 				task.start();
 				res.writeHead( 200 );
 				res.end( "started." );
-			}
+			} );
 		} else  {
 			sendTaskLookupError( req, res, taskResult );
       }
@@ -160,20 +167,14 @@ export function setupRest( server ) {
 		const task = taskResult.task;
 		console.log( "restart?", req.CGI.task || req.CGI.id, task?.running );
 		if( task )  {
-			if( task.running ) {
-				task.stop();	
-				function tick() {
-					if( task.running ) return setTimeout(tick, 250 );
-					task.restart = true; // setter with side effect start()
-					res.writeHead( 200 );
-					res.end( "set to restart." );
-				}
-				tick();
-			}else {
-				task.restart = true; // setter with side effect start()
+			whenStopped( task ).then( ()=>{
+				// a task configured restart:true may have come back up on its own
+				// while we waited; do not bounce it a second time.
+				task.held = false;
+				if( !task.running ) task.restart = true; // setter with side effect start()
 				res.writeHead( 200 );
 				res.end( "set to restart." );
-			}
+			} );
 		} else  {
 			sendTaskLookupError( req, res, taskResult );
       }

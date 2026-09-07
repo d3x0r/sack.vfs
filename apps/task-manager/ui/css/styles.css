@@ -43,6 +43,13 @@
 	background: #c9131f;
 	color:white;
 }
+/* in transition, either way - amber, and deliberately not the failed yellow */
+.task-starting:disabled, .task-starting,
+.task-stopping:disabled, .task-stopping {
+	background: #c47f00;
+	color:white;
+}
+
 .task-failed:disabled, .task-failed {
 	background: #dd3;
 	color:black;

@@ -16,6 +16,35 @@ export const config = {
 }
 
 
+/*
+  The single state a row shows.  `running` alone could not say whether a task was
+  on its way up or on its way down, so a task waiting on a dependency looked
+  simply "Stopped" - indistinguishable from one nobody had asked to run.
+*/
+export function taskState( task ) {
+	if( !task ) return "stopped";
+	if( task.failed ) return "failed";
+	if( task.stopping ) return "stopping";
+	if( task.running ) return "running";
+	if( task.starting || task.waiting ) return "starting";
+	return "stopped";
+}
+
+function applyStatus( task, msg ) {
+	if( msg.failed ) task.running = 0;
+	else task.running = msg.running;
+	task.ended = msg.ended;
+	task.started = msg.started;
+	// only present on newer managers; leaving them undefined just means the row
+	// falls back to running/stopped as before.
+	task.starting = msg.starting;
+	task.waiting  = msg.waiting;
+	task.stopping = msg.stopping;
+	task.failed   = msg.failed;
+	if( "ready" in msg ) task.ready = msg.ready;
+	task.state = taskState( task );
+}
+
 export class MySystem extends System {
 	constructor(msg) {
 		super( {address:""}, msg.id, msg.port, msg.system, msg.tasks )
@@ -182,6 +211,7 @@ export class Protocol extends Events {
 				config.local.system = msg.system;
 				config.local.taskData = msg.tasks;
 				for( let task of msg.tasks ) {
+					task.state = taskState( task );
 					protocol.on( "addTask",  [task.id,task] );
 					config.local.tasks[task.id] = task;
 					config.local.systemMap[task.id] = {id:msg.system,tasks:msg.tasks};
@@ -191,6 +221,7 @@ export class Protocol extends Events {
 
 				break;
 			case "addTask":
+				if( msg.task ) msg.task.state = taskState( msg.task );
 				if( msg.system && msg.system !== config.local.system) {
 					for( let system of config.local.systems ) {
 						if( system.id === msg.system ) {
@@ -274,10 +305,7 @@ export class Protocol extends Events {
 					const system = config.local.systemMap[msg.id];
 					if( task && !system )
 					{
-						if( msg.failed ) task.running = 0;
-						else task.running = msg.running;
-						task.ended = msg.ended;
-						task.started = msg.started;
+						applyStatus( task, msg );
 						config.local.refresh();
 						//console.log( "Replacing status?  need to update statuses" );
 						return;
@@ -290,10 +318,7 @@ export class Protocol extends Events {
 							let task = null;
 							for( task of system.tasks ) {
 								if( task.id === msg.id ) {
-									if( msg.failed ) task.running = false;
-									else task.running = msg.running;
-									task.ended = msg.ended;
-									task.started = msg.started;
+									applyStatus( task, msg );
 									config.local.refresh();
 									break;
 								}

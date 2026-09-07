@@ -226,11 +226,13 @@ function AddTaskList(display, object, field) {
 
 	}
 	const columns = [ {field:"name", name:"Name", className: "name", type:{edit:false} }
-		, { field: "running", name:"Status"  , className: "status"
+		, { field: "state", name:"Status"  , className: "status"
 				, type:{edit:false
-						,options:[ { text:"Running", value:true,className:"task-running" }
-								, {text:"Stopped", value:false,className:"task-stopped"} 
-								, {text:"Failed", value:0,className:"task-failed"}] } }
+						,options:[ { text:"Running",  value:"running", className:"task-running" }
+								, {text:"Starting", value:"starting",className:"task-starting"}
+								, {text:"Stopping", value:"stopping",className:"task-stopping"}
+								, {text:"Stopped",  value:"stopped", className:"task-stopped"} 
+								, {text:"Failed",   value:"failed",  className:"task-failed"}] } }
 		, { name:"Changed" , className: "started", type:{ toString(row) { 
 					if( row.running ) 
 						return row.started.toLocaleDateString() +" " + row.started.toLocaleTimeString() 
