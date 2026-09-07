@@ -657,8 +657,7 @@ class ObjectStorage {
 				l.currentStorage = os; // this part is synchronous... but leaves JS heap from os.read(), does callbacks using parser, but results with a parsed object
 								// all synchronously.
 				const parts = opts.id.split('.');
-				//console.log( "id?", opts.id, parts );
-				os.storage.read( currentReadId = parts[0], Number( parts[1] )
+				os.storage.read( currentReadId = parts[0], (parts.length>1)?Number( parts[1] ):undefined
 					, parser, opts.noParse?res:(obj)=>resultDecode(opts, priorReadId, obj,res) );
 			}catch(err) {
 				console.log( "ERROR:", err );
