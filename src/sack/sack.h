@@ -8081,6 +8081,9 @@ NETWORK_PROC( PCLIENT, OpenTCPClientExEx )( CTEXTSTR, uint16_t, cReadComplete,
 */
 NETWORK_PROC( int, NetworkConnectTCPEx )( PCLIENT pc DBG_PASS );
 #define NetworkConnectTCP( pc ) NetworkConnectTCPEx( pc DBG_SRC )
+/* Set a timeout for the next asynchronous NetworkConnectTCP() on this client.
+   Zero leaves the asynchronous connect without a deadline. */
+NETWORK_PROC( void, SetTCPConnectTimeout )( PCLIENT pc, uint32_t milliseconds );
 /* Drain is an operation on a TCP socket to just drop the next X
    bytes. They are ignored and not stored into any user buffer.
    Drain reads take precedence over any other queued reads.

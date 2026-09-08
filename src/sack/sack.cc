@@ -52394,6 +52394,9 @@ NETWORK_PROC( PCLIENT, OpenTCPClientExEx )( CTEXTSTR, uint16_t, cReadComplete,
 */
 NETWORK_PROC( int, NetworkConnectTCPEx )( PCLIENT pc DBG_PASS );
 #define NetworkConnectTCP( pc ) NetworkConnectTCPEx( pc DBG_SRC )
+/* Set a timeout for the next asynchronous NetworkConnectTCP() on this client.
+   Zero leaves the asynchronous connect without a deadline. */
+NETWORK_PROC( void, SetTCPConnectTimeout )( PCLIENT pc, uint32_t milliseconds );
 /* Drain is an operation on a TCP socket to just drop the next X
    bytes. They are ignored and not stored into any user buffer.
    Drain reads take precedence over any other queued reads.
@@ -79614,6 +79617,7 @@ struct NetworkClient
 	// from the connection the holder meant.
 	volatile uint32_t serial;
 	volatile uint32_t writeTimer;
+	uint32_t dwConnectTimeout;
  // we have the ability to save outstatnding UID locks...
 	PLIST psvInUse;
 	// this is set to what the thread that's waiting for this event is.
@@ -82272,7 +82276,10 @@ static void HandleEvent( PCLIENT pClient )
 #endif
 				if( networkEvents.lNetworkEvents & FD_CONNECT )
 				{
-					{
+					// connect() can complete synchronously even though FD_CONNECT was
+					// selected.  The queued event is stale after the synchronous path
+					// has already notified the application and kicked its first read.
+					if( !( pClient->dwFlags & CF_CONNECT_ISSUED ) ) {
 						uint16_t wError = networkEvents.iErrorCode[FD_CONNECT_BIT];
 #if defined( LOG_NOTICES ) || defined( LOG_WRITE_NOTICES )
 						if( globalNetworkData.flags.bLogNotices )
@@ -86093,6 +86100,48 @@ SACK_NETWORK_NAMESPACE_END
 #  define MSG_NOSIGNAL 0
 #endif
 SACK_NETWORK_NAMESPACE
+struct tcp_connect_timeout_data {
+	PCLIENT pc;
+	uint32_t serial;
+};
+static void CPROC TCPConnectTimeout( uintptr_t psv ) {
+	struct tcp_connect_timeout_data *timeout = (struct tcp_connect_timeout_data *)psv;
+	PCLIENT pc = timeout->pc;
+	uint32_t serial = timeout->serial;
+	Deallocate( struct tcp_connect_timeout_data *, timeout );
+	if( !NetworkClientValid( pc, serial ) )
+		return;
+	while( !NetworkLockEx( pc, 0 DBG_SRC ) ) {
+		if( !NetworkClientValid( pc, serial ) )
+			return;
+		Relinquish();
+	}
+	if( !NetworkClientValid( pc, serial )
+	 || !( pc->dwFlags & CF_CONNECTING )
+	 || ( pc->dwFlags & ( CF_CONNECTED | CF_CONNECTERROR | CF_CONNECT_ISSUED ) ) ) {
+		NetworkUnlockEx( pc, 0 DBG_SRC );
+		return;
+	}
+	ClearClientFlags( pc, CF_CONNECTING );
+	SetClientFlags( pc, CF_CONNECTERROR | CF_CONNECT_ISSUED );
+#ifdef _WIN32
+	const int timeoutError = WSAETIMEDOUT;
+#else
+	const int timeoutError = ETIMEDOUT;
+#endif
+	if( pc->connect.ThisConnected ) {
+		if( pc->dwFlags & CF_CPPCONNECT )
+			pc->connect.CPPThisConnected( pc->psvConnect, timeoutError );
+		else
+			pc->connect.ThisConnected( pc, timeoutError );
+	}
+	if( NetworkClientValid( pc, serial ) ) {
+		EnterCriticalSec( &globalNetworkData.csNetwork );
+		InternalRemoveClientEx( pc, TRUE, FALSE );
+		LeaveCriticalSec( &globalNetworkData.csNetwork );
+	}
+	NetworkUnlockEx( pc, 0 DBG_SRC );
+}
 // Read-dispatch nesting depth, per thread.  A read callback that re-enters the
 // message pump - Idle() is the way that happens - can dispatch another read on this
 // same thread, underneath one already in progress.  Everything that reasons about
@@ -86108,6 +86157,9 @@ DeclareThreadLocal uint32_t readStackLevel;
 DeclareThreadLocal uint32_t readStackHigh = 1;
 	extern int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t quick_check );
 _TCP_NAMESPACE
+void SetTCPConnectTimeout( PCLIENT pc, uint32_t milliseconds ) {
+	if( pc ) pc->dwConnectTimeout = milliseconds;
+}
 //----------------------------------------------------------------------------
 #if 0 && !DrainSupportDeprecated
 LOGICAL TCPDrainRead( PCLIENT pClient );
@@ -86584,6 +86636,12 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 		Relinquish();
 	}
 	SetClientFlags( pc, CF_CONNECTING );
+	if( pc->dwConnectTimeout ) {
+		struct tcp_connect_timeout_data *timeout = New( struct tcp_connect_timeout_data );
+		timeout->pc = pc;
+		timeout->serial = pc->serial;
+		AddTimerEx( pc->dwConnectTimeout, 0, TCPConnectTimeout, (uintptr_t)timeout );
+	}
 	while( 1 ) {
 		if( (err = connect( pc->Socket, pc->saClient
 		                  , SOCKADDR_LENGTH( pc->saClient ) )) )
@@ -86786,6 +86844,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 			pResult->psvClose                  = psvClose;
 			pResult->write.CPPWriteComplete    = WriteComplete;
 			pResult->psvWrite                  = psvWrite;
+			pResult->dwConnectTimeout          = globalNetworkData.dwConnectTimeout;
 			if( bCPP )
 				SetClientFlags( pResult, ( CF_CALLBACKTYPES ) );
 			AddActive( pResult );
@@ -86808,7 +86867,7 @@ static PCLIENT InternalTCPClientAddrFromAddrExxx( SOCKADDR *lpAddr, SOCKADDR *pF
 					SetClientFlags( pResult, CF_CONNECT_WAITING );
 					// caller was expecting connect to block....
 					while( !( pResult->dwFlags & (CF_CONNECTED|CF_CONNECTERROR|CF_CONNECT_CLOSED) ) &&
-							( ( timeGetTime64() - Start ) < globalNetworkData.dwConnectTimeout ) )
+							( ( timeGetTime64() - Start ) < pResult->dwConnectTimeout ) )
 					{
 						// may be this thread itself which connects...
 						if( this_thread )
