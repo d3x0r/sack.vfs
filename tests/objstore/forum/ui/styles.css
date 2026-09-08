@@ -25,7 +25,8 @@ button { color:inherit; }
 .forum-brand small { color:var(--muted); margin-top:2px; }
 .forum-mark { width:42px; height:42px; display:grid; place-items:center; border:1px solid #79c792; border-radius:13px; background:linear-gradient(145deg,#2b4734,#17241b); color:var(--accent); font:700 22px/1 Georgia,serif; box-shadow:0 9px 28px #0007; }
 .forum-identity { border:1px solid var(--line); border-radius:999px; padding:8px 14px; color:var(--muted); background:var(--surface); }
-.forum-identity::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--accent-strong); display:inline-block; margin-right:8px; box-shadow:0 0 10px var(--accent-strong); }
+.forum-identity::before { content:""; width:7px; height:7px; border-radius:50%; background:#8b665f; display:inline-block; margin-right:8px; }
+.forum-connected .forum-identity::before { background:var(--accent-strong); box-shadow:0 0 10px var(--accent-strong); }
 
 .forum-main { min-height:0; display:grid; grid-template-columns:280px minmax(0,1fr); }
 .forum-sidebar { border-right:1px solid var(--line); background:#121613cc; padding:22px 16px; }

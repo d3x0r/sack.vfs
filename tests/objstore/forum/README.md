@@ -36,7 +36,7 @@ $env:FORUM_ALLOW_GUESTS="1"
 npm start
 ```
 
-Then open `http://localhost:8082/?noauth=Alice`. Guest mode is deliberately opt-in and should not be enabled on a public service.
+Then open `http://localhost:7800/?noauth=Alice`. Guest mode is deliberately opt-in and should not be enabled on a public service.
 
 ## Features
 

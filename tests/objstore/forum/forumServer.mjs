@@ -18,7 +18,7 @@ const protocol = new ForumProtocol( database, {
 	allowGuests,
 	consumeToken:key=>consumeToken(key),
 } );
-const port = Number(process.env.PORT) || 8082;
+const port = Number(process.env.PORT) || 7800;
 const server = openServer( {
 	port,
 	resourcePath:forumPath + "/ui",

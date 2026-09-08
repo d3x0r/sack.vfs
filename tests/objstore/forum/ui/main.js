@@ -21,16 +21,20 @@ function displayDate(value) {
 	return new Date(value).toLocaleString( undefined, {dateStyle:"medium", timeStyle:"short"} );
 }
 
-function button(parent, label, callback, className = "") {
+function button(parent, label, callback, className = "", requiresConnection = true) {
 	const control = popups.makeButton( parent, label, ()=>Promise.resolve(callback()).catch(showError) );
 	const node = control.control || control.button || control.el;
 	if( className ) node.classList.add(className);
+	if( requiresConnection ) {
+		node.dataset.requiresForumConnection = "";
+		node.disabled = !document.documentElement.classList.contains("forum-connected");
+	}
 	return node;
 }
 
 function showError(error) {
 	console.error(error);
-	popups.Alert( error?.message || String(error) );
+	popups.Alert( error?.message || String(error), {timeout:6500} );
 }
 
 class ForumClient {
@@ -40,47 +44,97 @@ class ForumClient {
 		this.sequence = 1;
 		this.pending = new Map();
 		this.listeners = new Set();
+		this.statusListeners = new Set();
+		this.state = "idle";
+	}
+
+	get connected() {
+		return this.state === "ready" && this.ws?.readyState === WebSocket.OPEN;
+	}
+
+	setState(state, details = {}) {
+		this.state = state;
+		for( const listener of this.statusListeners ) listener({state, ...details});
 	}
 
 	connect(key, guestName = null) {
 		return new Promise( (resolve, reject)=>{
+			if( this.ws && this.ws.readyState < WebSocket.CLOSING ) {
+				this.ws.onclose = null;
+				this.ws.close();
+			}
 			const scheme = location.protocol === "https:" ? "wss:" : "ws:";
 			const query = guestName ? `?name=${encodeURIComponent(guestName)}` : "";
 			const ws = this.ws = new WebSocket( `${scheme}//${location.host}/${encodeURIComponent(key)}${query}`, "sack.forum" );
 			let connected = false;
+			let settled = false;
+			this.setState("connecting");
+			const timer = setTimeout( ()=>{
+				if( connected || ws !== this.ws ) return;
+				settled = true;
+				reject( new Error("The forum connection timed out.") );
+				ws.close();
+			}, 12000 );
 			ws.onmessage = event=>{
+				if( ws !== this.ws ) return;
 				let message;
 				try { message = JSOX.parse(event.data); }
 				catch( error ) { showError(error); return; }
 				if( message.op === "ready" ) {
 					connected = true;
+					settled = true;
+					clearTimeout(timer);
 					this.user = message.user;
+					this.setState("ready", {user:message.user});
 					resolve(message.user);
 				} else if( message.op === "result" || message.op === "error" ) {
 					const request = this.pending.get(message.rid);
 					if( !request ) return;
 					this.pending.delete(message.rid);
+					clearTimeout(request.timer);
 					if( message.op === "error" ) request.reject( new Error(message.error) );
 					else request.resolve(message.data);
 				} else if( message.op === "changed" ) {
 					for( const listener of this.listeners ) listener(message);
 				}
 			};
-			ws.onerror = ()=>{ if( !connected ) reject( new Error("Could not connect to the forum service.") ); };
+			ws.onerror = ()=>{
+				if( !connected && !settled ) {
+					settled = true;
+					clearTimeout(timer);
+					reject( new Error("Could not connect to the forum service.") );
+				}
+			};
 			ws.onclose = event=>{
-				if( !connected ) reject( new Error(event.reason || "The forum rejected this login.") );
-				for( const request of this.pending.values() ) request.reject( new Error("Forum connection closed.") );
+				if( ws !== this.ws ) return;
+				clearTimeout(timer);
+				this.ws = null;
+				this.user = null;
+				if( !connected && !settled ) reject( new Error(event.reason || "The forum rejected this login.") );
+				for( const request of this.pending.values() ) {
+					clearTimeout(request.timer);
+					request.reject( new Error("Forum connection closed.") );
+				}
 				this.pending.clear();
+				this.setState("disconnected", {
+					wasReady:connected,
+					code:event.code,
+					reason:event.reason || (connected ? "Forum connection closed." : "Login was rejected."),
+				});
 			};
 		} );
 	}
 
 	request(op, fields = {}) {
-		if( !this.ws || this.ws.readyState !== WebSocket.OPEN )
+		if( !this.connected )
 			return Promise.reject( new Error("The forum is not connected.") );
 		const rid = this.sequence++;
 		return new Promise( (resolve, reject)=>{
-			this.pending.set( rid, {resolve, reject} );
+			const timer = setTimeout( ()=>{
+				this.pending.delete(rid);
+				reject( new Error("The forum did not answer the request.") );
+			}, 15000 );
+			this.pending.set( rid, {resolve, reject, timer} );
 			this.ws.send( JSOX.stringify({op, rid, ...fields}) );
 		} );
 	}
@@ -88,6 +142,11 @@ class ForumClient {
 	onChange(listener) {
 		this.listeners.add(listener);
 		return ()=>this.listeners.delete(listener);
+	}
+
+	onStatus(listener) {
+		this.statusListeners.add(listener);
+		return ()=>this.statusListeners.delete(listener);
 	}
 }
 
@@ -120,7 +179,29 @@ class ForumApplication {
 		this.content = main.appendChild( element("section", "forum-content") );
 		this.status = this.shell.appendChild( element("footer", "forum-status", "Waiting for login") );
 		this.client.onChange( change=>this.changed(change) );
+		this.client.onStatus( status=>this.connectionChanged(status) );
+		this.connectionChanged({state:this.client.state});
 		this.welcome();
+	}
+
+	connectionChanged(status) {
+		const ready = status.state === "ready";
+		document.documentElement.classList.toggle("forum-connected", ready);
+		for( const control of document.querySelectorAll("[data-requires-forum-connection]") )
+			control.disabled = !ready;
+		if( ready ) {
+			this.identity.textContent = status.user?.name || this.client.user?.name || "Connected";
+			this.status.textContent = "Connected";
+		} else if( status.state === "connecting" ) {
+			this.identity.textContent = "Connecting…";
+			this.status.textContent = "Opening forum connection…";
+		} else if( status.state === "disconnected" ) {
+			this.identity.textContent = "Disconnected";
+			this.status.textContent = "Connection closed · requesting a fresh login token…";
+		} else {
+			this.identity.textContent = "Waiting for login";
+			this.status.textContent = "Waiting for user-database login…";
+		}
 	}
 
 	welcome() {
@@ -132,8 +213,6 @@ class ForumApplication {
 	}
 
 	async initialize() {
-		this.identity.textContent = this.client.user.name;
-		this.status.textContent = "Connected";
 		const bootstrap = await this.client.request( "bootstrap", {limit:GROUP_PAGE} );
 		this.renderTree( bootstrap.groups.items );
 	}
@@ -320,6 +399,10 @@ class ForumApplication {
 	}
 
 	editor(options, submit) {
+		if( !this.client.connected ) {
+			showError( new Error("The forum is still connecting. Please try again when the status says Connected.") );
+			return;
+		}
 		const form = new Popup( options.title, document.body, {modal:true, enableClose:true, suffix:"forum"} );
 		form.divContent.classList.add("editor-form");
 		let subject = null;
@@ -341,7 +424,7 @@ class ForumApplication {
 		previewTab.onclick = ()=>{ textarea.hidden = true; preview.hidden = false; write.classList.remove("active"); previewTab.classList.add("active"); renderMarkdown(preview, textarea.value); };
 		const hint = form.appendChild( element("p", "editor-hint", "Markdown supported · inline math $…$ · display math $$…$$") );
 		const actions = form.appendChild( element("div", "editor-actions") );
-		button( actions, "Cancel", ()=>form.hide(), "secondary" );
+		button( actions, "Cancel", ()=>form.hide(), "secondary", false );
 		button( actions, "Save", async ()=>{
 			const values = {subject:subject?.value.trim() || "", markdown:textarea.value.trim()};
 			if( subject && !values.subject ) throw new Error(`${options.subjectLabel || "Subject"} is required.`);
@@ -373,12 +456,35 @@ class ForumApplication {
 const client = new ForumClient();
 const app = new ForumApplication(client);
 const params = new URLSearchParams(location.search);
+let login = null;
+let reconnectTimer = null;
 
 async function connected(key, guestName = null) {
-	app.status.textContent = "Opening forum connection…";
+	clearTimeout(reconnectTimer);
+	reconnectTimer = null;
 	await client.connect(key, guestName);
 	await app.initialize();
 }
+
+function reconnect() {
+	if( reconnectTimer || client.connected || client.state === "connecting" ) return;
+	reconnectTimer = setTimeout( ()=>{
+		reconnectTimer = null;
+		if( params.has("noauth") ) {
+			const name = params.get("noauth") || "Local guest";
+			connected( `guest-${crypto.randomUUID()}`, name ).catch(showError);
+		} else if( login ) {
+			try { login.reConnect(); }
+			catch( error ) { showError(error); reconnect(); }
+		}
+	}, 1500 );
+}
+
+client.onStatus( status=>{
+	if( status.state !== "disconnected" ) return;
+	if( status.wasReady ) showError( new Error("The forum connection closed. Reconnecting…") );
+	reconnect();
+} );
 
 if( params.has("noauth") ) {
 	const name = params.get("noauth") || "Local guest";
@@ -386,8 +492,11 @@ if( params.has("noauth") ) {
 } else {
 	app.status.textContent = "Waiting for user-database login…";
 	import( "/node_modules/@d3x0r/user-database-remote/requestService.js" )
-		.then(login=>login.requestService( "d3x0r.org", "Sack Forum", token=>
-			connected(token.svc.key[0]).catch(showError) ))
+		.then(module=>{
+			login = module;
+			return login.requestService( "d3x0r.org", "Sack Forum", token=>
+				connected(token.svc.key[0]).catch(error=>{ showError(error); reconnect(); }) );
+		})
 		.catch(error=>{
 			app.status.textContent = "Login service unavailable";
 			showError(error);
