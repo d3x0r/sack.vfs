@@ -12,6 +12,8 @@ struct optionStrings {
 	Eternal<String> *broadcastString;
 	Eternal<String> *messageString;
 	Eternal<String> *closeString;
+	Eternal<String> *errorString;
+	Eternal<String> *timeoutString;
 
 	Eternal<String> *toPortString;
 	Eternal<String> *toAddressString;
@@ -74,6 +76,7 @@ struct tcpOptions {
 	// client side options (else is server)
 	int toPort;
 	char *toAddress;
+	uint32_t connectTimeout;
 
 	bool addressDefault;
 	bool v6;
@@ -94,6 +97,7 @@ struct tcpOptions {
 	PERSISTENT_FUNCTION readyCallback;
 	PERSISTENT_FUNCTION messageCallback;
 	PERSISTENT_FUNCTION closeCallback;
+	PERSISTENT_FUNCTION errorCallback;
 };
 
 
@@ -139,6 +143,7 @@ public:
 //	static Persistent<Function> constructor;
 	PERSISTENT_FUNCTION messageCallback;
 	PERSISTENT_FUNCTION closeCallback;
+	PERSISTENT_FUNCTION errorCallback;
 	struct networkEvent *eventMessage;
 
 public:
@@ -183,6 +188,7 @@ public:
 	PERSISTENT_FUNCTION connectCallback;
 	PERSISTENT_FUNCTION readyCallback;
 	PERSISTENT_FUNCTION closeCallback;
+	PERSISTENT_FUNCTION errorCallback;
 	struct networkEvent *eventMessage; // probably use the same queue?
 
 public:
@@ -350,6 +356,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->broadcastString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "broadcast" ) );
 		check->messageString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "message" ) );
 		check->closeString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "close" ) );
+		check->errorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "error" ) );
+		check->timeoutString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "timeout" ) );
 
 		check->familyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "family" ) );
 		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IPv4" ) );
@@ -779,6 +787,8 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
+			if (cb->IsFunction())
+				obj->errorCallback.Reset(isolate, cb);
 		}
 		else if( StrCmp( *event, "message" ) == 0 ) {
 			if( cb->IsFunction() )
@@ -895,7 +905,7 @@ static void tcpAsyncMsg_( Isolate *isolate, Local<Context> context, tcpObject * 
 					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, NULL );
 				break;
 			case NET_EVENT_CONNECT_ERROR:
-				cb = Local<Function>::New( isolate, obj->connectCallback );
+				cb = Local<Function>::New( isolate, obj->errorCallback );
 				argv[0] = Integer::New( isolate, eventMessage->error );
 				if( !cb.IsEmpty() )
 					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 1, argv );
@@ -1125,7 +1135,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	}
 	NetworkWait( NULL, 256, 2 );
 	SOCKADDR *addr = opts->address?CreateSockAddress( opts->address, opts->port ):NULL;
-	SOCKADDR *toAddr = opts->toAddress?CreateSockAddress( opts->toAddress, opts->port ):NULL;
+	SOCKADDR *toAddr = opts->toAddress?CreateSockAddress( opts->toAddress, opts->toPort ):NULL;
 
 	this->readStrings = opts->readStrings;
 	this->allowSSLfallback = opts->allowSSLfallback;
@@ -1148,6 +1158,8 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		this->readyCallback.Reset(isolate, opts->readyCallback );
 	if( !opts->closeCallback.IsEmpty() )
 		this->closeCallback.Reset(isolate, opts->closeCallback );
+	if( !opts->errorCallback.IsEmpty() )
+		this->errorCallback.Reset(isolate, opts->errorCallback );
 
 	this->ssl = opts->ssl;
 
@@ -1156,17 +1168,20 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		                             , TCP_Close, (uintptr_t)this
 		                             , TCP_Write, (uintptr_t)this
 		                             , TCP_Connect, (uintptr_t)this
-		                             , ((opts->delayConnect || opts->ssl)? OPEN_TCP_FLAG_DELAY_CONNECT:0)
+		                             , ((opts->delayConnect || opts->ssl || opts->connectTimeout)? OPEN_TCP_FLAG_DELAY_CONNECT:0)
 		                               | (( opts->ssl ) ? OPEN_TCP_FLAG_SSL_CLIENT : 0 )
 		                               DBG_SRC );
 	if( pc ) {
+		if( opts->connectTimeout )
+			SetTCPConnectTimeout( pc, opts->connectTimeout );
 		if( opts->ssl ) {
 			ssl_BeginClientSession( pc
 				, opts->key, opts->key_len
 				, opts->pass, opts->pass_len
 				, opts->cert_chain, opts->cert_chain_len );
-			NetworkConnectTCP( pc );
 		}
+		if( opts->ssl || opts->connectTimeout )
+			NetworkConnectTCP( pc );
 	} else {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
 
@@ -1328,6 +1343,10 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					tcpOpts.toPort = (int)GETV( opts, optName )->ToInteger( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 				} else
 					tcpOpts.toPort = 0;
+				// ---- get asynchronous connect timeout
+				if( opts->Has( context, optName = strings->timeoutString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.connectTimeout = (uint32_t)GETV( opts, optName )->Uint32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+				}
 				// ---- get toAddress
 				if( opts->Has( context, optName = strings->toAddressString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.toAddress = StrDup( *String::Utf8Value( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
@@ -1357,6 +1376,10 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				// ---- get close callback
 				if( opts->Has( context, optName = strings->closeString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.closeCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+				}
+				// ---- get connection error callback
+				if( opts->Has( context, optName = strings->errorString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.errorCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 				}
 				// ---- get read strings setting
 				if( opts->Has( context, optName = strings->readStringsString->Get( isolate ) ).ToChecked() ) {
@@ -1489,6 +1512,8 @@ void tcpObject::on( const FunctionCallbackInfo<Value>& args ) {
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
+			if (cb->IsFunction())
+				obj->errorCallback.Reset(isolate, cb);
 		}
 		else if( StrCmp( *event, "message" ) == 0 ) {
 			if( cb->IsFunction() )
