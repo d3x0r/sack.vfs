@@ -50,6 +50,12 @@
 	color:white;
 }
 
+/* held until a dependency is ready - not moving yet, so not the transition amber */
+.task-waiting:disabled, .task-waiting {
+	background: #5a6b8c;
+	color:white;
+}
+
 .task-failed:disabled, .task-failed {
 	background: #dd3;
 	color:black;

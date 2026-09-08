@@ -8622,7 +8622,8 @@ NETWORK_PROC( LOGICAL, DoWhois )( CTEXTSTR pHost, CTEXTSTR pServer, PVARTEXT pvt
 //----- NETSTAT ----
 struct listener_pid_info {
 	uint16_t port;
-	uint64_t pid;
+//uint64_t pid;
+	PDATALIST pdlPids;
 };
 // list is filled with struct listener_pid_info entries
 NETWORK_PROC( void, SackNetstat_GetListeners )( PDATALIST* ppList );

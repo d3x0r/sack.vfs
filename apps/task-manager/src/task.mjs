@@ -615,6 +615,13 @@ export class Task {
 					dep.#run.end();
 					timeoutTaskStop( dep );
 				}
+			} else if( dep.waiting ) {
+				// held on this task becoming ready - which it now never will.
+				// It would otherwise show "Waiting" forever; treat it like the
+				// running dependants and take it down with us.
+				dep.waiting = false;
+				dep.stopped = true;
+				dep.sendStatus();
 			}
 			dep.#ranOnce = false;
 		}
@@ -872,7 +879,15 @@ function timeoutTaskStop( task ) {
 
 		function tick() {
 			task.stopTimer = null;
-			if( !task.running ) return settle( true );
+			if( !task.running ) {
+				// never spawned (held on a dependency, or already down): there is no
+				// end event coming to clear these, so the row sat on "Stopping".
+				task.stopping = false;
+				task.waiting = false;
+				task.starting = false;
+				task.sendStatus();
+				return settle( true );
+			}
 
 			const del = Date.now() - started;
 			if( del > TASK_STOP_KILL_MS && !task.killed ) {

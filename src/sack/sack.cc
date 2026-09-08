@@ -52935,7 +52935,8 @@ NETWORK_PROC( LOGICAL, DoWhois )( CTEXTSTR pHost, CTEXTSTR pServer, PVARTEXT pvt
 //----- NETSTAT ----
 struct listener_pid_info {
 	uint16_t port;
-	uint64_t pid;
+//uint64_t pid;
+	PDATALIST pdlPids;
 };
 // list is filled with struct listener_pid_info entries
 NETWORK_PROC( void, SackNetstat_GetListeners )( PDATALIST* ppList );
@@ -79773,6 +79774,10 @@ void TerminateClosedClientEx( PCLIENT pc DBG_PASS );
 #define TerminateClosedClient(pc) TerminateClosedClientEx(pc DBG_SRC)
 void InternalRemoveClientExx(PCLIENT lpClient, LOGICAL bBlockNofity, LOGICAL bLinger DBG_PASS );
 #define InternalRemoveClientEx(c,b,l) InternalRemoveClientExx(c,b,l DBG_SRC)
+// tcpnetwork.c: close a client after its connect failed, from a caller holding
+// the client lock 0 and not the global lock (see the definition for the rules).
+LOGICAL RemoveFailedConnectEx( PCLIENT pc, uint32_t serial DBG_PASS );
+#define RemoveFailedConnect(c,s) RemoveFailedConnectEx(c,s DBG_SRC)
 #define InternalRemoveClient(c) InternalRemoveClientEx(c, FALSE, FALSE )
 struct peer_thread_info *IsNetworkThread( void );
 PCLIENT AddActive( PCLIENT pClient );
@@ -82351,6 +82356,23 @@ static void HandleEvent( PCLIENT pClient )
 						}
 						if( pClient->pWaiting )
 							WakeThread( pClient->pWaiting );
+						if( wError ) {
+							// a failed connect closes the client here, the same as the
+							// synchronous failure and the connect timeout do; the socket used
+							// to linger in CF_CONNECTERROR until the application closed it.
+							// Notice is blocked: the error callback was it.  No client lock
+							// is held on this path, so take lock 0 for RemoveFailedConnect.
+							const uint32_t serial = pClient->serial;
+							LOGICAL locked;
+							while( !( locked = ( NetworkLockEx( pClient, 0 DBG_SRC ) != NULL ) ) ) {
+								if( !NetworkClientValid( pClient, serial ) ) break;
+								Relinquish();
+							}
+							if( locked ) {
+								if( !NetworkClientValid( pClient, serial ) || RemoveFailedConnect( pClient, serial ) )
+									NetworkUnlockEx( pClient, 0 DBG_SRC );
+							}
+						}
 #if defined( LOG_NOTICES ) || defined( LOG_WRITE_NOTICES )
 						if( globalNetworkData.flags.bLogNotices )
 							lprintf( "FD_CONNECT Completed" );
@@ -83390,7 +83412,12 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 						FinishUDPRead( event_data->pc, event_data->broadcast );
 					}
 					else if( ( event_data->pc->dwFlags & CF_READPENDING )
-					       || ( events[n].events & ( EPOLLRDHUP | EPOLLHUP ) ) )
+					       || ( ( events[n].events & ( EPOLLRDHUP | EPOLLHUP ) )
+					          // a refused/failed connect arrives as EPOLLIN|EPOLLERR|EPOLLHUP; the
+					          // connecting branch below reports it through SO_ERROR.  Taking it
+					          // here removed the socket with the close notice blocked, so the
+					          // application never heard the connect fail.
+					          && !( event_data->pc->dwFlags & CF_CONNECTING ) ) )
 					{
 						size_t read;
 #ifdef LOG_NOTICES
@@ -83550,7 +83577,11 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 					const PCLIENT pc = event_data->pc;
 					int locked;
 					locked = 1;
-					if( events[n].events & EPOLLOUT )
+					// a failed connect may report only EPOLLERR|EPOLLHUP; the connecting
+					// branch must still see it to deliver the error.
+					if( ( events[n].events & EPOLLOUT )
+					  || ( ( event_data->pc->dwFlags & CF_CONNECTING )
+					     && ( events[n].events & ( EPOLLERR | EPOLLHUP ) ) ) )
 					{
 #  if defined( LOG_NETWORK_EVENT_THREAD ) || defined( LOG_WRITE_NOTICES )
 						lprintf( "EPOLLOUT %s", ( event_data->pc->dwFlags & CF_CONNECTING ) ? "connecting"
@@ -83576,6 +83607,23 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 							//lprintf( "FLAGS IS NOT ACTIVE BUT: %x", event_data->pc->dwFlags );
 							// change to inactive status by the time we got here...
 						} else if( event_data->pc->dwFlags & CF_CONNECTING ) {
+							int error = 0;
+							socklen_t errlen = sizeof( error );
+							struct sockaddr_storage peer;
+							socklen_t peerlen = sizeof( peer );
+							getsockopt( event_data->pc->Socket, SOL_SOCKET, SO_ERROR, &error, &errlen );
+							// The socket is added to epoll (EPOLLOUT|EPOLLET) before connect() is
+							// issued, and an unconnected stream socket reports EPOLLOUT|EPOLLHUP at
+							// once.  SO_ERROR is still 0 while the connect is in flight, so that
+							// edge was reported as a successful connect: every client "connected"
+							// instantly, even to a black hole, and the real completion (or the
+							// connect timeout) was never delivered.  Only a peer address proves
+							// the connect completed; otherwise leave CF_CONNECTING for the real edge.
+							if( !error && getpeername( event_data->pc->Socket, (struct sockaddr*)&peer, &peerlen ) < 0 ) {
+#  if defined( LOG_NETWORK_EVENT_THREAD ) || defined( LOG_WRITE_NOTICES )
+								lprintf( "EPOLLOUT on a socket still connecting; waiting for completion" );
+#  endif
+							} else {
 #  if defined( LOG_NETWORK_EVENT_THREAD ) || defined( LOG_WRITE_NOTICES )
 							//if( globalNetworkData.flags.bLogNotices )
 								lprintf( "Connected!" );
@@ -83606,11 +83654,6 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 								}
 							}
 							{
-								int error;
-								socklen_t errlen = sizeof( error );
-								getsockopt( event_data->pc->Socket, SOL_SOCKET
-									, SO_ERROR
-									, &error, &errlen );
 								// errors like EHOSTUNREACH/ENETUNREACH happen in connect()
 								// and result immediately so they do not get delayed until here.
 								//lprintf( "Error checking for connect is: %s on %p", strerror( error ), event_data->pc );
@@ -83625,6 +83668,7 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 									SetClientFlags( event_data->pc, CF_CONNECTERROR );
 								}
 								// have to allow SSL to clear this... so set it before calling the connect callback.
+								const uint32_t serial = event_data->pc->serial;
 								SetClientFlags( event_data->pc, CF_CONNECT_ISSUED );
 								if( event_data->pc->dwFlags & CF_CPPCONNECT ) {
 									if( event_data->pc->connect.CPPThisConnected )
@@ -83636,6 +83680,25 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 								if( globalNetworkData.flags.bLogNotices )
 									lprintf( "Connect error was: %d", error );
 #endif
+								if( error ) {
+									// a failed connect closes the client here, the same as the
+									// synchronous failure and the connect timeout do; the socket
+									// used to linger in CF_CONNECTERROR until the application
+									// closed it.  Notice is blocked: the error callback was it.
+									if( !locked ) {
+										// `locked` must say whether lock 0 is actually held: the
+										// shared unlock at the end of this block keys off it.
+										while( !( locked = ( NetworkLock( event_data->pc, 0 ) != NULL ) ) ) {
+											if( !NetworkClientValid( event_data->pc, serial ) ) break;
+											Relinquish();
+										}
+									}
+									if( locked && NetworkClientValid( event_data->pc, serial ) ) {
+										// FALSE: closed from the callback's thread, lock is gone.
+										if( !RemoveFailedConnect( event_data->pc, serial ) )
+											locked = 0;
+									}
+								}
 								// if connected okay - issue first read...
 								if( !error ) {
 #ifdef LOG_NOTICES
@@ -83677,6 +83740,8 @@ int CPROC ProcessNetworkMessages( struct peer_thread_info *thread, uintptr_t non
 										// stays set and ClearNetWork closes when released.
 									}
 								}
+							}
+ // else: connect completed (or failed)
 							}
 						} else if( event_data->pc->dwFlags & CF_UDP ) {
 							//lprintf( "UDP WRITE IS NEVER QUEUED." );
@@ -86104,6 +86169,35 @@ struct tcp_connect_timeout_data {
 	PCLIENT pc;
 	uint32_t serial;
 };
+// Close a client whose connect() failed, after the application has been told.
+// The caller holds the client's lock 0 and must NOT hold the global lock.
+// InternalRemoveClientEx needs the global lock and, holding it, spins for the
+// client locks; blocking for the global lock here deadlocked against a
+// RemoveClient() from another thread (global held, spinning on this client) -
+// the application closing the socket from its connect-error callback.  So try
+// the global lock and back off by releasing the client lock, as the
+// network_linux event loop does.
+// Returns TRUE with lock 0 still held; FALSE when the client was closed by that
+// other thread meanwhile - lock 0 is then NOT held and pc must not be touched.
+LOGICAL RemoveFailedConnectEx( PCLIENT pc, uint32_t serial DBG_PASS ) {
+	while( !TryNetworkGlobalLock( DBG_VOIDSRC ) ) {
+		NetworkUnlockEx( pc, 0 DBG_RELAY );
+		Relinquish();
+		while( !NetworkLockEx( pc, 0 DBG_RELAY ) ) {
+			if( !NetworkClientValid( pc, serial ) ) return FALSE;
+			Relinquish();
+		}
+		if( !NetworkClientValid( pc, serial )
+		 || !( pc->dwFlags & CF_ACTIVE )
+		 || ( pc->dwFlags & ( CF_CLOSING | CF_CLOSED | CF_AVAILABLE ) ) ) {
+			NetworkUnlockEx( pc, 0 DBG_RELAY );
+			return FALSE;
+		}
+	}
+	InternalRemoveClientExx( pc, TRUE, FALSE DBG_RELAY );
+	LeaveCriticalSec( &globalNetworkData.csNetwork );
+	return TRUE;
+}
 static void CPROC TCPConnectTimeout( uintptr_t psv ) {
 	struct tcp_connect_timeout_data *timeout = (struct tcp_connect_timeout_data *)psv;
 	PCLIENT pc = timeout->pc;
@@ -86135,11 +86229,10 @@ static void CPROC TCPConnectTimeout( uintptr_t psv ) {
 		else
 			pc->connect.ThisConnected( pc, timeoutError );
 	}
-	if( NetworkClientValid( pc, serial ) ) {
-		EnterCriticalSec( &globalNetworkData.csNetwork );
-		InternalRemoveClientEx( pc, TRUE, FALSE );
-		LeaveCriticalSec( &globalNetworkData.csNetwork );
-	}
+	if( NetworkClientValid( pc, serial ) )
+		if( !RemoveFailedConnect( pc, serial ) )
+ // closed from the callback's thread; our lock went with it
+			return;
 	NetworkUnlockEx( pc, 0 DBG_SRC );
 }
 // Read-dispatch nesting depth, per thread.  A read callback that re-enters the
@@ -86636,10 +86729,11 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 		Relinquish();
 	}
 	SetClientFlags( pc, CF_CONNECTING );
+	const uint32_t serial = pc->serial;
 	if( pc->dwConnectTimeout ) {
 		struct tcp_connect_timeout_data *timeout = New( struct tcp_connect_timeout_data );
 		timeout->pc = pc;
-		timeout->serial = pc->serial;
+		timeout->serial = serial;
 		AddTimerEx( pc->dwConnectTimeout, 0, TCPConnectTimeout, (uintptr_t)timeout );
 	}
 	while( 1 ) {
@@ -86708,10 +86802,8 @@ int NetworkConnectTCPEx( PCLIENT pc DBG_PASS ) {
 						pc->connect.ThisConnected( pc, dwError );
 				}
 				//_lprintf( DBG_RELAY )("Connect FAIL: %p %d %d %" _32f, pc->saClient, pc->Socket, err, dwError);
-				EnterCriticalSec( &globalNetworkData.csNetwork );
-				InternalRemoveClientEx( pc, TRUE, FALSE );
-				LeaveCriticalSec( &globalNetworkData.csNetwork );
-				NetworkUnlockEx( pc, 0 DBG_SRC );
+				if( RemoveFailedConnect( pc, serial ) )
+					NetworkUnlockEx( pc, 0 DBG_SRC );
 				pc = NULL;
 				return dwError;
 			}
@@ -88921,7 +89013,9 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 		for( int i = 0; i < table->dwNumEntries; i++ ) {
 			if( table->table[i].dwState == MIB_TCP_STATE_LISTEN ) {
 				struct listener_pid_info l;
-				l.pid = table->table[i].dwOwningPid;
+				//l.pid = table->table[i].dwOwningPid;
+				l.pdlPids = CreateDataList( sizeof( uint64_t ) );
+				AddDataItem( &l.pdlPids, &table->table[i].dwOwningPid );
 				l.port = ntohs( table->table[i].dwLocalPort );
 				AddDataItem( ppList, &l );
 			}
@@ -88946,19 +89040,20 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 				struct listener_pid_info l;
 				INDEX idx;
 				struct listener_pid_info* info;
-				l.pid = table6->table[i].dwOwningPid;
+				//l.pid = table->table[i].dwOwningPid;
+				l.pdlPids = NULL;
 				l.port = ntohs( table6->table[i].dwLocalPort );
 				DATA_FORALL( ppList[0], idx, struct listener_pid_info*, info ) {
 					if( info->port == l.port ) {
-						if( info->pid != l.pid ) {
-							lprintf( "Port in use by multiple processes: %llu %llu", info->pid, l.pid );
-							continue;
-						}
+						AddDataItem( &info->pdlPids, &table->table[i].dwOwningPid );
 						break;
 					}
 				}
-				if( !info )
+				if( !info ) {
 					AddDataItem( ppList, &l );
+					l.pdlPids = CreateDataList( sizeof( uint64_t ) );
+					AddDataItem( &l.pdlPids, &table->table[i].dwOwningPid );
+				}
 			}
 		}
 		Release( table6 );
@@ -89079,9 +89174,11 @@ static void ProcessProcFD( uintptr_t psv, CTEXTSTR name, enum ScanFileProcessFla
 		while( list ) {
 			struct listener_pid_info_list *next = list->next;
 			//lprintf( "Looking at item %p %lld %lld", list, list->inode, inode );
-			if( list->info.pid == -1 ) {
+			if( !list->info.pdlPids ) {
 				if( list->inode == inode ) {
-					list->info.pid = psv;
+					list->info.pdlPids = CreateDataList( sizeof( uint64_t ) );
+					AddDataItem( &list->info.pdlPids, &psv );
+					//list->info.pid = psv;
 					if( list->next )
 						list->next->me = list->me;
 					list->me[0] = list->next;
@@ -89181,7 +89278,7 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 				if( state != 10 ) continue;
 				//lprintf( "Add port4: %d %zd", port, inode );
 				link.info.port = port;
-				link.info.pid = -1;
+				link.info.pdlPids = NULL;
 				link.inode = inode;
 				AddDataItem( &pdlNodes, &link );
 			}
@@ -89251,7 +89348,7 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 				port = strtol( addr+33, NULL, 16 );
 				//lprintf( "Add port6: %s %d %zd", addr+33, port, inode );
 				link.info.port = port;
-				link.info.pid = -1;
+				link.info.pdlPids = NULL;
 				link.inode = inode;
 				AddDataItem( &pdlNodes, &link );
 			}

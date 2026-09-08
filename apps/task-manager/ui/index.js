@@ -230,6 +230,7 @@ function AddTaskList(display, object, field) {
 				, type:{edit:false
 						,options:[ { text:"Running",  value:"running", className:"task-running" }
 								, {text:"Starting", value:"starting",className:"task-starting"}
+								, {text:"Waiting",  value:"waiting", className:"task-waiting"}
 								, {text:"Stopping", value:"stopping",className:"task-stopping"}
 								, {text:"Stopped",  value:"stopped", className:"task-stopped"} 
 								, {text:"Failed",   value:"failed",  className:"task-failed"}] } }

@@ -25,8 +25,14 @@ export function taskState( task ) {
 	if( !task ) return "stopped";
 	if( task.failed ) return "failed";
 	if( task.stopping ) return "stopping";
-	if( task.running ) return "running";
-	if( task.starting || task.waiting ) return "starting";
+	// `running` only says the child exists.  A manager that reports `ready`
+	// keeps `starting` set while the readiness probe (readyPort/readyDelay)
+	// is still pending, and the row stays "Starting" until it clears - showing
+	// "Running" at spawn hid the whole probe.  An older manager never sends
+	// `ready`, so running alone still means running there.
+	if( task.running ) return ( task.starting && task.ready === false ) ? "starting" : "running";
+	if( task.waiting ) return "waiting";
+	if( task.starting ) return "starting";
 	return "stopped";
 }
 

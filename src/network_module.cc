@@ -395,8 +395,12 @@ void getOpenPorts(  Local<Name> property, const PropertyCallbackInfo<Value>& arg
 	SackNetstat_GetListeners( &list );
 	DATA_FORALL( list, idx, struct listener_pid_info*, info ){
 		Local<Object> o = Object::New( isolate );
-		SET_READONLY( o, "port", Number::New( isolate, info->port ) );
-		SET_READONLY( o, "pid", Number::New( isolate, info->pid ) );
+		INDEX idx2;
+		uint64_t* pid;
+		DATA_FORALL( info->pdlPids, idx2, uint64_t*, pid ) {
+			SET_READONLY( o, "port", Number::New( isolate, info->port ) );
+			SET_READONLY( o, "pid", Number::New( isolate, pid[0] ) );
+		}
 		SETN( result, idx, o );
 	}
 	DeleteDataList( &list );
@@ -1019,6 +1023,11 @@ void TCP_Connect( uintptr_t psv, int error ) {
 	else {
 		(*pevt).eventType = NET_EVENT_CONNECT_ERROR;
 		(*pevt).error = error;
+		// netlib closes the client itself after this callback returns (with the
+		// close notice blocked), so this handle is stale by the time the error
+		// reaches JS.  Forget it now: a close() from the error handler then does
+		// nothing instead of RemoveClient() on a recycled client.
+		obj->pc = NULL;
 	}
 	(*pevt)._this.tcp = obj;
 	(*pevt).waiter = NULL;
