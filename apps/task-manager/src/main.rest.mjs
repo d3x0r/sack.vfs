@@ -194,11 +194,25 @@ export function setupRest( server ) {
 		return true;
    } );
 
+	server.app.get( "/ready", (req,res)=>{
+		const taskResult = resolveRequestedTask( req );
+		const task = taskResult.task;
+		if( task )  {
+			res.writeHead( 200 );
+			if( task.ready ) res.end( "true" );
+			else             res.end( "false" );
+		} else  {
+			sendTaskLookupError( req, res, taskResult );
+      }
+		return true;
+   } );
+
 	server.app.get( "/list", (req,res)=>{
 		const tasks = local.tasks.map( task=>({
 			id: task.id,
 			name: task.name,
 			running: task.running,
+			ready: task.ready,
 			started: task.started,
 			ended: task.ended,
 			failed: task.failed

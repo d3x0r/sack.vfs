@@ -19,10 +19,13 @@ The REST-ish endpoints are intended for automation.
 | `/stop` | `task=<name>` | stops the task |
 | `/restart` | `task=<name>` | sets restart/start behavior for the task |
 | `/running` | `task=<name>` | `true` or `false` |
+| `/ready` | `task=<name>` | `true` only after the task's configured `readyPort` or `readyDelay` check succeeds |
 | `/list` | optional `json=1` | task ids, running state, and names |
 | `/log` | optional `task=<name>` or `id=<task id>`; optional `time=1`; optional `at=<line index>`; optional `length=<count>`; optional `json=1` | recent log lines as plain text, or JSON with `json=1` |
 
 Task lookup tries exact name, case-insensitive exact name, unique prefix, then unique contains match.  Ambiguous close matches return `409 Ambiguous Task` with candidate task names, or `{ error, matches }` when `json=1`.
+
+`/running` reports whether the child process exists; it does not imply that the service has begun accepting connections.  Use `/ready` for the configured readiness result.  JSON `/list` responses include both `running` and `ready`.
 
 `/log` without a task returns the previous 50 retained lines from the interleaved master log.  `/log?task=Example&time=1` returns one task's log and prefixes each line with the captured log timestamp.  `at` uses the absolute line index returned in the `X-Task-Log-At` header to page older retained log lines; `length` controls how many lines are returned.  The response also includes `X-Task-Log-Length`.  `/log?task=Example&json=1` returns `{ at, length, truncated, log }`; `/log?json=1` returns master log entries as `{ taskId, taskName, time, error, line }`.
 

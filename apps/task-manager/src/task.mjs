@@ -1,7 +1,6 @@
 
 import {local} from "./local.mjs"
 import {sack} from "sack.vfs"
-import net from "net"
 import path from "path"
 const JSOX = sack.JSOX;
 const disk = sack.Volume();
@@ -39,19 +38,23 @@ const TASK_STOP_GIVEUP_MS = 15000;
 const READY_POLL_MS = 250;
 const READY_TIMEOUT_MS = 30000;
 
-function probePort( host, port ) {
+function probePort( host, port, maxWait = 1000 ) {
 	return new Promise( ( resolve )=>{
 		let settled = false;
+		let timeout;
 		const done = ( open )=>{
 			if( settled ) return;
 			settled = true;
-			socket.destroy();
+			clearTimeout( timeout );
+			socket.close();
 			resolve( open );
 		};
-		const socket = net.connect( { host, port } );
-		socket.once( "connect", ()=>done( true ) );
-		socket.once( "error",   ()=>done( false ) );
-		socket.setTimeout( 1000, ()=>done( false ) );
+		const socket = sack.Network.TCP( { toAddress:host, toPort:port, timeout:maxWait
+			, connect:()=>done( true )
+			, error:()=>done( false )
+			, close:()=>done( false )
+		} );
+		timeout = setTimeout( ()=>done( false ), maxWait );
 	} );
 }
 
@@ -454,12 +457,15 @@ export class Task {
 				this.#run.setPtySize( ptySize.cols, ptySize.rows, ptySize.width, ptySize.height );
 			}
 			this.running = true;
-			this.starting = false; // is running, not just starting.
 			this.started = new Date();
 			this_.sendStatus();
-			// dependants wait for ready, not merely for launched
+			// `starting` spans process creation through readiness.  `running`
+			// only says that the child exists; dependants still wait for ready.
 			this.#beginReady();
 		}else { 
+			this.starting = false;
+			this.failed = true;
+			this.sendStatus();
 			console.log( 'failed to start? try altbin?' );
 		}
 
@@ -499,6 +505,7 @@ export class Task {
 		function stop() {
 			this_.ended = new Date();
 			this_.running = false;
+			this_.starting = false;
 			this_.ready = false;
 			this_.#readyRun++; // abandon any readiness probe still polling
 			if( this_.#stopTimer) { 
@@ -717,6 +724,7 @@ export class Task {
 	#setReady( run ) {
 		if( run !== this.#readyRun || !this.running ) return; // superseded, or gone
 		this.ready = true;
+		this.starting = false;
 		this.sendStatus();
 		this.#startDependants();
 	}
