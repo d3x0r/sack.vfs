@@ -1,6 +1,6 @@
 
 import {local} from "./local.mjs"
-import {getMasterLog} from "./task.mjs"
+import {getMasterLog,closeAllTasks} from "./task.mjs"
 
 
 const DEFAULT_LOG_LENGTH = 50;
@@ -180,6 +180,16 @@ export function setupRest( server ) {
       }
 			return true;
    } );
+
+	server.app.get( "/shutdown", (req,res)=>{
+		closeAllTasks(null).then( ()=>{
+			res.writeHead( 200 );
+			res.end( "true" );
+			setTimeout( ()=>{process.exit("stop" in req.CGI?1:0);}, 1000 );
+		} );
+		return true;
+
+	} );
 
 	server.app.get( "/running", (req,res)=>{
 		const taskResult = resolveRequestedTask( req );
