@@ -157,11 +157,40 @@ export class TaskInfoEditor extends Popup {
 			headerTitle.textContent = task.name || "New Task";
 		} );
 		this.bin = new TextInput( this.group1, task, "bin", 'Program');
-		this.bin.tooltip = "Program to run for this task";
 		this.altbin = new TextInput( this.group1, task, "altbin", 'Alternate Program');
-		this.altbin.tooltip = "Alternate Program to run for this task (if bin fails to run)";
 		this.work = new TextInput( this.group1, task, "work", "Start In Path" );
-		this.work.tooltip = "This is the directory this task starts in.";
+		// the tooltips on these carry what the service manager would actually
+		// use: the work directory made absolute, a relative program resolved
+		// against it, and a bare program name looked up on PATH.  Refreshed a
+		// moment after typing stops.
+		const pathTips = { bin: "Program to run for this task"
+		                 , altbin: "Alternate Program to run for this task (if bin fails to run)"
+		                 , work: "This is the directory this task starts in." };
+		const describe = ( resolved )=>{
+			if( !resolved ) return "";
+			if( !resolved.path ) return "\nNot found on PATH";
+			return "\n" + resolved.path + ( resolved.exists ? "" : "  (does not exist)" );
+		};
+		let pathTimer = null;
+		const refreshPathTips = ()=>{
+			if( pathTimer ) clearTimeout( pathTimer );
+			pathTimer = setTimeout( async ()=>{
+				pathTimer = null;
+				const paths = await protocol.resolvePaths( group, { bin: task.bin, altbin: task.altbin, work: task.work
+				                                                  , prePath: task.prePath, postPath: task.postPath } );
+				if( !local.dialogs.has( this ) ) return; // closed while waiting
+				this.bin.tooltip = pathTips.bin + describe( paths.bin );
+				this.altbin.tooltip = pathTips.altbin + describe( paths.altbin );
+				this.work.tooltip = pathTips.work + describe( paths.work );
+			}, 300 );
+		};
+		this.bin.tooltip = pathTips.bin;
+		this.altbin.tooltip = pathTips.altbin;
+		this.work.tooltip = pathTips.work;
+		this.bin.on( "change", refreshPathTips );
+		this.altbin.on( "change", refreshPathTips );
+		this.work.on( "change", refreshPathTips );
+		refreshPathTips();
 		this.programName = new TextInput( this.group1, task, "programName", "Program Name", false, false, false, "" );
 		this.programName.tooltip = "Program name used for 'use signal'";
 
@@ -363,17 +392,10 @@ export class TaskInfoEditor extends Popup {
 			if( originalName && reaches( sibling.name, originalName, new Set() ) ) {
 				row.checked = false;
 				dep.control.checked = false;
-				dep.control.disabled = true;
-				// it also toggles from its container's click handler, so the whole
-				// control has to stop taking pointer events - which means the
-				// reason has to go on a wrapper that still can.
-				const guard = document.createElement( "div" );
-				guard.className = "dependency-cycle";
-				guard.title = "\"" + sibling.name + "\" already depends on this task"
-				            + " - depending on it back would be a loop";
-				this.group4.insertBefore( guard, dep.el );
-				guard.appendChild( dep.el );
-				dep.el.style.pointerEvents = "none";
+				dep.disabled = true;
+				dep.el.classList.add( "dependency-cycle" );
+				dep.el.title = "\"" + sibling.name + "\" already depends on this task"
+				             + " - depending on it back would be a loop";
 			} else
 				dep.tooltip = "Start \"" + sibling.name + "\" before this task";
 		}

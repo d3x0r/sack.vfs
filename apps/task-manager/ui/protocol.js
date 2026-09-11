@@ -74,6 +74,7 @@ export class Protocol extends Events {
 	static displayRequests = [];
 	static taskRequests = [];
 	static pluginRequests = [];
+	static pathRequests = [];
 	ws = null;
 
 	stopTask( group, task ) {
@@ -158,6 +159,17 @@ export class Protocol extends Events {
 			this.ws.send( JSOX.stringify( { op:"getPlugins", system:id } ) );
 		} );
 		return p;
+	}
+
+	// ask a service manager what a task's bin/altbin/work would resolve to;
+	// resolves with { bin, altbin, work } of { path, exists } (or null if unset)
+	resolvePaths( group, task ) {
+		const system = config.local.systems.find( system=>system === group );
+		const id = "paths-" + Math.random().toString( 36 ).slice( 2 );
+		return new Promise( (res)=>{
+			Protocol.pathRequests.push( { id, res } );
+			this.ws.send( JSOX.stringify( { op:"resolvePaths", system:system ? system.id : config.local.system, id, task } ) );
+		} );
 	}
 
 	setPlugins( group, plugins, settings ) {
@@ -353,6 +365,12 @@ export class Protocol extends Events {
 							break;
 						}
 					}
+				}
+				break;
+			case "resolvedPaths":
+				{
+					const at = Protocol.pathRequests.findIndex( request=>request.id === msg.id );
+					if( at >= 0 ) Protocol.pathRequests.splice( at, 1 )[0].res( msg.paths || {} );
 				}
 				break;
 			case "taskInfo":

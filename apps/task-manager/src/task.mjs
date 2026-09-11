@@ -2,6 +2,7 @@
 import {local} from "./local.mjs"
 import {sack} from "sack.vfs"
 import path from "path"
+import fs from "fs"
 const JSOX = sack.JSOX;
 const disk = sack.Volume();
 
@@ -94,6 +95,79 @@ function resolveTaskBin( task, bin ) {
 	if( disk.exists( resolved ) ) return resolved;
 
 	return bin;
+}
+
+// PATH as a task's child would see it (prePath/postPath applied), or null when
+// the task uses the manager's own PATH unchanged.
+function taskPathEnv( task ) {
+	const sep = process.platform === "win32" ? ";" : ":";
+	let p = null;
+	if( task.prePath ) p = task.prePath + sep + process.env.PATH;
+	if( task.postPath ) p = ( p || process.env.PATH ) + sep + task.postPath;
+	return p;
+}
+
+// Bare program names looked up on PATH, keyed by name and PATH, so the editor
+// asking after every keystroke doesn't spawn `where`/`which` each time.  A miss
+// is forgotten after a while in case the program gets installed.
+const binLookups = new Map();
+const BIN_MISS_TTL = 30000;
+
+function findOnPath( name, pathEnv ) {
+	const key = name + "\0" + ( pathEnv || "" );
+	let pending = binLookups.get( key );
+	if( pending ) return pending;
+	pending = new Promise( (res)=>{
+		let out = "";
+		const win = process.platform === "win32";
+		try {
+			const opts = { // a full path so stdout is captured on windows
+			               bin: win ? path.join( process.env.SystemRoot || "C:\\Windows", "System32", "where.exe" ) : "/usr/bin/which"
+			             , args: [ name ]
+			             , firstArgIsArg: true
+			             , hidden: true
+			             , input( buffer ) { out += buffer; }
+			             , errorInput() {}
+			             , end() {
+				const first = out.split( /\r?\n/ ).map( line=>line.trim() ).find( line=>line );
+				res( first || null );
+			} };
+			// only when overriding: sack.Task reads `env` as an object whenever the
+			// key is present, and an undefined value crashes it.
+			if( pathEnv ) opts.env = Object.assign( {}, process.env, { PATH: pathEnv } );
+			sack.Task( opts );
+		} catch( err ) {
+			console.log( "Failed to look up", name, "on PATH:", err );
+			res( null );
+		}
+	} );
+	binLookups.set( key, pending );
+	pending.then( found=>{ if( !found ) setTimeout( ()=>binLookups.delete( key ), BIN_MISS_TTL ); } );
+	return pending;
+}
+
+// What a task's bin/altbin/work would resolve to if it were started now; the
+// editor shows these so a relative path or bare program name can be checked
+// before saving.  Each is { path, exists }, or null when the field is unset.
+export async function resolveTaskPaths( task ) {
+	const work = taskWorkPath( task.work );
+	const pathEnv = taskPathEnv( task );
+	async function resolveBin( bin ) {
+		if( !bin ) return null;
+		if( /[\\/]/.test( bin ) ) {
+			// same rule as resolveTaskBin(), but always report the absolute form so
+			// a missing relative program still shows where it was looked for
+			const resolved = path.isAbsolute( bin ) ? path.normalize( bin ) : path.resolve( work, bin );
+			return { path: resolved, exists: fs.existsSync( resolved ) };
+		}
+		// a bare name is left to the system's search, so report what PATH finds
+		const found = await findOnPath( bin, pathEnv );
+		return { path: found, exists: !!found };
+	}
+	return { work: { path: work, exists: fs.existsSync( work ) }
+	       , bin: await resolveBin( task.bin )
+	       , altbin: await resolveBin( task.altbin )
+	       };
 }
 
 function getPtySize( task ) {

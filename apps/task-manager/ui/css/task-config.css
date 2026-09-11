@@ -165,6 +165,26 @@ span {
 .has-tooltip .tooltip-text{
 		width: 25vw;
 }
+/* resolved paths sit on their own line under the field's description.  The
+   dialog frame scrolls, so it clips anything that sticks out of it; keep the
+   tooltip inside by hanging it from the field's right edge, as wide as the
+   field's row, and wrapping long paths rather than letting them run off. */
+.task-config-group1 .tooltip-text {
+	white-space: pre-line;
+	overflow-wrap: anywhere;
+	left: auto;
+	right: 0;
+	margin-left: 0;
+	width: auto;
+	max-width: 100%;
+	box-sizing: border-box;
+	padding: 5px 10px;
+	text-align: left;
+}
+.task-config-group1 .tooltip-text::after {
+	left: auto;
+	right: 2rem;
+}
 .page-frame-page-handle.has-tooltip .tooltip-text {
 	bottom: auto;
 	top: calc(100% + .35rem);
@@ -233,7 +253,11 @@ select{
 	background-color: #222;
 }
 
-.task-config-group1 .fieldUnit-task-config {
+/* the popup frame shrinks to fit, so a row whose input is width:100% has no
+   width to take a percentage of and grows to the frame's cap instead; a grid
+   with a bounded column keeps these rows the same width as page one's */
+.task-config-group1 .fieldUnit-task-config,
+.task-config-ready .fieldUnit-task-config {
 	display: grid;
 	grid-template-columns: 12rem minmax(14rem, 1fr);
 	gap: .75rem;
@@ -402,6 +426,23 @@ select{
 	opacity: 0.7;
 	font-style: italic;
 	margin: 4px 0;
+}
+/* one dependency per row: box, then the name, left to right and unwrapped;
+   without this the label takes the library's 6em right-aligned default and a
+   long task name wraps around the box */
+.task-config-group4 .fieldUnit-task-config {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: .5rem;
+	min-height: 2.5rem;
+}
+.task-config-group4 .field-unit-span {
+	width: auto;
+	flex: 1 1 auto;
+	margin: 0;
+	text-align: left;
+	white-space: nowrap;
 }
 /* a dependency that would close a loop - inert, and says why on hover */
 .dependency-cycle {

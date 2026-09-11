@@ -20,7 +20,7 @@ let firstLoad = true;
 import {openServer} from "../../http-ws/server.mjs"
 import {setupRest} from "./main.rest.mjs"
 
-import {config as taskConfig, Task, closeAllTasks} from "./task.mjs"
+import {config as taskConfig, Task, closeAllTasks, resolveTaskPaths} from "./task.mjs"
 taskConfig.pwdBare = pwdBare;
 taskConfig.send = send;
 taskConfig.config = config;
@@ -425,6 +425,7 @@ function connect( ws ) {
 				}
 			}
 			break;
+		case "resolvedPaths":
 		case "taskInfo":
 			const replyTo = local.replyMap[msg.id];
 			//console.log( "Info reply should rely to:", replyTo, local.replyMap );
@@ -795,6 +796,22 @@ function handleMessage( ws, msg_ ) {
 		case "getTaskInfo":
 			handleTaskInfo( ws, msg, msg_ );
 			break;
+		case "resolvePaths": {
+			// msg.id is the requester's own token; the reply carries it back.
+			if( msg.system && msg.system !== local.id ) {
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) {
+					( local.replyMap[msg.id] || ( local.replyMap[msg.id] = [] ) ).push( ws );
+					remote.connection.ws.send( msg_ );
+				}
+				break;
+			}
+			resolveTaskPaths( msg.task || {} ).then( paths=>{
+				if( ws.readyState === 1 )
+					ws.send( JSOX.stringify( { op:"resolvedPaths", id:msg.id, paths } ) );
+			} );
+			break;
+		}
 		case "updateDisplay": {
 				const task = local.taskMap[msg.id];
 				if( !task ) {
