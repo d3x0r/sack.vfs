@@ -13,6 +13,35 @@
 .plugins-grid {
 	min-width: 40em;
 }
+.plugins-settings {
+	border: .1vh solid #fff;
+	border-radius: 1vh;
+	padding: 1vh;
+	margin: 0 0 1vh 0;
+}
+.plugins-settings .fieldUnit-plugins {
+	display: grid;
+	grid-template-columns: 14rem minmax(14rem, 1fr);
+	gap: .75rem;
+	align-items: center;
+	border-radius: 0;
+}
+/* TextInput suffixes its label class (text-label-plugins) but Checkbox does
+   not (field-unit-span), so the two only match the same rules when both are
+   named here. */
+.plugins-settings .field-unit-span,
+.plugins-settings .text-label-plugins {
+	font-size: 1rem;
+	line-height: 1.35;
+	width: auto;
+	margin: 0;
+	text-align: left;
+	white-space: nowrap;
+}
+.plugins-settings .checkOption-plugins {
+	justify-self: start;
+	margin: 0;
+}
 
 .button-service-managerstop-launcher {
 	margin-right: 6px;

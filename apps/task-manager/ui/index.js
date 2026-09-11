@@ -136,8 +136,8 @@ function confirmDeleteTask( group, task ) {
 }
 
 async function showPlugins( group ) {
-	const plugins = await protocol.getPlugins( group );
-	new PluginsEditor( group, plugins );
+	const { plugins, settings } = await protocol.getPlugins( group );
+	new PluginsEditor( group, plugins, settings );
 }
 
 // Stopping a launcher takes down every task it owns and exits it - from here
@@ -274,6 +274,7 @@ function AddTaskList(display, object, field) {
 
 	const dataGrid = new DataGrid( display, object, field, {//suffix:'-browse'
 		edit:false,
+		filter:true,
       columns } );
 
 	let visible = false;

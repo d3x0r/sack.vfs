@@ -149,6 +149,7 @@ export class Protocol extends Events {
 			this.ws.send( JSOX.stringify( {op:"updateTask", id, task} ) );
 	}
 
+	// resolves with { plugins, settings } for that service manager
 	async getPlugins( group ) {
 		const system = config.local.systems.find( system=>system === group );
 		const id = system ? system.id : config.local.system;
@@ -159,10 +160,10 @@ export class Protocol extends Events {
 		return p;
 	}
 
-	setPlugins( group, plugins ) {
+	setPlugins( group, plugins, settings ) {
 		const system = config.local.systems.find( system=>system === group );
 		const id = system ? system.id : config.local.system;
-		this.ws.send( JSOX.stringify( { op:"setPlugins", system:id, plugins } ) );
+		this.ws.send( JSOX.stringify( { op:"setPlugins", system:id, plugins, settings } ) );
 	}
 
 	// stop the service manager itself (and everything it launched)
@@ -347,7 +348,7 @@ export class Protocol extends Events {
 					for( let r = 0; r < Protocol.pluginRequests.length; r++ ) {
 						const request = Protocol.pluginRequests[r];
 						if( request.id === msg.system ) {
-							request.res( msg.plugins );
+							request.res( { plugins: msg.plugins || [], settings: msg.settings || {} } );
 							Protocol.pluginRequests.splice( r, 1 );
 							break;
 						}

@@ -111,8 +111,10 @@ for the program to run, while windows requires a full path (otherwise stdio redi
 |name|Type|Description|
 |---|---|----|
 | port | number | port to host service on |
+| hostname | string | name this service manager reports to its upstream; defaults to the machine's hostname |
 | useUpstream | bool | Enables connecting to an upstream task server |
-| upstreamServer | string | "Host:port" address to connect to, with `ws://` (support wss?) |
+| upstreamServer | string | "Host:port" address to connect to (no `ws://` prefix) |
+| disallowUpstreamTaskManagment | bool | the upstream may list and watch tasks here, but not start, stop, or edit them |
 | maxMasterLogLines | number | maximum number of interleaved master log entries to retain |
 | extraModules| array of {name,function} | Specifies additional modules to load before starting any tasks.  This are expected to be async functions and await resolution of each module in turn.|
 | onStopAll| array of {name,function,options} | Specifies additional modules to load when Stop All is triggered.  This are expected to be async functions and await resolution of each module in turn. `module.function(options)` |

@@ -755,7 +755,8 @@ function handleMessage( ws, msg_ ) {
 				break;
 			}
 			ws.send( JSOX.stringify( { op:"plugins", system:local.id
-			                         , plugins: config.extraModules || [] } ) );
+			                         , plugins: config.extraModules || []
+			                         , settings: getServiceSettings() } ) );
 			break;
 		}
 		case "setPlugins": {
@@ -768,10 +769,12 @@ function handleMessage( ws, msg_ ) {
 			// only entries with a module name are worth keeping; `function` is
 			// optional - such a plugin is imported and not waited on.
 			config.extraModules = ( msg.plugins || [] ).filter( plugin=>plugin && plugin.name );
+			if( msg.settings ) setServiceSettings( msg.settings );
 			saveRunConfig();
 			console.log( "Plugin list updated;", config.extraModules.length
 			           , "plugin(s) - they load on the next start of this service manager." );
-			send( { op:"plugins", system:local.id, plugins: config.extraModules } );
+			send( { op:"plugins", system:local.id, plugins: config.extraModules
+			      , settings: getServiceSettings() } );
 			break;
 		}
 		case "getDisplays": {
@@ -825,10 +828,40 @@ function handleMessage( ws, msg_ ) {
 }
 
 
+// The service-level settings the Plugins dialog edits alongside the module
+// list.  Like the plugins these are stored now and take effect on the next
+// start; the port is already bound and the upstream link already made.
+function getServiceSettings() {
+	return { port: config.port || ""
+	       , hostname: config.hostname || ""
+	       , useUpstream: !!config.useUpstream
+	       , upstreamServer: config.upstreamServer || ""
+	       , disallowUpstreamTaskManagment: !!config.disallowUpstreamTaskManagment
+	       // what each blank field falls back to; the dialog shows these as placeholders
+	       , defaults: { port: Number( process.env.PORT ) || 8080
+	                   , hostname: os.hostname()
+	                   , upstreamServer: "localhost:8089" }
+	       };
+}
+
+function setServiceSettings( settings ) {
+	const port = Number( settings.port );
+	// 0 (or blank) means "not set"; leave the key out so the default applies.
+	if( port > 0 && port < 65536 ) config.port = port;
+	else delete config.port;
+	if( typeof settings.hostname === "string" && settings.hostname.trim() )
+		config.hostname = settings.hostname.trim();
+	else delete config.hostname;
+	config.useUpstream = !!settings.useUpstream;
+	if( typeof settings.upstreamServer === "string" )
+		config.upstreamServer = settings.upstreamServer.trim().replace( /^wss?:\/\//, "" );
+	config.disallowUpstreamTaskManagment = !!settings.disallowUpstreamTaskManagment;
+}
+
 function saveRunConfig() {
 	const c = Object.assign( {}, config );
         c.tasks = c.tasks.reduce( (acc,task)=>{if( !task.temporary ) acc.push( task ); return acc;}, [] );
-	const output = JSOX.stringify( config, null, "\t" );
+	const output = JSOX.stringify( c, null, "\t" );
 	disk.write( process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox", output );
 }
 

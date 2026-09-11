@@ -1,6 +1,8 @@
 import {Popup,popups} from "/node_modules/@d3x0r/popups2/popups.js"
 import {Button} from "/node_modules/@d3x0r/popups2/controls/button.js"
 import {DataGrid} from "/node_modules/@d3x0r/popups2/controls/data-grid.js"
+import {TextInput} from "/node_modules/@d3x0r/popups2/controls/text-input.js"
+import {Checkbox} from "/node_modules/@d3x0r/popups2/controls/checkbox.js"
 import {local} from "./local.js"
 import {protocol} from "./protocol.js"
 
@@ -12,12 +14,17 @@ import {protocol} from "./protocol.js"
   without one is imported for its side effects and the list moves straight on.
   Nothing here takes effect until that system is next started - the modules have
   already been loaded by the time there is a UI to edit them from.
+
+  The same dialog carries the handful of service-level settings from the config
+  file (port, name, upstream link); those are stored the same way and also apply
+  on the next start.
 */
 export class PluginsEditor extends Popup {
 
 	rows = [];
+	settings = {};
 
-	constructor( group, plugins ) {
+	constructor( group, plugins, settings ) {
 		super( "Plugins", document.body, { suffix:"-plugins", shadowFrame: true, enableClose: true } );
 		this.on( "captionClose", ()=>{
 			this.on( "close", true );
@@ -54,17 +61,38 @@ export class PluginsEditor extends Popup {
 				// send the loader looking for an export named "".
 				if( row.function ) plugin.function = row.function;
 				return plugin;
-			} ) );
+			} ), this.settings );
 			this.on( "close", true );
 			this.remove();
 		} );
-		this.save.tooltip = "Store this list; it loads the next time this service manager starts";
+		this.save.tooltip = "Store these settings and this list; they apply the next time this service manager starts";
+
+		// service settings; a copy so cancelling the dialog leaves nothing changed.
+		// `defaults` is what the service uses for a blank field; shown, not stored.
+		const { defaults = {}, ...stored } = settings || {};
+		this.settings = Object.assign( { port: "", hostname: "", useUpstream: false
+		                               , upstreamServer: "", disallowUpstreamTaskManagment: false }
+		                             , stored );
+		const settingsFrame = document.createElement( "div" );
+		settingsFrame.className = "plugins-settings";
+		this.appendChild( settingsFrame );
+
+		const hostname = new TextInput( settingsFrame, this.settings, "hostname", "Server Name", { placeholder: defaults.hostname } );
+		hostname.tooltip = "Name reported to an upstream task manager; blank uses this machine's hostname";
+		const port = new TextInput( settingsFrame, this.settings, "port", "Port", { number:true, placeholder: defaults.port } );
+		port.tooltip = "Port this service manager listens on; blank uses the PORT environment variable or 8080";
+		const useUpstream = new Checkbox( settingsFrame, this.settings, "useUpstream", "Connect Upstream" );
+		useUpstream.tooltip = "Register this service manager's tasks with another task manager";
+		const upstream = new TextInput( settingsFrame, this.settings, "upstreamServer", "Upstream Server", { placeholder: defaults.upstreamServer } );
+		upstream.tooltip = "host:port of the task manager to connect to";
+		const disallow = new Checkbox( settingsFrame, this.settings, "disallowUpstreamTaskManagment", "Upstream Cannot Manage Tasks" );
+		disallow.tooltip = "The upstream task manager can watch these tasks but not start, stop, or edit them";
 
 		const note = document.createElement( "div" );
 		note.className = "plugins-note";
-		note.textContent = "Loaded in order at start-up. An entry with a Function waits for it to"
+		note.textContent = "Plugins are loaded in order at start-up. An entry with a Function waits for it to"
 		                 + " finish before the next entry runs; without one the module is only"
-		                 + " imported. Changes apply on the next start.";
+		                 + " imported. Settings and plugin changes apply on the next start.";
 		this.appendChild( note );
 
 		const gridFrame = document.createElement( "div" );
