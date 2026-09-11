@@ -30,46 +30,6 @@ local.addTask = addTask;
 const JSOX = sack.JSOX;
 import {config} from "./config.mjs"
 
-// Plugins.  An ordered list of { name, function, options }, run in sequence:
-// with a `function` the next one waits for it, without one the module is just
-// imported for its side effects and the list moves straight on.
-if( config.extraModules ) {	
-	await new Promise( (res,rej)=>{
-		loadModules( 0 );
-	
-		function loadModules( n ) {
-			if( n >= config.extraModules.length ) {
-				return res();
-			}
-			const plugin = config.extraModules[n];
-			const next = ()=>loadModules( n+1 );
-			return import( "file://"+pwdBare+"/"+plugin.name ).then( (module)=>{
-				// no function named: importing it was the whole point
-				if( !plugin.function ) return next();
-				const entry = module[plugin.function];
-				if( "function" !== typeof entry ) {
-					console.log( "Plugin has no such export:", plugin.name, plugin.function );
-					return next();
-				}
-				// a plugin that returns nothing is not an error - only wait when
-				// there is something to wait on.  Calling .then() on whatever it
-				// returned used to throw straight into the "Error loading" catch.
-				return Promise.resolve( entry( plugin.options ) ).then( next, (err)=>{
-					console.log( "Error running:", plugin.name, plugin.function, err );
-					return next();
-				} );
-			} ).catch( (err)=>{
-					console.log( "Error loading:", plugin.name, err );
-					return next();
-				} );
-		}
-	} );
-}
-
-
-config.tasks.forEach( loadTask );
-
-
 
 const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
 	, npmPath:process.env.NPM_PATH || (parentRoot+"/..")
@@ -89,6 +49,55 @@ server.addHandler( (req,res)=>{
 		req.url = "/../.." + req.url;
 	}
 	return false;
+})
+
+
+// Plugins.  An ordered list of { name, function, options }, run in sequence:
+// with a `function` the next one waits for it, without one the module is just
+// imported for its side effects and the list moves straight on.
+const waitInit = ( config.extraModules ) ?
+	new Promise( (res,rej)=>{
+		loadModules( 0 );
+		
+		function loadModules( n ) {
+			//console.log( "module is:", n );
+			if( n >= config.extraModules.length ) {
+				//console.log( "modules done... so .. resolve!")
+				return res();
+			}
+			const plugin = config.extraModules[n];
+			const next = ()=>loadModules( n+1 );
+			return import( "file://"+pwdBare+"/"+plugin.name ).then( (module)=>{
+				// no function named: importing it was the whole point
+				//console.log( "Managed to import the thing?", module );
+				if( !plugin.function ) return next();
+				const entry = module[plugin.function];
+				if( "function" !== typeof entry ) {
+					console.log( "Plugin has no such export:", plugin.name, plugin.function );
+					return next();
+				}
+				// a plugin that returns nothing is not an error - only wait when
+				// there is something to wait on.  Calling .then() on whatever it
+				// returned used to throw straight into the "Error loading" catch.
+				return Promise.resolve( entry( plugin.options ) ).then( next, (err)=>{
+					console.log( "Error running:", plugin.name, plugin.function, err );
+					return next();
+				} );
+			} ).catch( (err)=>{
+					console.log( "Error loading:", plugin.name, err );
+					return next();
+				} );
+		}
+	} ): Promise.resolve();
+
+config.tasks.forEach( loadTask );
+	
+waitInit.then( ()=>{
+	//console.log( "Wait init finished so we can start tasks?");
+	//console.log( "uhh started tasks? setup opts?");
+	if( config.useUpstream )
+		connectToCore();
+
 })
 
 let authCb = null;
@@ -287,16 +296,9 @@ function connectToCore() {
 }
 
 //console.log( "Upstream?", config.useUpstream, config.upstreamServer )
-if( config.useUpstream )
-	connectToCore();
-
-
 export function beginScheduler() {
-	//console.log( "Loading tasks?", config.tasks, local.tasks );
-	config.tasks.forEach( loadTask );
-
+	//console.log( "So still waiting for plugin init?", waitInit)
 	startTasks();
-
 }
 
 if( isTopLevel(import.meta.url) ) beginScheduler();
@@ -356,12 +358,14 @@ function onStopAll( n ) {
 
 
 function startTasks() {
-	local.tasks.forEach( task=>{
-		if (!task.running 
-                   && !task.hasDepends 
-		   && !task.noAutoRun){
-			task.start() 
-		}} );
+	waitInit.then( ()=>{
+		local.tasks.forEach( task=>{
+			if (!task.running 
+					&& !task.hasDepends 
+			&& !task.noAutoRun){
+				task.start() 
+			}} );
+	})
 }
 // start client interface to server.
 //sack.Task( { work:programRoot+"/../ui", bin:"cmd", args:["/C", "start", "http://localhost:8080/index.html" ] } );
@@ -565,10 +569,10 @@ function connect( ws ) {
 		if( protocol === "task-proxy"){
 			// need to forget this system.
 			const systemindex = local.systems.findIndex( system=>system.connection === connection );
-			console.log( "did we find proxy connection?", systemindex);
+			//console.log( "did we find proxy connection?", systemindex);
 			if( systemindex >= 0 ) {
 				local.systems.splice( systemindex, 1 );
-				console.log( "connection too:", connection.system );
+				//console.log( "connection to:", connection.system );
 				send( {op:"deleteSystem", id: connection.system.id});
 			}
 		}
