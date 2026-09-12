@@ -10,10 +10,13 @@ const parentRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-2).join(
 import {System} from "../ui/system.mjs"
 import {local} from "./local.mjs"
 import {isTopLevel} from "sack.vfs/isTopLevel" 
+import {Events} from "sack.vfs/Events2" 
 
 import os from "os";
 import {sack} from "sack.vfs"
 const disk = sack.Volume();
+const JSOX = sack.JSOX;
+
 export const pwdBare = process.cwd();
 let firstLoad = true;
 
@@ -27,8 +30,21 @@ taskConfig.config = config;
 taskConfig.local = local;
 local.addTask = addTask;
 
-const JSOX = sack.JSOX;
-import {config} from "./config.mjs"
+
+import {reloadConfig} from "./cfg.mjs"
+export const config = await reloadConfig();
+
+sack.system.programName = config.programName || "sack.vfs Default Task Manager";
+if( "enableExitSignal" in sack.system ) {
+	sack.system.enableExitSignal( ()=>{
+		//console.log( "Got exit signal... so generate exit?" );
+		closeAllTasks().then( ()=>{
+			//console.log( "Took some time to shut down tasks?" );
+			//process.emit( "SIGINT" );
+			process.exit(0);
+		});
+	} );
+}
 
 
 const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
@@ -41,6 +57,19 @@ const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
 // start server...
 console.log( "Serve on port:", serverOpts.port );
 export const server = openServer( serverOpts, accept, connect );
+
+export function on( taskName, event, data ) {
+	// find task by name, and 	
+	const task = local.tasks.find( task=>task.name===taskName );
+	if( task ) {
+		task.on( event, data );
+		if( "function" === typeof data ) switch( event ) {
+		case "ready":
+			data( task[event] );
+			break;
+		}
+	}
+}
 
 setupRest( server );
 
@@ -886,32 +915,3 @@ function saveRunConfig() {
 	disk.write( process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox", output );
 }
 
-if( "enableExitSignal" in sack.system ) {
-	sack.system.enableExitSignal( ()=>{
-		//console.log( "Got exit signal... so generate exit?" );
-		closeAllTasks().then( ()=>{
-			//console.log( "Took some time to shut down tasks?" );
-			//process.emit( "SIGINT" );
-			process.exit(0);
-		});
-	} );
-}
-
-function enableDefaultLogin() {
-	let attempts =0;
-	function attemptEnableDefaultLoginService() {
-		return import( "@d3x0r/user-database-remote/enableLogin" ).then( udbr=>{
-		// serves additional login REST api... 
-			udbr.enableLogin( server, server.app, (user)=>{
-				console.log( "Need to at least get the user, right?", user );
-			} )  // extra argument is onExpect callback	
-		} ).catch( (err)=>{
-			if( ++attempts < 2 )
-				setTimeout( attemptEnableDefaultLoginService, 2000 );
-			else
-				console.log( "User login not enabled on the server", err );
-			// login = true?
-		} );
-	}
-}
-enableDefaultLogin();

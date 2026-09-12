@@ -1,6 +1,7 @@
 
 import {local} from "./local.mjs"
 import {sack} from "sack.vfs"
+import {Events} from "sack.vfs/Events2"
 import path from "path"
 import fs from "fs"
 const JSOX = sack.JSOX;
@@ -157,13 +158,13 @@ export async function resolveTaskPaths( task ) {
 			// same rule as resolveTaskBin(), but always report the absolute form so
 			// a missing relative program still shows where it was looked for
 			const resolved = path.isAbsolute( bin ) ? path.normalize( bin ) : path.resolve( work, bin );
-			return { path: resolved, exists: fs.existsSync( resolved ) };
+			return { path: resolved, exists: disk.exists( resolved ) };
 		}
 		// a bare name is left to the system's search, so report what PATH finds
 		const found = await findOnPath( bin, pathEnv );
 		return { path: found, exists: !!found };
 	}
-	return { work: { path: work, exists: fs.existsSync( work ) }
+	return { work: { path: work, exists: disk.exists( work ) }
 	       , bin: await resolveBin( task.bin )
 	       , altbin: await resolveBin( task.altbin )
 	       };
@@ -179,7 +180,7 @@ function getPtySize( task ) {
 	};
 }
 
-export class Task {
+export class Task extends Events {
 	started = new Date(0);
 	starting = false;
 	// wants to run, but a dependency is not ready yet - #startDependants will
@@ -220,6 +221,7 @@ export class Task {
 	#readyRun = 0; // generation, so a restart abandons the previous probe
 
 	constructor(task) {
+		super();
 		this.#task = task;
 		this.name = task.name;
 		this.noAutoRun = task.noAutoRun;
@@ -580,6 +582,7 @@ export class Task {
 			this_.running = false;
 			this_.starting = false;
 			this_.ready = false;
+			this.on( "ready", false );
 			this_.#readyRun++; // abandon any readiness probe still polling
 			if( this_.#stopTimer) { 
 				clearTimeout ( this_.#stopTimer )
@@ -804,6 +807,7 @@ export class Task {
 	#setReady( run ) {
 		if( run !== this.#readyRun || !this.running ) return; // superseded, or gone
 		this.ready = true;
+		this.on( "ready", true );
 		this.starting = false;
 		this.sendStatus();
 		this.#startDependants();
