@@ -5,6 +5,17 @@ This is a shell static web resource server, and websocket endpoint.
 Environment variables `SSL_PATH` and `SSL_HOST` are used to enable HTTPS.  `SSL_PATH` specifies
 the root directory to find 'fullchain.pem' and 'privkey.pem' which are standard names Lets Encrypt 
 uses at this time.  `SSL_HOST` specifies a list of tilde(~) separated names in the certificate.  
+If `SSL_HOST` is not set, the names are taken from the certificate itself.
+
+To serve several certificates (one per site) both variables may be JSOX arrays; `SSL_HOST` is
+positional with `SSL_PATH`, and an omitted entry is again filled from that certificate:
+
+```
+export "SSL_PATH=['/etc/letsencrypt/live/app.d3x0r.org','/etc/letsencrypt/live/sideplayr.com']"
+export "SSL_HOST=['app.d3x0r.org','www.sideplayr.com']"
+```
+
+The certificate presented is chosen by the server name (SNI) the client sends.
 
 More advanced configurations are possible, the server can specify multiple hosts strings each with
 their own certificates and keys.  The server will switch to use one that matches the server requested

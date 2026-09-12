@@ -61,39 +61,66 @@ function read( name ) {
 	}
 }
 
-function getCertChain( ) {
-	//SSLCertificateFile /etc/letsencrypt/live/d3x0r.org/fullchain.pem
-	//SSLCertificateKeyFile /etc/letsencrypt/live/d3x0r.org/privkey.pem
-	if( process.env.SSL_PATH ) {
-		//if( !process.env.SSL_HOST ) {
-		//	console.log( "ssl host name not specified..." )
-		//	return null;
-		//}
-		return process.env.SSL_PATH + "/fullchain.pem"
-	}
-	return  parentRoot + "/certgen/cert-chain.pem"
-}
-function getCertKey( ) {
-	if( process.env.SSL_PATH ) {
-		if( !process.env.SSL_HOST ) {
-			console.log( "ssl host name not specified..." )
-			return null;
+// SSL_PATH and SSL_HOST may be a plain string (one certificate) or a JSOX
+// array of strings, e.g.
+//    SSL_PATH="['/etc/letsencrypt/live/a.org','/etc/letsencrypt/live/b.com']"
+//    SSL_HOST="['a.org','www.b.com']"
+// SSL_HOST is positional with SSL_PATH; a missing or empty entry is filled
+// from the names found in that certificate.  Names within one entry may be
+// tilde(~) separated as before.
+function envList( name ) {
+	const val = process.env[name];
+	if( !val ) return [];
+	const trimmed = val.trim();
+	if( trimmed[0] === '[' ) {
+		try {
+			const parsed = sack.JSOX.parse( trimmed );
+			if( parsed instanceof Array ) return parsed.map( v=>( v === null || v === undefined ) ? "" : String( v ) );
+		} catch( err ) {
+			console.log( "Failed to parse", name, "as a JSOX array:", err.message );
 		}
-		return process.env.SSL_PATH + "/privkey.pem"
 	}
-	return  parentRoot + "/certgen/rootkeynopass.prv"
+	return [ val ];
 }
 
-const certChain = read( getCertChain() );
-if( certChain )
-	if( !process.env.SSL_HOST ) {
-		process.env.SSL_HOST = sack.TLS.hosts( certChain ).join("~");
-		console.log( "Host not specified, using certificate hosts:", process.env.SSL_HOST );
-	} else {
-		console.log( "host not checked?" );
+function loadCerts() {
+	//SSLCertificateFile /etc/letsencrypt/live/d3x0r.org/fullchain.pem
+	//SSLCertificateKeyFile /etc/letsencrypt/live/d3x0r.org/privkey.pem
+	const sslPaths = envList( "SSL_PATH" );
+	const sslHosts = envList( "SSL_HOST" );
+	const result = [];
+	if( !sslPaths.length ) {
+		const cert = read( parentRoot + "/certgen/cert-chain.pem" );
+		if( !cert ) return result;
+		const key = read( parentRoot + "/certgen/rootkeynopass.prv" );
+		let host = sslHosts[0];
+		if( !host ) {
+			host = sack.TLS.hosts( cert ).join( "~" );
+			console.log( "Host not specified, using certificate hosts:", host );
+		}
+		result.push( { host, cert, key } );
+		return result;
 	}
-//console.log( "certChain loaded?", sack.TLS.hosts( certChain ) );
-const certKey = read( getCertKey() );
+	for( let n = 0; n < sslPaths.length; n++ ) {
+		const sslPath = sslPaths[n];
+		if( !sslPath ) continue;
+		const cert = read( sslPath + "/fullchain.pem" );
+		if( !cert ) continue;
+		const key = read( sslPath + "/privkey.pem" );
+		let host = sslHosts[n];
+		if( !host ) {
+			host = sack.TLS.hosts( cert ).join( "~" );
+			console.log( "Host not specified for", sslPath, "using certificate hosts:", host );
+		}
+		result.push( { host, cert, key } );
+	}
+	return result;
+}
+
+const sslCerts = loadCerts();
+// first (or only) certificate; kept for callers that override cert/key in serverOpts.
+const certChain = sslCerts.length ? sslCerts[0].cert : undefined;
+const certKey = sslCerts.length ? sslCerts[0].key : undefined;
 
 const encMap = {
 		'.gz':'gzip'
@@ -396,17 +423,20 @@ export function openServer( opts, cbAccept, cbConnect )
 	let handlers = [];
 	const serverOpts = opts || {};
 	if( !("port" in serverOpts )) serverOpts.port = Number(process.env.PORT)||(process.argv.length > 2?Number(process.argv[2]):0) || 8080;
-	if( certChain ) 
+	if( sslCerts.length ) 
 	{
 		if( !serverOpts.hosts ) serverOpts.hosts = [];
-		serverOpts.hosts.push( {
-			host: process.env.SSL_HOST || "localhost",
-			cert : serverOpts.cert || certChain,
-			key : serverOpts.key || certKey
-	
-		});
-		//serverOpts.cert = serverOpts.cert || certChain;
-		//serverOpts.key = serverOpts.key || certKey;
+		if( serverOpts.cert || serverOpts.key ) {
+			// caller supplied an explicit certificate; use it for the first host only.
+			serverOpts.hosts.push( {
+				host: sslCerts[0].host || "localhost",
+				cert : serverOpts.cert || certChain,
+				key : serverOpts.key || certKey
+			});
+		} else {
+			for( let ssl of sslCerts )
+				serverOpts.hosts.push( { host: ssl.host || "localhost", cert: ssl.cert, key: ssl.key } );
+		}
 	}
 	const server = sack.WebSocket.Server( serverOpts )
 	//console.log( "serving on " + serverOpts.port, server );
