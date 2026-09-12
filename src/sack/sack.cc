@@ -69544,7 +69544,7 @@ struct json_parse_context {
 	struct json_context_object *object;
 };
 #define RESET_VAL()  {	  val.value_type = VALUE_UNSET;	 val.contains = NULL;	              val._contains = NULL;	             val.name = NULL;	                  val.string = NULL;	                negative = FALSE; }
-#define RESET_STATE_VAL()  {	  state->val.value_type = VALUE_UNSET;	 state->val.contains = NULL;	              state->val._contains = NULL;	             state->val.name = NULL;	                  state->val.string = NULL;	                state->negative = FALSE;	                 state->signPending = FALSE; }
+#define RESET_STATE_VAL()  {	  state->val.value_type = VALUE_UNSET;	 state->val.contains = NULL;	              state->val._contains = NULL;	             state->val.name = NULL;	                  state->val.string = NULL;	                state->negative = FALSE;	                 state->signSeen = FALSE; }
 typedef struct json_parse_context PARSE_CONTEXT, *PPARSE_CONTEXT;
 #define MAXPARSE_CONTEXTSPERSET 128
 DeclareSet( PARSE_CONTEXT );
@@ -69586,7 +69586,7 @@ struct json_parse_state {
 	LOGICAL status;
 	LOGICAL negative;
  // '+' or '-' seen; no number or keyword has followed it yet
-	LOGICAL signPending;
+	LOGICAL signSeen;
 	LOGICAL literalString;
 	PLINKSTACK *context_stack;
 	LOGICAL first_token;
@@ -71750,7 +71750,7 @@ static LOGICAL json6_numberIsValid( CTEXTSTR s ) {
 }
 // A delimiter arrived while a value was still being spelled out: 'tru', or a
 // sign with nothing after it.  ( WORD_POS_END sorts before the keyword states. )
-#define JSON6_PARTIAL_VALUE_PENDING()	 ( ( state->word > WORD_POS_END && state->word < WORD_POS_FIELD )	   || ( state->signPending && state->val.value_type == VALUE_UNSET ) )
+#define JSON6_PARTIAL_VALUE_PENDING()	 ( ( state->word > WORD_POS_END && state->word < WORD_POS_FIELD )	   || ( state->signSeen && state->val.value_type == VALUE_UNSET ) )
 #define JSON6_PARTIAL_VALUE_FAULT( where )	 if( state->word > WORD_POS_END && state->word < WORD_POS_FIELD ) {		 JSON6_FAULT( "Incomplete keyword " where " at %" _size_f "  %" _size_f ":%" _size_f, state->n, state->line, state->col );	 } else {		 JSON6_FAULT( "Sign with no number following " where " at %" _size_f "  %" _size_f ":%" _size_f, state->n, state->line, state->col );	 }
 char *json6_escape_string_length( const char *string, size_t len, size_t *outlen ) {
 	size_t m = 0;
@@ -72714,7 +72714,7 @@ int json6_parse_add_data( struct json_parse_state *state
 							JSON6_FAULT( "Two values with no separator between them; '%c' unexpected at %" _size_f "  %" _size_f ":%" _size_f, c, state->n, state->line, state->col );
 							break;
 						}
-						state->signPending = TRUE;
+						state->signSeen = TRUE;
 						state->negative = !state->negative;
 					}
 					else {
@@ -73037,7 +73037,7 @@ void json_parse_clear_state( struct json_parse_state *state ) {
 		state->line = 1;
 		state->gatheringString = FALSE;
 		state->gatheringNumber = FALSE;
-		state->signPending = FALSE;
+		state->signSeen = FALSE;
 		{
 			PDATALIST *result = state->elements;
 // CreateDataList( sizeof( state->val ) );

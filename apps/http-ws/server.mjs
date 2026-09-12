@@ -65,9 +65,11 @@ function read( name ) {
 // array of strings, e.g.
 //    SSL_PATH="['/etc/letsencrypt/live/a.org','/etc/letsencrypt/live/b.com']"
 //    SSL_HOST="['a.org','www.b.com']"
-// SSL_HOST is positional with SSL_PATH; a missing or empty entry is filled
-// from the names found in that certificate.  Names within one entry may be
-// tilde(~) separated as before.
+// SSL_HOST is positional with SSL_PATH.  Within one entry names may be
+// tilde(~) separated as before.  An entry of "*" (or an omitted/empty entry)
+// takes the names from that certificate.  An entry of null registers that
+// certificate with no name, which the TLS layer uses as the default for any
+// SNI that matches nothing (and for connections that send no SNI at all).
 function envList( name ) {
 	const val = process.env[name];
 	if( !val ) return [];
@@ -75,12 +77,27 @@ function envList( name ) {
 	if( trimmed[0] === '[' ) {
 		try {
 			const parsed = sack.JSOX.parse( trimmed );
-			if( parsed instanceof Array ) return parsed.map( v=>( v === null || v === undefined ) ? "" : String( v ) );
+			if( parsed instanceof Array ) return parsed.map( v=>( v === null || v === undefined ) ? null : String( v ) );
 		} catch( err ) {
 			console.log( "Failed to parse", name, "as a JSOX array:", err.message );
 		}
 	}
 	return [ val ];
+}
+
+// resolve one SSL_HOST entry against its certificate; returns null for the default host.
+function resolveHost( host, cert, from ) {
+	if( host === null ) return null;
+	if( !host || host === "*" ) {
+		host = sack.TLS.hosts( cert ).join( "~" );
+		if( host )
+			console.log( "Using certificate hosts for", from, ":", host );
+		else {
+			console.log( "No hosts in certificate", from, "; using it as the default host" );
+			return null;
+		}
+	}
+	return host;
 }
 
 function loadCerts() {
@@ -90,15 +107,11 @@ function loadCerts() {
 	const sslHosts = envList( "SSL_HOST" );
 	const result = [];
 	if( !sslPaths.length ) {
-		const cert = read( parentRoot + "/certgen/cert-chain.pem" );
+		const from = parentRoot + "/certgen";
+		const cert = read( from + "/cert-chain.pem" );
 		if( !cert ) return result;
-		const key = read( parentRoot + "/certgen/rootkeynopass.prv" );
-		let host = sslHosts[0];
-		if( !host ) {
-			host = sack.TLS.hosts( cert ).join( "~" );
-			console.log( "Host not specified, using certificate hosts:", host );
-		}
-		result.push( { host, cert, key } );
+		const key = read( from + "/rootkeynopass.prv" );
+		result.push( { host: resolveHost( sslHosts[0], cert, from ), cert, key } );
 		return result;
 	}
 	for( let n = 0; n < sslPaths.length; n++ ) {
@@ -107,12 +120,7 @@ function loadCerts() {
 		const cert = read( sslPath + "/fullchain.pem" );
 		if( !cert ) continue;
 		const key = read( sslPath + "/privkey.pem" );
-		let host = sslHosts[n];
-		if( !host ) {
-			host = sack.TLS.hosts( cert ).join( "~" );
-			console.log( "Host not specified for", sslPath, "using certificate hosts:", host );
-		}
-		result.push( { host, cert, key } );
+		result.push( { host: resolveHost( sslHosts[n], cert, sslPath ), cert, key } );
 	}
 	return result;
 }
@@ -429,13 +437,13 @@ export function openServer( opts, cbAccept, cbConnect )
 		if( serverOpts.cert || serverOpts.key ) {
 			// caller supplied an explicit certificate; use it for the first host only.
 			serverOpts.hosts.push( {
-				host: sslCerts[0].host || "localhost",
+				host: sslCerts[0].host,
 				cert : serverOpts.cert || certChain,
 				key : serverOpts.key || certKey
 			});
 		} else {
 			for( let ssl of sslCerts )
-				serverOpts.hosts.push( { host: ssl.host || "localhost", cert: ssl.cert, key: ssl.key } );
+				serverOpts.hosts.push( { host: ssl.host, cert: ssl.cert, key: ssl.key } );
 		}
 	}
 	const server = sack.WebSocket.Server( serverOpts )

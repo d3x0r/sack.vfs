@@ -15,7 +15,16 @@ export "SSL_PATH=['/etc/letsencrypt/live/app.d3x0r.org','/etc/letsencrypt/live/s
 export "SSL_HOST=['app.d3x0r.org','www.sideplayr.com']"
 ```
 
-The certificate presented is chosen by the server name (SNI) the client sends.
+An `SSL_HOST` entry of `*` (or an omitted entry) takes its names from that certificate.  An entry of
+`null` registers the certificate without a name, making it the default used when the requested
+server name matches nothing, or when the client sends no server name (e.g. a bare IP address):
+
+```
+export "SSL_HOST=['*',null]"
+```
+
+The certificate presented is chosen by the server name (SNI) the client sends.  Without a default
+entry, a request for an unknown name is rejected during the TLS handshake.
 
 More advanced configurations are possible, the server can specify multiple hosts strings each with
 their own certificates and keys.  The server will switch to use one that matches the server requested
