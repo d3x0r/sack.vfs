@@ -34,7 +34,10 @@ protocol.on( "updateTask", updateTask );
 protocol.on( "deleteTask", deleteTask );
 protocol.on( "extern.task", addNewSystem );
 protocol.on( "deleteSystem", deleteSystem );
-protocol.on( "login", (arg)=>{ local.login = true; showForm() } );
+protocol.on( "login", (arg)=>{ if( arg !== "No User Server" ) 
+									local.login = arg; 
+								showForm() 
+} );
 protocol.connect();
 
 function showForm(arg) {
@@ -264,8 +267,7 @@ function AddTaskList(display, object, field) {
 			editing[task.id] = true;
 			const editor = new TaskInfoEditor( task.id, taskInfo.task, object );
 			editor.on( "close", ()=>{ delete editing[task.id] } );
-
-    }, text: "✎"} } );
+    	}, text: "✎"} } );
 	if( local.login && managed )
 		columns.push( { name:"Delete"  , className: "-delete", type:{suffix:" red", click(gridRow){
 			confirmDeleteTask( object, gridRow.rowData );
