@@ -338,7 +338,7 @@ if( isTopLevel(import.meta.url) ) beginScheduler();
 // writing readyPort:"" into every task that was ever saved.
 function tidyTask( task ) {
 	if( !task ) return task;
-	for( const key of [ "readyPort", "readyDelay", "readyTimeout", "readyHost" ] )
+	for( const key of [ "readyPort", "readyDelay", "readyTimeout", "readyHost", "readyRecheck", "readyMisses" ] )
 		if( key in task && !task[key] ) delete task[key];
 	return task;
 }

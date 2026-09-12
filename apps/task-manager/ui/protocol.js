@@ -48,6 +48,9 @@ function applyStatus( task, msg ) {
 	task.stopping = msg.stopping;
 	task.failed   = msg.failed;
 	if( "ready" in msg ) task.ready = msg.ready;
+	// a task with no program (see Task.isProbe); shows as Starting while it
+	// probes and Running once its port answers, same as a spawned task.
+	if( "probe" in msg ) task.probe = msg.probe;
 	task.state = taskState( task );
 }
 

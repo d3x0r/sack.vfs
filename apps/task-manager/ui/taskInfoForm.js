@@ -163,7 +163,7 @@ export class TaskInfoEditor extends Popup {
 		// use: the work directory made absolute, a relative program resolved
 		// against it, and a bare program name looked up on PATH.  Refreshed a
 		// moment after typing stops.
-		const pathTips = { bin: "Program to run for this task"
+		const pathTips = { bin: "Program to run for this task.  Leave blank for a task that runs nothing: with a port under 'Ready when' it probes that port (a service this manager does not run), otherwise it is a placeholder others can depend on"
 		                 , altbin: "Alternate Program to run for this task (if bin fails to run)"
 		                 , work: "This is the directory this task starts in." };
 		const describe = ( resolved )=>{
@@ -351,7 +351,13 @@ export class TaskInfoEditor extends Popup {
 		c = new TextInput( this.readyGroup, task, "readyDelay", "Or after (ms)", false, false, false, "" );
 		c.tooltip = "With no port, wait this long after launching before this task counts as ready";
 		c = new TextInput( this.readyGroup, task, "readyTimeout", "Give up after (ms)", false, false, false, "" );
-		c.tooltip = "How long to keep probing before giving up and letting dependants start anyway (default 30000)";
+		c.tooltip = "How long to keep probing before giving up and letting dependants start anyway (default 30000).  Not used by a task with no program: that keeps probing until stopped";
+		c = new TextInput( this.readyGroup, task, "readyRecheck", "Re-check every (ms)", false, false, false, "" );
+		c.tooltip = "Task with no program only: once the port answers, how often to check it is still there (default 5000)";
+		c = new TextInput( this.readyGroup, task, "readyMisses", "Lost after misses", false, false, false, "" );
+		c.tooltip = "Task with no program only: this many failed re-checks in a row and the task goes down, taking dependants with it, then keeps probing for the port to come back (default 3)";
+		c = new Checkbox( this.readyGroup, task, "readyOnExit", "Ready when it exits" );
+		c.tooltip = "A pre-run step (e.g. kill stray browser processes): not ready while it runs; a clean exit starts what depends on it, and every later start of a dependant runs this step again first.  A non-zero exit starts nothing.  Restart is ignored";
 
 		this.group4 = document.createElement( "div" );
 		this.group4.className = "task-config-group4"

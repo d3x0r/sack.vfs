@@ -39,6 +39,24 @@ const TASK_STOP_GIVEUP_MS = 15000;
 const READY_POLL_MS = 250;
 const READY_TIMEOUT_MS = 30000;
 
+// A task with no `bin` launches nothing; it IS its readiness check.  With a
+// readyPort it is a probe on something this manager does not run (a remote
+// service, say), ready while the port answers.  Once ready it keeps checking,
+// and after enough misses in a row it goes down the way a process exit does -
+// dependants cascade - and resumes probing until the port is back.  With no
+// port at all it is a plain placeholder: ready as soon as it is started, which
+// makes a name several tasks can depend on.  Override per task with
+// readyRecheck (ms between checks) and readyMisses.
+const READY_RECHECK_MS = 5000;
+const READY_MISSES = 3;
+
+// `readyOnExit`: a pre-run step, such as killing the stray browser processes
+// that stop a fresh instance from coming up.  It is never ready while it runs;
+// a clean exit is the ready edge that starts its dependants, and ready drops
+// again at once, so the next start of a dependant runs this again first.  A
+// non-zero exit starts nothing.  Finishing is not dying, so dependants are not
+// cascaded down, and `restart` is ignored - it would only loop.
+
 function probePort( host, port, maxWait = 1000 ) {
 	return new Promise( ( resolve )=>{
 		let settled = false;
@@ -328,7 +346,17 @@ export class Task extends Events {
 		    , started: this.started, ended: this.ended
 		    , starting: this.starting, waiting: this.waiting
 		    , stopping: this.stopping, failed: this.failed
-		    , ready: this.ready }, extra ) );
+		    , ready: this.ready, probe: this.isProbe }, extra ) );
+	}
+
+	// no program to run: this task is only its readiness check (see the
+	// READY_RECHECK_MS comment above).
+	get isProbe() {
+		return !this.#task.bin;
+	}
+	// ready is the clean exit, not the launch (see the readyOnExit comment above)
+	get readyOnExit() {
+		return !!this.#task.readyOnExit && !this.isProbe;
 	}
 
 	get task() {
@@ -450,6 +478,10 @@ export class Task extends Events {
 		this.sendStatus();
 		for( let dep of this.#dependsOn ) {
 			if( dep.running ) continue;
+			// a readyOnExit step is ready precisely when it is NOT running - this
+			// is being started from its ready edge; running it again would run
+			// the step twice for every launch
+			if( dep.ready ) continue;
 			if( dep.held ) {
 				// somebody stopped this one deliberately; starting a dependant is
 				// not a reason to bring it back up behind their back.
@@ -473,6 +505,16 @@ export class Task extends Events {
 			return;
 		}
 		this.waiting = false;
+		if( this.isProbe ) {
+			// nothing to spawn; "running" here means the check is live.  #run
+			// stays null, which is how stop()/kill() tell this apart from a child.
+			console.log( "Starting probe:", this.#task.name );
+			this.running = true;
+			this.started = new Date();
+			this.sendStatus();
+			this.#beginReady();
+			return;
+		}
 		let bin;
 		if( process.platform === "linux" ) {
 			bin = this.#task.bin; // linux will scan path for name
@@ -578,62 +620,8 @@ export class Task extends Events {
 		/* this is the low level task end callback
          the native code has ended. */
 		function stop() {
-			this_.ended = new Date();
-			this_.running = false;
-			this_.starting = false;
-			this_.ready = false;
-			this.on( "ready", false );
-			this_.#readyRun++; // abandon any readiness probe still polling
-			if( this_.#stopTimer) { 
-				clearTimeout ( this_.#stopTimer )
-				this_.#stopTimer = 0;
-			} 
-			// Settle everyone waiting on this task from the end event itself.
-			// There is only one #stopTimer slot, so with more than one wait
-			// outstanding the clearTimeout above would cancel the only armed
-			// tick and orphan the promise a shutdown was waiting on.
-			this_.#stopWaiters.splice( 0 ).forEach( resolve=>resolve( true ) );
-			this_.stopping = false;
-			/*
-			if( this_.#stopTimer !== null ) {
-				console.trace( "stop is clearing the stop timer...." );
-				clearTimeout( this_.#stopTimer );
-				this_.#stopTimer = null;
-			}
-			*/
-			let exitCode = this_.#run?this_.#run.exitCode:this_.#exitCode;
-			// exitCode can be null/undefined; a throw here would skip clearing
-			// #run and the status broadcast below.
-			console.log( "Task ended:", this_.name, this_.ended, exitCode
-			           , (exitCode??0).toString(16) );
-			this_.#ranOnce = true;
-			this_.#exitCode = exitCode;
-			this_.#run = null;
-			for( let dep of this_.#dependants ) {
-				dep.stop();
-				dep.#ranOnce = false;
-			}
-			if( !this_.#stopTimer ) {
-				if( this_.#restart && this_.dependenciesHeld ) {
-					// this was torn down because something it depends on was
-					// stopped by hand.  Restarting now would run it without that
-					// dependency, and its start() would try to drag the held task
-					// back up.  Wait to be started when that one comes back.
-					console.log( "Not restarting", this_.name
-					           , "- a dependency is stopped:", this_.heldDependencies.join(", ") );
-				} else if( this_.#restart ) {
-					//console.log( "doing resume timeout", this_.#task.restartDelay)
-					console.log( "this should restart?" );
-					if( this_.#task.restartDelay )
-						setTimeout( ()=>this_.start(), this_.#task.restartDelay );
-					else 
-						setTimeout( ()=>this_.start(), 200 );
-				}
-			}
-			//console.log( "stopped:", this_.#task.name );
-			this_.waiting = false;
-			this_.sendStatus();
-			
+			// exitCode can be null/undefined; #ended copes with that.
+			this_.#ended( this_.#run ? this_.#run.exitCode : this_.#exitCode );
 		}
 		if( this.#task.multiStart ) {
 			const sameConfig = local.tasks.find( t=>t.#task === this.#task );
@@ -667,10 +655,92 @@ export class Task extends Events {
 		//console.log( "msg to send:", msg_ );
 		this.#ws.forEach( ws=>ws.send( msg_ ) );
 	}
+	// This run is over - the child exited, or a probe was stopped or lost its
+	// port.  One path for all of them so dependants cascade and restart rules
+	// apply the same way whether or not there was ever a process.
+	#ended( exitCode ) {
+		// a pre-run step that finished on its own, cleanly: this exit is what
+		// its dependants have been waiting for
+		const finished = this.readyOnExit && !this.stopped && !this.#killed
+		               && ( exitCode ?? 0 ) === 0;
+		this.ended = new Date();
+		this.running = false;
+		this.starting = false;
+		if( finished ) {
+			this.ready = true;
+			this.on( "ready", true );
+		} else {
+			if( this.readyOnExit && !this.stopped && !this.#killed ) {
+				console.log( "Pre-run step failed:", this.name, "- not starting what depends on it" );
+				this.failed = true;
+			}
+			this.ready = false;
+			this.on( "ready", false );
+		}
+		this.#readyRun++; // abandon any readiness probe still polling
+		if( this.#stopTimer) {
+			clearTimeout ( this.#stopTimer )
+			this.#stopTimer = 0;
+		}
+		// Settle everyone waiting on this task from the end event itself.
+		// There is only one #stopTimer slot, so with more than one wait
+		// outstanding the clearTimeout above would cancel the only armed
+		// tick and orphan the promise a shutdown was waiting on.
+		this.#stopWaiters.splice( 0 ).forEach( resolve=>resolve( true ) );
+		this.stopping = false;
+		console.log( "Task ended:", this.name, this.ended, exitCode
+		           , (exitCode??0).toString(16) );
+		this.#ranOnce = true;
+		this.#exitCode = exitCode;
+		this.#run = null;
+		if( finished ) {
+			// the edge: kick dependants while ready reads true, then drop it
+			// (silently - nobody needs a false for a step that succeeded) so
+			// the next start of a dependant runs this step again first.
+			this.waiting = false;
+			this.sendStatus();
+			this.#startDependants();
+			this.ready = false;
+			this.sendStatus();
+			return;
+		}
+		if( !this.readyOnExit ) for( let dep of this.#dependants ) {
+			dep.stop();
+			dep.#ranOnce = false;
+		}
+		if( !this.#stopTimer && !this.readyOnExit ) {
+			if( this.#restart && this.dependenciesHeld ) {
+				// this was torn down because something it depends on was
+				// stopped by hand.  Restarting now would run it without that
+				// dependency, and its start() would try to drag the held task
+				// back up.  Wait to be started when that one comes back.
+				console.log( "Not restarting", this.name
+				           , "- a dependency is stopped:", this.heldDependencies.join(", ") );
+			} else if( this.#restart ) {
+				//console.log( "doing resume timeout", this.#task.restartDelay)
+				console.log( "this should restart?" );
+				if( this.#task.restartDelay )
+					setTimeout( ()=>this.start(), this.#task.restartDelay );
+				else
+					setTimeout( ()=>this.start(), 200 );
+			} else if( this.isProbe && !this.stopped && !this.held && !this.#killed ) {
+				// a probe that lost its port was not asked to go away; keep
+				// watching for the port to come back, whatever `restart` says
+				const recheck = Number( this.#task.readyRecheck ) || READY_RECHECK_MS;
+				setTimeout( ()=>this.start(), recheck );
+			}
+		}
+		//console.log( "stopped:", this.#task.name );
+		this.waiting = false;
+		this.sendStatus();
+	}
+
 	kill() {
 		this.#killed = true;
 		if( this.#run )
 			this.#run.terminate();
+		else if( this.running )
+			this.#ended( 0 ); // a probe: there is no process, so end it here
 	}
 	stop() {
 		//console.log( "Stop command: ", this.stopped, this.#run, this.stopped );
@@ -682,6 +752,14 @@ export class Task extends Events {
 		//console.trace( "STOPPED?", this.stopped, this.#run );
 		if( this.#run )
 			this.#run.end();
+		else if( this.running ) {
+			// a probe has no end event coming; end it now so timeoutTaskStop()
+			// finds it down on its first tick instead of escalating to a kill
+			// of nothing and waiting out the give-up cap.  `stopped` first, so
+			// #ended knows this was asked for and does not resume probing.
+			this.stopped = true;
+			this.#ended( 0 );
+		}
 		// stop things this depends on.
 		for( let dep of this.#dependants ) {
 			if( dep.#run ) {
@@ -815,6 +893,12 @@ export class Task extends Events {
 
 	#beginReady() {
 		const run = ++this.#readyRun;
+		if( this.readyOnExit ) {
+			// nothing to wait for while it runs; #ended() supplies the ready edge
+			this.starting = false;
+			this.sendStatus();
+			return;
+		}
 		const port = Number( this.#task.readyPort ) || 0;
 		const delay = Number( this.#task.readyDelay ) || 0;
 		if( !port && !delay ) return this.#setReady( run ); // launched is ready
@@ -826,6 +910,7 @@ export class Task extends Events {
 
 		const host = this.#task.readyHost || "localhost";
 		const limit = Number( this.#task.readyTimeout ) || READY_TIMEOUT_MS;
+		const probe = this.isProbe;
 		const started = Date.now();
 		console.log( "Waiting for", this.name, "to listen on", host + ":" + port );
 		const poll = ()=>{
@@ -834,20 +919,49 @@ export class Task extends Events {
 				if( run !== this.#readyRun || !this.running ) return;
 				if( open ) {
 					console.log( "Task ready:", this.name, "-", host + ":" + port, "is listening" );
-					return this.#setReady( run );
+					this.#setReady( run );
+					if( probe ) this.#watchPort( run, host, port );
+					return;
 				}
-				if( Date.now() - started > limit ) {
-					// never block the chain outright - say so and let it through
+				// A process that never listens is let through so the chain is not
+				// blocked outright.  A probe has nothing to let through: the port
+				// answering is the whole task, so it keeps asking until stopped.
+				if( !probe && Date.now() - started > limit ) {
 					console.log( "Task never listened on", host + ":" + port
 					           , "- continuing without it:", this.name );
 					return this.#setReady( run );
 				}
-				setTimeout( poll, READY_POLL_MS );
+				setTimeout( poll, probe ? ( Number( this.#task.readyRecheck ) || READY_RECHECK_MS ) : READY_POLL_MS );
 			} );
 		};
 		// give it a moment before the first attempt; a just-spawned process has
-		// not had time to bind, and a refused connect is only noise.
-		setTimeout( poll, READY_POLL_MS );
+		// not had time to bind, and a refused connect is only noise.  A probe has
+		// nothing to wait for, so it asks straight away.
+		setTimeout( poll, probe ? 0 : READY_POLL_MS );
+	}
+
+	// A ready probe stays ready only while its port keeps answering.  Enough
+	// misses in a row and it ends like a process exit would; #ended then
+	// resumes probing (see the isProbe branch there) so it comes back on its
+	// own once the port does.
+	#watchPort( run, host, port ) {
+		const recheck = Number( this.#task.readyRecheck ) || READY_RECHECK_MS;
+		const maxMisses = Number( this.#task.readyMisses ) || READY_MISSES;
+		let misses = 0;
+		const check = ()=>{
+			if( run !== this.#readyRun || !this.running ) return; // restarted or stopped
+			probePort( host, port ).then( ( open )=>{
+				if( run !== this.#readyRun || !this.running ) return;
+				if( open ) misses = 0;
+				else if( ++misses >= maxMisses ) {
+					console.log( "Probe lost:", this.name, "-", host + ":" + port
+					           , "stopped answering (" + misses + " misses)" );
+					return this.#ended( 1 );
+				}
+				setTimeout( check, recheck );
+			} );
+		};
+		setTimeout( check, recheck );
 	}
 
 	move() {

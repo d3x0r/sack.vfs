@@ -55,7 +55,7 @@ Tasks to run are defined with a few fields.
 |name|Type|Description|
 |---|---|----|
 | name | string | this is the text name shown on the UI regarding this task. |
-| bin | string | this is the name of the program to run; it is built from this and default options specified in the configuration; linux searches the PATH environment. |
+| bin | string | this is the name of the program to run; it is built from this and default options specified in the configuration; linux searches the PATH environment.  Leave it out for a task that runs nothing - see [Readiness, probes and pre-run steps](#readiness-probes-and-pre-run-steps). |
 | winbin | string | used if `process.platform !== linux`  |
 | linbin | string | used if `process.platform === linux`   |
 | restart | bool | defaults task to automatically restart when it fails |
@@ -75,7 +75,14 @@ Tasks to run are defined with a few fields.
 |			style | number | (WIN32) Style to configure the main window of a task (remove border, make popup,.. )  |
 |			noInheritStdio | bool | prevent standard IO handles from being inherited.  |
 |			multiStart | bool | Once started, create a new, unstarted version of the same task. |
-| dependsOn | [string,...] | An array of names of other tasks which this depends on.  Dependant tasks are started first.  Tasks that depend on a started task are also started. |
+| dependsOn | [string,...] | An array of names of other tasks which this depends on.  Dependant tasks are started first.  Tasks that depend on a started task are also started, once every dependency is *ready* (below). |
+| readyPort | number | The task is ready once something accepts a connection on this port.  Dependants wait for that rather than starting the moment this task launches. |
+| readyHost | string | Host to probe for `readyPort` (default `localhost`). |
+| readyDelay | number | With no `readyPort`, the task is ready this many ms after launch. |
+| readyTimeout | number | How long to keep probing `readyPort` before giving up and declaring the task ready anyway, so a chain is never blocked outright (default 30000).  Ignored by a task with no `bin`. |
+| readyRecheck | number | Task with no `bin` only: once the port answers, how often (ms) to check it is still there (default 5000). |
+| readyMisses | number | Task with no `bin` only: this many failed re-checks in a row and the task goes down, taking dependants with it, then keeps probing for the port to return (default 3). |
+| readyOnExit | bool | A pre-run step.  Not ready while it runs; a clean exit is what starts its dependants, and each later start of a dependant runs this step again first.  A non-zero exit starts nothing.  `restart` is ignored. |
 | temporary | When the task ends, the definition for
 the task is removed; the task is not saved to the running tasks config; useful for remote task invokations. |
 | autoEndBatch | watches the stdin pipe for the ending message of a batch file to terminate y/n; This can happen if the task is sent a ctrl-c, this will finish the task termination |
@@ -100,6 +107,47 @@ ctrl-c or ctrl-break when attempting to end a task.
 | height | number | how tall to make the window |
 
 The absolute position settings are ignored if display or monitor is specified.  Display is more stable than Monitor.  Display overrides monitor and both override the absolute position `x,y, width, height`.
+
+### Readiness, probes and pre-run steps
+
+`dependsOn` orders launches; *ready* is what spaces them.  A task is ready as
+soon as it is running unless it says otherwise with `readyPort` (wait for
+something to accept a connection there) or `readyDelay` (just wait).  Dependants
+hold in the "Waiting" state until every dependency is ready, and a dependency
+going down takes its dependants down with it.  The `on( taskName, "ready", cb )`
+hook exported by `main.mjs` gives plugins the same signal.
+
+**A task with no `bin` runs nothing; it is only its readiness check.**
+
+- With a `readyPort` it is a *probe* on something this manager does not run: a
+  remote service, a database on another machine.  It polls until the port
+  answers (there is no timeout - the port answering is the whole task), then
+  keeps checking every `readyRecheck` ms.  After `readyMisses` failures in a row
+  it goes down the way a process exit does, dependants cascade, and it resumes
+  probing on its own until the port is back.  Stopping it by hand holds it down
+  like any other task.
+- With no port it is a *placeholder*: ready as soon as it is started, which
+  makes a single name several tasks can depend on.
+
+```
+  { name: "user database", readyHost: "app.d3x0r.org", readyPort: 8190, readyRecheck: 10000 },
+  { name: "launcher", bin: "node", args: [ "launcher.mjs" ], dependsOn: [ "user database" ], restart: true },
+```
+
+**`readyOnExit` makes a task a pre-run step**, for the case where something has
+to happen before a dependant comes up - typically killing the stray browser
+processes that stop a fresh instance from starting.  It is never ready while it
+runs.  A clean exit (code 0) is the ready edge that starts its dependants, and
+ready drops again at once, so the next start of a dependant - from `restart`,
+or by hand - runs the step again first.  A non-zero exit marks the step failed
+and starts nothing.  Finishing is not dying, so its dependants are not cascaded
+down, and `restart` on the step itself is ignored.  Nothing is written anywhere
+to remember it ran; the step is simply re-run whenever it is needed.
+
+```
+  { name: "kill-edge", bin: "taskkill", args: [ "/F", "/IM", "msedge.exe" ], readyOnExit: true },
+  { name: "edge", bin: "msedge.exe", args: [ "--kiosk", "http://localhost/" ], dependsOn: [ "kill-edge" ], restart: true },
+```
 
 
 ###  Configuration global options
