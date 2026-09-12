@@ -403,7 +403,7 @@ await import( "/node_modules/@d3x0r/user-database-remote/requestService.js" ).th
 	})
 	return module;
 } ).catch( (err)=>{
-	console.log( "User databsae not available..." );
+	console.log( "User database not available..." );
 	setTimeout( ()=>{
 			protocol.on( "login", "No User Server" );
 		}, 25 );
