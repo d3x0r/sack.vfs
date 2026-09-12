@@ -1536,9 +1536,9 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getFCIHolder(args) );
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		if( vol->volNative ) {
-			args.GetReturnValue().Set( sack_vfs_exists( vol->vol, *fName ) );
+			args.GetReturnValue().Set(sack_vfs_exists(vol->vol, *fName) ? True(isolate) : False(isolate) );
 		}else {
-			args.GetReturnValue().Set( sack_existsEx( *fName, vol->fsMount )?True(isolate):False(isolate) );
+			args.GetReturnValue().Set( sack_existsEx( *fName, vol->fsMount ) || sack_isPathEx( *fName, vol->fsMount )?True(isolate):False(isolate) );
 		}
 	}
 
@@ -1563,14 +1563,15 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( Boolean::New( isolate, sack_vfs_unlink_file( vol->vol, *fName ) != 0 ) );
 		}
 		else {
-			args.GetReturnValue().Set( Boolean::New( isolate, sack_unlinkEx( 0, *fName, vol->fsMount ) != 0 ) );
+			args.GetReturnValue().Set( Boolean::New( isolate, sack_unlinkEx( 0, *fName, vol->fsMount ) || sack_rmdirEx( 0, *fName, vol->fsMount ) != 0 ) );
 		}
 	}
 
 	void fileDelete( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
-		args.GetReturnValue().Set( Boolean::New( isolate, sack_unlink( 0, *fName ) != 0 ) );
+		int a = sack_unlink( 0, *fName ) || sack_rmdir( 0, *fName );
+		args.GetReturnValue().Set( Boolean::New( isolate, a != 0 ) );
 	}
 
 	void VolumeObject::getRootDirectories(const v8::FunctionCallbackInfo<Value>& args) {
