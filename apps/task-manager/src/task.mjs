@@ -9,7 +9,6 @@ const disk = sack.Volume();
 export const config = {
 	pwdBare:null, config:null, send:null, local : null
 }
-//import {pwdBare, config,send} from "./main.mjs";
 
 let pendingDepends = [];
 
