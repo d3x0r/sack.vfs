@@ -602,6 +602,7 @@ sack.JSOX.stringifier = function() {
 				{
 					// The value is an array. Stringify every element. Use null as a placeholder
 					// for non-JSOX values.
+					gap += indent;
 					for (let i = 0; i < this.length; i += 1) {
 						path[thisNodeNameIndex] = i;
 						partial[i] = str(i, this) || "null";
@@ -623,6 +624,7 @@ sack.JSOX.stringifier = function() {
 								, "]"
 							].join("")
 							: "[" + partial.join(",") + "]" );
+					gap = mind;
 					return v;
 				}
 			}
