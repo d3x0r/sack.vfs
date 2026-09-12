@@ -625,10 +625,6 @@ describe( 'Added in 1.2.126 - class tags and cyclic references', function () {
 		expect( seenVal ).to.equal( "hello" );
 		expect( out ).to.deep.equal( { got : "hello" } );
 	} );
-		p.write( 'T"hello"' );
-		expect( seen ).to.equal( "hello" );
-		expect( out ).to.deep.equal( { got : "hello" } );
-	} );
 
 	it( 'round-trips a RegExp through the tagged-string form', function () {
 		// the built-in that depends on this path; `JSOX.stringify(/ab+c/)` is `regex'ab+c'`
