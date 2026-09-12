@@ -258,6 +258,7 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
 
 ## Changelog
 - 1.3.134(in progress)
+- 1.3.133
    - Took some time to stress test and debug corner cases in networking.
    - Implemented HTTP 1.1 streaming request API.
    - Improved performance; enabled TCP no delay on websocket connections; cache alignment and spin lock scheduling improvements on concurrent HTTP requests.
@@ -268,7 +269,6 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
    - Added `res.statusCode`, settable; a response whose handler never called `writeHead()` now gets a status line from it instead of going out with none.
    - Report the size of library-owned ArrayBuffers to V8 (`AdjustAmountOfExternalAllocatedMemory`), so file reads, mapped files, query blobs and socket messages create collection pressure instead of accumulating invisibly.  New `makeReleasableBackingStore()` replaces every `NewBackingStore(...,releaseBufferBackingStore,NULL)`.
    - Update JSOX parsing to align more with the standard - NBSP is a non-breaking space, allowed in unquoted strings.  Allow '/' in unquoted strings.
-- 1.3.133
    - Added `getRoot` export utility that can find the root package.json.
    - Added program name to task information in task manager.  Program name support is used for process exit signal generation.
    - Added user database login support to default task manager app.
