@@ -89142,7 +89142,7 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 			if( table->table[i].dwState == MIB_TCP_STATE_LISTEN ) {
 				struct listener_pid_info l;
 				//l.pid = table->table[i].dwOwningPid;
-				l.pdlPids = CreateDataList( sizeof( uint64_t ) );
+				l.pdlPids = CreateDataList( sizeof( uint32_t ) );
 				AddDataItem( &l.pdlPids, &table->table[i].dwOwningPid );
 				l.port = ntohs( table->table[i].dwLocalPort );
 				AddDataItem( ppList, &l );
@@ -89179,7 +89179,7 @@ void SackNetstat_GetListeners( PDATALIST *ppList ){
 				}
 				if( !info ) {
 					AddDataItem( ppList, &l );
-					l.pdlPids = CreateDataList( sizeof( uint64_t ) );
+					l.pdlPids = CreateDataList( sizeof( uint32_t ) );
 					AddDataItem( &l.pdlPids, &table->table[i].dwOwningPid );
 				}
 			}

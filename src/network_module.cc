@@ -396,8 +396,8 @@ void getOpenPorts(  Local<Name> property, const PropertyCallbackInfo<Value>& arg
 	DATA_FORALL( list, idx, struct listener_pid_info*, info ){
 		Local<Object> o = Object::New( isolate );
 		INDEX idx2;
-		uint64_t* pid;
-		DATA_FORALL( info->pdlPids, idx2, uint64_t*, pid ) {
+		uint32_t* pid;
+		DATA_FORALL( info->pdlPids, idx2, uint32_t*, pid ) {
 			SET_READONLY( o, "port", Number::New( isolate, info->port ) );
 			SET_READONLY( o, "pid", Number::New( isolate, pid[0] ) );
 		}
