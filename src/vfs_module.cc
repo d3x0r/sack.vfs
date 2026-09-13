@@ -186,6 +186,14 @@ static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 	DebugDumpMem( );
 }
 
+static void logMem(const v8::FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if (argc > 0) {
+		SetAllocateLogging(args[0]->BooleanValue( isolate ));
+	}
+}
+
 #if ( NODE_MAJOR_VERSION > 9 )
 static void CleanupThreadResources( void* arg_ ) {
 	class constructorSet *c = (class constructorSet*)arg_;
@@ -580,9 +588,11 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 
 	Local<Function> VolFunc = volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
+	//SetAllocateLogging( TRUE );
 	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal(isolate, "memDump" )
 		, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
 	SET_READONLY_METHOD( exports, "log", logString );
+	SET_READONLY_METHOD( exports, "memLog", logMem );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
 	SET_READONLY_METHOD( VolFunc, "chdir", chDir );
