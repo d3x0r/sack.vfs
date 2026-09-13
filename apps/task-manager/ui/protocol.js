@@ -200,14 +200,27 @@ export class Protocol extends Events {
 			this.ws.send( JSOX.stringify( {op:"deleteTask", id:task.id } ) );
 	}
 
+	// The login token this page holds (from /internal/requestService.js); its
+	// svc.key is presented to the server as `auth`.  A key is one-shot on the
+	// server side, so a login that happens again replaces it and is re-sent.
+	#token = null;
+	login( token ) {
+		this.#token = token;
+		this.#sendAuth();
+	}
+	#sendAuth() {
+		const key = this.#token && this.#token.svc && this.#token.svc.key;
+		if( !key || !this.ws || this.ws.readyState !== 1 ) return;
+		this.ws.send( JSOX.stringify( { op:"auth", uid: key } ) );
+	}
+
  	connect( to ) {
 		to = to || location.protocol.replace( "http", "ws" )+"//"+location.host+"/";
 		const ws = new WebSocket( to, "tasks");
 		config.local.ws = this.ws = ws;
-		ws.onopen = function() {
-		// Web Socket is connected. You can send data by send() method.
-		//ws.send("message to send"); 
-		//ws.send( JSON.stringify( { MsgID: "flashboard" } ) );
+		ws.onopen = ()=>{
+			// a key minted while the socket was down is presented now
+			this.#sendAuth();
 		};
 		ws.onmessage = function (evt) { 
 				const received_msg = evt.data; 
@@ -392,6 +405,11 @@ export class Protocol extends Events {
 				protocol.on( "login", null )
 
 				break;
+			case "auth":
+				// the server's answer to the key sent in connect(): whether this
+				// socket may manage things now
+				protocol.on( "auth", msg );
+				break;
 			}
 		}
 	}
@@ -400,14 +418,26 @@ export class Protocol extends Events {
 export const protocol = new Protocol();
 export default protocol;
 
-await import( "/node_modules/@d3x0r/user-database-remote/requestService.js" ).then( (module)=>{  // reverse call openSocket
-	module.requestService( "d3x0r.org", "launcher", (token)=>{
-		return protocol.on( "login", token )
-	})
+// Login.  The page does not know which provider its server has - the sideplayr
+// employee login, the d3x0r user database, or none - and it should not: the
+// server's login plugin serves /internal/requestService.js, a module with one
+// call, requestService( domain, service, cb ), that puts its own form over the
+// page and hands cb a token.  Domain and service are null here so the served
+// module fills in its own defaults; a page that wants a specific service names
+// it.  No plugin means a 404, which is the read-only "No User Server" page.
+//
+// The token's `svc.key` is what this page's own server can turn into a person;
+// see Protocol.connect(), which sends it as `auth` on the tasks socket.
+await import( "/internal/requestService.js" ).then( (module)=>{
+	module.requestService( null, null, (token)=>{
+		protocol.login( token );
+		return protocol.on( "login", token );
+	} );
 	return module;
 } ).catch( (err)=>{
-	console.log( "User database not available..." );
+	console.log( "No login provider on this server (no /internal/requestService.js):", err.message || err );
 	setTimeout( ()=>{
-			protocol.on( "login", "No User Server" );
-		}, 25 );
+		protocol.on( "login", "No User Server" );
+	}, 25 );
 } );
+

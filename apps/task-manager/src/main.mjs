@@ -23,6 +23,9 @@ let firstLoad = true;
 import {openServer} from "../../http-ws/server.mjs"
 import {setupRest} from "./main.rest.mjs"
 
+import {reloadConfig} from "./cfg.mjs"
+export const config = await reloadConfig();
+
 import {config as taskConfig, Task, closeAllTasks, resolveTaskPaths} from "./task.mjs"
 taskConfig.pwdBare = pwdBare;
 taskConfig.send = send;
@@ -31,8 +34,6 @@ taskConfig.local = local;
 local.addTask = addTask;
 
 
-import {reloadConfig} from "./cfg.mjs"
-export const config = await reloadConfig();
 
 sack.system.programName = config.programName || "sack.vfs Default Task Manager";
 if( "enableExitSignal" in sack.system ) {
@@ -128,12 +129,6 @@ waitInit.then( ()=>{
 		connectToCore();
 
 })
-
-let authCb = null;
-export function onLogin( loginCb ) {
-	authCb = loginCb;
-	
-}
 
 // optional expect handler, otherwise use getUser on the key....
 // default expect handler (null for last callback)
@@ -301,19 +296,42 @@ function handleTaskInfo( ws, msg, msg_ ) {
 
 }
 
+// What an upstream that may not manage this system gets to see of a task:
+// identity, state and times.  Not its dependencies, holds or auto-run flags,
+// and (through the getTaskInfo refusal below) never its configuration.
+function upstreamView( task ) {
+	return { id: task.id, name: task.name
+	       , running: task.running, starting: task.starting, waiting: task.waiting
+	       , stopping: task.stopping, stopped: task.stopped, failed: task.failed
+	       , ready: task.ready, probe: task.isProbe
+	       , started: task.started, ended: task.ended };
+}
+
+// The message as upstream should see it.  With disallowUpstreamTaskManagment
+// every task carried in a message is reduced to its upstreamView; otherwise
+// the message goes as is.  Only object messages are inspected - the string
+// form is used for status lines, which carry no task.
+function forUpstream( msg ) {
+	if( !config.disallowUpstreamTaskManagment || "string" === typeof msg ) return msg;
+	if( msg.tasks ) msg = Object.assign( {}, msg, { tasks: msg.tasks.map( upstreamView ) } );
+	if( msg.task && ( msg.op === "addTask" || msg.op === "updateTask" ) )
+		msg = Object.assign( {}, msg, { task: upstreamView( msg.task ) } );
+	return msg;
+}
+
 function connectToCore() {
 	console.log( "Connecting upstream...");
 	const ws = sack.WebSocket.Client( "ws://"+(config.upstreamServer|| "localhost:8089"), "task-proxy");
 	ws.onopen = ()=>{
 		//console.log( "Sending initial tasks", local.tasks );
-		ws.send( JSOX.stringify( {op:"extern.tasks", tasks:local.tasks
+		ws.send( JSOX.stringify( forUpstream( {op:"extern.tasks", tasks:local.tasks
 		      , system:config.hostname || os.hostname()
 		      , id : local.id
 		      , port:serverOpts.port
 		      // tell upstream not to offer controls it will not be allowed to use
 		      , disallowUpstreamTaskManagment: !!config.disallowUpstreamTaskManagment
 		      }
-		))
+		) ) )
 		local.upstreamWS = ws;
 	}
 	ws.onmessage = (msg)=>handleMessage(ws,msg);
@@ -403,13 +421,18 @@ function startTasks() {
 
 export function send( msg_ ) {
 	// should append my system id
+	// broadcasts reach only sockets that may see state (see authorized()), and
+	// upstream sees a task only as much as forUpstream() lets it
 	if( "string" === typeof msg_ ) {
 		if( local.upstreamWS && local.upstreamWS.readyState === 1 ) local.upstreamWS.send( msg_ );
-		local.connections.forEach( conn=>(conn.ws.readyState == 1) &&conn.ws.send( msg_ ) );
+		local.connections.forEach( conn=>(conn.ws.readyState == 1) && authorized( conn ) && conn.ws.send( msg_ ) );
 	} else {
 		const msg = JSOX.stringify( msg_ );
-		if( local.upstreamWS && local.upstreamWS.readyState === 1 ) local.upstreamWS.send( msg );
-		local.connections.forEach( conn=>(conn.ws.readyState == 1) &&conn.ws.send( msg ) );
+		if( local.upstreamWS && local.upstreamWS.readyState === 1 ) {
+			const up = forUpstream( msg_ );
+			local.upstreamWS.send( up === msg_ ? msg : JSOX.stringify( up ) );
+		}
+		local.connections.forEach( conn=>(conn.ws.readyState == 1) && authorized( conn ) && conn.ws.send( msg ) );
 	}
 }
 
@@ -422,6 +445,10 @@ function accept( ws ) {
 function connect( ws ) {
 	//console.log( "Connect ws:", ws.headers );
 	const connection = new Connection( ws );
+	// an open manager (no login provider) treats every socket as authed from
+	// the start, so `authed` alone answers "may this socket see state" anywhere
+	// a Connection is in hand - task.mjs's stopping broadcast included
+	connection.authed = !server.login;
 	const protocol = ws.headers["Sec-WebSocket-Protocol"];
 	if( protocol === "task-proxy" ) {
 		//console.log( "Remote system connection..." );
@@ -438,7 +465,11 @@ function connect( ws ) {
 		ws.onmessage = (msg)=>handleMessage(ws,msg);
 		console.log( "Adding task info connection...");
 		local.connections.push( connection );
-		sendTasks();
+		// With a login provider installed (server.login, from a setupLogin
+		// plugin) a page gets nothing until its key has been resolved: the task
+		// list is sent from the auth handler instead, and send() skips the
+		// socket until then.  Without one the manager is open, as it always was.
+		if( !server.login ) sendTasks();
 	} else {
 		ws.close( 1020, "Bad Protocol" );
 		return;
@@ -450,14 +481,6 @@ function connect( ws ) {
 		const msg = JSOX.parse( msg_ );
 		//console.log( "Received (from proxy):", msg );
 		switch( msg.op ) {
-		case "login":
-			/* this just dispatches an event? */
-			if( authCb ) {
-				if( authCb( msg.uid ) ) {
-					ws.authed = true;
-				}
-			}
-			break;
 		case "resolvedPaths":
 		case "taskInfo":
 			const replyTo = local.replyMap[msg.id];
@@ -588,9 +611,7 @@ function connect( ws ) {
 
 
 	function sendTasks() {
-		const msg = {op:"tasks", system:local.id, tasks: local.tasks, systems: local.systems };
-		const msg_ = JSOX.stringify( msg );
-		ws.send( msg_ );
+		sendTasksTo( ws );
 	}
 
 
@@ -627,10 +648,30 @@ function connect( ws ) {
 		send( {op:"deleteTask", system:local.id, id } );
 	}
 
+// The initial state a UI connection gets: on connect when the manager is open,
+// or once its login key has resolved when a provider is installed.
+function sendTasksTo( ws ) {
+	const msg = {op:"tasks", system:local.id, tasks: local.tasks, systems: local.systems };
+	ws.send( JSOX.stringify( msg ) );
+}
+
+// Whether a UI socket may be told or asked anything but `auth`.  Only a
+// provider makes this false; the upstream socket has no Connection and is
+// governed by disallowUpstreamTaskManagment instead.
+function authorized( connection ) {
+	return !connection || connection.authed;
+}
+
 function handleMessage( ws, msg_ ) {
 	try {
 		const msg = JSOX.parse( msg_ );
 		const connection = local.connections.find( (c)=>c.ws===ws );
+		if( msg.op !== "auth" && !authorized( connection ) ) {
+			// nothing is answered before a login, reads included: the task list
+			// itself is what a login is for
+			ws.send( JSOX.stringify( { op:"error", reason:"Unauthorized", was: msg.op } ) );
+			return;
+		}
 		// `disallowUpstreamTaskManagment` in the config makes this system refuse
 		// to have its task list edited by whoever it reports to.  Upstream is
 		// told about the setting when we connect, so its UI hides the controls;
@@ -638,12 +679,39 @@ function handleMessage( ws, msg_ ) {
 		// anyway.  It deliberately covers only the task edits - shutdown and
 		// stopAll/startAll are still honoured.
 		if( config.disallowUpstreamTaskManagment
-		 && local.upstreamWS && ws === local.upstreamWS
-		 && ( msg.op === "createTask" || msg.op === "updateTask" || msg.op === "deleteTask" ) ) {
-			console.log( "Refused upstream task management:", msg.op, msg.id || (msg.task && msg.task.name) );
-			return;
+		 && local.upstreamWS && ws === local.upstreamWS ) {
+			if( msg.op === "createTask" || msg.op === "updateTask" || msg.op === "deleteTask"
+			 || msg.op === "setPlugins" || msg.op === "updateDisplay" ) {
+				console.log( "Refused upstream task management:", msg.op, msg.id || (msg.task && msg.task.name) );
+				return;
+			}
+			// The reads that only exist to feed the editor answer empty rather
+			// than not at all, so the requesting page's promise settles.  A task's
+			// configuration (bin, args, env, paths) and the plugin settings are
+			// exactly what this option keeps off the wire.
+			if( msg.op === "getTaskInfo" ) { ws.send( JSOX.stringify( { op:"taskInfo", id:msg.id, task:null } ) ); return; }
+			if( msg.op === "resolvePaths" ) { ws.send( JSOX.stringify( { op:"resolvedPaths", id:msg.id, paths:{} } ) ); return; }
+			if( msg.op === "getPlugins" ) { ws.send( JSOX.stringify( { op:"plugins", system:local.id, plugins:[], settings:{} } ) ); return; }
 		}
 		switch( msg.op ) {
+		case "auth": {
+			const login = server.login;
+			if( !login || !connection ) {
+				ws.send( JSOX.stringify( { op:"auth", ok:false, reason: login ? "not a UI connection" : "no login provider" } ) );
+				break;
+			}
+			login.getUser( msg.uid ).then( ( user )=>{
+				const wasAuthed = connection.authed;
+				connection.authed = !!user;
+				connection.grants = user ? user.permissions : null;   // keep the grants, drop the identity
+				connection.who    = user ? user.name : null;
+				ws.send( JSOX.stringify( { op:"auth", ok: connection.authed, name: connection.who } ) );
+				// the deferred initial send; a re-auth on a socket that already
+				// has the list (the page logged in again) does not repeat it
+				if( connection.authed && !wasAuthed && ws.readyState === 1 ) sendTasksTo( ws );
+			} );
+			break;
+		}
 		case "shutdown": {
 			if( msg.system && msg.system !== local.id ) {
 				// aimed at one of the systems reporting to this one

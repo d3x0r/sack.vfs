@@ -34,9 +34,14 @@ protocol.on( "updateTask", updateTask );
 protocol.on( "deleteTask", deleteTask );
 protocol.on( "extern.task", addNewSystem );
 protocol.on( "deleteSystem", deleteSystem );
-protocol.on( "login", (arg)=>{ if( arg !== "No User Server" ) 
-									local.login = arg; 
-								showForm() 
+protocol.on( "login", (arg)=>{ 
+	console.log( "Login Received...", arg );
+	if( arg !== "No User Server" )  {
+		// otherwise leave login disabled to hide unusable controls.
+		local.login = arg; 
+	} 
+	else local.login = true; // allow task manager without auth to be controlled (need to give it auth somehow)
+	showForm() 
 } );
 protocol.connect();
 

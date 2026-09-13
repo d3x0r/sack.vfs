@@ -1042,6 +1042,9 @@ function timeoutTaskStop( task ) {
 	//console.log( "A stop started... and now we wait on", task.name );
 	config.local.connections.forEach( (conn)=>
 		{
+			// a socket that has not logged in (main.mjs Connection.authed) is
+			// told nothing, the same as the status broadcasts
+			if( conn.authed === false ) return;
 			if( conn.ws.readyState == 1 ) {
 				try {
 					conn.ws.send( JSOX.stringify( {op:"stopping", task } ) )
