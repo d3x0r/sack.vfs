@@ -680,8 +680,10 @@ function handleMessage( ws, msg_ ) {
 		// stopAll/startAll are still honoured.
 		if( config.disallowUpstreamTaskManagment
 		 && local.upstreamWS && ws === local.upstreamWS ) {
+			// updateDisplay is deliberately not here: moving a task's window is a
+			// runtime control like start/stop, not an edit of its definition
 			if( msg.op === "createTask" || msg.op === "updateTask" || msg.op === "deleteTask"
-			 || msg.op === "setPlugins" || msg.op === "updateDisplay" ) {
+			 || msg.op === "setPlugins" ) {
 				console.log( "Refused upstream task management:", msg.op, msg.id || (msg.task && msg.task.name) );
 				return;
 			}

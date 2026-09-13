@@ -58,6 +58,11 @@ export class MySystem extends System {
 	constructor(msg) {
 		super( {address:""}, msg.id, msg.port, msg.system, msg.tasks )
 		this.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
+		// the rows come with their flags but no `state`; the master's own list
+		// computes it as it is loaded, and a system that connects later (or is in
+		// the first `tasks` message) has to get the same, or its status column
+		// stays blank until each task next changes
+		if( this.tasks ) for( const task of this.tasks ) task.state = taskState( task );
 	}
 
 	addTask( id, task ) {
