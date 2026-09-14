@@ -3,6 +3,8 @@
 
 #include "ssh2_module.h"
 #include "websocket_module.h"
+// defined with maybeLower() below; used by the request header loop above it
+static void setHeaderBothCases( Isolate* isolate, Local<Object> arr, char const* name, Local<String> val );
 
 //#define DEBUG_AGGREGATE_WRITES
 //#define DEBUG_EVENTS
@@ -944,7 +946,9 @@ Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket*
 	INDEX idx;
 	struct HttpField *header;
 	LIST_FORALL( headers, idx, struct HttpField *, header ) {
-		SETT( arr, header->name
+		// req.headers and req.connection.headers are this same object; both
+		// spellings live on it (see setHeaderBothCases)
+		setHeaderBothCases( isolate, arr, GetText( header->name )
 			, String::NewFromUtf8( isolate, (const char*)GetText( header->value ), NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
 	}
 	optionStrings *strings = getStrings( isolate );
@@ -1137,6 +1141,42 @@ static void httpRequestAsyncMsg( uv_async_t * handle ) {
 	httpRequestAsyncMsg__( isolate, context, (httpRequestObject *)handle->data );
 }
 
+static char* maybeLower( char const* name ) {
+	char *result = NULL;
+	char const* tst = name;
+	char * tmp;
+	while( tst[0] ) {
+		if( tst[0] >= 'A' && tst[0] <= 'Z' ) break;
+		tst++;
+	}
+	if( !tst[0] )
+		return result;
+	while( tst[0] ) tst++;                 // to the end: the whole name is copied
+	uintptr_t len = tst-name;
+	result = (TEXTCHAR*)AllocateEx( sizeof(TEXTCHAR)*(len+1)  DBG_SRC );
+	for( tst=name, tmp=result; tst[0]; tmp++,tst++ ) {
+		if( tst[0] >= 'A' && tst[0] <= 'Z' ) tmp[0]=tst[0] + ('a'-'A');
+		else  tmp[0]=tst[0];
+	}
+	tmp[0] = 0;
+	return result;
+}
+
+// Headers are exposed under BOTH spellings on the one object: as sent,
+// because the sender's casing carries information (a proxy can be told by
+// it), and lowercased, because that is how code looks a header up
+// (`headers['if-modified-since']`, as with node's own http).
+static void setHeaderBothCases( Isolate* isolate, Local<Object> arr, char const* name, Local<String> val ) {
+	// SETT() wants a PTEXT key; these are C strings, so set the keys directly
+	Local<Context> context = isolate->GetCurrentContext();
+	(void)arr->Set( context, String::NewFromUtf8( isolate, name, NewStringType::kNormal ).ToLocalChecked(), val );
+	char* lcName = maybeLower( name );
+	if( lcName ) {
+		(void)arr->Set( context, String::NewFromUtf8( isolate, lcName, NewStringType::kNormal ).ToLocalChecked(), val );
+		Deallocate( char*, lcName );
+	}
+}
+
 static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, httpRequestObject * myself ) {
 	struct HTTPRequestOptions *opts = myself->opts;
 	{
@@ -1203,9 +1243,9 @@ static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, htt
 					struct HttpField* header;
 					//headers
 					LIST_FORALL( headers, idx, struct HttpField*, header ) {
-						SETT( arr, header->name
+						setHeaderBothCases( isolate, arr, GetText( header->name )
 							, String::NewFromUtf8( isolate, (const char*)GetText( header->value )
-								, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
+									, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
 					}
 					SET( result, "headers", arr );
 
@@ -5192,7 +5232,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 					struct HttpField* header;
 					//headers
 					LIST_FORALL(headers, idx, struct HttpField*, header) {
-						SETT(arr, header->name
+						setHeaderBothCases( isolate, arr, GetText( header->name )
 							, String::NewFromUtf8(isolate, (const char*)GetText(header->value)
 								, NewStringType::kNormal, (int)GetTextSize(header->value)).ToLocalChecked());
 					}
@@ -5389,8 +5429,7 @@ static void httpConnAsyncMsg__( Isolate *isolate, Local<Context> context, httpCo
 					, evt->response.statusText ? evt->response.statusText : "NO RESPONSE"
 					, NewStringType::kNormal ).ToLocalChecked() );
 				LIST_FORALL( evt->response.headers, idx, struct httpConnHeader*, h ) {
-					(void)arr->Set( context
-						, String::NewFromUtf8( isolate, h->name, NewStringType::kNormal ).ToLocalChecked()
+					setHeaderBothCases( isolate, arr, h->name
 						, String::NewFromUtf8( isolate, h->value, NewStringType::kNormal ).ToLocalChecked() );
 				}
 				SET( result, "headers", arr );
