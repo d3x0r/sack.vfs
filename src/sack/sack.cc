@@ -69961,7 +69961,8 @@ static void json_state_init( struct json_parse_state *state )
 	if( ppList[0] ) ppList[0]->Cnt = 0;
 	state->outValBuffers = ppList;
 	state->line = 1;
-	state->col = 1;
+ // json6 counts the column as each character is taken; the first lands on 1
+	state->col = 0;
  // character index;
 	state->n = 0;
 	state->word = WORD_POS_RESET;
@@ -70922,6 +70923,18 @@ static const char *json6_runeText( struct json_parse_state *state, TEXTRUNE c ) 
 	state->runeText[len] = 0;
 	return state->runeText;
 }
+// Line bookkeeping for a character that has just been taken (next points past it).
+// CR, LF, LS and PS each end a line; a CR directly followed by LF counts once, at
+// the LF.  Column resets to 0 so the next character, which is counted as it is
+// taken, lands on column 1.
+static void json6_countLine( struct json_parse_state *state, TEXTRUNE c, CTEXTSTR next, CTEXTSTR end ) {
+	if( c == '\r' ) {
+		if( next < end && next[0] == '\n' ) return;
+	}
+	else if( c != '\n' && c != 0x2028 && c != 0x2029 ) return;
+	state->line++;
+	state->col = 0;
+}
 //#define DEBUG_LOG_TIMING
 #ifdef DEBUG_LOG_TIMING
 uint32_t ticks[10];
@@ -71049,11 +71062,12 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 				else if( c >= 'a' && c <= 'f' ) state->hex_char += ( c - 'a' ) + 10;
 				else {
 					if( !state->pvtError ) state->pvtError = VarTextCreate();
-					vtprintf( state->pvtError, "(escaped character, parsing hex of \\u) fault while parsing; '%s' unexpected at %" _size_f " (near %*.*s[%s]%s)", json6_runeText( state, c ), n
+					vtprintf( state->pvtError, "(escaped character, parsing hex of \\u) fault while parsing; '%s' unexpected at %" _size_f " (near %*.*s[%s]%s) [%" _size_f ":%" _size_f "]", json6_runeText( state, c ), n
 						, (int)( ( n > 3 ) ? 3 : n ), (int)( ( n > 3 ) ? 3 : n )
 						, ( *msg_input ) - ( ( n > 3 ) ? 3 : n )
 						, json6_runeText( state, c )
 						, ( *msg_input ) + 1
+					, state->line, state->col
 // fault
 					);
 					status = -1;
@@ -71073,11 +71087,12 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 					else if( c >= 'a' && c <= 'f' ) state->hex_char += ( c - 'a' ) + 10;
 					else {
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
-						vtprintf( state->pvtError, "(escaped character, parsing hex of \\x) fault while parsing; '%s' unexpected at %" _size_f " (near %*.*s[%s]%s)", json6_runeText( state, c ), n
+						vtprintf( state->pvtError, "(escaped character, parsing hex of \\x) fault while parsing; '%s' unexpected at %" _size_f " (near %*.*s[%s]%s) [%" _size_f ":%" _size_f "]", json6_runeText( state, c ), n
 							, (int)( ( n>3 ) ? 3 : n ), (int)( ( n>3 ) ? 3 : n )
 							, ( *msg_input ) - ( ( n>3 ) ? 3 : n )
 							, json6_runeText( state, c )
 							, ( *msg_input ) + 1
+						, state->line, state->col
 // fault
 						);
 						status = -1;
@@ -71102,17 +71117,17 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 			}
 			switch( c ) {
 			case '\r':
+				// \ CR : a continuation; if LF follows it is counted there
 				state->cr_escaped = TRUE;
+				json6_countLine( state, c, *msg_input, msg + msglen );
 				continue;
 			case '\n':
-				state->line++;
-				state->col = 1;
-				if( state->cr_escaped ) state->cr_escaped = FALSE;
-				// fall through to clear escape status <CR><LF> support.
  // LS (Line separator)
 			case 0x2028:
  // PS (paragraph separate)
 			case 0x2029:
+				state->cr_escaped = FALSE;
+				json6_countLine( state, c, *msg_input, msg + msglen );
 				// escaped whitespace is nul'ed.
 				state->escape = 0;
 				continue;
@@ -71174,15 +71189,8 @@ static int gatherString6(struct json_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 		}
 		else
 		{
-			if( state->cr_escaped ) {
-				state->cr_escaped = FALSE;
-				if( c == '\n' ) {
-					state->line++;
-					state->col = 1;
-					state->escape = FALSE;
-					continue;
-				}
-			}
+			state->cr_escaped = FALSE;
+			json6_countLine( state, c, *msg_input, msg + msglen );
 			mOut += ConvertToUTF8( mOut, c );
 		}
 	}
@@ -71304,6 +71312,7 @@ int json6_parse_add_data( struct json_parse_state *state
 			state->n = input->pos - input->buf;
 			if( state->n > input->size ) DebugBreak();
 			if( state->comment ) {
+				json6_countLine( state, c, input->pos, input->buf + input->size );
 				if( state->comment == 1 ) {
 					if( c == '*' ) { state->comment = 3; continue; }
 					if( c != '/' ) {
@@ -71611,9 +71620,6 @@ int json6_parse_add_data( struct json_parse_state *state
 						}
 						break;
 					case '\n':
-						state->line++;
-						state->col = 1;
-						// fall through to normal space handling - just updated line/col position
 					case ' ':
 					case '\t':
 					case '\r':
@@ -71629,6 +71635,7 @@ int json6_parse_add_data( struct json_parse_state *state
 					case 0x2029:
  // ZWNBS is WS though
 					case 0xFEFF:
+						json6_countLine( state, c, input->pos, input->buf + input->size );
 						if( state->word == WORD_POS_RESET || state->word == WORD_POS_AFTER_FIELD )
 							break;
 						else if( state->word == WORD_POS_FIELD ) {
@@ -71697,9 +71704,6 @@ int json6_parse_add_data( struct json_parse_state *state
 					}
 					break;
 				case '\n':
-					state->line++;
-					state->col = 1;
-					// FALLTHROUGH
 				case ' ':
 				case '\t':
 				case '\r':
@@ -71714,6 +71718,7 @@ int json6_parse_add_data( struct json_parse_state *state
  // PS
 				case 0x2029:
 				case 0xFEFF:
+					json6_countLine( state, c, input->pos, input->buf + input->size );
 					if( state->word == WORD_POS_END ) {
 						state->word = WORD_POS_RESET;
 						if( state->parse_context == CONTEXT_UNKNOWN ) {
@@ -72073,6 +72078,9 @@ int json6_parse_add_data( struct json_parse_state *state
 							}
 						}
 						if( input ) {
+							// the character that ended the number was counted here and is handed
+							// back to the main loop, which counts it again.
+							if( input->pos > _msg_input ) state->col--;
 							input->pos = _msg_input;
 							state->n = (input->pos - input->buf);
 							if( state->n > input->size ) DebugBreak();
@@ -72116,11 +72124,12 @@ int json6_parse_add_data( struct json_parse_state *state
 						// fault, illegal characer
 						state->status = FALSE;
 						if( !state->pvtError ) state->pvtError = VarTextCreate();
-						vtprintf( state->pvtError, "fault parsing '%s' unexpected %" _size_f " (near %*.*s[%s]%s)", json6_runeText( state, c ), state->n
+						vtprintf( state->pvtError, "fault parsing '%s' unexpected %" _size_f " (near %*.*s[%s]%s) [%" _size_f ":%" _size_f "]", json6_runeText( state, c ), state->n
 							, (int)((state->n > 4) ? 3 : (state->n-1)), (int)((state->n > 4) ? 3 : (state->n-1))
 							, input->buf + state->n - ((state->n > 3) ? 3 : state->n)
 							, json6_runeText( state, c )
 							, input->buf + state->n
+						, state->line, state->col
 // fault
 						);
 					}
@@ -72234,7 +72243,8 @@ void json_parse_clear_state( struct json_parse_state *state ) {
 		state->parse_context = CONTEXT_UNKNOWN;
 		state->word = WORD_POS_RESET;
 		state->n = 0;
-		state->col = 1;
+ // counted as each character is taken; the first lands on 1
+		state->col = 0;
 		state->line = 1;
 		state->gatheringString = FALSE;
 		state->gatheringNumber = FALSE;
