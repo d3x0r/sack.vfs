@@ -72737,6 +72737,18 @@ static const char *jsox_runeText( struct jsox_parse_state *state, TEXTRUNE c ) {
 	state->runeText[len] = 0;
 	return state->runeText;
 }
+// Line bookkeeping for a character that has just been taken (next points past it).
+// CR, LF, LS and PS each end a line; a CR directly followed by LF counts once, at
+// the LF.  Column resets to 0 so the next character, which is counted as it is
+// taken, lands on column 1.
+static void jsox_countLine( struct jsox_parse_state *state, TEXTRUNE c, CTEXTSTR next, CTEXTSTR end ) {
+	if( c == '\r' ) {
+		if( next < end && next[0] == '\n' ) return;
+	}
+	else if( c != '\n' && c != 0x2028 && c != 0x2029 ) return;
+	state->line++;
+	state->col = 0;
+}
 PLIST knownArrayTypeNames;
 static void registerKnownArrayTypeNames(void) {
 	AddLink( &knownArrayTypeNames, "ab" );
@@ -72790,7 +72802,8 @@ static void jsox_state_init( struct jsox_parse_state *state )
 	}
 	DeleteList( &state->classes );
 	state->line = 1;
-	state->col = 1;
+ // counted as each character is taken; the first lands on 1
+	state->col = 0;
  // character index;
 	state->n = 0;
 	state->word = JSOX_WORD_POS_RESET;
@@ -72985,17 +72998,17 @@ static int gatherStringX(struct jsox_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 			}
 			switch( c ) {
 			case '\r':
+				// \ CR : a continuation; if LF follows it is counted there
 				state->cr_escaped = TRUE;
+				jsox_countLine( state, c, *msg_input, msg + msglen );
 				continue;
 			case '\n':
-				state->line++;
-				state->col = 1;
-				if( state->cr_escaped ) state->cr_escaped = FALSE;
-				// fall through to clear escape status <CR><LF> support.
  // LS (Line separator)
 			case 0x2028:
  // PS (paragraph separate)
 			case 0x2029:
+				state->cr_escaped = FALSE;
+				jsox_countLine( state, c, *msg_input, msg + msglen );
 				// escaped whitespace is nul'ed.
 				state->escape = 0;
 				continue;
@@ -73066,15 +73079,8 @@ static int gatherStringX(struct jsox_parse_state *state, CTEXTSTR msg, CTEXTSTR 
 		}
 		else
 		{
-			if( state->cr_escaped ) {
-				state->cr_escaped = FALSE;
-				if( c == '\n' ) {
-					state->line++;
-					state->col = 1;
-					state->escape = FALSE;
-					continue;
-				}
-			}
+			state->cr_escaped = FALSE;
+			jsox_countLine( state, c, *msg_input, msg + msglen );
 			mOut += ConvertToUTF8( mOut, c );
 		}
 	}
@@ -74093,6 +74099,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				break;
 			}
 			if( state->comment ) {
+				jsox_countLine( state, c, input->pos, input->buf + input->size );
 				if( state->comment == 1 ) {
 					if( c == '*' ) { state->comment = 3; continue; }
 					if( c == '/' ) { state->comment = 2; continue; }
@@ -74739,9 +74746,6 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 						}
 						break;
 					case '\n':
-						state->line++;
-						state->col = 1;
-						// fall through to normal space handling - just updated line/col position
 					case ' ':
 					//case 160 :// case '\xa0': // nbsp
 					case '\t':
@@ -74755,6 +74759,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
  // ZWNBS is WS though
 					case 0xFEFF:
 					whitespace:
+						jsox_countLine( state, c, input->pos, input->buf + input->size );
 						if( state->word == JSOX_WORD_POS_END ) {
 							state->word = JSOX_WORD_POS_RESET;
 							if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
@@ -74885,9 +74890,6 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 					}
 					break;
 				case '\n':
-					state->line++;
-					state->col = 1;
-					// FALLTHROUGH
 				case ' ':
 				// U+00A0 is deliberately absent: it joins words rather than separating
 				// them, so it is an ordinary identifier character.  It still ends a
@@ -74901,6 +74903,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 				case '\v':
 				case '\f':
 				case 0xFEFF:
+					jsox_countLine( state, c, input->pos, input->buf + input->size );
 					if( state->word == JSOX_WORD_POS_END ) {
 						state->word = JSOX_WORD_POS_RESET;
 						if( state->parse_context == JSOX_CONTEXT_UNKNOWN ) {
@@ -75491,7 +75494,8 @@ void jsox_parse_clear_state( struct jsox_parse_state *state ) {
 		state->parse_context = JSOX_CONTEXT_UNKNOWN;
 		state->word = JSOX_WORD_POS_RESET;
 		state->n = 0;
-		state->col = 1;
+ // counted as each character is taken; the first lands on 1
+		state->col = 0;
 		state->line = 1;
 		state->gatheringString = FALSE;
 		state->gatheringNumber = FALSE;
@@ -77299,6 +77303,18 @@ static const char *vesl_runeText( struct vesl_parse_state *state, TEXTRUNE c ) {
 	state->runeText[len] = 0;
 	return state->runeText;
 }
+// Line bookkeeping for a character that has just been taken (next points past it).
+// CR, LF, LS and PS each end a line; a CR directly followed by LF counts once, at
+// the LF.  Column resets to 0 so the next character, which is counted as it is
+// taken, lands on column 1.
+static void vesl_countLine( struct vesl_parse_state *state, TEXTRUNE c, CTEXTSTR next, CTEXTSTR end ) {
+	if( c == '\r' ) {
+		if( next < end && next[0] == '\n' ) return;
+	}
+	else if( c != '\n' && c != 0x2028 && c != 0x2029 ) return;
+	state->line++;
+	state->col = 0;
+}
 #define _2char(result,from) (((*from) += 2),( ( result & 0x1F ) << 6 ) | ( ( result & 0x3f00 )>>8))
 #define _zero(result,from)  ((*from)++,0)
 #define _3char(result,from) ( ((*from) += 3),( ( ( result & 0xF ) << 12 ) | ( ( result & 0x3F00 ) >> 2 ) | ( ( result & 0x3f0000 ) >> 16 )) )
@@ -77336,7 +77352,8 @@ static void vesl_state_init( struct vesl_parse_state *state )
 	if( ppList[0] ) ppList[0]->Cnt = 0;
 	state->outValBuffers = ppList;
 	state->line = 1;
-	state->col = 1;
+ // counted as each character is taken; the first lands on 1
+	state->col = 0;
  // character index;
 	state->n = 0;
 	state->word = VESL_WORD_POS_RESET;
@@ -77565,17 +77582,17 @@ static int gatherString6v(struct vesl_parse_state *state, CTEXTSTR msg, CTEXTSTR
 			}
 			switch( c ) {
 			case '\r':
+				// \ CR : a continuation; if LF follows it is counted there
 				state->cr_escaped = TRUE;
+				vesl_countLine( state, c, *msg_input, msg + msglen );
 				continue;
 			case '\n':
-				state->line++;
-				state->col = 1;
-				if( state->cr_escaped ) state->cr_escaped = FALSE;
-				// fall through to clear escape status <CR><LF> support.
- // LS (Line separator)
-			case 2028:
+ // LS (Line separator)  (was written as decimal 2028)
+			case 0x2028:
  // PS (paragraph separate)
-			case 2029:
+			case 0x2029:
+				state->cr_escaped = FALSE;
+				vesl_countLine( state, c, *msg_input, msg + msglen );
 				// escaped whitespace is nul'ed.
 				state->escape = 0;
 				continue;
@@ -77643,15 +77660,8 @@ static int gatherString6v(struct vesl_parse_state *state, CTEXTSTR msg, CTEXTSTR
 		}
 		else
 		{
-			if( state->cr_escaped ) {
-				state->cr_escaped = FALSE;
-				if( c == '\n' ) {
-					state->line++;
-					state->col = 1;
-					state->escape = FALSE;
-					continue;
-				}
-			}
+			state->cr_escaped = FALSE;
+			vesl_countLine( state, c, *msg_input, msg + msglen );
 			if( c < 127 )
 				(*mOut++) = (char)c;
 			else
@@ -77677,6 +77687,8 @@ static int gatherIdentifier( struct vesl_parse_state *state, CTEXTSTR msg
 	{
 		(state->col)++;
 		if( c < 0x80 && vesl_identifierTerminators[c] ) {
+ // handed back through *unused; the main loop counts it again
+			(state->col)--;
 			status = 1;
 			(*unused) = c;
 			break;
@@ -77846,6 +77858,7 @@ int vesl_parse_add_data( struct vesl_parse_state *state
 				, (int)((c<127)?TESTFLAG(isOp,c):0) );
 			vesl_dump_parse( state->root );
 			if( state->comment ) {
+				vesl_countLine( state, c, input->pos, input->buf + input->size );
 				if( state->comment == 1 ) {
 					if( c == '*' ) { state->comment = 3; continue; }
 					if( c != '/' ) {
@@ -77891,13 +77904,12 @@ int vesl_parse_add_data( struct vesl_parse_state *state
 					state->weakSpace = TRUE;
 					continue;
 				}
-				if( c == '\n' ) {
-					state->line++;
-					state->col = 1;
+				if( c == '\n' || c == '\r' ) {
+					vesl_countLine( state, c, input->pos, input->buf + input->size );
 					state->weakSpace = FALSE;
 					continue;
 				}
-				if( c == ',' || c == ';' || c == '\t' || c == '\r' ) {
+				if( c == ',' || c == ';' || c == '\t' ) {
 					state->weakSpace = FALSE;
 					continue;
 				}
@@ -78033,6 +78045,9 @@ int vesl_parse_add_data( struct vesl_parse_state *state
 							}
 						}
 						if( input ) {
+							// the character that ended the number was counted here and is handed
+							// back to the main loop, which counts it again.
+							if( input->pos > _msg_input ) state->col--;
 							input->pos = _msg_input;
 							state->n = (input->pos - input->buf);
 							if( state->n > input->size ) DebugBreak();
@@ -78273,7 +78288,8 @@ void vesl_parse_clear_state( struct vesl_parse_state* state ) {
 		state->parse_context = VESL_CONTEXT_UNKNOWN;
 		state->word = VESL_WORD_POS_RESET;
 		state->n = 0;
-		state->col = 1;
+ // counted as each character is taken; the first lands on 1
+		state->col = 0;
 		state->line = 1;
 		state->gatheringString = FALSE;
 		state->gatheringNumber = FALSE;
@@ -90633,16 +90649,27 @@ static int handleServerName( SSL* ssl, int* al, void* param ) {
 							if( strlen == buflen - 5 ) {
 								INDEX idx;
 								struct ssl_hostContext* hostctx;
+								struct ssl_hostContext* defaultHostctx = NULL;
 								unsigned char const* host = buf + 5;
 								ssl_Accept->hostname = DupCStrLen( (CTEXTSTR)host, strlen );
 								//lprintf( "Have hostchange: %.*s", strlen, host );
 								LIST_FORALL( ctxList[0], idx, struct ssl_hostContext*, hostctx ) {
 									char* checkName;
 									char* nextName;
+									size_t maxhosts;
+									// a host context registered without a name is the explicit match-anything
+									// cert; remember it, but keep looking for a real name match first.
+									if( !hostctx->host ) { defaultHostctx = hostctx; continue; }
+									maxhosts = StrLen( hostctx->host );
 									for( checkName = hostctx->host; checkName ? (nextName = StrChr( checkName, '~' )), 1 : 0; checkName = nextName ) {
-										int namelen = (int)(nextName ? (nextName - checkName) : strlen);
+										// the trailing name's length is what is left of the list, not the requested
+										// length.  Using the latter made this a prefix compare, so a configured name
+										// that merely starts with the requested one matched.
+										size_t namelen = nextName ? (size_t)( nextName - checkName ) : maxhosts;
 										if( nextName ) nextName++;
-										if( namelen != strlen ) {
+  // the name plus the '~' that follows it
+										maxhosts -= namelen + 1;
+										if( namelen != (size_t)strlen ) {
 											//lprintf( "%.*s is not %.*s", namelen, checkName, strlen, host );
 											continue;
 										}
@@ -90650,11 +90677,28 @@ static int handleServerName( SSL* ssl, int* al, void* param ) {
 										if( StrCaseCmpEx( checkName, (CTEXTSTR)host, strlen ) == 0 ) {
 											SSL_set_SSL_CTX( ssl, hostctx->ctx );
 											//lprintf( "SET CTX, and RETRY?" );
+											OPENSSL_free( type );
 											return SSL_CLIENT_HELLO_SUCCESS;
 										}
 									}
 								}
-								ses->noHost = TRUE;
+								if( defaultHostctx ) {
+									// an explicitly nameless certificate was registered as the catch-all.
+									SSL_set_SSL_CTX( ssl, defaultHostctx->ctx );
+									OPENSSL_free( type );
+									return SSL_CLIENT_HELLO_SUCCESS;
+								}
+								// Nothing matched and no catch-all was registered.  Mark the ACCEPTING
+								// session - `ses` is the listener, which never handshakes, so marking it
+								// left this connection unflagged (and the listener flagged forever).
+								// The flag makes the read path drop the handshake output instead of
+								// answering with whatever certificate the accepting SSL_CTX happens to
+								// carry - which would hand the client a name it never asked for.
+								ssl_Accept->noHost = TRUE;
+								if( ses->errorCallback )
+									ses->errorCallback( ses->psvErrorCallback, ssl_Accept->pc, SACK_NETWORK_ERROR_HOST_NOT_FOUND
+  // size_t through varargs, not the int
+										, (const char*)host, (size_t)strlen );
 							}
 						}
 					}
@@ -90734,7 +90778,10 @@ static int handleServerName( SSL* ssl, int* al, void* param ) {
 			//lprintf( "check: %s next: %s %d", checkName, nextName, maxhosts );
 			size_t namelen = nextName ? (nextName - checkName) : maxhosts;
 			if( nextName ) nextName++;
-			maxhosts -= namelen - 1;
+			// a name costs its own length plus the separator that follows it; subtracting
+			// namelen-1 overshot by 2 per separator, so every name after the first in a
+			// tilde list measured too long and the namelen != strlen test below skipped it.
+			maxhosts -= namelen + 1;
 			if( namelen != strlen ) {
 				//lprintf( "%.*s is not %.*s", (int)namelen, checkName, (int)strlen, host );
 				continue;
