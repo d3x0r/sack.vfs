@@ -66,10 +66,10 @@ function read( name ) {
 //    SSL_PATH="['/etc/letsencrypt/live/a.org','/etc/letsencrypt/live/b.com']"
 //    SSL_HOST="['a.org','www.b.com']"
 // SSL_HOST is positional with SSL_PATH.  Within one entry names may be
-// tilde(~) separated as before.  An entry of "*" (or an omitted/empty entry)
-// takes the names from that certificate.  An entry of null registers that
-// certificate with no name, which the TLS layer uses as the default for any
-// SNI that matches nothing (and for connections that send no SNI at all).
+// tilde(~) separated as before.  An omitted or empty entry takes the names
+// from that certificate.  An entry of "*" or null registers the certificate
+// with no name at all, which the TLS layer uses as the catch-all: it answers
+// any SNI that matches nothing, and any connection that sends no SNI.
 function envList( name ) {
 	const val = process.env[name];
 	if( !val ) return [];
@@ -87,8 +87,10 @@ function envList( name ) {
 
 // resolve one SSL_HOST entry against its certificate; returns null for the default host.
 function resolveHost( host, cert, from ) {
-	if( host === null ) return null;
-	if( !host || host === "*" ) {
+	// "*" and null both mean "match anything": register the certificate with no
+	// name, and the TLS layer falls back to it for any name it cannot match.
+	if( host === null || host === "*" ) return null;
+	if( !host ) {
 		host = sack.TLS.hosts( cert ).join( "~" );
 		if( host )
 			console.log( "Using certificate hosts for", from, ":", host );

@@ -15,12 +15,14 @@ export "SSL_PATH=['/etc/letsencrypt/live/app.d3x0r.org','/etc/letsencrypt/live/s
 export "SSL_HOST=['app.d3x0r.org','www.sideplayr.com']"
 ```
 
-An `SSL_HOST` entry of `*` (or an omitted entry) takes its names from that certificate.  An entry of
-`null` registers the certificate without a name, making it the default used when the requested
-server name matches nothing, or when the client sends no server name (e.g. a bare IP address):
+An omitted or empty `SSL_HOST` entry takes its names from that certificate.  An entry of `*` or
+`null` means *match anything*: the certificate is registered without a name, and is used whenever
+the requested server name matches nothing, or the client sends no server name at all (e.g. a bare
+IP address).  Here the first certificate answers only its own names and the second answers
+everything else:
 
 ```
-export "SSL_HOST=['*',null]"
+export "SSL_HOST=['','*']"
 ```
 
 The certificate presented is chosen by the server name (SNI) the client sends.  Without a default
