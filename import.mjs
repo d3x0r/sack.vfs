@@ -144,8 +144,8 @@ export async function load(urlin, context, defaultLoad) {
 		//console.log( "Setting format to module here...");
 		context.format="module";
 	} else {
-		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, forceModule, exten );
-		if( forceModule && exten === ".js" ) context.format="module";
+		debug_ && console.log( "forcing .js to be module?", process.env.FORCE_IMPORT_MODULE, sack.import.forceNextModule, sack.import.forceNextModule || forceModule, exten );
+		if( (sack.import.forceNextModule || forceModule ) && exten === ".js" ) context.format="module";
 	}
 	return defaultLoad(urlin, context, defaultLoad);
 
