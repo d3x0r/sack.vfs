@@ -188,10 +188,14 @@ export class WS extends Events{
 	 * @param {*} msg - message to send to the server, if an object, it will be sent as a JSOX object, otherwise it will be sent as a literal string.
 	 */
 	send( msg ) {
-		if( "object" === typeof msg ) 
-			this.ws.send( JSOX.stringify(msg) ); 
-		else
-			this.ws.send( msg );	
+		if( this.ws.readyState === 1 ) {
+			if( "object" === typeof msg ) 
+				this.ws.send( JSOX.stringify(msg) ); 
+			else
+				this.ws.send( msg );	
+		} else {
+			console.trace( "Would have written to a closed socket..." );
+		}
 	}
 	/**
 	 * emit an event to the server

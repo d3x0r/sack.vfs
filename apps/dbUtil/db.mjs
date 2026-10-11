@@ -359,6 +359,30 @@ export class Db {
 	
 	getSqlDateTime(date) { return Db.getSqlDateTime(this.db,date); }
 
+	// Is this COLUMN_DEFAULT an unquoted SQL keyword/expression rather than a value?
+	// A real string default comes back quoted ('NULL', 'abc'), so a bare keyword
+	// is never ambiguous with one.
+	static isSqlDefaultExpression( def ) {
+		return /^(NULL|CURRENT_TIMESTAMP(\(\d*\))?|LOCALTIME(STAMP)?(\(\d*\))?|NOW\(\d*\)|UTC_TIMESTAMP(\(\d*\))?|UTC_DATE(\(\))?|CURRENT_DATE(\(\))?|CURRENT_TIME(\(\d*\))?|UUID\(\))$/i.test( String(def).trim() );
+	}
+	isSqlDefaultExpression( def ) { return Db.isSqlDefaultExpression( def ); }
+
+	// Turn a column's COLUMN_DEFAULT (SQL text, as loadSchema stores it) into a
+	// value usable as a bound parameter.  Quoted string defaults
+	// ('0000-00-00 00:00:00') lose their quotes; numbers pass through; bare SQL
+	// expressions (NULL, CURRENT_TIMESTAMP) have no literal value => null.
+	// The quoted form is kept on the column because it splices straight into
+	// a CREATE/INSERT statement; this is the bound-parameter view of it.
+	static sqlDefaultValue( def ) {
+		if( def === null || def === undefined ) return null;
+		if( "string" !== typeof def ) return def;
+		const t = def.trim();
+		if( Db.isSqlDefaultExpression( t ) ) return null;
+		const m = /^'([\s\S]*)'$/.exec( t );
+		return m ? m[1].replaceAll( "''", "'" ).replaceAll( "\\'", "'" ) : t;
+	}
+	sqlDefaultValue( def ) { return Db.sqlDefaultValue( def ); }
+
 	static getSqlDate(db,date) {
 		 if( date.getTime() === -62167219200000 ) return "0000-00-00";
 		const yr = date.getFullYear();

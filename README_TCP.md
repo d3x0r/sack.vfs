@@ -45,11 +45,13 @@ tcp2.send( "Hello World" );
 | family | &lt;string&gt; |either 'IPv4' or 'IPv6' which controls the default address; otherwise address string will determine the family |
 | toPort | &lt;number&gt; vspecify the port to send to if not specified in send call |
 | toAddress | &lt;string&gt; |specify the address to connect to; using toPort (if any) as a default port.  This triggers the TCP object to be a client to a server.|
+| timeout | &lt;number&gt; | (client) milliseconds to wait for the connect to complete; on expiry the `error` callback receives ETIMEDOUT (110 on linux, 10060 on windows) and the socket is closed.  Default is the library default (10000). |
+| error | &lt;function&gt; | (client) receives a number that is the error of a failed connection (ECONNREFUSED, ETIMEDOUT...).  `connect` is only called on success.  The socket is already closed when this is called; no `close` event follows and calling `close()` is a no-op.  Also used for TLS layer errors. |
 | readStrings | &lt;bool&gt;| if `true` messages passed to message callback will be given as text format, otherwise will be a TypedArray |
 | reuseAddress | &lt;bool&gt; |if `true` set reuse address socket option |
 | reusePort | &lt;bool&gt; |if `true` set reuse port socket option (linux option, not applicable for windows) |
 | message | &lt;function&gt; | receives a buffer as a parameter.  The buffer is either a Uint8Array or a string, depending on readStrings option.  |
-| connect | &lt;function&gt; | For a server, this receives a new connection.  For a client, this will receive `undefined` or a number that is the error of the connection. |
+| connect | &lt;function&gt; | For a server, this receives a new connection.  For a client, this is called (with no arguments) when the connection completes; a failed connection is reported to `error` instead. |
 | close | &lt;function&gt; | called when a connection is closed.  No parameters are given. |
 | ssl | &lt;bool&gt; | Set to enable SSL on client sockets, without further certificate information. (for client) |
 | host | &lt;string&gt; | Host name(s) that match the default cerfiticate; names separated by '~' |

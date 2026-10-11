@@ -1,15 +1,23 @@
 
 import {local} from "./local.mjs"
 import {sack} from "sack.vfs"
+import {Events} from "sack.vfs/Events2"
+import path from "path"
+import fs from "fs"
 const JSOX = sack.JSOX;
 const disk = sack.Volume();
 
 export const config = {
 	pwdBare:null, config:null, send:null, local : null
 }
-//import {pwdBare, config,send} from "./main.mjs";
 
 let pendingDepends = [];
+
+// True while closeAllTasks() is sweeping.  Stopping tasks one at a time races
+// its own cascade: a dependant torn down before the sweep reaches it still has
+// its own restart pending, fires it, and its start() drags the dependency back
+// up - which is how things came back just as the manager was exiting.
+let stoppingAll = false;
 
 // lines of output retained per task; a long lived service would otherwise grow
 // #log without bound.  Override per task with `maxLogLines` in the task config.
@@ -17,6 +25,57 @@ const DEFAULT_MAX_LOG_LINES = 5000;
 const DEFAULT_MAX_MASTER_LOG_LINES = 5000;
 // trim in chunks - splicing the front on every line is O(n) per line.
 const LOG_TRIM_SLACK = 1024;
+
+// how long a task gets to exit on its own before it is force-killed, and the
+// hard cap after which a shutdown stops waiting for it at all rather than
+// hanging the whole process on one task that will not die.
+const TASK_STOP_KILL_MS = 1500;
+const TASK_STOP_GIVEUP_MS = 15000;
+
+// Readiness.  A task is "ready" as soon as it is running unless it says
+// otherwise with readyPort (wait for something to accept a connection there) or
+// readyDelay (just wait).  Dependants hold off until then - without it,
+// dependsOn only ordered the launches, it did not space them.
+const READY_POLL_MS = 250;
+const READY_TIMEOUT_MS = 30000;
+
+// A task with no `bin` launches nothing; it IS its readiness check.  With a
+// readyPort it is a probe on something this manager does not run (a remote
+// service, say), ready while the port answers.  Once ready it keeps checking,
+// and after enough misses in a row it goes down the way a process exit does -
+// dependants cascade - and resumes probing until the port is back.  With no
+// port at all it is a plain placeholder: ready as soon as it is started, which
+// makes a name several tasks can depend on.  Override per task with
+// readyRecheck (ms between checks) and readyMisses.
+const READY_RECHECK_MS = 5000;
+const READY_MISSES = 3;
+
+// `readyOnExit`: a pre-run step, such as killing the stray browser processes
+// that stop a fresh instance from coming up.  It is never ready while it runs;
+// a clean exit is the ready edge that starts its dependants, and ready drops
+// again at once, so the next start of a dependant runs this again first.  A
+// non-zero exit starts nothing.  Finishing is not dying, so dependants are not
+// cascaded down, and `restart` is ignored - it would only loop.
+
+function probePort( host, port, maxWait = 1000 ) {
+	return new Promise( ( resolve )=>{
+		let settled = false;
+		let timeout;
+		const done = ( open )=>{
+			if( settled ) return;
+			settled = true;
+			clearTimeout( timeout );
+			socket.close();
+			resolve( open );
+		};
+		const socket = sack.Network.TCP( { toAddress:host, toPort:port, timeout:maxWait
+			, connect:()=>done( true )
+			, error:()=>done( false )
+			, close:()=>done( false )
+		} );
+		timeout = setTimeout( ()=>done( false ), maxWait );
+	} );
+}
 
 function getLogPage( log, logBase, from = logBase + log.length, length = 20 ) {
 	const lineCount = Math.max( 0, Math.floor( length ) || 0 );
@@ -42,9 +101,110 @@ function addMasterLogEntry( task, logEntry ) {
 	}
 }
 
-export class Task {
+function taskWorkPath( work ) {
+	return work ? path.resolve( config.pwdBare || process.cwd(), work ) : ( config.pwdBare || process.cwd() );
+}
+
+function resolveTaskBin( task, bin ) {
+	if( !bin || !/[\\/]/.test( bin ) ) return bin;
+	if( path.isAbsolute( bin ) ) return path.normalize( bin );
+
+	const resolved = path.resolve( taskWorkPath( task.work ), bin );
+	if( disk.exists( resolved ) ) return resolved;
+
+	return bin;
+}
+
+// PATH as a task's child would see it (prePath/postPath applied), or null when
+// the task uses the manager's own PATH unchanged.
+function taskPathEnv( task ) {
+	const sep = process.platform === "win32" ? ";" : ":";
+	let p = null;
+	if( task.prePath ) p = task.prePath + sep + process.env.PATH;
+	if( task.postPath ) p = ( p || process.env.PATH ) + sep + task.postPath;
+	return p;
+}
+
+// Bare program names looked up on PATH, keyed by name and PATH, so the editor
+// asking after every keystroke doesn't spawn `where`/`which` each time.  A miss
+// is forgotten after a while in case the program gets installed.
+const binLookups = new Map();
+const BIN_MISS_TTL = 30000;
+
+function findOnPath( name, pathEnv ) {
+	const key = name + "\0" + ( pathEnv || "" );
+	let pending = binLookups.get( key );
+	if( pending ) return pending;
+	pending = new Promise( (res)=>{
+		let out = "";
+		const win = process.platform === "win32";
+		try {
+			const opts = { // a full path so stdout is captured on windows
+			               bin: win ? path.join( process.env.SystemRoot || "C:\\Windows", "System32", "where.exe" ) : "/usr/bin/which"
+			             , args: [ name ]
+			             , firstArgIsArg: true
+			             , hidden: true
+			             , input( buffer ) { out += buffer; }
+			             , errorInput() {}
+			             , end() {
+				const first = out.split( /\r?\n/ ).map( line=>line.trim() ).find( line=>line );
+				res( first || null );
+			} };
+			// only when overriding: sack.Task reads `env` as an object whenever the
+			// key is present, and an undefined value crashes it.
+			if( pathEnv ) opts.env = Object.assign( {}, process.env, { PATH: pathEnv } );
+			sack.Task( opts );
+		} catch( err ) {
+			console.log( "Failed to look up", name, "on PATH:", err );
+			res( null );
+		}
+	} );
+	binLookups.set( key, pending );
+	pending.then( found=>{ if( !found ) setTimeout( ()=>binLookups.delete( key ), BIN_MISS_TTL ); } );
+	return pending;
+}
+
+// What a task's bin/altbin/work would resolve to if it were started now; the
+// editor shows these so a relative path or bare program name can be checked
+// before saving.  Each is { path, exists }, or null when the field is unset.
+export async function resolveTaskPaths( task ) {
+	const work = taskWorkPath( task.work );
+	const pathEnv = taskPathEnv( task );
+	async function resolveBin( bin ) {
+		if( !bin ) return null;
+		if( /[\\/]/.test( bin ) ) {
+			// same rule as resolveTaskBin(), but always report the absolute form so
+			// a missing relative program still shows where it was looked for
+			const resolved = path.isAbsolute( bin ) ? path.normalize( bin ) : path.resolve( work, bin );
+			return { path: resolved, exists: disk.exists( resolved ) };
+		}
+		// a bare name is left to the system's search, so report what PATH finds
+		const found = await findOnPath( bin, pathEnv );
+		return { path: found, exists: !!found };
+	}
+	return { work: { path: work, exists: disk.exists( work ) }
+	       , bin: await resolveBin( task.bin )
+	       , altbin: await resolveBin( task.altbin )
+	       };
+}
+
+function getPtySize( task ) {
+	const ptySize = task.ptySize || task.pty || {};
+	return {
+		cols: ptySize.cols || ptySize.columns || 80,
+		rows: ptySize.rows || ptySize.lines || 30,
+		width: ptySize.width || 0,
+		height: ptySize.height || 0,
+	};
+}
+
+export class Task extends Events {
 	started = new Date(0);
 	starting = false;
+	// wants to run, but a dependency is not ready yet - #startDependants will
+	// start it when that clears.  Distinct from `starting`, which has to go back
+	// to false while waiting or the dependency-ready path refuses to start it.
+	waiting = false;
 	ended = new Date();
 	running = false;
 	failed = false;
@@ -52,6 +212,14 @@ export class Task {
 	name = null;
 	stopped = false;
 	stopping = false;
+	// serialized out to clients: the graph they need to spot dependency loops,
+	// and whether this task has satisfied its readiness check yet.
+	dependsOn = [];
+	ready = false;
+	// Stopped by hand, as opposed to stopped because something it needed went
+	// away.  A held task stays down: nothing may start it as a side effect of
+	// starting something else.  Cleared when it is started or restarted.
+	held = false;
 
 	#autoEndBatch = false;
 	#log = [];
@@ -67,8 +235,11 @@ export class Task {
 	#killed = false;
 	#path = null;
 	#stopTimer = null;
+	#stopWaiters = []; // resolvers waiting for this task to actually stop
+	#readyRun = 0; // generation, so a restart abandons the previous probe
 
 	constructor(task) {
+		super();
 		this.#task = task;
 		this.name = task.name;
 		this.noAutoRun = task.noAutoRun;
@@ -113,26 +284,12 @@ export class Task {
 				this.#path = process.env.PATH + ":" + task.postPath;
 		}
 
-		if( task.dependsOn ) {
-			for( let dep of task.dependsOn ) {
-				let found = false;
-				for( let testTask of config.local.tasks ) {
-					if( testTask.name === dep ){
-						testTask.#dependants.push( this );
-						this.#dependsOn.push( testTask );
-						found = true;
-						break;
-					}
-				}
-				if( !found ) {
-					pendingDepends.push( {task:this, dep} );
-				}
-			}
-		}
+		if( task.dependsOn ) this.#setDeps( task.dependsOn );
 		for( let p = 0; p < pendingDepends.length; p++ ) {
 			const pd = pendingDepends[p];
 			if( pd.dep === this.name ) {
-				pd.task.#dependsOn.push( this );
+				if( !pd.task.#dependsOn.find( t=>t === this ) )
+					pd.task.#dependsOn.push( this );
 				this.#dependants.push( pd.task );
 				pendingDepends.splice( p, 1 );
 				p--;
@@ -179,6 +336,27 @@ export class Task {
 		}
 		//console.log( "Generate click after move:", this.name, x, y );
 		sack.Mouse.clickAt( x, y );
+	}
+
+	// every status broadcast carries the same shape, so a client can tell a task
+	// that is coming up from one that is running from one that is going down.
+	sendStatus( extra ) {
+		config.send( Object.assign( { op:"status", id:this.id
+		    , running: this.running
+		    , started: this.started, ended: this.ended
+		    , starting: this.starting, waiting: this.waiting
+		    , stopping: this.stopping, failed: this.failed
+		    , ready: this.ready, probe: this.isProbe }, extra ) );
+	}
+
+	// no program to run: this task is only its readiness check (see the
+	// READY_RECHECK_MS comment above).
+	get isProbe() {
+		return !this.#task.bin;
+	}
+	// ready is the clean exit, not the launch (see the readyOnExit comment above)
+	get readyOnExit() {
+		return !!this.#task.readyOnExit && !this.isProbe;
 	}
 
 	get task() {
@@ -266,8 +444,14 @@ export class Task {
 
 	set stopTimer( val ) { this.#stopTimer = val; }
 	get stopTimer() { return this.#stopTimer; }
+	// timeoutTaskStop() lives outside the class and needs to register itself
+	get stopWaiters() { return this.#stopWaiters; }
 
 	start() {
+		if( stoppingAll ) {
+			console.log( "Not starting", this.name, "- stopping all tasks" );
+			return;
+		}
 		this.stopped = false;
 		if( this.running ) {
 			console.log( "Already started:", this.#task.name );
@@ -283,28 +467,66 @@ export class Task {
 			console.log( "Task not available (working path doesn't exist", this.#task.work );
 			this.running = false;
 			this.failed = true;
-			const msg = {op:"status", id:this.id, running: false, ended: this.ended, started: this.started, failed:true };
-			config.send( msg );
+			this.starting = false;
+			this.waiting = false;
+			this.sendStatus();
 			return;
 		}
 
 		// set starting to prevent dependancies from starting dependants
 		this.starting = true;
+		this.sendStatus();
 		for( let dep of this.#dependsOn ) {
-			if( !dep.running ) dep.start();
+			if( dep.running ) continue;
+			// a readyOnExit step is ready precisely when it is NOT running - this
+			// is being started from its ready edge; running it again would run
+			// the step twice for every launch
+			if( dep.ready ) continue;
+			if( dep.held ) {
+				// somebody stopped this one deliberately; starting a dependant is
+				// not a reason to bring it back up behind their back.
+				console.log( "Not starting held dependency:", dep.name, "for", this.name );
+				continue;
+			}
+			dep.start();
+		}
+		// Anything not ready yet will start this task itself once it is (see
+		// #startDependants) - launching now would race ahead of it, which is how
+		// a restarting dependant used to come up before its dependency was
+		// listening.  A held dependency is not going to become ready, so an
+		// explicit start of this task still goes ahead without it.
+		const waiting = this.#dependsOn.filter( dep=>!dep.ready && !dep.held );
+		if( waiting.length ) {
+			console.log( "Holding", this.name, "until ready:"
+			           , waiting.map( dep=>dep.name ).join( ", " ) );
+			this.starting = false;
+			this.waiting = true;
+			this.sendStatus();
+			return;
+		}
+		this.waiting = false;
+		if( this.isProbe ) {
+			// nothing to spawn; "running" here means the check is live.  #run
+			// stays null, which is how stop()/kill() tell this apart from a child.
+			console.log( "Starting probe:", this.#task.name );
+			this.running = true;
+			this.started = new Date();
+			this.sendStatus();
+			this.#beginReady();
+			return;
 		}
 		let bin;
 		if( process.platform === "linux" ) {
 			bin = this.#task.bin; // linux will scan path for name
 		}else if( !this.#task.bin.includes( ":" ) )
-			bin = this.#task.bin;
+			bin = resolveTaskBin( this.#task, this.#task.bin );
 		else {
 			if( this.#task.altbin ) {
 				if( disk.exists( this.#task.bin ) )
-					bin = this.#task.bin;
-				else bin = this.#task.altbin;
+					bin = resolveTaskBin( this.#task, this.#task.bin );
+				else bin = resolveTaskBin( this.#task, this.#task.altbin );
 			} else
-				bin = this.#task.bin; // linux will scan path for name
+				bin = resolveTaskBin( this.#task, this.#task.bin ); // linux will scan path for name
 		}
 		if( this.#run ) this.#run.end();
 		const this_ = this;
@@ -312,15 +534,24 @@ export class Task {
 		//console.log( "Starting:", bin, this );
 		const env = Object.assign( {}, this.#task.env );
 		if( this.#path ) env.PATH = this.#path;
+		// Passing input/errorInput is what makes the launcher hand the child
+		// pipes for stdout and stderr - so a `newConsole` task got a console
+		// window with nothing routed to it, and cmd.exe's own banner and prompt
+		// went to the log instead of the screen.  `noInheritStdio` is the switch
+		// for "this task owns its stdio"; honour it by not capturing at all.
+		// The cost is real and unavoidable: such a task has no Show Log output,
+		// because output can go to the console or to us, not both.
+		const ownStdio = !!this.#task.noInheritStdio;
 		//env.PATH = this.#path;
 		this.#run = sack.Task( {
 		  work:this.#task.work,
 		  bin:bin,
 		  args:this.#task.args,
+		  firstArgIsArg: this.#task.firstArgIsArg ?? true,
 		  end: stop,
 		  env,
-		  input: log,
-		  errorInput: log2,
+		  input: ownStdio ? undefined : log,
+		  errorInput: ( ownStdio || this.#task.usePty ) ? undefined : log2,
 		hidden: this.#task.hidden,
 		minimized: this.#task.minimized,
 		maximized: this.#task.maximized,
@@ -328,6 +559,7 @@ export class Task {
 			noKill: this.#task.noKill,
 			noWait: this.#task.noWait,
 			newConsole : this.#task.newConsole,
+			usePty : this.#task.usePty,
 			useSignal : this.#task.useSignal,
 			useBreak : this.#task.useBreak,
 			moveTo : this.#task.moveTo,
@@ -337,20 +569,20 @@ export class Task {
 		} );
 		//console.log( "Task:", this.#task );
 		if( this.#run ) {
-			this.running = true;
-			this.starting = false; // is running, not just starting.
-			this.started = new Date();
-			const msg = {op:"status", id:this_.id, running: true, ended: this_.ended, started: this_.started };
-			config.send( msg );
-			for( let dep of this.#dependants ) {
-				if( !dep.running && !dep.starting ) {
-					console.log( "Task Started, starting Dep:", dep.name );
-					dep.start();
-				} else {
-					console.log( "Dependant task is still running:", dep.name, dep.starting, dep.running );
-				}
+			if( this.#task.usePty && ( this.#task.ptySize || this.#task.pty ) && typeof this.#run.setPtySize === "function" ) {
+				const ptySize = getPtySize( this.#task );
+				this.#run.setPtySize( ptySize.cols, ptySize.rows, ptySize.width, ptySize.height );
 			}
+			this.running = true;
+			this.started = new Date();
+			this_.sendStatus();
+			// `starting` spans process creation through readiness.  `running`
+			// only says that the child exists; dependants still wait for ready.
+			this.#beginReady();
 		}else { 
+			this.starting = false;
+			this.failed = true;
+			this.sendStatus();
 			console.log( 'failed to start? try altbin?' );
 		}
 
@@ -388,46 +620,8 @@ export class Task {
 		/* this is the low level task end callback
          the native code has ended. */
 		function stop() {
-			this_.ended = new Date();
-			this_.running = false;
-			if( this_.#stopTimer) { 
-				clearTimeout ( this_.#stopTimer )
-				this_.#stopTimer = 0;
-			} 
-			this_.stopping = false;
-			/*
-			if( this_.#stopTimer !== null ) {
-				console.trace( "stop is clearing the stop timer...." );
-				clearTimeout( this_.#stopTimer );
-				this_.#stopTimer = null;
-			}
-			*/
-			let exitCode = this_.#run?this_.#run.exitCode:this_.#exitCode;
-			// exitCode can be null/undefined; a throw here would skip clearing
-			// #run and the status broadcast below.
-			console.log( "Task ended:", this_.name, this_.ended, exitCode
-			           , (exitCode??0).toString(16) );
-			this_.#ranOnce = true;
-			this_.#exitCode = exitCode;
-			this_.#run = null;
-			for( let dep of this_.#dependants ) {
-				dep.stop();
-				dep.#ranOnce = false;
-			}
-			if( !this_.#stopTimer ) {
-				if( this_.#restart ) {
-					//console.log( "doing resume timeout", this_.#task.restartDelay)
-					console.log( "this should restart?" );
-					if( this_.#task.restartDelay )
-						setTimeout( ()=>this_.start(), this_.#task.restartDelay );
-					else 
-						setTimeout( ()=>this_.start(), 200 );
-				}
-			}
-			//console.log( "stopped:", this_.#task.name );
-			const msg = {op:"status", id:this_.id, running: false, ended: this_.ended, started: this_.started };
-			config.send( msg );
-			
+			// exitCode can be null/undefined; #ended copes with that.
+			this_.#ended( this_.#run ? this_.#run.exitCode : this_.#exitCode );
 		}
 		if( this.#task.multiStart ) {
 			const sameConfig = local.tasks.find( t=>t.#task === this.#task );
@@ -461,17 +655,111 @@ export class Task {
 		//console.log( "msg to send:", msg_ );
 		this.#ws.forEach( ws=>ws.send( msg_ ) );
 	}
+	// This run is over - the child exited, or a probe was stopped or lost its
+	// port.  One path for all of them so dependants cascade and restart rules
+	// apply the same way whether or not there was ever a process.
+	#ended( exitCode ) {
+		// a pre-run step that finished on its own, cleanly: this exit is what
+		// its dependants have been waiting for
+		const finished = this.readyOnExit && !this.stopped && !this.#killed
+		               && ( exitCode ?? 0 ) === 0;
+		this.ended = new Date();
+		this.running = false;
+		this.starting = false;
+		if( finished ) {
+			this.ready = true;
+			this.on( "ready", true );
+		} else {
+			if( this.readyOnExit && !this.stopped && !this.#killed ) {
+				console.log( "Pre-run step failed:", this.name, "- not starting what depends on it" );
+				this.failed = true;
+			}
+			this.ready = false;
+			this.on( "ready", false );
+		}
+		this.#readyRun++; // abandon any readiness probe still polling
+		if( this.#stopTimer) {
+			clearTimeout ( this.#stopTimer )
+			this.#stopTimer = 0;
+		}
+		// Settle everyone waiting on this task from the end event itself.
+		// There is only one #stopTimer slot, so with more than one wait
+		// outstanding the clearTimeout above would cancel the only armed
+		// tick and orphan the promise a shutdown was waiting on.
+		this.#stopWaiters.splice( 0 ).forEach( resolve=>resolve( true ) );
+		this.stopping = false;
+		console.log( "Task ended:", this.name, this.ended, exitCode
+		           , (exitCode??0).toString(16) );
+		this.#ranOnce = true;
+		this.#exitCode = exitCode;
+		this.#run = null;
+		if( finished ) {
+			// the edge: kick dependants while ready reads true, then drop it
+			// (silently - nobody needs a false for a step that succeeded) so
+			// the next start of a dependant runs this step again first.
+			this.waiting = false;
+			this.sendStatus();
+			this.#startDependants();
+			this.ready = false;
+			this.sendStatus();
+			return;
+		}
+		if( !this.readyOnExit ) for( let dep of this.#dependants ) {
+			dep.stop();
+			dep.#ranOnce = false;
+		}
+		if( !this.#stopTimer && !this.readyOnExit ) {
+			if( this.#restart && this.dependenciesHeld ) {
+				// this was torn down because something it depends on was
+				// stopped by hand.  Restarting now would run it without that
+				// dependency, and its start() would try to drag the held task
+				// back up.  Wait to be started when that one comes back.
+				console.log( "Not restarting", this.name
+				           , "- a dependency is stopped:", this.heldDependencies.join(", ") );
+			} else if( this.#restart ) {
+				//console.log( "doing resume timeout", this.#task.restartDelay)
+				console.log( "this should restart?" );
+				if( this.#task.restartDelay )
+					setTimeout( ()=>this.start(), this.#task.restartDelay );
+				else
+					setTimeout( ()=>this.start(), 200 );
+			} else if( this.isProbe && !this.stopped && !this.held && !this.#killed ) {
+				// a probe that lost its port was not asked to go away; keep
+				// watching for the port to come back, whatever `restart` says
+				const recheck = Number( this.#task.readyRecheck ) || READY_RECHECK_MS;
+				setTimeout( ()=>this.start(), recheck );
+			}
+		}
+		//console.log( "stopped:", this.#task.name );
+		this.waiting = false;
+		this.sendStatus();
+	}
+
 	kill() {
 		this.#killed = true;
 		if( this.#run )
 			this.#run.terminate();
+		else if( this.running )
+			this.#ended( 0 ); // a probe: there is no process, so end it here
 	}
 	stop() {
 		//console.log( "Stop command: ", this.stopped, this.#run, this.stopped );
-		if( this.stopped ) return;
+		if( this.stopped )
+			// already asked to stop once - the caller still needs something to
+			// wait on, and returning undefined here made closeAllTasks() fall
+			// back to starting a second, competing wait loop.
+			return this.running ? timeoutTaskStop( this ) : Promise.resolve( true );
 		//console.trace( "STOPPED?", this.stopped, this.#run );
 		if( this.#run )
 			this.#run.end();
+		else if( this.running ) {
+			// a probe has no end event coming; end it now so timeoutTaskStop()
+			// finds it down on its first tick instead of escalating to a kill
+			// of nothing and waiting out the give-up cap.  `stopped` first, so
+			// #ended knows this was asked for and does not resume probing.
+			this.stopped = true;
+			this.#ended( 0 );
+		}
 		// stop things this depends on.
 		for( let dep of this.#dependants ) {
 			if( dep.#run ) {
@@ -481,6 +769,13 @@ export class Task {
 					dep.#run.end();
 					timeoutTaskStop( dep );
 				}
+			} else if( dep.waiting ) {
+				// held on this task becoming ready - which it now never will.
+				// It would otherwise show "Waiting" forever; treat it like the
+				// running dependants and take it down with us.
+				dep.waiting = false;
+				dep.stopped = true;
+				dep.sendStatus();
 			}
 			dep.#ranOnce = false;
 		}
@@ -504,21 +799,38 @@ export class Task {
 			}
 		}
 		this.noAutoRun = task.noAutoRun;
+		// `name` is a public field of the Task itself - that is what gets
+		// serialized into the client's task list - so writing it into #task
+		// alone would leave every display on the old name until a restart.
+		if( "name" in task ) this.name = task.name;
 		//if( ( task.work[0] !== '/' && task.work[1] !== ':' )  )
 		//	this.work = config.pwdBare + "/" + task.work;
 		//else this.work = task.work;
 
 		this.#restart = task.restart || false;
-		if( task.dependsOn ) {
-			if( ( "object" === typeof task.dependsOn )
-			   && task.dependsOn.length ){
-				// depends on more than one task...
-				for( let dep of task.dependsOn )
-					this.#addDep( dep );
-			}else {
-				this.#addDep( task.dependsOn );
-			}
+		// only when the caller actually said something about them - loadTask()
+		// re-runs update() for configs that never mention dependsOn.
+		if( "dependsOn" in task ) this.#setDeps( task.dependsOn );
+	}
+	// Replace the dependency set.  This used to only ever add: editing a task
+	// could not remove a dependency, and saving the same task twice pushed the
+	// same entry into #dependsOn again.
+	#setDeps( deps ) {
+		this.dependsOn = deps ? ( ( "object" === typeof deps && deps.length !== undefined )
+		                          ? deps.slice() : [ deps ] )
+		                      : [];
+		for( const old of this.#dependsOn ) {
+			const at = old.#dependants.indexOf( this );
+			if( at >= 0 ) old.#dependants.splice( at, 1 );
 		}
+		this.#dependsOn.length = 0;
+		// a task that no longer depends on anything is startable on its own
+		// again, so drop any queued lookups that would re-link it later.
+		for( let p = pendingDepends.length - 1; p >= 0; p-- )
+			if( pendingDepends[p].task === this ) pendingDepends.splice( p, 1 );
+		if( !deps ) return;
+		const list = ( "object" === typeof deps && deps.length !== undefined ) ? deps : [ deps ];
+		for( const dep of list ) this.#addDep( dep );
 	}
 	#addDep( dep ){
 		const oldTask = findTask( dep );
@@ -526,10 +838,130 @@ export class Task {
 			if( !oldTask.#dependants.find( t=>t === this )) {
 				oldTask.#dependants.push( this );
 			}
-			this.#dependsOn.push( oldTask );
+			if( !this.#dependsOn.find( t=>t === oldTask ) )
+				this.#dependsOn.push( oldTask );
 		} else {
+			// not loaded yet (or not any more); pick it up when it appears
 			console.log( "Dependant task is not found:", dep, "for", this.name );
+			pendingDepends.push( { task:this, dep } );
 		}
+	}
+
+	// Every dependency satisfied?  A dependant can have more than one, and the
+	// one that just became ready is not necessarily the last.
+	get depsReady() {
+		return this.#dependsOn.every( dep=>dep.ready );
+	}
+
+	// something this task needs was stopped by hand
+	get dependenciesHeld() {
+		return this.#dependsOn.some( dep=>dep.held );
+	}
+	get heldDependencies() {
+		return this.#dependsOn.filter( dep=>dep.held ).map( dep=>dep.name );
+	}
+
+	#startDependants() {
+		if( stoppingAll ) return;
+		for( let dep of this.#dependants ) {
+			if( dep.held ) {
+				// stopped by hand; coming back up is not this task's call
+				console.log( "Dependant is stopped, leaving it down:", dep.name );
+				continue;
+			}
+			if( dep.running || dep.starting ) {
+				console.log( "Dependant task is still running:", dep.name, dep.starting, dep.running );
+				continue;
+			}
+			if( !dep.depsReady ) {
+				console.log( "Dependant still waiting on another dependency:", dep.name );
+				continue;
+			}
+			console.log( "Task ready, starting Dep:", dep.name );
+			dep.start();
+		}
+	}
+
+	#setReady( run ) {
+		if( run !== this.#readyRun || !this.running ) return; // superseded, or gone
+		this.ready = true;
+		this.on( "ready", true );
+		this.starting = false;
+		this.sendStatus();
+		this.#startDependants();
+	}
+
+	#beginReady() {
+		const run = ++this.#readyRun;
+		if( this.readyOnExit ) {
+			// nothing to wait for while it runs; #ended() supplies the ready edge
+			this.starting = false;
+			this.sendStatus();
+			return;
+		}
+		const port = Number( this.#task.readyPort ) || 0;
+		const delay = Number( this.#task.readyDelay ) || 0;
+		if( !port && !delay ) return this.#setReady( run ); // launched is ready
+
+		if( !port ) {
+			setTimeout( ()=>this.#setReady( run ), delay );
+			return;
+		}
+
+		const host = this.#task.readyHost || "localhost";
+		const limit = Number( this.#task.readyTimeout ) || READY_TIMEOUT_MS;
+		const probe = this.isProbe;
+		const started = Date.now();
+		console.log( "Waiting for", this.name, "to listen on", host + ":" + port );
+		const poll = ()=>{
+			if( run !== this.#readyRun || !this.running ) return; // restarted or stopped
+			probePort( host, port ).then( ( open )=>{
+				if( run !== this.#readyRun || !this.running ) return;
+				if( open ) {
+					console.log( "Task ready:", this.name, "-", host + ":" + port, "is listening" );
+					this.#setReady( run );
+					if( probe ) this.#watchPort( run, host, port );
+					return;
+				}
+				// A process that never listens is let through so the chain is not
+				// blocked outright.  A probe has nothing to let through: the port
+				// answering is the whole task, so it keeps asking until stopped.
+				if( !probe && Date.now() - started > limit ) {
+					console.log( "Task never listened on", host + ":" + port
+					           , "- continuing without it:", this.name );
+					return this.#setReady( run );
+				}
+				setTimeout( poll, probe ? ( Number( this.#task.readyRecheck ) || READY_RECHECK_MS ) : READY_POLL_MS );
+			} );
+		};
+		// give it a moment before the first attempt; a just-spawned process has
+		// not had time to bind, and a refused connect is only noise.  A probe has
+		// nothing to wait for, so it asks straight away.
+		setTimeout( poll, probe ? 0 : READY_POLL_MS );
+	}
+
+	// A ready probe stays ready only while its port keeps answering.  Enough
+	// misses in a row and it ends like a process exit would; #ended then
+	// resumes probing (see the isProbe branch there) so it comes back on its
+	// own once the port does.
+	#watchPort( run, host, port ) {
+		const recheck = Number( this.#task.readyRecheck ) || READY_RECHECK_MS;
+		const maxMisses = Number( this.#task.readyMisses ) || READY_MISSES;
+		let misses = 0;
+		const check = ()=>{
+			if( run !== this.#readyRun || !this.running ) return; // restarted or stopped
+			probePort( host, port ).then( ( open )=>{
+				if( run !== this.#readyRun || !this.running ) return;
+				if( open ) misses = 0;
+				else if( ++misses >= maxMisses ) {
+					console.log( "Probe lost:", this.name, "-", host + ":" + port
+					           , "stopped answering (" + misses + " misses)" );
+					return this.#ended( 1 );
+				}
+				setTimeout( check, recheck );
+			} );
+		};
+		setTimeout( check, recheck );
 	}
 
 	move() {
@@ -565,18 +997,37 @@ export function closeAllTasks( ws ) {
 	const local = config.local;
 	const waits = [];
 
+	// held first, and for every task rather than only the running ones: the
+	// sweep below stops them one at a time, and each stop cascades into
+	// dependants that the sweep has not reached yet.
+	stoppingAll = true;
+	local.tasks.forEach( task=>{
+		if( task.noKill ) return;
+		task.held = true;
+		task.restart = false;
+	} );
 	local.tasks.forEach( task=>{
 		if( task.noKill ) return;
 		if (task.running){
-			task.restart = false;
-			task.stop()
-			waits.push( timeoutTaskStop( task ) );
+			// wait on the promise stop() already returns.  Pushing a second
+			// timeoutTaskStop() here ran two tick loops per task through one
+			// shared stopTimer slot: the first killed the task, the second only
+			// ever logged "waiting for end", and the end callback then cancelled
+			// the one armed tick - so this Promise.all never settled and the
+			// shutdown hung with every task already reporting "Task ended:".
+			waits.push( task.stop() );
 		} } );
 
 	return Promise.all( waits ).then( (waits)=>{
+		// stopAll leaves the manager running, so this has to lift - the tasks
+		// stay held until something explicitly starts them.
+		stoppingAll = false;
 		//console.log( "Reply with a close?", ws );
 		if( ws ) ws.close( 1000, "Tasks Stopped" );
 		return waits;
+	}, (err)=>{
+		stoppingAll = false;
+		throw err;
 	} );
 
 
@@ -585,9 +1036,15 @@ export function closeAllTasks( ws ) {
 function timeoutTaskStop( task ) {
 	const started = Date.now();
 	task.stopping = true;
+	// the existing {op:"stopping"} below is a separate event with the whole task
+	// on it; the status broadcast is what drives the state column.
+	task.sendStatus();
 	//console.log( "A stop started... and now we wait on", task.name );
 	config.local.connections.forEach( (conn)=>
 		{
+			// a socket that has not logged in (main.mjs Connection.authed) is
+			// told nothing, the same as the status broadcasts
+			if( conn.authed === false ) return;
 			if( conn.ws.readyState == 1 ) {
 				try {
 					conn.ws.send( JSOX.stringify( {op:"stopping", task } ) )
@@ -598,31 +1055,47 @@ function timeoutTaskStop( task ) {
 			else console.log( "Connection is still in list but closed:", conn );
 		});
 
-	function tick( resolve, reject ) {
-		let del;
-		//console.log( "Clearing stop in tick:", task.name );
-		task.stopTimer = null;
-		if( (del=Date.now()-started) > 1500 ) {
-			if( task.running ) {
-				//console.log( "Still waiting for task...", task.running, task.name, Date.now() -started);
-				//console.log( "Task is stubborn - forcing kill:", task.name );
-				if( !task.killed ) {
-					console.log( "Task is stubborn - forcing kill:", task.name );
-					task.kill();
-					resolve( false );
-				} else console.log( "Task is stubborn - forced kill (waiting for end):", task.name );
-				//config.local.connections.forEach( (conn)=>
-				//	conn.ws.send( JSOX.stringify( {op:"stop", task } ) ));
+	return new Promise( ( resolve )=>{
+		// The end event is what really settles this - see Task's end callback.
+		// The tick below only escalates to a kill and enforces the hard cap.
+		task.stopWaiters.push( resolve );
+		tick();
+
+		function settle( stopped ) {
+			const waiting = task.stopWaiters.indexOf( resolve );
+			if( waiting >= 0 ) task.stopWaiters.splice( waiting, 1 );
+			if( task.stopTimer ) {
+				clearTimeout( task.stopTimer );
+				task.stopTimer = null;
 			}
+			resolve( stopped );
 		}
 
-		if( task.running ) {
-			console.log( "Still running...", task.name, del );
-			task.stopTimer = setTimeout( ()=>tick(resolve, reject), 300 );
-		} else {
-			resolve( true );
+		function tick() {
+			task.stopTimer = null;
+			if( !task.running ) {
+				// never spawned (held on a dependency, or already down): there is no
+				// end event coming to clear these, so the row sat on "Stopping".
+				task.stopping = false;
+				task.waiting = false;
+				task.starting = false;
+				task.sendStatus();
+				return settle( true );
+			}
+
+			const del = Date.now() - started;
+			if( del > TASK_STOP_KILL_MS && !task.killed ) {
+				console.log( "Task is stubborn - forcing kill:", task.name );
+				task.kill();
+			}
+			if( del > TASK_STOP_GIVEUP_MS ) {
+				// it was killed and still has not gone; stop holding the
+				// shutdown hostage to it.
+				console.log( "Task will not end; stopped waiting for it:", task.name );
+				return settle( false );
+			}
+			task.stopTimer = setTimeout( tick, 300 );
 		}
-	}
-	return new Promise( tick );
+	} );
 
 }

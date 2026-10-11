@@ -136,7 +136,7 @@ function initPrototypes()
 	pushToProto( Uint8Array.prototype, { external:true, name:"u8"
 		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
-	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"uc8"
+	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"cu8"
 		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
 	} );
 	pushToProto( Int8Array.prototype, { external:true, name:"s8"
@@ -175,11 +175,18 @@ function initPrototypes()
 
 	pushToProto( RegExp.prototype, { external:true, name:"regex"
 	    , cb:function(o,stringifier){
-			return "'"+escape(this.source)+"'";
+			// No flags: emit the bare source (the pre-1.2.129 encoding, readable by
+			// older parsers).  With flags: /source/flags.  Unambiguous because
+			// RegExp.prototype.source always escapes '/', so a bare source can never
+			// begin with '/'.
+			if( !this.flags )
+				return "'"+escape(this.source)+"'";
+			return "'/"+escape(this.source)+'/'+escape(this.flags)+"'";
 		}
 	} );
 	fromProtoTypes.set( "regex", { protoCon:RegExp, cb:function (field,val){
-		return new RegExp( this );
+		const match = /^\/((?:\\.|[^\\/])*)\/([a-z]*)$/i.exec(val);
+		return match?new RegExp( match[1], match[2] ):new RegExp( val );
 	} } );
 
 
@@ -596,6 +603,7 @@ sack.JSOX.stringifier = function() {
 				{
 					// The value is an array. Stringify every element. Use null as a placeholder
 					// for non-JSOX values.
+					gap += indent;
 					for (let i = 0; i < this.length; i += 1) {
 						path[thisNodeNameIndex] = i;
 						partial[i] = str(i, this) || "null";
@@ -617,6 +625,7 @@ sack.JSOX.stringifier = function() {
 								, "]"
 							].join("")
 							: "[" + partial.join(",") + "]" );
+					gap = mind;
 					return v;
 				}
 			}

@@ -10,52 +10,67 @@ const parentRoot = (process.platform==="win32"?"":'/')+tmpPath.slice(0,-2).join(
 import {System} from "../ui/system.mjs"
 import {local} from "./local.mjs"
 import {isTopLevel} from "sack.vfs/isTopLevel" 
+import {Events} from "sack.vfs/Events2" 
 
 import os from "os";
 import {sack} from "sack.vfs"
 const disk = sack.Volume();
+const JSOX = sack.JSOX;
+
 export const pwdBare = process.cwd();
 let firstLoad = true;
-let config = await reloadConfig();
 
 import {openServer} from "../../http-ws/server.mjs"
 import {setupRest} from "./main.rest.mjs"
 
-import {config as taskConfig, Task, closeAllTasks} from "./task.mjs"
+import {reloadConfig} from "./cfg.mjs"
+export const config = await reloadConfig();
+
+import {config as taskConfig, Task, closeAllTasks, resolveTaskPaths} from "./task.mjs"
 taskConfig.pwdBare = pwdBare;
 taskConfig.send = send;
 taskConfig.config = config;
 taskConfig.local = local;
 local.addTask = addTask;
 
-const JSOX = sack.JSOX;
 
-async function reloadConfig() {
-	const config_run = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
-	const config_tasks = (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_TASK_CONFIG||"config.tasks.jsox") ).catch( err=>(console.log( "parsing error:", err),{default:null}) )).default;
-	const config = config_run
-			|| config_tasks
-	      || (await import( (process.platform==="win32"?"file://":"")+pwdBare+"/"+(process.env.TASK_MANAGER_CONFIG||"config.jsox") ).catch( err=>({default:null}) )).default 
-	      || { extraModules:[]
-	         , hostname:""
-	         , useUpstream: false
-	         , upstreamServer: ""
-	         , port:0
-	         , tasks:[] 
-	         };
 
-	if( !firstLoad )
-		config.tasks.forEach( loadTask );
-	firstLoad = false;
-	return config;
+sack.system.programName = config.programName || "sack.vfs Default Task Manager";
+if( "enableExitSignal" in sack.system ) {
+	sack.system.enableExitSignal( ()=>{
+		//console.log( "Got exit signal... so generate exit?" );
+		closeAllTasks().then( ()=>{
+			//console.log( "Took some time to shut down tasks?" );
+			//process.emit( "SIGINT" );
+			process.exit(0);
+		});
+	} );
 }
+
 
 const serverOpts = {resourcePath:process.env.RESOURCE_PATH || (appRoot+"/ui")
 	, npmPath:process.env.NPM_PATH || (parentRoot+"/..")
+	// extra packages this manager's pages may load from /node_modules/ (the
+	// server always allows @d3x0r, jsox and sack.vfs/apps).  e.g. the login
+	// form's on-screen keyboard needs allowModules:["simple-keyboard"].
+	, allowModules: config.allowModules
 	, port:Number(process.env.PORT) || config.port || 8080};
 // start server...
 console.log( "Serve on port:", serverOpts.port );
 export const server = openServer( serverOpts, accept, connect );
+
+export function on( taskName, event, data ) {
+	// find task by name, and 	
+	const task = local.tasks.find( task=>task.name===taskName );
+	if( task ) {
+		task.on( event, data );
+		if( "function" === typeof data ) switch( event ) {
+		case "ready":
+			data( task[event] );
+			break;
+		}
+	}
+}
 
 setupRest( server );
 
@@ -66,11 +81,54 @@ server.addHandler( (req,res)=>{
 	return false;
 })
 
-let authCb = null;
-export function onLogin( loginCb ) {
-	authCb = loginCb;
+
+// Plugins.  An ordered list of { name, function, options }, run in sequence:
+// with a `function` the next one waits for it, without one the module is just
+// imported for its side effects and the list moves straight on.
+const waitInit = ( config.extraModules ) ?
+	new Promise( (res,rej)=>{
+		loadModules( 0 );
+		
+		function loadModules( n ) {
+			//console.log( "module is:", n );
+			if( n >= config.extraModules.length ) {
+				//console.log( "modules done... so .. resolve!")
+				return res();
+			}
+			const plugin = config.extraModules[n];
+			const next = ()=>loadModules( n+1 );
+			return import( "file://"+pwdBare+"/"+plugin.name ).then( (module)=>{
+				// no function named: importing it was the whole point
+				//console.log( "Managed to import the thing?", module );
+				if( !plugin.function ) return next();
+				const entry = module[plugin.function];
+				if( "function" !== typeof entry ) {
+					console.log( "Plugin has no such export:", plugin.name, plugin.function );
+					return next();
+				}
+				// a plugin that returns nothing is not an error - only wait when
+				// there is something to wait on.  Calling .then() on whatever it
+				// returned used to throw straight into the "Error loading" catch.
+				return Promise.resolve( entry( plugin.options ) ).then( next, (err)=>{
+					console.log( "Error running:", plugin.name, plugin.function, err );
+					return next();
+				} );
+			} ).catch( (err)=>{
+					console.log( "Error loading:", plugin.name, err );
+					return next();
+				} );
+		}
+	} ): Promise.resolve();
+
+config.tasks.forEach( loadTask );
 	
-}
+waitInit.then( ()=>{
+	//console.log( "Wait init finished so we can start tasks?");
+	//console.log( "uhh started tasks? setup opts?");
+	if( config.useUpstream )
+		connectToCore();
+
+})
 
 // optional expect handler, otherwise use getUser on the key....
 // default expect handler (null for last callback)
@@ -96,7 +154,8 @@ function handleStart( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
-			//task.restart = true;
+			// an explicit start clears a hold, so its dependants may run again
+			task.held = false;
 			task.start();
 		}
 	} else {
@@ -115,6 +174,7 @@ function handleRestart( ws, msg, msg_ ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
 			console.log( "Set task restart:", task );
+			task.held = false;
 			task.restart = true;
 			console.log( "Task is running alrady?", task.running );
 		}
@@ -133,6 +193,10 @@ function handleStop( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
+			// asked for by hand: it means stop, and stay stopped.  Without this a
+			// dependant torn down by the cascade restarts from its own config and
+			// drags this one back up with it.
+			task.held = true;
 			task.restart = false;
 			task.stop();
 		}
@@ -216,7 +280,10 @@ function handleTaskInfo( ws, msg, msg_ ) {
 		if( task ){
 			ws.send( JSOX.stringify( {op:"taskInfo", id:task.id, task:task.task, title:task.title }));
 		}else
-			ws.send( JSOX.stringify( {op:"taskInfo", id:task.id, task:null }));
+			// `task` is what was just found to be missing - reading its .id threw
+			// out of the message handler, so the request never got any reply and
+			// the editor sat waiting on the promise forever.
+			ws.send( JSOX.stringify( {op:"taskInfo", id:msg.id, task:null }));
 	} else {
 		const remote = local.systems.find( system=>system.id === msg.system );
 		if( remote ) {
@@ -229,17 +296,42 @@ function handleTaskInfo( ws, msg, msg_ ) {
 
 }
 
+// What an upstream that may not manage this system gets to see of a task:
+// identity, state and times.  Not its dependencies, holds or auto-run flags,
+// and (through the getTaskInfo refusal below) never its configuration.
+function upstreamView( task ) {
+	return { id: task.id, name: task.name
+	       , running: task.running, starting: task.starting, waiting: task.waiting
+	       , stopping: task.stopping, stopped: task.stopped, failed: task.failed
+	       , ready: task.ready, probe: task.isProbe
+	       , started: task.started, ended: task.ended };
+}
+
+// The message as upstream should see it.  With disallowUpstreamTaskManagment
+// every task carried in a message is reduced to its upstreamView; otherwise
+// the message goes as is.  Only object messages are inspected - the string
+// form is used for status lines, which carry no task.
+function forUpstream( msg ) {
+	if( !config.disallowUpstreamTaskManagment || "string" === typeof msg ) return msg;
+	if( msg.tasks ) msg = Object.assign( {}, msg, { tasks: msg.tasks.map( upstreamView ) } );
+	if( msg.task && ( msg.op === "addTask" || msg.op === "updateTask" ) )
+		msg = Object.assign( {}, msg, { task: upstreamView( msg.task ) } );
+	return msg;
+}
+
 function connectToCore() {
 	console.log( "Connecting upstream...");
 	const ws = sack.WebSocket.Client( "ws://"+(config.upstreamServer|| "localhost:8089"), "task-proxy");
 	ws.onopen = ()=>{
 		//console.log( "Sending initial tasks", local.tasks );
-		ws.send( JSOX.stringify( {op:"extern.tasks", tasks:local.tasks
+		ws.send( JSOX.stringify( forUpstream( {op:"extern.tasks", tasks:local.tasks
 		      , system:config.hostname || os.hostname()
 		      , id : local.id
 		      , port:serverOpts.port
+		      // tell upstream not to offer controls it will not be allowed to use
+		      , disallowUpstreamTaskManagment: !!config.disallowUpstreamTaskManagment
 		      }
-		))
+		) ) )
 		local.upstreamWS = ws;
 	}
 	ws.onmessage = (msg)=>handleMessage(ws,msg);
@@ -251,22 +343,23 @@ function connectToCore() {
 }
 
 //console.log( "Upstream?", config.useUpstream, config.upstreamServer )
-if( config.useUpstream )
-	connectToCore();
-
-
 export function beginScheduler() {
-	//console.log( "Loading tasks?", config.tasks, local.tasks );
-	config.tasks.forEach( loadTask );
-
-	if( config.extraModules ) {
-		loadModules( 0 );
-	}
-	else startTasks();
-
+	//console.log( "So still waiting for plugin init?", waitInit)
+	startTasks();
 }
 
 if( isTopLevel(import.meta.url) ) beginScheduler();
+
+// The form always sends the readiness fields, blank included, because
+// Task.update() only copies keys that are present - a missing one would leave
+// the old value set.  Blank means "not set", so drop them here instead of
+// writing readyPort:"" into every task that was ever saved.
+function tidyTask( task ) {
+	if( !task ) return task;
+	for( const key of [ "readyPort", "readyDelay", "readyTimeout", "readyHost", "readyRecheck", "readyMisses" ] )
+		if( key in task && !task[key] ) delete task[key];
+	return task;
+}
 
 function loadTask( task ) {
 	const oldTask = local.tasks.find( oldTask=>oldTask.name === task.name );
@@ -284,47 +377,42 @@ function loadTask( task ) {
 	}
 }
 
-function loadModules( n ) {
-	if( n >= config.extraModules.length )
-		return startTasks();
-	import( config.extraModules[n].name ).then( (module)=>{
-		module[config.extraModules[n].function](config.extraModules[n].options).then( ()=>{
-			loadModules( n+1 );
-		} ).catch( (err)=>{
-			console.log( "Error loading:", config.extraModules[n].name, config.extraModules[n].function );
-			loadModules( n+1 );
-		} )
-	} ).catch( (err)=>{
-			console.log( "Error loading:", config.extraModules[n].name, config.extraModules[n].function );
-			loadModules( n+1 );
-		} );
-}
-
 function onStopAll( n ) {
 	if( !config.onStopAll || n >= config.onStopAll.length )
 		return;
-	return import( config.onStopAll[n].name ).then( (module)=>{
-		module[config.onStopAll[n].function](config.onStopAll[n].options).then( ()=>{
-			return loadModules( n+1 );
-		} ).catch( (err)=>{
-			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
-			return loadModules( n+1 );
-		} )
+	// this used to chain to loadModules(), which is local to the extraModules
+	// block above and not in scope here - so the second hook onward never ran,
+	// and the ReferenceError went nowhere.
+	const hook = config.onStopAll[n];
+	const next = ()=>onStopAll( n+1 );
+	return import( hook.name ).then( (module)=>{
+		if( !hook.function ) return next();
+		const entry = module[hook.function];
+		if( "function" !== typeof entry ) {
+			console.log( "Stop hook has no such export:", hook.name, hook.function );
+			return next();
+		}
+		return Promise.resolve( entry( hook.options ) ).then( next, (err)=>{
+			console.log( "Error running stop hook:", hook.name, hook.function, err );
+			return next();
+		} );
 	} ).catch( (err)=>{
-			console.log( "Error loading:", config.onStopAll[n].name, config.onStopAll[n].function );
-			return loadModules( n+1 );
+			console.log( "Error loading stop hook:", hook.name, err );
+			return next();
 		} );
 }
 
 
 
 function startTasks() {
-	local.tasks.forEach( task=>{
-		if (!task.running 
-                   && !task.hasDepends 
-		   && !task.noAutoRun){
-			task.start() 
-		}} );
+	waitInit.then( ()=>{
+		local.tasks.forEach( task=>{
+			if (!task.running 
+					&& !task.hasDepends 
+			&& !task.noAutoRun){
+				task.start() 
+			}} );
+	})
 }
 // start client interface to server.
 //sack.Task( { work:programRoot+"/../ui", bin:"cmd", args:["/C", "start", "http://localhost:8080/index.html" ] } );
@@ -333,13 +421,18 @@ function startTasks() {
 
 export function send( msg_ ) {
 	// should append my system id
+	// broadcasts reach only sockets that may see state (see authorized()), and
+	// upstream sees a task only as much as forUpstream() lets it
 	if( "string" === typeof msg_ ) {
 		if( local.upstreamWS && local.upstreamWS.readyState === 1 ) local.upstreamWS.send( msg_ );
-		local.connections.forEach( conn=>(conn.ws.readyState == 1) &&conn.ws.send( msg_ ) );
+		local.connections.forEach( conn=>(conn.ws.readyState == 1) && authorized( conn ) && conn.ws.send( msg_ ) );
 	} else {
 		const msg = JSOX.stringify( msg_ );
-		if( local.upstreamWS && local.upstreamWS.readyState === 1 ) local.upstreamWS.send( msg );
-		local.connections.forEach( conn=>(conn.ws.readyState == 1) &&conn.ws.send( msg ) );
+		if( local.upstreamWS && local.upstreamWS.readyState === 1 ) {
+			const up = forUpstream( msg_ );
+			local.upstreamWS.send( up === msg_ ? msg : JSOX.stringify( up ) );
+		}
+		local.connections.forEach( conn=>(conn.ws.readyState == 1) && authorized( conn ) && conn.ws.send( msg ) );
 	}
 }
 
@@ -352,6 +445,10 @@ function accept( ws ) {
 function connect( ws ) {
 	//console.log( "Connect ws:", ws.headers );
 	const connection = new Connection( ws );
+	// an open manager (no login provider) treats every socket as authed from
+	// the start, so `authed` alone answers "may this socket see state" anywhere
+	// a Connection is in hand - task.mjs's stopping broadcast included
+	connection.authed = !server.login;
 	const protocol = ws.headers["Sec-WebSocket-Protocol"];
 	if( protocol === "task-proxy" ) {
 		//console.log( "Remote system connection..." );
@@ -368,7 +465,11 @@ function connect( ws ) {
 		ws.onmessage = (msg)=>handleMessage(ws,msg);
 		console.log( "Adding task info connection...");
 		local.connections.push( connection );
-		sendTasks();
+		// With a login provider installed (server.login, from a setupLogin
+		// plugin) a page gets nothing until its key has been resolved: the task
+		// list is sent from the auth handler instead, and send() skips the
+		// socket until then.  Without one the manager is open, as it always was.
+		if( !server.login ) sendTasks();
 	} else {
 		ws.close( 1020, "Bad Protocol" );
 		return;
@@ -380,14 +481,7 @@ function connect( ws ) {
 		const msg = JSOX.parse( msg_ );
 		//console.log( "Received (from proxy):", msg );
 		switch( msg.op ) {
-		case "login":
-			/* this just dispatches an event? */
-			if( authCb ) {
-				if( authCb( msg.uid ) ) {
-					ws.authed = true;
-				}
-			}
-			break;
+		case "resolvedPaths":
 		case "taskInfo":
 			const replyTo = local.replyMap[msg.id];
 			//console.log( "Info reply should rely to:", replyTo, local.replyMap );
@@ -418,25 +512,26 @@ function connect( ws ) {
 				//ws.send( JSOX.stringify( {op:"remote disappeared?"}))
 			}
 		}break;
+		// These three relay a remote system's own change on to this system's
+		// clients.  They all used to drop `id` on the way out, which is what
+		// every one of those clients keys the task off; and send() already
+		// relays upstream, so the extra upstreamWS.send was a duplicate.
 		case "addTask": {
 			// received from creating a remote task
 			connection.system.addTask( msg.id, msg.task );
-			if( local.upstreamWS ) local.upstreamWS.send( JSOX.stringify( {op:msg.op, system:connection.system.id, task:msg.task } ) );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			send( {op:msg.op, system:connection.system.id, id:msg.id, task:msg.task});
 		}
 		break;
 		case "updateTask": {
 			// received from updating a remote task
-			connection.system.updateTask( msg.task );
-			if( local.upstreamWS ) local.upstreamWS.send( JSOX.stringify( {op:msg.op, system:connection.system.id, task:msg.task } ) );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			connection.system.updateTask( msg.id, msg.task );
+			send( {op:msg.op, system:connection.system.id, id:msg.id, task:msg.task});
 		}
 		break;
 		case "deleteTask": {
 			// received from deleting a remote task
-			connection.system.deleteTask( msg.task );
-			if( local.upstreamWS ) local.upstreamWS.send( msg_ );
-			send( {op:msg.op, system:connection.system.id, task:msg.task});
+			connection.system.deleteTask( msg.id );
+			send( {op:msg.op, system:connection.system.id, id:msg.id});
 		}
 		break;
 		case "status": {
@@ -481,6 +576,7 @@ function connect( ws ) {
 					//console.log( "Found existing system to replace tasks." );
 					system.connection = connection;
 					system.tasks = msg.tasks;
+					system.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
 					// the create path below sets this; reconnects need it too or
 					// later addTask/updateTask deref a null connection.system.
 					if( !connection.system ) connection.system = system;
@@ -489,6 +585,7 @@ function connect( ws ) {
 					//console.log( "Make a new system", msg.tasks );
 					// this is the connection that the system can be reached on...
 					system = new System( connection, msg.id, msg.port, msg.system, msg.tasks);
+					system.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
 					// if this already heard tasks, this is probably a chlid system of the remote
 					// which will go under that system's systems.
 					if( connection.system ){
@@ -514,9 +611,7 @@ function connect( ws ) {
 
 
 	function sendTasks() {
-		const msg = {op:"tasks", system:local.id, tasks: local.tasks, systems: local.systems };
-		const msg_ = JSOX.stringify( msg );
-		ws.send( msg_ );
+		sendTasksTo( ws );
 	}
 
 
@@ -524,10 +619,10 @@ function connect( ws ) {
 		if( protocol === "task-proxy"){
 			// need to forget this system.
 			const systemindex = local.systems.findIndex( system=>system.connection === connection );
-			console.log( "did we find proxy connection?", systemindex);
+			//console.log( "did we find proxy connection?", systemindex);
 			if( systemindex >= 0 ) {
 				local.systems.splice( systemindex, 1 );
-				console.log( "connection too:", connection.system );
+				//console.log( "connection to:", connection.system );
 				send( {op:"deleteSystem", id: connection.system.id});
 			}
 		}
@@ -540,25 +635,93 @@ function connect( ws ) {
 }
 
 
+	// send() already relays to local.upstreamWS, and it stringifies first; the
+	// extra send of the raw object each of these used to do reached upstream as
+	// "Unhandled message format", so an upstream master never saw these at all.
 	function addTask( id, task ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"addTask", system:local.id, id, task } );
 		send( {op:"addTask", system:local.id, id, task } );
 	}
 	function updateTask( id, task ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"updateTask", system:local.id, id, task } );
 		send( {op:"updateTask", system:local.id, id, task } );
 	}
 	function deleteTask( id ) {
-		if( local.upstreamWS ) local.upstreamWS.send( {op:"deleteTask", system:local.id, id } );
 		send( {op:"deleteTask", system:local.id, id } );
 	}
+
+// The initial state a UI connection gets: on connect when the manager is open,
+// or once its login key has resolved when a provider is installed.
+function sendTasksTo( ws ) {
+	const msg = {op:"tasks", system:local.id, tasks: local.tasks, systems: local.systems };
+	ws.send( JSOX.stringify( msg ) );
+}
+
+// Whether a UI socket may be told or asked anything but `auth`.  Only a
+// provider makes this false; the upstream socket has no Connection and is
+// governed by disallowUpstreamTaskManagment instead.
+function authorized( connection ) {
+	return !connection || connection.authed;
+}
 
 function handleMessage( ws, msg_ ) {
 	try {
 		const msg = JSOX.parse( msg_ );
 		const connection = local.connections.find( (c)=>c.ws===ws );
+		if( msg.op !== "auth" && !authorized( connection ) ) {
+			// nothing is answered before a login, reads included: the task list
+			// itself is what a login is for
+			ws.send( JSOX.stringify( { op:"error", reason:"Unauthorized", was: msg.op } ) );
+			return;
+		}
+		// `disallowUpstreamTaskManagment` in the config makes this system refuse
+		// to have its task list edited by whoever it reports to.  Upstream is
+		// told about the setting when we connect, so its UI hides the controls;
+		// this is the enforcement behind that, for anything that gets sent
+		// anyway.  It deliberately covers only the task edits - shutdown and
+		// stopAll/startAll are still honoured.
+		if( config.disallowUpstreamTaskManagment
+		 && local.upstreamWS && ws === local.upstreamWS ) {
+			// updateDisplay is deliberately not here: moving a task's window is a
+			// runtime control like start/stop, not an edit of its definition
+			if( msg.op === "createTask" || msg.op === "updateTask" || msg.op === "deleteTask"
+			 || msg.op === "setPlugins" ) {
+				console.log( "Refused upstream task management:", msg.op, msg.id || (msg.task && msg.task.name) );
+				return;
+			}
+			// The reads that only exist to feed the editor answer empty rather
+			// than not at all, so the requesting page's promise settles.  A task's
+			// configuration (bin, args, env, paths) and the plugin settings are
+			// exactly what this option keeps off the wire.
+			if( msg.op === "getTaskInfo" ) { ws.send( JSOX.stringify( { op:"taskInfo", id:msg.id, task:null } ) ); return; }
+			if( msg.op === "resolvePaths" ) { ws.send( JSOX.stringify( { op:"resolvedPaths", id:msg.id, paths:{} } ) ); return; }
+			if( msg.op === "getPlugins" ) { ws.send( JSOX.stringify( { op:"plugins", system:local.id, plugins:[], settings:{} } ) ); return; }
+		}
 		switch( msg.op ) {
+		case "auth": {
+			const login = server.login;
+			if( !login || !connection ) {
+				ws.send( JSOX.stringify( { op:"auth", ok:false, reason: login ? "not a UI connection" : "no login provider" } ) );
+				break;
+			}
+			login.getUser( msg.uid ).then( ( user )=>{
+				const wasAuthed = connection.authed;
+				connection.authed = !!user;
+				connection.grants = user ? user.permissions : null;   // keep the grants, drop the identity
+				connection.who    = user ? user.name : null;
+				ws.send( JSOX.stringify( { op:"auth", ok: connection.authed, name: connection.who } ) );
+				// the deferred initial send; a re-auth on a socket that already
+				// has the list (the page logged in again) does not repeat it
+				if( connection.authed && !wasAuthed && ws.readyState === 1 ) sendTasksTo( ws );
+			} );
+			break;
+		}
 		case "shutdown": {
+			if( msg.system && msg.system !== local.id ) {
+				// aimed at one of the systems reporting to this one
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to shut down a system I can't reach:", msg.system );
+				break;
+			}
 			console.log( "received shutdown request" );
 			closeAllTasks(msg.close?ws:null).then( ()=>{
 				console.log( "Close resulted, and we're exiting now." );
@@ -576,6 +739,9 @@ function handleMessage( ws, msg_ ) {
 		}
 		case "startAll": {
 			console.log( "Start all tasks" );
+			// explicit start-everything lifts the holds a stopAll left behind,
+			// the same way the per-task Start button does
+			local.tasks.forEach( task=>{ task.held = false; } );
 			startTasks();
 			if( msg.close )
 				ws.close( 1000, "Starting Tasks" );
@@ -605,26 +771,22 @@ function handleMessage( ws, msg_ ) {
 			handleInput( ws, msg, msg_ );
 			break;
 		case "createTask": {
-			if( local.system === msg.system || !msg.system ) {
-				const task = loadTask( msg.task );
+			// same as the delete case: the local system's identity is local.id,
+			// so a create addressed to this system by name fell through to the
+			// remote lookup and was dropped.
+			if( !msg.system || msg.system === local.id ) {
+				const task = loadTask( tidyTask( msg.task ) );
 				if( !msg.task.temporary )
 					saveRunConfig();
 				addTask( task.id, task ); // sends new task
 				if( !task.noAutoRun ) task.start();
-			} else if( msg.system && msg.system != local.system ) {
-				local.systems.find( system=>{
-					if( system.id === msg.system ) {
-						system.createTask( msg_ );
-						return true;
-					} 
-					return false;
-				});
-			}else {
-				const task = loadTask( msg.task );
-				if( !msg.task.temporary )
-					saveRunConfig();
-				addTask( task.id, task );
-				if( !task.noAutoRun ) task.start();
+			} else {
+				// forward to the system that owns it, the same way
+				// handleStart/handleStop do.  (System.createTask() sends through
+				// the Connection itself, which has no send().)
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to create a task on a system I can't reach:", msg );
 			}
 			}
 			break;
@@ -635,6 +797,7 @@ function handleMessage( ws, msg_ ) {
 				{
 					const taskInfo = task.task;
 					task.update( msg.task );
+					tidyTask( taskInfo );
 					for( let t = 0; t < config.tasks; t++ ) {
 						if( config.task[t] === taskInfo ) {
 							const keys = Object.keys( msg.task );
@@ -649,42 +812,75 @@ function handleMessage( ws, msg_ ) {
 					updateTask( msg.id, task.task );
 				}
 			}else {
-				if( connection.system )
-					connection.system.updateTask( msg.id, msg.task );
-				else
-					console.log( "Told to update a task I don't know, and can't reach?", msg );
+				// `connection` is the browser asking for the change, and its
+				// .system is null - the update has to go to the system that
+				// owns the task.
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to update a task I don't know, and can't reach?", msg );
 			}
 		}
 			break;
 		case "deleteTask": {
-			if( !msg.system || msg.system ===local.system ) {
+			// `local.system` is not a field - the local system is `local.id`,
+			// so a delete that named the local system never matched here.
+			if( !msg.system || msg.system === local.id ) {
 				const task = local.taskMap[msg.id];
 				if( task ) {
 					const taskInfo = task.task;
-					for( let t = 0; t < config.tasks.length; t++ ) {
-						if( config.tasks[t] === taskInfo ) {
-							config.tasks.splice( t, 1 );
-							for( let t2 = 0; t2 < local.tasks.length; t2++ ) {
-								if( local.tasks[t2] === task ) {
-									local.tasks.splice( t2, 1 );
-									break;
-								}
-							}
-							delete local.taskMap[msg.id];
-							if( task.running )
-								task.stop();
-							if( !taskInfo.temporary )
-								saveRunConfig();
-							break;
-						}
-					}
-					send( msg_ );
+					// all of this used to be conditional on finding the task in
+					// config.tasks, so a task that wasn't in the saved config
+					// stayed in local.tasks and came back on the next task list.
+					const cfgIdx = config.tasks.indexOf( taskInfo );
+					if( cfgIdx >= 0 ) config.tasks.splice( cfgIdx, 1 );
+					const taskIdx = local.tasks.indexOf( task );
+					if( taskIdx >= 0 ) local.tasks.splice( taskIdx, 1 );
+					delete local.taskMap[msg.id];
+					if( task.running )
+						task.stop();
+					if( !taskInfo.temporary )
+						saveRunConfig();
+					deleteTask( msg.id );
 				}
 			} else {
-				// send to remote system...
+				// forward to the system that owns it, the same way
+				// handleStart/handleStop do.
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 			}
 			}
 			break;
+		case "getPlugins": {
+			if( msg.system && msg.system !== local.id ) {
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to list plugins on a system I can't reach:", msg.system );
+				break;
+			}
+			ws.send( JSOX.stringify( { op:"plugins", system:local.id
+			                         , plugins: config.extraModules || []
+			                         , settings: getServiceSettings() } ) );
+			break;
+		}
+		case "setPlugins": {
+			if( msg.system && msg.system !== local.id ) {
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) remote.connection.ws.send( msg_ );
+				else console.log( "Told to set plugins on a system I can't reach:", msg.system );
+				break;
+			}
+			// only entries with a module name are worth keeping; `function` is
+			// optional - such a plugin is imported and not waited on.
+			config.extraModules = ( msg.plugins || [] ).filter( plugin=>plugin && plugin.name );
+			if( msg.settings ) setServiceSettings( msg.settings );
+			saveRunConfig();
+			console.log( "Plugin list updated;", config.extraModules.length
+			           , "plugin(s) - they load on the next start of this service manager." );
+			send( { op:"plugins", system:local.id, plugins: config.extraModules
+			      , settings: getServiceSettings() } );
+			break;
+		}
 		case "getDisplays": {
 				const displays = sack.Task.getDisplays();
 				for( let device of displays.device ) {
@@ -703,6 +899,22 @@ function handleMessage( ws, msg_ ) {
 		case "getTaskInfo":
 			handleTaskInfo( ws, msg, msg_ );
 			break;
+		case "resolvePaths": {
+			// msg.id is the requester's own token; the reply carries it back.
+			if( msg.system && msg.system !== local.id ) {
+				const remote = local.systems.find( system=>system.id === msg.system );
+				if( remote ) {
+					( local.replyMap[msg.id] || ( local.replyMap[msg.id] = [] ) ).push( ws );
+					remote.connection.ws.send( msg_ );
+				}
+				break;
+			}
+			resolveTaskPaths( msg.task || {} ).then( paths=>{
+				if( ws.readyState === 1 )
+					ws.send( JSOX.stringify( { op:"resolvedPaths", id:msg.id, paths } ) );
+			} );
+			break;
+		}
 		case "updateDisplay": {
 				const task = local.taskMap[msg.id];
 				if( !task ) {
@@ -736,25 +948,40 @@ function handleMessage( ws, msg_ ) {
 }
 
 
+// The service-level settings the Plugins dialog edits alongside the module
+// list.  Like the plugins these are stored now and take effect on the next
+// start; the port is already bound and the upstream link already made.
+function getServiceSettings() {
+	return { port: config.port || ""
+	       , hostname: config.hostname || ""
+	       , useUpstream: !!config.useUpstream
+	       , upstreamServer: config.upstreamServer || ""
+	       , disallowUpstreamTaskManagment: !!config.disallowUpstreamTaskManagment
+	       // what each blank field falls back to; the dialog shows these as placeholders
+	       , defaults: { port: Number( process.env.PORT ) || 8080
+	                   , hostname: os.hostname()
+	                   , upstreamServer: "localhost:8089" }
+	       };
+}
+
+function setServiceSettings( settings ) {
+	const port = Number( settings.port );
+	// 0 (or blank) means "not set"; leave the key out so the default applies.
+	if( port > 0 && port < 65536 ) config.port = port;
+	else delete config.port;
+	if( typeof settings.hostname === "string" && settings.hostname.trim() )
+		config.hostname = settings.hostname.trim();
+	else delete config.hostname;
+	config.useUpstream = !!settings.useUpstream;
+	if( typeof settings.upstreamServer === "string" )
+		config.upstreamServer = settings.upstreamServer.trim().replace( /^wss?:\/\//, "" );
+	config.disallowUpstreamTaskManagment = !!settings.disallowUpstreamTaskManagment;
+}
+
 function saveRunConfig() {
 	const c = Object.assign( {}, config );
         c.tasks = c.tasks.reduce( (acc,task)=>{if( !task.temporary ) acc.push( task ); return acc;}, [] );
-	const output = JSOX.stringify( config, null, "\t" );
+	const output = JSOX.stringify( c, null, "\t" );
 	disk.write( process.env.TASK_MANAGER_RUN_CONFIG||"config.run.jsox", output );
 }
-
-if( "enableExitSignal" in sack.system ) {
-	sack.system.enableExitSignal( ()=>{
-		//console.log( "Got exit signal... so generate exit?" );
-		closeAllTasks().then( ()=>{
-			//console.log( "Took some time to shut down tasks?" );
-			//process.emit( "SIGINT" );
-			process.exit(0);
-		});
-	} );
-}
-
-//process.on( "SIGINT", ()=>{ process.stdout.write( "SIGINT\n" ); closeAllTasks().then( ()=>{ console.log( "sigint terminate finished" ); } ) } );
-
-//process.on( "uncaughtException", (err)=>{ process.stdout.write( "uncaught Exception" + err ); } );
 

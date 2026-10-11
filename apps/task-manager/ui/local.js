@@ -8,6 +8,7 @@ export const local = {
 	statusDisplay : null,
 	fillStatusDisplay : false,
 	pendingShowTasks : [],
+	pendingSystems : [], // systems that arrived before the Display existed
 	statusTimer: 0,
 	systems: [],
 	refresh : null,
@@ -16,7 +17,13 @@ export const local = {
 	pageFrame : null, // page control for systems.
 	firstPage : null, // the first status has a page itself...
 	login : null,
+	dialogs : new Set(), // per-task dialogs that are open right now
 	reset() {
+		// a dropped connection invalidates every task id these are editing, and
+		// the reconnect rebuilds the lists behind them - so close them instead
+		// of leaving them floating over state that no longer exists.
+		for( const dialog of Array.from( local.dialogs ) ) dialog.remove();
+		local.dialogs.clear();
 		if( local.statusDisplay )
 			local.statusDisplay.remove();
 		const tasks = Object.keys( local.tasks );

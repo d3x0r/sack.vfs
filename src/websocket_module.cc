@@ -3,6 +3,8 @@
 
 #include "ssh2_module.h"
 #include "websocket_module.h"
+// defined with maybeLower() below; used by the request header loop above it
+static void setHeaderBothCases( Isolate* isolate, Local<Object> arr, char const* name, Local<String> val );
 
 //#define DEBUG_AGGREGATE_WRITES
 //#define DEBUG_EVENTS
@@ -237,7 +239,24 @@ struct wssEvent {
 			int error;
 			const char *buffer;
 			size_t buflen;
+			// JS-visible copy of `buffer`.  The error callback is handed the live
+			// network read buffer, which the next read reuses and which
+			// ssl_EndSecure re-feeds to the http parser on fallback, so JS must
+			// not alias it.  Ownership passes to the ArrayBuffer's deleter when
+			// the drain hands it over (which NULLs this); anything still here
+			// afterwards never reached JS, and the poster frees it.
+			char *jsBuffer;
 			volatile int fallback_ssl;
+			// The SSL layer no longer applies a verdict itself for handshake errors -
+			// it hands the decision over and returns.  Set once disableSSL/rejectSSL
+			// (or the drain default) has answered, so the answer is applied exactly once.
+			volatile int ssl_decided;
+			// Set when the drain hands jsBuffer to the ArrayBuffer's deleter.  The
+			// POINTER deliberately stays valid here afterwards - the fallback re-feeds
+			// these same bytes from wssResolveSSLVerdict, which runs while the
+			// callback's ArrayBuffer argument is still on the stack.  Only the free
+			// changes hands, so there is exactly one copy of the buffer.
+			volatile int jsBufferGiven;
 		} error;
 	}data;
 	PLIST send;
@@ -249,6 +268,7 @@ struct wssEvent {
 	int uses;
 };
 typedef struct wssEvent WSS_EVENT;
+static void wssResolveSSLVerdict( struct wssEvent *pevt, LOGICAL fallback );
 #define MAXWSS_EVENTSPERSET 64
 DeclareSet( WSS_EVENT );
 
@@ -627,6 +647,7 @@ public:
 	Isolate *isolate;
 	bool headWritten = false;
 	bool found_content_length = false;
+	int statusCode = 200; // what end() will send if writeHead is never called
 public:
 
 	httpObject();
@@ -634,6 +655,8 @@ public:
 	static void New( const v8::FunctionCallbackInfo<Value>& args );
 	static void writeHead( const v8::FunctionCallbackInfo<Value>& args );
 	static void end( const v8::FunctionCallbackInfo<Value>& args );
+	static void getStatusCode( const v8::FunctionCallbackInfo<Value>& args );
+	static void setStatusCode( const v8::FunctionCallbackInfo<Value>& args );
 
 	~httpObject();
 };
@@ -923,7 +946,9 @@ Local<Object> makeSocket( Isolate* isolate, PCLIENT pc, struct html5_web_socket*
 	INDEX idx;
 	struct HttpField *header;
 	LIST_FORALL( headers, idx, struct HttpField *, header ) {
-		SETT( arr, header->name
+		// req.headers and req.connection.headers are this same object; both
+		// spellings live on it (see setHeaderBothCases)
+		setHeaderBothCases( isolate, arr, GetText( header->name )
 			, String::NewFromUtf8( isolate, (const char*)GetText( header->value ), NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
 	}
 	optionStrings *strings = getStrings( isolate );
@@ -1043,8 +1068,8 @@ static Local<Value> makeRequest(struct HttpState* pHttpState, Isolate *isolate, 
 		SETV( req, strings->contentString->Get(isolate), String::NewFromUtf8(isolate, GetText(content), v8::NewStringType::kNormal).ToLocalChecked());
 		void* newBuf = NewArray(uint8_t, GetTextSize(content));
 		MemCpy(newBuf, GetText(content), GetTextSize(content));
-		std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
-			GetTextSize(content), releaseBufferBackingStore, NULL);
+		std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( newBuf,
+			GetTextSize(content) );
 
 		SETV( req, strings->bytesString->Get(isolate), ArrayBuffer::New(isolate, bs));
 	} else
@@ -1116,6 +1141,42 @@ static void httpRequestAsyncMsg( uv_async_t * handle ) {
 	httpRequestAsyncMsg__( isolate, context, (httpRequestObject *)handle->data );
 }
 
+static char* maybeLower( char const* name ) {
+	char *result = NULL;
+	char const* tst = name;
+	char * tmp;
+	while( tst[0] ) {
+		if( tst[0] >= 'A' && tst[0] <= 'Z' ) break;
+		tst++;
+	}
+	if( !tst[0] )
+		return result;
+	while( tst[0] ) tst++;                 // to the end: the whole name is copied
+	uintptr_t len = tst-name;
+	result = (TEXTCHAR*)AllocateEx( sizeof(TEXTCHAR)*(len+1)  DBG_SRC );
+	for( tst=name, tmp=result; tst[0]; tmp++,tst++ ) {
+		if( tst[0] >= 'A' && tst[0] <= 'Z' ) tmp[0]=tst[0] + ('a'-'A');
+		else  tmp[0]=tst[0];
+	}
+	tmp[0] = 0;
+	return result;
+}
+
+// Headers are exposed under BOTH spellings on the one object: as sent,
+// because the sender's casing carries information (a proxy can be told by
+// it), and lowercased, because that is how code looks a header up
+// (`headers['if-modified-since']`, as with node's own http).
+static void setHeaderBothCases( Isolate* isolate, Local<Object> arr, char const* name, Local<String> val ) {
+	// SETT() wants a PTEXT key; these are C strings, so set the keys directly
+	Local<Context> context = isolate->GetCurrentContext();
+	(void)arr->Set( context, String::NewFromUtf8( isolate, name, NewStringType::kNormal ).ToLocalChecked(), val );
+	char* lcName = maybeLower( name );
+	if( lcName ) {
+		(void)arr->Set( context, String::NewFromUtf8( isolate, lcName, NewStringType::kNormal ).ToLocalChecked(), val );
+		Deallocate( char*, lcName );
+	}
+}
+
 static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, httpRequestObject * myself ) {
 	struct HTTPRequestOptions *opts = myself->opts;
 	{
@@ -1165,8 +1226,8 @@ static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, htt
 							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
 						void* newBuf = NewArray(uint8_t, GetTextSize(content));
 						MemCpy(newBuf, GetText(content), GetTextSize(content));
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
-							GetTextSize( content ), releaseBufferBackingStore, NULL);
+						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( newBuf,
+							GetTextSize( content ) );
 						
 						SET(result, "bytes", ArrayBuffer::New(isolate, bs)  );
 					}
@@ -1182,9 +1243,9 @@ static void httpRequestAsyncMsg__( Isolate *isolate, Local<Context> context, htt
 					struct HttpField* header;
 					//headers
 					LIST_FORALL( headers, idx, struct HttpField*, header ) {
-						SETT( arr, header->name
+						setHeaderBothCases( isolate, arr, GetText( header->name )
 							, String::NewFromUtf8( isolate, (const char*)GetText( header->value )
-								, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
+									, NewStringType::kNormal, (int)GetTextSize( header->value ) ).ToLocalChecked() );
 					}
 					SET( result, "headers", arr );
 
@@ -1245,7 +1306,7 @@ static void wssiAsyncMsg__( Isolate *isolate, Local<Context> context, wssiObject
 					//if( !myself->messageCallback.IsEmpty() ) {
 					if( eventMessage->binary ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen );
 						ab = ArrayBuffer::New( isolate, bs );
 #else
 						ab =
@@ -1366,16 +1427,28 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 				if( !myself->errorLowCallback.IsEmpty() ) {
 					argv[0] = Integer::New( isolate, eventMessage->data.error.error );
 					argv[1] = makeSocket( isolate, eventMessage->pc, NULL, myself, NULL, NULL );
-					if( eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
-						if( eventMessage->data.error.buffer ) {
+					// _2 gets the bytes too - the poster captures them for both codes
+					// and the fallback re-feeds them for both, so handing JS null for
+					// _2 only withheld the evidence for the decision it is being asked
+					// to make.  (firstPacket, which picks between the two, flips on a
+					// WANT_READ retry, so a real first-packet failure surfaces as _2.)
+					if( eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+					 || eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) {
+						if( eventMessage->data.error.jsBuffer ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-							std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (void*)eventMessage->data.error.buffer,
-								eventMessage->data.error.buflen, dontReleaseBufferBackingStore, NULL );
+							std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (void*)eventMessage->data.error.jsBuffer,
+								eventMessage->data.error.buflen );
 							argv[2] = ArrayBuffer::New( isolate, bs );
+							// the ArrayBuffer's deleter owns the copy from here; the
+							// poster frees only what is left behind.
+							// The deleter owns the copy from here; the pointer stays set so
+							// the fallback can re-feed the same bytes without a second copy.
+							eventMessage->data.error.jsBufferGiven = 1;
 #else
-						if( eventMessage->data.error.buffer )
+							// the pre-14 API does not take ownership, so leave jsBuffer
+							// set and let the poster free it after the callback.
 							argv[2] = ArrayBuffer::New( isolate,
-							(void*)eventMessage->data.error.buffer,
+								(void*)eventMessage->data.error.jsBuffer,
 								eventMessage->data.error.buflen );
 #endif
 						} else
@@ -1389,6 +1462,13 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 						argv[2] = Null( isolate );
 					myself->errorLowCallback.Get( isolate )->Call( context, myself->_this.Get( isolate ), 3, argv );
 				}
+				// The poster no longer waits for an answer, so if the app did not give
+				// one - no handler registered, or it ignored the event - the verdict
+				// still has to be applied, and the default is reject.  A no-op once
+				// disableSSL/rejectSSL has already decided.
+				if( eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+				 || eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 )
+					wssResolveSSLVerdict( eventMessage, FALSE );
 			} else if( eventMessage->eventType == WS_EVENT_NOOP ) {
 				//lprintf( "event canceled before dispatch!" );
 				if( eventMessage->pc && NetworkClientValid( eventMessage->pc, eventMessage->pcSerial ) )
@@ -1472,10 +1552,14 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 						// re-validate; the connection can close between the check at
 						// dispatch and here, and a recycled client must not be closed.
 						if (eventMessage->pc && NetworkClientValid(eventMessage->pc, eventMessage->pcSerial)) {
-							// balance the AddNetWork done when this request event was posted;
+							// balance the AddNetWork( httpInternal ) done at the handoff above;
 							// without it bInUse stays set and the deferred close never completes
 							// (the !bInUse close guards leave the socket in CLOSE_WAIT).
-							ClearNetWork(eventMessage->pc, (uintptr_t)myself);
+							// NOT `myself` - that is the listening wssObject, which is never in
+							// psvInUse, so ClearNetWork's FindLink found nothing and this cleared
+							// no hold at all.  The event's own entry was already cleared at the
+							// handoff; httpInternal is what is live here.
+							ClearNetWork(eventMessage->pc, (uintptr_t)httpInternal);
 							RemoveClientEx(eventMessage->pc, 0, 1);
 						}
 
@@ -1489,10 +1573,12 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 							// and then even after this returns, the write might be pending...
 						} else if( eventMessage->pc ) {
 							// empty/bogus request: the handler is skipped, so end() (which does the
-							// ClearNetWork) never runs.  Balance the AddNetWork done when this event
-							// was posted, or bInUse stays set and the deferred close never completes
-							// (the !bInUse close guards then strand the socket in CLOSE_WAIT).
-							ClearNetWork( eventMessage->pc, (uintptr_t)myself );
+							// ClearNetWork) never runs.  Balance the AddNetWork( httpInternal ) from
+							// the handoff above, or bInUse stays set and the deferred close never
+							// completes (the !bInUse close guards then strand the socket in
+							// CLOSE_WAIT).  NOT `myself` - the listening wssObject is never in
+							// psvInUse, so that cleared nothing.
+							ClearNetWork( eventMessage->pc, (uintptr_t)httpInternal );
 						}
 					}
 					//else
@@ -1628,10 +1714,30 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 				}
 			} else if( eventMessage->eventType == WS_EVENT_ERROR_CLOSE ) {
 				Local<Object> closingSock = makeSocket( isolate, eventMessage->pc, myself->wsPipe, myself, NULL, NULL );
-				if( !myself->errorCloseCallback.IsEmpty() ) {
-					Local<Function> cb = myself->errorCloseCallback.Get( isolate );
-					argv[0] = closingSock;
-					cb->Call( context, eventMessage->_this->_this.Get( isolate ), 1, argv );
+				// Release the poster HERE, not after the callback.  makeSocket has
+				// copied everything it needs out of pc - addresses go through
+				// GetAddrName into fresh Strings, headers and hostname into new
+				// objects - so the socket only had to survive that call.  The JS
+				// callback below cannot do anything meaningful with a network thread
+				// parked on it anyway, and waiting for it is the 1000ms-quantised
+				// close stall (webSockHttpClose's WakeableSleep( 1000 )).
+				//
+				// Capture off the event BEFORE the store: setting done hands it back
+				// to the waiter, which DropWssEvent()s it immediately, so nothing may
+				// read eventMessage after this point.  Clearing myself->eventMessage
+				// is how the tail below learns the event is already gone (same
+				// protocol disableSSL uses).
+				{
+					Local<Object> closeRecv = eventMessage->_this->_this.Get( isolate );
+					PTHREAD waiter = eventMessage->waiter;
+					eventMessage->done = TRUE;
+					if( waiter ) WakeThread( waiter );
+					myself->eventMessage = NULL;
+					if( !myself->errorCloseCallback.IsEmpty() ) {
+						Local<Function> cb = myself->errorCloseCallback.Get( isolate );
+						argv[0] = closingSock;
+						cb->Call( context, closeRecv, 1, argv );
+					}
 				}
 
 				//myself->readyState = CLOSED;
@@ -1657,8 +1763,14 @@ static void wssAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wssObje
 				return;
 			}
 
+			// A callback can release the event itself - disableSSL sets done and
+			// wakes the waiter, which drops it as soon as ssl_EndSecure returns.  It
+			// clears this slot to say so, and the event must not be read again here:
+			// a recycled one reads back waiter==NULL and would be dropped a second
+			// time while it is live for somebody else.
+			LOGICAL released     = !myself->eventMessage;
 			myself->eventMessage = NULL;
-			{
+			if( !released ) {
 				// waiter doubles as the ownership marker: a posting thread that
 				// blocks on ->done owns the event and drops it after its wait.
 				// Dropping it here would recycle it (GetWssEvent memsets, clearing
@@ -1737,7 +1849,7 @@ static void wscAsyncMsg__( v8::Isolate *isolate, Local<Context> context, wscObje
 			case WS_EVENT_READ:
 				if( eventMessage->binary ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen );
 					ab = ArrayBuffer::New( isolate,bs );
 #else
 					ab =
@@ -2064,6 +2176,9 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		httpTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "writeHead", httpObject::writeHead );
 		NODE_SET_PROTOTYPE_METHOD( httpTemplate, "end", httpObject::end );
+		httpTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "statusCode" )
+			, FunctionTemplate::New( isolate, httpObject::getStatusCode )
+			, FunctionTemplate::New( isolate, httpObject::setStatusCode ) );
 		httpTemplate->ReadOnlyPrototype();
 
 		c->httpConstructor.Reset( isolate, httpTemplate->GetFunction(context).ToLocalChecked() );
@@ -2119,6 +2234,7 @@ void InitWebSocket( Isolate *isolate, Local<Object> exports ){
 		wssTemplate->InstanceTemplate()->SetInternalFieldCount( 1 );  // need 1 implicit constructor for wrap
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "close", wssObject::close );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "disableSSL", wssObject::disableSSL );
+		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "rejectSSL", wssObject::rejectSSL );
 		NODE_SET_PROTOTYPE_METHOD( wssTemplate, "on", wssObject::on );
 
 		//NODE_SET_PROTOTYPE_METHOD( wssTemplate, "onconnect", wssObject::onConnect );
@@ -2381,6 +2497,16 @@ static void webSockServerClosed( PCLIENT pc, uintptr_t psv, int code, const char
 	else {
 		uintptr_t psvServer = WebSocketGetServerData( pc );
 		wssObject *wss = (wssObject*)psvServer;
+		if( !wss ) {
+			// WebSocketGetServerData returns 0 by design for a client that is
+			// already closing - GetNetworkLong finds no user data and logs
+			// "User data wasn't set on socket... 0" - and every path below
+			// dereferences wss, starting with wss->c->thread.  There is nothing to
+			// dispatch: the server object this close would be reported to is no
+			// longer reachable from this socket.  Guard before GetWssEvent so the
+			// early return cannot leak an event from the pool.
+			return;
+		}
 		//DumpAddr( "IP", ip );
 		struct wssEvent *pevt = GetWssEvent();
 		if( ( (*pevt).waiter = MakeThread() ) != wss->c->thread )  {
@@ -2545,6 +2671,89 @@ void httpObject::New( const FunctionCallbackInfo<Value>& args ) {
 	args.GetReturnValue().Set( _this );
 }
 
+// The reason phrase used to be the literal "OK" for every status, so a 404 went out as
+// "HTTP/1.1 404 OK".  Nothing parses it - the code is what counts - but it shows up in
+// every curl -v and every proxy log.  Same set node exposes as http.STATUS_CODES, and
+// the same fallback for anything not listed.
+static const char *statusText( int status ) {
+	switch( status ) {
+	case 100: return "Continue";
+	case 101: return "Switching Protocols";
+	case 102: return "Processing";
+	case 103: return "Early Hints";
+	case 200: return "OK";
+	case 201: return "Created";
+	case 202: return "Accepted";
+	case 203: return "Non-Authoritative Information";
+	case 204: return "No Content";
+	case 205: return "Reset Content";
+	case 206: return "Partial Content";
+	case 207: return "Multi-Status";
+	case 208: return "Already Reported";
+	case 226: return "IM Used";
+	case 300: return "Multiple Choices";
+	case 301: return "Moved Permanently";
+	case 302: return "Found";
+	case 303: return "See Other";
+	case 304: return "Not Modified";
+	case 305: return "Use Proxy";
+	case 307: return "Temporary Redirect";
+	case 308: return "Permanent Redirect";
+	case 400: return "Bad Request";
+	case 401: return "Unauthorized";
+	case 402: return "Payment Required";
+	case 403: return "Forbidden";
+	case 404: return "Not Found";
+	case 405: return "Method Not Allowed";
+	case 406: return "Not Acceptable";
+	case 407: return "Proxy Authentication Required";
+	case 408: return "Request Timeout";
+	case 409: return "Conflict";
+	case 410: return "Gone";
+	case 411: return "Length Required";
+	case 412: return "Precondition Failed";
+	case 413: return "Payload Too Large";
+	case 414: return "URI Too Long";
+	case 415: return "Unsupported Media Type";
+	case 416: return "Range Not Satisfiable";
+	case 417: return "Expectation Failed";
+	case 418: return "I'm a Teapot";
+	case 421: return "Misdirected Request";
+	case 422: return "Unprocessable Entity";
+	case 423: return "Locked";
+	case 424: return "Failed Dependency";
+	case 425: return "Too Early";
+	case 426: return "Upgrade Required";
+	case 428: return "Precondition Required";
+	case 429: return "Too Many Requests";
+	case 431: return "Request Header Fields Too Large";
+	case 451: return "Unavailable For Legal Reasons";
+	case 500: return "Internal Server Error";
+	case 501: return "Not Implemented";
+	case 502: return "Bad Gateway";
+	case 503: return "Service Unavailable";
+	case 504: return "Gateway Timeout";
+	case 505: return "HTTP Version Not Supported";
+	case 506: return "Variant Also Negotiates";
+	case 507: return "Insufficient Storage";
+	case 508: return "Loop Detected";
+	case 509: return "Bandwidth Limit Exceeded";
+	case 510: return "Not Extended";
+	case 511: return "Network Authentication Required";
+	default: return "unknown";
+	}
+}
+
+// The one place a status line is formatted.  writeHead() calls it with what JS passed;
+// end() calls it for a response that never called writeHead at all, using statusCode.
+// Replying with the request's own version is deliberate.
+static void writeStatusLine( httpObject *obj, struct HttpState *http, int status ) {
+	int vers = GetHttpRequestVersion( http ); // reply with same version as request
+	obj->headWritten = true;
+	obj->statusCode = status;
+	vtprintf( obj->pvtResult, "HTTP/%d.%d %d %s\r\n", vers / 100, vers % 100, status, statusText( status ) );
+}
+
 void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	Local<Context> context = isolate->GetCurrentContext();
@@ -2565,9 +2774,7 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 			status = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
 		}
 
-		int vers = GetHttpRequestVersion( http ); // reply with same version as request
-		obj->headWritten = true;
-		vtprintf( obj->pvtResult, "HTTP/%d.%d %d %s\r\n", vers / 100, vers % 100, status, "OK" );
+		writeStatusLine( obj, http, status );
 
 		if( args.Length() > 1 ) {
 			headers = args[1]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
@@ -2598,6 +2805,38 @@ void httpObject::writeHead( const v8::FunctionCallbackInfo<Value>& args ) {
 		lprintf( "Socket closed while processing a request; maybe becomes a LOW_ERROR?" );
 		//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Socket closed while processing a request." ) ) );
 	}
+}
+
+// Terminate a response that carries no body.  Without Content-Length (and with no
+// Transfer-Encoding) the message is delimited only by the connection closing, so on a
+// keep-alive connection - which is every HTTP/1.1 request that did not ask for close -
+// the client waits for a body that never arrives and the request hangs until the server
+// goes away.  That is what made a bare res.end(), and every redirect written as
+// writeHead(30x)+end(), never complete.  1xx/204/304 are self-delimiting and MUST NOT
+// carry Content-Length (RFC 9110 8.6), so those only get the blank line.
+static void endHeaders( httpObject *obj ) {
+	if( !obj->found_content_length
+	 && !( obj->statusCode >= 100 && obj->statusCode < 200 )
+	 && obj->statusCode != 204 && obj->statusCode != 304 )
+		vtprintf( obj->pvtResult, "Content-Length: 0\r\n" );
+	vtprintf( obj->pvtResult, "\r\n" );
+}
+
+void httpObject::getStatusCode( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	httpObject* obj = ObjectWrap::Unwrap<httpObject>( args.This() );
+	args.GetReturnValue().Set( Integer::New( isolate, obj->statusCode ) );
+}
+
+// res.statusCode = 404; res.end();  - end() writes the head from this.  Ignored once the
+// head is out: the status line is already formatted into the buffer by then, and a
+// silently disagreeing statusCode would also mislead the 204/304 test in endHeaders.
+void httpObject::setStatusCode( const FunctionCallbackInfo<Value>& args ) {
+	Isolate* isolate = args.GetIsolate();
+	httpObject* obj = ObjectWrap::Unwrap<httpObject>( args.This() );
+	if( obj->headWritten ) return;
+	if( args.Length() > 0 )
+		obj->statusCode = args[0]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( obj->statusCode );
 }
 
 void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -2635,6 +2874,24 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 				}
 			}
 		}
+		// However this response was built, it starts with a status line, and that has to
+		// reach the buffer before anything else.  Two ways in:
+		//  - end( statusNumber[, headers] ) forwards to writeHead, which also takes the
+		//    header object.  It used to be called from the argument dispatch below, AFTER
+		//    the keep-alive header, where writeHead refuses to run on a non-empty buffer -
+		//    so end(200) threw "Headers have already been set" on every HTTP/1.1 request
+		//    and only worked where include_close left the buffer empty (close, HTTP/1.0).
+		//  - a handler that never called writeHead at all (res.statusCode = 404; res.end())
+		//    gets one from statusCode, which defaults to 200.  Such a response used to go
+		//    out with NO status line whatsoever - the client read `Connection: keep-alive`
+		//    as the status line - which is not something JS should manage by omission.
+		if( !obj->headWritten ) {
+			if( args.Length() > 0 && args[0]->IsNumber() )
+				writeHead( args );
+			else
+				writeStatusLine( obj, pHttpState, obj->statusCode );
+		}
+
 		if( !include_close )
 			vtprintf( obj->pvtResult, "Connection: keep-alive\r\n" );
 		if( args.Length() > 0 && !args[0]->IsNull() ) {
@@ -2648,19 +2905,15 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 			}
 			else if( args[0]->IsUint8Array() ) {
 				Local<Uint8Array> body = args[0].As<Uint8Array>();
+				// The write below is async: write->data is a raw pointer into
+				// these bytes, so the persistent has to root the *backing*
+				// ArrayBuffer that owns them, even though the data pointer and
+				// length come from the view.
 				Local<ArrayBuffer> bodybuf = body->Buffer();
 				if( !obj->found_content_length )
 					vtprintf( obj->pvtResult, "Content-Length: %d\r\n", body->ByteLength() );
 				vtprintf( obj->pvtResult, "\r\n" );
-#if ( NODE_MAJOR_VERSION >= 14 )
-				content = (char*)bodybuf->GetBackingStore()->Data();
-				contentLen = bodybuf->ByteLength();
-				//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetBackingStore()->Data(), bodybuf->ByteLength() );
-#else
-				content = (char*)bodybuf->GetContents().Data();
-				contentLen = bodybuf->ByteLength();
-				//VarTextAddData( obj->pvtResult, (CTEXTSTR)bodybuf->GetContents().Data(), bodybuf->ByteLength() );
-#endif
+				GetBufferBytes( args[0], &content, &contentLen );
 				if( obj->pc && !obj->ssl ) {
 					struct pendingWrite* write = new struct pendingWrite();
 					write->wss = obj->wss;
@@ -2699,17 +2952,15 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					doSend = false;
 				}
 			} else if( args[0]->IsNumber() ){
-				if( !obj->headWritten ) 
-					writeHead( args );
-
-				vtprintf( obj->pvtResult, "\r\n" );
+				// the head went out above; this is just the terminator
+				endHeaders( obj );
 			} else {
 				lprintf( "Unhandled argument type passed to http response.end(); just ending head" );
-				vtprintf( obj->pvtResult, "\r\n" );
+				endHeaders( obj );
 			}
 		}
 		else
-			vtprintf( obj->pvtResult, "\r\n" );
+			endHeaders( obj );
 
 		if( doSend ) {
 #if AGGREGATE_BEFORE_NETWORK
@@ -2738,7 +2989,14 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					lprintf( "Sending header buffer: %p  %d", obj->pc, GetTextSize(buffer) );
 					LogBinary( GetText( buffer ), GetTextSize( buffer ) );
 #endif
-					SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) );
+					// doTCPWriteV2's result used to be discarded here, and that is what made a
+					// lost response invisible: the write is refused, end() returns normally, and
+					// the peer gets a clean FIN with no body.  -1 means the write was QUEUED
+					// (normal, not a failure); only FALSE means the data was dropped.
+					// LOG_ERROR so it survives release log-level filtering.
+					if( !SendTCP( obj->pc, GetText( buffer ), GetTextSize( buffer ) ) )
+						xlprintf( LOG_ERROR )( "Response not accepted for send; %d bytes dropped for client %p"
+						                     , (int)GetTextSize( buffer ), (void*)obj->pc );
 					if( content && contentLen ) {
 #ifdef DEBUG_AGGREGATE_WRITES
 						lprintf( "And send data: %d", contentLen );
@@ -2746,8 +3004,10 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 						lprintf( "And there's some content to send: %p %d", obj->pc, contentLen );
 #endif
 						// allow network layer to keep this content buffer
-						SendTCPLong( obj->pc, content, contentLen );
-					} 
+						if( !SendTCPLong( obj->pc, content, contentLen ) )
+							xlprintf( LOG_ERROR )( "Response body not accepted for send; %d bytes dropped for client %p"
+							                     , (int)contentLen, (void*)obj->pc );
+					}
 					// no content is allowed.
 					//else
 					//	lprintf( "Content disappeared?" );
@@ -2758,6 +3018,16 @@ void httpObject::end( const v8::FunctionCallbackInfo<Value>& args ) {
 					WebSocketPipeSend( obj->wss->wsPipe, GetText( buffer ), GetTextSize( buffer ) );
 					if( content && contentLen )
 						WebSocketPipeSend( obj->wss->wsPipe, content, contentLen );
+				} else {
+					// PROBE: neither branch taken - the response is discarded here with
+					// no error to JS and nothing in the log.  This is the suspected
+					// silent lost-response site.
+					static volatile uint32_t nDropped;
+					fprintf( stderr, "HTTP-END-DROPPED pc=%p active=%d hdr=%d content=%d n=%u\n"
+					       , (void*)obj->pc
+					       , obj->pc ? (int)sack_network_is_active( obj->pc ) : -1
+					       , (int)GetTextSize( buffer ), (int)contentLen
+					       , (unsigned)LockedIncrement( &nDropped ) );
 				}
 #ifdef DEBUG_AGGREGATE_WRITES
 				lprintf( "Done with end function %p", obj->pc );
@@ -3023,6 +3293,14 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		//( ( *pevt ).data.error.buffer ); // keep the buffer, allow SSL to
 		(*pevt).data.error.buflen = va_arg( args, size_t );
 		(*pevt).data.error.fallback_ssl = 0; // make sure this is cleared.
+		// ssl_EndSecure below keeps using `buffer` itself, which is safe because
+		// that all happens inside this read callback - but it is the live network
+		// read buffer, so JS gets a copy rather than a view of memory the next
+		// read reuses and the http parser is about to consume.
+		if( (*pevt).data.error.buffer && (*pevt).data.error.buflen ) {
+			(*pevt).data.error.jsBuffer = NewArray( char, (*pevt).data.error.buflen );
+			MemCpy( (*pevt).data.error.jsBuffer, (*pevt).data.error.buffer, (*pevt).data.error.buflen );
+		}
 		break;
 	case SACK_NETWORK_ERROR_HOST_NOT_FOUND:
 		(*pevt).data.error.buffer = va_arg( args, const char * );
@@ -3030,10 +3308,34 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		break;
 	}
 	(*pevt).pc = pc;
+	// pc is only usable while NetworkClientValid( pc, pcSerial ); the release below
+	// runs after the app has had the socket for an arbitrary time, so it needs this.
+	(*pevt).pcSerial = pc ? NetworkClientSerial( pc ) : 0;
 	(*pevt)._this = wss;
-	(*pevt).waiter = MakeThread();
-	// no HoldWssEvent needed: waiter is set, so wssAsyncMsg_ leaves the event to
-	// this thread and the DropWssEvent below is the only release.
+	// The handshake failures are the ones with a verdict still outstanding: the SSL
+	// layer hands that decision to the app and returns without applying one.  Nothing
+	// blocks here any more - this used to wait for the app's answer, which made the
+	// whole peer go deaf for as long as the app took, and (with the win32 ClosedClients
+	// reaper firing 1s after AddClosed) could leave a dispatch parked past the point
+	// the client was reaped.
+	LOGICAL deferredVerdict = ( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
+	                         || error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 );
+	// waiter is the ownership marker, and it has to be set before the enqueue
+	// publishes the event to the drain.  Set it only when this thread really does
+	// wait: a non-blocking error is fire-and-forget and wssAsyncMsg_ owns the
+	// drop.  Marking it owned here instead would take the drop below - freeing
+	// the event while it is still sitting in the queue, for the drain to dequeue
+	// out of the pool after some other connection has already been handed it.
+	// No HoldWssEvent needed either way; exactly one side releases it.
+	// No waiter: every LOW_ERROR is fire-and-forget now, so wssAsyncMsg_ owns the
+	// drop in all cases.
+	// Hold the socket across the decision.  psvInUse marks the client in use, so a
+	// close defers rather than reaping the connection the app is still deciding
+	// about, and webSockHttpClose's GetNetWork walk can find this event and mark it
+	// WS_EVENT_NOOP.  Same registration webSockHttpRequest does for the request
+	// event.  Must be taken BEFORE the enqueue publishes the event to the drain.
+	if( deferredVerdict && pc )
+		AddNetWork( pc, (uintptr_t)pevt );
 	EnqueLink( &wss->eventQueue, pevt );
 #ifdef DEBUG_EVENTS
 	lprintf( "socket HTTP LowError Send %p", &wss->async);
@@ -3042,23 +3344,6 @@ static void webSockServerLowError( uintptr_t psv, PCLIENT pc, SackNetworkError e
 		wss->c->ivm_post( wss->c->ivm_holder, std::make_unique<wssAsyncTask>( wss ) );
 	else
 		uv_async_send( &wss->async );
-	// Only the SSL first-packet handshake failure blocks here for the app's
-	// synchronous fallback-to-http decision.  Blocking on any other error
-	// deadlocks when the error is raised from inside ProcessHttp while the
-	// http lock is held: this thread waits for the JS thread to mark the
-	// event done, but the JS thread is blocked acquiring that same http lock.
-	if( error == SACK_NETWORK_ERROR_SSL_HANDSHAKE || error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) {
-		while( !(*pevt).done )
-			WakeableSleep( 1000 );
-		//lprintf( "probably doing endsecure on %p %d", pc, ( *pevt ).data.error.fallback_ssl );
-		if( ( *pevt ).data.error.fallback_ssl ) {
-			// increment this, so the caller can recognize the fallback happened...
-			( *pevt ).data.error.fallback_ssl = (*pevt).data.error.fallback_ssl + 1;
-			ssl_EndSecure( pc, (POINTER)( *pevt ).data.error.buffer, ( *pevt ).data.error.buflen );
-		} else
-			lprintf( "didn't end secure on %p", pc );
-	}
-	DropWssEvent( pevt );
 }
 
 #if 0
@@ -3471,33 +3756,84 @@ void wssObject::New(const FunctionCallbackInfo<Value>& args){
 	}
 }
 
+// Apply the outstanding verdict for a handshake error, exactly once.  The poster
+// used to do this after waiting for the app; it is fire-and-forget now, so the
+// answer is applied here on the JS thread instead.  Safe against a connection that
+// closed while the app was deciding: the AddNetWork hold defers the recycle, and the
+// serial re-check catches a client that got away anyway.
+static void wssResolveSSLVerdict( struct wssEvent *pevt, LOGICAL fallback ) {
+	PCLIENT pc = pevt->pc;
+	if( pevt->data.error.ssl_decided ) return;
+	pevt->data.error.ssl_decided = 1;
+	pevt->data.error.fallback_ssl = fallback;
+	if( pc && NetworkClientValid( pc, pevt->pcSerial ) ) {
+		if( fallback )
+			// re-feed the bytes as plain http.  This uses the poster's own copy, not
+			// the live network read buffer the callback was handed - that buffer
+			// belonged to a read that has already returned.
+			ssl_EndSecure( pc, (POINTER)pevt->data.error.jsBuffer, pevt->data.error.buflen );
+		else
+			// the reject verdict ssl_ReadComplete_ would have applied inline when the
+			// callback still blocked.
+			ssl_EndStream( pc );
+		// balance the poster's hold, after the verdict - the whole point of it is
+		// that the socket survives the decision.  If a close was deferred on our
+		// account, this completes it.
+		ClearNetWork( pc, (uintptr_t)pevt );
+	} else if( pc )
+		lprintf( "SSL verdict: client went away while the app was deciding" );
+	if( pevt->data.error.jsBuffer && !pevt->data.error.jsBufferGiven )
+		Deallocate( char*, pevt->data.error.jsBuffer );
+	pevt->data.error.jsBuffer = NULL;
+}
+
 void wssObject::disableSSL( const FunctionCallbackInfo<Value>& args ) {
 	// at this point there is a socket, but it's not a JS object yet even...
 	// so we can't set that it is NOT SSL?
 
 	//Isolate* isolate = args.GetIsolate();
 	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
-	// only an actual SSL first-packet handshake error can be "disabled" (fall
-	// back to plain http).  webSockServerLowError only completes the fallback_ssl
-	// handshake (increment to 2) for SACK_NETWORK_ERROR_SSL_HANDSHAKE, so engaging
-	// it for any other LOW_ERROR (e.g. a parse error raised while re-feeding the
-	// bytes as http after a fallback) would spin here forever.
+	// only an actual SSL handshake error can be "disabled" (fall back to plain
+	// http); webSockServerLowError blocks for the app's decision on those alone,
+	// so engaging it for any other LOW_ERROR (e.g. a parse error raised while
+	// re-feeding the bytes as http after a fallback) would release an event that
+	// nobody is waiting on.
+	// _2 means the handshake consumed earlier packets, so the reported bytes are
+	// only the last chunk - falling back would re-feed a truncated request.  Only
+	// _1 is eligible.
+	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR
+	    && obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE ) {
+		// capture before releasing: setting done hands the event back to its
+		// waiter, which drops it as soon as ssl_EndSecure returns - so every
+		// field, waiter included, has to be read before that store.
+		// Perform the fallback here, on this thread.  It used to be handed back to
+		// the parked poster because that thread was the one holding the negotiation;
+		// there is no parked poster now, and the session cannot be torn down under
+		// this call because a closer only RETIRES it (the objects live until
+		// ssl_finalize under both channel locks) and the poster's hold defers the
+		// recycle.
+		wssResolveSSLVerdict( obj->eventMessage, TRUE );
+	} else
+		lprintf( "cannot disable SSL outside of error event" );
+}
+
+void wssObject::rejectSSL( const FunctionCallbackInfo<Value>& args ) {
+	wssObject *obj = ObjectWrap::Unwrap<wssObject>( args.This() );
+	// same gate as disableSSL: only the handshake failures have a waiter parked on
+	// this decision, so releasing anything else would free an event nobody owns.
 	if( obj->eventMessage && obj->eventMessage->eventType == WS_EVENT_LOW_ERROR
 	    && ( obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE
 	      || obj->eventMessage->data.error.error == SACK_NETWORK_ERROR_SSL_HANDSHAKE_2 ) ) {
-		// delay until we return to the thread that dispatched this error.
-		obj->eventMessage->data.error.fallback_ssl = 1;
-		// allow this to return immediately, so the SSL layer will give up its lock.
-		obj->eventMessage->done                    = 1;
-		WakeThread( obj->eventMessage->waiter );
-		// confirm that the fallback happened?  Otherwise this could result with a ssl
-		// enabled socket in the end().
-		while (obj->eventMessage->data.error.fallback_ssl < 2) {
-			Relinquish();
-		}
-		//ssl_EndSecure( obj->eventMessage->pc, (POINTER)obj->eventMessage->data.error.buffer, obj->eventMessage->data.error.buflen );
+		// leave fallback_ssl clear: the poster then skips ssl_EndSecure, and the SSL
+		// layer's own "still have a session, so nobody fell back" branch closes the
+		// socket as a failed handshake.  Setting done here only makes that happen
+		// now rather than whenever this callback happens to return, so a firewall
+		// rule installed just above this call is in place before the peer is dropped.
+		// Apply the reject now rather than at the drain default, so a firewall rule
+		// installed just above this call is in place before the peer is dropped.
+		wssResolveSSLVerdict( obj->eventMessage, FALSE );
 	} else
-		lprintf( "cannot disable SSL outside of error event" );
+		lprintf( "cannot reject SSL outside of error event" );
 }
 
 void wssObject::close( const FunctionCallbackInfo<Value>& args ) {
@@ -3870,53 +4206,13 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	while( obj->readyState == wsReadyStates::CONNECTING )
 		Relinquish();
 
-	if( args[0]->IsTypedArray() ) {
-		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
-		Local<ArrayBuffer> ab = ta->Buffer();
+	char* sendData;
+	size_t sendLen;
+	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
 		if( obj->pc ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			WebSocketSendBinary( obj->pc, (const uint8_t*)sendData, sendLen );
 		} else if( obj->wsPipe ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-
-		}
-	} else if( args[0]->IsUint8Array() ) {
-		Local<Uint8Array> body = args[0].As<Uint8Array>();
-		Local<ArrayBuffer> ab = body->Buffer();
-		if( obj->pc ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-		} else if( obj->wsPipe ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-		}
-	} else if( args[0]->IsArrayBuffer() ) {
-		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-		if( obj->pc ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-		} else if( obj->wsPipe ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			WebSocketPipeSendBinary( obj->wsPipe, (const uint8_t*)sendData, sendLen );
 		}
 	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -3926,9 +4222,9 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 			WebSocketPipeSendText( obj->wsPipe, *buf, buf.length() );
 		}
 	} else if( args[0]->IsObject() ) {
-		lprintf( "Cannot send argument that is a type of object passed to websocket send." );
+		isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate, "Cannot send argument that is a type of object passed to websocket send.")));
 	}  else {
-		lprintf( "Argument passed to send is not a String, ArrayBuffer or TypeAarray." );
+		isolate->ThrowException(Exception::Error(String::NewFromUtf8Literal(isolate, "Argument passed to send is not a String, ArrayBuffer or TypedArray.")));
 	}
 }
 
@@ -4530,21 +4826,10 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 			String::NewFromUtf8( isolate, msg, v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
-	if( args[0]->IsTypedArray() ) {
-		Local<TypedArray> ta = Local<TypedArray>::Cast( args[0] );
-		Local<ArrayBuffer> ab = ta->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
-	} else if( args[0]->IsArrayBuffer() ) {
-		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-#if ( NODE_MAJOR_VERSION >= 14 )
-		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-		WebSocketSendBinary( obj->pc, (const uint8_t*)ab->GetContents().Data(), ab->ByteLength() );
-#endif
+	char* sendData;
+	size_t sendLen;
+	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
+		WebSocketSendBinary( obj->pc, (const uint8_t*)sendData, sendLen );
 	}
 	else if( args[0]->IsString() ) {
 		String::Utf8Value buf( USE_ISOLATE( isolate ) args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
@@ -4931,8 +5216,8 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 							, String::NewFromUtf8( isolate, GetText( content ), v8::NewStringType::kNormal ).ToLocalChecked() );
 						void* newBuf = NewArray(uint8_t, GetTextSize(content));
 						MemCpy(newBuf, GetText(content), GetTextSize(content));
-						std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(newBuf,
-							GetTextSize( content ), releaseBufferBackingStore, NULL);
+						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( newBuf,
+							GetTextSize( content ) );
 						SET(result, "bytes", ArrayBuffer::New(isolate, bs));
 					}
 					SET( result, "statusCode"
@@ -4947,7 +5232,7 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 					struct HttpField* header;
 					//headers
 					LIST_FORALL(headers, idx, struct HttpField*, header) {
-						SETT(arr, header->name
+						setHeaderBothCases( isolate, arr, GetText( header->name )
 							, String::NewFromUtf8(isolate, (const char*)GetText(header->value)
 								, NewStringType::kNormal, (int)GetTextSize(header->value)).ToLocalChecked());
 					}
@@ -5134,8 +5419,8 @@ static void httpConnAsyncMsg__( Isolate *isolate, Local<Context> context, httpCo
 						, String::NewFromUtf8( isolate, (const char*)evt->response.content
 							, NewStringType::kNormal, (int)evt->response.contentLen ).ToLocalChecked() );
 					// hand the copy we already made to V8 rather than copying again
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( evt->response.content
-						, evt->response.contentLen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( evt->response.content
+						, evt->response.contentLen );
 					SET( result, "bytes", ArrayBuffer::New( isolate, bs ) );
 					evt->response.content = NULL; // owned by the backing store now
 				}
@@ -5144,8 +5429,7 @@ static void httpConnAsyncMsg__( Isolate *isolate, Local<Context> context, httpCo
 					, evt->response.statusText ? evt->response.statusText : "NO RESPONSE"
 					, NewStringType::kNormal ).ToLocalChecked() );
 				LIST_FORALL( evt->response.headers, idx, struct httpConnHeader*, h ) {
-					(void)arr->Set( context
-						, String::NewFromUtf8( isolate, h->name, NewStringType::kNormal ).ToLocalChecked()
+					setHeaderBothCases( isolate, arr, h->name
 						, String::NewFromUtf8( isolate, h->value, NewStringType::kNormal ).ToLocalChecked() );
 				}
 				SET( result, "headers", arr );

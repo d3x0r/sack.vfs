@@ -1103,7 +1103,7 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 			objStore::sack_vfs_os_close( file );
 			if( !cb.IsEmpty() ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buf, len );
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
@@ -1136,7 +1136,7 @@ void ObjectStorageObject::fileRead( const v8::FunctionCallbackInfo<Value>& args 
 			if( !cb.IsEmpty() ) {
 
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buf, len );
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
@@ -1289,19 +1289,21 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 	while( arg < args.Length() ) {
 		if( args[arg]->IsNumber() ) {
 			// maybe make sure (arg==1) ?
-			Local<Number> version_num = args[arg].As<Number>();
-			version = (uint64_t)version_num->Value();
-			arg++;
+			double val = 0.0;
+			if (args[arg]->NumberValue(isolate->GetCurrentContext()).To(&val)) {
+				if (!std::isnan(val)) {
+					version = (uint64_t)val;
+				}
+			}
 		} else if( args[arg]->IsFunction() ) {
 			cb = Local<Function>::Cast( args[arg] );
-			arg++;
 		}
 		else if( args[arg]->IsObject() ) {
 			Local<Object> useParser = args[arg]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 			parserObject = ObjectWrap::Unwrap<JSOXObject>( useParser );
 			parser = parserObject->state;
-			arg++;
 		}
+		arg++;
 	}
 
 	if( !parser ) {
@@ -1319,7 +1321,7 @@ void ObjectStorageObject::fileReadJSOX( const v8::FunctionCallbackInfo<Value>& a
 		}
 
 		if( version )
-			lprintf( "Object storage version reads were removed; reading current object for %s", *fName );
+			lprintf( "Object storage version reads were removed; reading current object for %s %d", *fName, version );
 		//lprintf( "OPEN FILE:%s", *fName );
 		struct objStore::sack_vfs_os_file *file = objStore::sack_vfs_os_openfile( vol->vol, (*fName) );
 		if( file ) {

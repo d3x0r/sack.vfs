@@ -14,6 +14,7 @@ Options for logging, and priority are also per type.
 |on  | (string, array)| If the second parameter is an array, then the callback is called with `.apply(array)`.|
 |on  | (string)| If the second parameter is undefined then the result is true if at least one event handler has been registered.  This is a query for handler existance. |
 |off | (string,function) | Remove a subscription by name and function |
+|off | (Retrun from on(string,function)) | Remove a subscription by handle |
 
 ## Events Accessors
 
@@ -26,7 +27,9 @@ Options for logging, and priority are also per type.
 
 |Name| Arguments | Description |
 |---|---|---|
-|enableArrayArgs | bool | The default behavior is to pass data that is an array as an argument list to the callback; this can be used to disable or re-enable this feature.  Set to false to receive an array as an agument. |
+|enableArrayArgs | bool | (Not in Events2) The default behavior is to pass data that is an array as an argument list to the callback; this can be used to disable or re-enable this feature.  Set to false to receive an array as an agument. |
+
+Events2 takes the known behavior 'if the argument is an array, it is expanded, so arrays must be passed within wrapper arrays to expand once (sorry, not sorry)'.
 
 
 `on()` events which emit events (with a second data parameter), the result is an array of the result of all of the callbacks registered.

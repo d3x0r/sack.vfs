@@ -61,39 +61,76 @@ function read( name ) {
 	}
 }
 
-function getCertChain( ) {
-	//SSLCertificateFile /etc/letsencrypt/live/d3x0r.org/fullchain.pem
-	//SSLCertificateKeyFile /etc/letsencrypt/live/d3x0r.org/privkey.pem
-	if( process.env.SSL_PATH ) {
-		//if( !process.env.SSL_HOST ) {
-		//	console.log( "ssl host name not specified..." )
-		//	return null;
-		//}
-		return process.env.SSL_PATH + "/fullchain.pem"
-	}
-	return  parentRoot + "/certgen/cert-chain.pem"
-}
-function getCertKey( ) {
-	if( process.env.SSL_PATH ) {
-		if( !process.env.SSL_HOST ) {
-			console.log( "ssl host name not specified..." )
-			return null;
+// SSL_PATH and SSL_HOST may be a plain string (one certificate) or a JSOX
+// array of strings, e.g.
+//    SSL_PATH="['/etc/letsencrypt/live/a.org','/etc/letsencrypt/live/b.com']"
+//    SSL_HOST="['a.org','www.b.com']"
+// SSL_HOST is positional with SSL_PATH.  Within one entry names may be
+// tilde(~) separated as before.  An omitted or empty entry takes the names
+// from that certificate.  An entry of "*" or null registers the certificate
+// with no name at all, which the TLS layer uses as the catch-all: it answers
+// any SNI that matches nothing, and any connection that sends no SNI.
+function envList( name ) {
+	const val = process.env[name];
+	if( !val ) return [];
+	const trimmed = val.trim();
+	if( trimmed[0] === '[' ) {
+		try {
+			const parsed = sack.JSOX.parse( trimmed );
+			if( parsed instanceof Array ) return parsed.map( v=>( v === null || v === undefined ) ? null : String( v ) );
+		} catch( err ) {
+			console.log( "Failed to parse", name, "as a JSOX array:", err.message );
 		}
-		return process.env.SSL_PATH + "/privkey.pem"
 	}
-	return  parentRoot + "/certgen/rootkeynopass.prv"
+	return [ val ];
 }
 
-const certChain = read( getCertChain() );
-if( certChain )
-	if( !process.env.SSL_HOST ) {
-		process.env.SSL_HOST = sack.TLS.hosts( certChain ).join("~");
-		console.log( "Host not specified, using certificate hosts:", process.env.SSL_HOST );
-	} else {
-		console.log( "host not checked?" );
+// resolve one SSL_HOST entry against its certificate; returns null for the default host.
+function resolveHost( host, cert, from ) {
+	// "*" and null both mean "match anything": register the certificate with no
+	// name, and the TLS layer falls back to it for any name it cannot match.
+	if( host === null || host === "*" ) return null;
+	if( !host ) {
+		host = sack.TLS.hosts( cert ).join( "~" );
+		if( host )
+			console.log( "Using certificate hosts for", from, ":", host );
+		else {
+			console.log( "No hosts in certificate", from, "; using it as the default host" );
+			return null;
+		}
 	}
-//console.log( "certChain loaded?", sack.TLS.hosts( certChain ) );
-const certKey = read( getCertKey() );
+	return host;
+}
+
+function loadCerts() {
+	//SSLCertificateFile /etc/letsencrypt/live/d3x0r.org/fullchain.pem
+	//SSLCertificateKeyFile /etc/letsencrypt/live/d3x0r.org/privkey.pem
+	const sslPaths = envList( "SSL_PATH" );
+	const sslHosts = envList( "SSL_HOST" );
+	const result = [];
+	if( !sslPaths.length ) {
+		const from = parentRoot + "/certgen";
+		const cert = read( from + "/cert-chain.pem" );
+		if( !cert ) return result;
+		const key = read( from + "/rootkeynopass.prv" );
+		result.push( { host: resolveHost( sslHosts[0], cert, from ), cert, key } );
+		return result;
+	}
+	for( let n = 0; n < sslPaths.length; n++ ) {
+		const sslPath = sslPaths[n];
+		if( !sslPath ) continue;
+		const cert = read( sslPath + "/fullchain.pem" );
+		if( !cert ) continue;
+		const key = read( sslPath + "/privkey.pem" );
+		result.push( { host: resolveHost( sslHosts[n], cert, sslPath ), cert, key } );
+	}
+	return result;
+}
+
+const sslCerts = loadCerts();
+// first (or only) certificate; kept for callers that override cert/key in serverOpts.
+const certChain = sslCerts.length ? sslCerts[0].cert : undefined;
+const certKey = sslCerts.length ? sslCerts[0].key : undefined;
 
 const encMap = {
 		'.gz':'gzip'
@@ -115,18 +152,17 @@ const extMap = { '.js': 'text/javascript'
               ,'.pem':'application/x-pem-file'
               ,'.wasm': 'application/wasm'
               , '.asm': 'application/wasm' 
-			, '.bat':'application/x-msdownload'
-			, '.dll':'application/x-msdownload'
-			, '.exe':'application/x-msdownload'
-			, '.cmd':'application/x-msdownload'
-			, '.com':'application/x-msdownload'
-			, '.msi':'application/x-msdownload'
-		, ".gltf":"model/gltf+json"
-		, ".glb":"model/gltf+binary"
-		, ".obj":"model/obj"
-		, ".bin":"application/octet-stream"
-		, ".mtl":"model/mtl"
-
+              , '.bat':'application/x-msdownload'
+              , '.dll':'application/x-msdownload'
+              , '.exe':'application/x-msdownload'
+              , '.cmd':'application/x-msdownload'
+              , '.com':'application/x-msdownload'
+              , '.msi':'application/x-msdownload'
+              , ".gltf":"model/gltf+json"
+              , ".glb":"model/gltf+binary"
+              , ".obj":"model/obj"
+              , ".bin":"application/octet-stream"
+              , ".mtl":"model/mtl"
 		}
 
 const requests = [];
@@ -138,6 +174,14 @@ function logRequests() {
 	console.log( "Requests:", log );
 }
 
+function decodeRequestURI( uri ) {
+	try {
+		return decodeURI( uri );
+	} catch( err ) {
+		return uri;
+	}
+}
+
 
 //exports.getRequestHandler = getRequestHandler;
 export function getRequestHandler( serverOpts ) {
@@ -145,6 +189,26 @@ export function getRequestHandler( serverOpts ) {
 	const resourcePath = serverOpts.resourcePath || process.env.RESOURCE_PATH || ".";
 	const commonPath = serverOpts?.commonPath || process.env.COMMON_PATH || ".";
 	const npm_path = serverOpts.npmPath || process.env.NPM_PATH || ".";
+	// Which packages under npmPath may be served over /node_modules/.  The three
+	// defaults are what this server has always allowed; `allowModules` (an array
+	// of module names, or ALLOW_MODULES as a comma separated list) adds to them,
+	// so an app can publish e.g. "simple-keyboard" to its pages without every
+	// http-ws server having to.  Scoped names ("@scope") and subpaths
+	// ("sack.vfs/apps") both work.
+	const allowedModules = [ "@d3x0r", "jsox", "sack.vfs/apps" ].concat(
+		  serverOpts.allowModules
+		|| ( process.env.ALLOW_MODULES ? process.env.ALLOW_MODULES.split( "," ) : [] ) );
+	const allowedModulePaths = allowedModules
+		.map( name=>String(name).trim().replace( /^\/+|\/+$/g, "" ) )
+		.filter( name=>name.length )
+		.map( name=>"/node_modules/" + name );
+	// match whole path segments, so "simple-keyboard" does not also allow
+	// "simple-keyboard-something-else"
+	function moduleAllowed( url ) {
+		return allowedModulePaths.some( allowed=>
+			   url === allowed
+			|| url.startsWith( allowed + "/" ) );
+	}
 	//console.log( "basic handler:", resourcePath, npm_path );
 	return function( req, res ) {
 
@@ -171,10 +235,7 @@ export function getRequestHandler( serverOpts ) {
 		if( req.url.startsWith( "/common/" ) ) {
 			paths.push( commonPath );
 			req.url = req.url.replace("/common", "" );
-		} else if( req.url.startsWith( "/node_modules/" ) 
-			   && ( req.url.startsWith( "/node_modules/@d3x0r" ) 
-			      || req.url.startsWith( "/node_modules/jsox" )
-		   	   || req.url.startsWith( "/node_modules/sack.vfs/apps" ) ) ) {
+		} else if( req.url.startsWith( "/node_modules/" ) && moduleAllowed( req.url ) ) {
 				if( npm_path instanceof Array ) paths.push( ...npm_path );
 				else paths.push( npm_path );
 		} else if( resourcePath instanceof Array ) paths.push(...resourcePath);
@@ -182,8 +243,7 @@ export function getRequestHandler( serverOpts ) {
 		lastFilePath = '';
 		for( let rpath of paths ) {
 
-			let filePath = rpath + unescape(req.url);
-	   
+			let filePath = rpath + decodeRequestURI(req.url);
 			let extname = path.extname(filePath);		
 			let contentEncoding = encMap[extname];
 			if( contentEncoding ) {
@@ -224,7 +284,7 @@ export function getRequestHandler( serverOpts ) {
 			lastFilePath = (lastFilePath?lastFilePath+" or ":"") + filePath;
 		}
 		{
-			const foundModule = findModule( unescape(req.url), req, res );
+			const foundModule = findModule( decodeRequestURI(req.url), req, res );
 			if( foundModule ) {
 				if( "object" === typeof  foundModule ) {
 					const headers = { 'Content-Type': foundModule.contentType
@@ -284,7 +344,7 @@ function hookJSOX( serverOpts, server ) {
 	server.addHandler( app.handle );
 
 	server.app = app;
-	app.get( /.*\.jsox|.*\.json6/, (req,res)=>{
+	app.get( /.*\.jsox|.*\.json6/, (req,res,next)=>{
 
 		const headers = {
 			'Content-Type': "text/javascript",
@@ -296,7 +356,7 @@ function hookJSOX( serverOpts, server ) {
 		for( let rpath of paths ) {
 			let filePath;
 			if( req.url.startsWith( "/common/" ) ) {
-				filePath = commonPath + decodeURI(req.url).replace( "/common", "" );
+				filePath = commonPath + decodeRequestURI(req.url).replace( "/common", "" );
 				paths.length =0;
 			}else {
 				filePath = rpath + req.url;
@@ -307,10 +367,10 @@ function hookJSOX( serverOpts, server ) {
 				res.writeHead( 200, headers );
 				const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
 				res.end( resultContent );
-				return true;
+				return;
 			}
 		}
-		return false;
+		return next();
 	} ) 
 }
 
@@ -373,17 +433,20 @@ export function openServer( opts, cbAccept, cbConnect )
 	let handlers = [];
 	const serverOpts = opts || {};
 	if( !("port" in serverOpts )) serverOpts.port = Number(process.env.PORT)||(process.argv.length > 2?Number(process.argv[2]):0) || 8080;
-	if( certChain ) 
+	if( sslCerts.length ) 
 	{
 		if( !serverOpts.hosts ) serverOpts.hosts = [];
-		serverOpts.hosts.push( {
-			host: process.env.SSL_HOST || "localhost",
-			cert : serverOpts.cert || certChain,
-			key : serverOpts.key || certKey
-	
-		});
-		//serverOpts.cert = serverOpts.cert || certChain;
-		//serverOpts.key = serverOpts.key || certKey;
+		if( serverOpts.cert || serverOpts.key ) {
+			// caller supplied an explicit certificate; use it for the first host only.
+			serverOpts.hosts.push( {
+				host: sslCerts[0].host,
+				cert : serverOpts.cert || certChain,
+				key : serverOpts.key || certKey
+			});
+		} else {
+			for( let ssl of sslCerts )
+				serverOpts.hosts.push( { host: ssl.host, cert: ssl.cert, key: ssl.key } );
+		}
 	}
 	const server = sack.WebSocket.Server( serverOpts )
 	//console.log( "serving on " + serverOpts.port, server );
@@ -394,7 +457,7 @@ export function openServer( opts, cbAccept, cbConnect )
 	server.onrequest = srvr.handleEvent.bind( srvr );
 
 	server.on( "lowError",function (error, address, buffer) {
-        	console.log( "Low error:", error, address );
+		//console.log( "Low error:", error, address );
 		if( error !== 1 && error != 6 ) 
 			if( error === 7 ) {
 				console.log( "Requested host not found:", address.remoteAddress, "requested:", buffer );
@@ -448,4 +511,3 @@ export function openServer( opts, cbAccept, cbConnect )
 	hookJSOX( serverOpts, srvr );
 	return srvr;
 }
-

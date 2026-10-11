@@ -1,108 +1,103 @@
-import {sack} from "sack.vfs"
-//const StoredObject = sack.ObjectStorage.StoredObject;
-
 import {StoredObject} from "../object-storage/object-storage-object.mjs"
 
-
-const SlabArray_StorageTag = "?sa"
-const SlabArrayElement_StorageTag = "?ae"
-const elementSize = 200;
-let storage = null;
+const SlabArray_StorageTag = "?sa";
+const SlabArrayElement_StorageTag = "?ae";
+export const SLAB_PAGE_SIZE = 200;
 
 const storages = [];
-function regStorage( storage ){
-	if( !storages.find( s=>s===storage ) ) {
-		storage.addEncoders( [ { tag:SlabArrayElement_StorageTag, p:SlabArrayElement, f: null }
-			,  { tag:SlabArray_StorageTag, p:SlabArray, f: null }
-			] );
-		storage.addDecoders( [ { tag:SlabArrayElement_StorageTag, p:SlabArrayElement, f: null }
-			,  { tag:SlabArray_StorageTag, p:SlabArray, f: null }
-			] );
-		storages.push( storage );
-	}
+function regStorage(storage) {
+	if( storages.includes(storage) ) return;
+	storage.addEncoders( [
+		{ tag:SlabArrayElement_StorageTag, p:SlabArrayElement, f:null },
+		{ tag:SlabArray_StorageTag, p:SlabArray, f:null },
+	] );
+	storage.addDecoders( [
+		{ tag:SlabArrayElement_StorageTag, p:SlabArrayElement, f:null },
+		{ tag:SlabArray_StorageTag, p:SlabArray, f:null },
+	] );
+	storages.push( storage );
 }
 
 class SlabArrayElement extends StoredObject {
 	elements = [];
 	depth = 0;
 	parent = null;
+
 	constructor(storage) {
-		super(storage );
+		super(storage);
 	}
 
-	push(object, intoCb) {
-		if( this.depth > 0 ) {
-			// parent nodes - only contains other arrays - which may be delay loaded as promised content.
-			const lastBlock = this.elements && this.elements[this.elements.length-1];
-			if( lastBlock instanceof Promise ) {
-				lastBlock.then( ()=>{
-					//console.log( "Array element resolved this is now:", this );
-					return this.push( object, intoCb );
-				})
-				this.storage.map(lastBlock);
-				return  object; // it will get pushed...
-			}
+	get capacity() {
+		return SLAB_PAGE_SIZE ** ( this.depth + 1 );
+	}
 
-			// the last element has a free spot?
-			//console.log( "this.elements is?", this.depth, this.elements.length, this.elements[this.elements.length-1].elements.length );
-			if( !this.elements.length
-				|| ( lastBlock.elements.length >= elementSize ) ) {
-				if( this.elements.length ){
-					if( lastBlock.push( object, intoCb ) ){
-						return object;	
-					}
-					// else, that block is actually full, and still truly need a new block
-				}
-				const newSlab = new SlabArrayElement(this.storage);
-				newSlab.depth = this.depth-1;
-				newSlab.parent = this;
-				this.elements.push( newSlab );
-				this.store(); // parent 
-				return newSlab.push( object, intoCb );  // push into real new slab.
-			} else {
-				return lastBlock.push( object, intoCb );
-			}
-		} else {
-			if( this.elements.length >= elementSize  ) {
-				if( !this.parent ) {
-					const parent = new SlabArrayElement(this.storage);
-					parent.depth = this.depth+1;
-					parent.elements.push( this );
-					this.parent = parent;
-					//console.log( "New block data...", parent, "which should be the new root" );
-					// new parent generation root.
-					intoCb( parent );
-					return parent.push( object, intoCb );
-				}else {
-					// this could infinitely recurse if there's bad counts.
-					return null;
-					//return this.parent.push( object, intoCb );
-				}
-			} else {
-				this.elements.push( object );
-				this.store();
-				return object;
-			}
+	async child(index) {
+		let child = this.elements[index];
+		if( child instanceof Promise ) {
+			child = await this.storage.map( child );
+			this.elements[index] = child;
 		}
+		return child;
 	}
 
-	async forEach(cb) {
-		let block = 0;
-		let entry = 0;
-		for( ; block < this.elements.length; block++ ){
-			let elements = this.elements[block];		
-			if( elements instanceof Promise ) {
-				elements = await this.storage.map( elements );
+	async push(object) {
+		if( this.depth === 0 ) {
+			if( this.elements.length >= SLAB_PAGE_SIZE ) return false;
+			this.elements.push( object );
+			await this.store();
+			return true;
+		}
+
+		let child = this.elements.length
+			? await this.child( this.elements.length - 1 )
+			: null;
+		if( !child ) {
+			child = new SlabArrayElement( this.storage );
+			child.depth = this.depth - 1;
+			child.parent = this;
+			this.elements.push( child );
+		}
+
+		if( !await child.push( object ) ) {
+			if( this.elements.length >= SLAB_PAGE_SIZE ) return false;
+			child = new SlabArrayElement( this.storage );
+			child.depth = this.depth - 1;
+			child.parent = this;
+			this.elements.push( child );
+			if( !await child.push( object ) )
+				throw new Error( "Failed to append to a new SlabArray block." );
+		}
+
+		await this.store();
+		return true;
+	}
+
+	async get(index) {
+		if( this.depth === 0 ) {
+			let value = this.elements[index];
+			if( value instanceof Promise ) {
+				value = await this.storage.map(value);
+				this.elements[index] = value;
 			}
-			if( this.depth > 0 ) {
-				for( entry = 0; entry < this.elements.length; entry++ ){
-					await this.elements[entry].forEach( cb );
-				}
-			}else {
-				for( entry = 0; entry < this.elements.length; entry++ ){
-					await cb( arr[entry], block * elementSize + entry );
-				}
-			}
+			return value;
+		}
+		const childCapacity = SLAB_PAGE_SIZE ** this.depth;
+		const childIndex = Math.floor( index / childCapacity );
+		if( childIndex >= this.elements.length ) return undefined;
+		const child = await this.child( childIndex );
+		return child.get( index % childCapacity );
+	}
+
+	async forEach(cb, offset = 0) {
+		if( this.depth === 0 ) {
+			for( let index = 0; index < this.elements.length; index++ )
+				await cb( await this.get(index), offset + index );
+			return;
+		}
+		const childCapacity = SLAB_PAGE_SIZE ** this.depth;
+		for( let index = 0; index < this.elements.length; index++ ) {
+			const child = await this.child( index );
+			await child.forEach( cb, offset + index * childCapacity );
 		}
 	}
 }
@@ -110,82 +105,82 @@ class SlabArrayElement extends StoredObject {
 class SlabArray extends StoredObject {
 	elements = null;
 	count = 0;
+
 	constructor(storage) {
 		super(storage);
 	}
+
+	get length() {
+		return this.count;
+	}
+
 	async get(index) {
-		if( index < 0 ) {
-			const block = Math.floor( (this.count+index) / elementSize );
-			const entry = (this.count+index) % elementSize;
-			if( block < this.elements.length ) {
-				let elements = this.elements[block];
-		        
-				if( elements instanceof Promise ) {
-					// trigger resolution of the promise
-					elements = await this.storage.map( elements );
-				}
-				return elements.elements[entry];
-			} 
-			
-		} else {
-			const block = Math.floor( index / elementSize );
-			const entry = index % elementSize;
-			if( block < this.elements.length ) {
-				let elements = this.elements[block];
-		        
-				if( elements instanceof Promise ) {
-					// trigger resolution of the promise
-					elements = await this.storage.map( elements );
-				}
-				return elements.elements[entry];
-			} 
-		}
-		return undefined;
+		index = Number(index);
+		if( !Number.isInteger(index) ) return undefined;
+		if( index < 0 ) index = this.count + index;
+		if( index < 0 || index >= this.count || !this.elements ) return undefined;
+		if( this.elements instanceof Promise )
+			this.elements = await this.storage.map( this.elements );
+		return this.elements.get( index );
 	}
-	push(object) {
-		const this_ = this;
+
+	async push(object) {
+		if( this.elements instanceof Promise )
+			this.elements = await this.storage.map( this.elements );
+		if( !this.elements )
+			this.elements = new SlabArrayElement( this.storage );
+
+		if( this.count >= this.elements.capacity ) {
+			const oldRoot = this.elements;
+			const newRoot = new SlabArrayElement( this.storage );
+			newRoot.depth = oldRoot.depth + 1;
+			newRoot.elements.push( oldRoot );
+			oldRoot.parent = newRoot;
+			this.elements = newRoot;
+		}
+
+		if( !await this.elements.push( object ) )
+			throw new Error( "SlabArray root did not have capacity after expansion." );
 		this.count++;
-		if( this.elements instanceof Promise ) {
-			return this.storage.map( this.elements ).then( (elements)=>{
-				return elements.push( object, newBlock );
-			});
-		} else {
-			//console.log( "Do I not have elements at all?", this.elements );
-			if( !this.elements ) {
-				( this.elements = new SlabArrayElement( this.storage ) ).push( object, newBlock );
-				this.store();
-			}
-
-			return this.elements.push( object, newBlock );
-		}
-
-		function newBlock(newRoot){
-			if( !newRoot ){ console.trace( "Failure");
-				throw new Error( "Please do not set NO root?");
-			}
-			//console.log( "new root?", newRoot );
-			this_.elements = newRoot;
-			this_.store();
-		}
+		await this.store();
+		return object;
 	}
-	store( opts ) {
-		return super.store( opts );
+
+	store(opts) {
+		return super.store(opts);
 	}
+
 	async forEach(cb) {
 		if( !this.elements ) return;
-		await this.elements.forEach( cb )
+		if( this.elements instanceof Promise )
+			this.elements = await this.storage.map( this.elements );
+		await this.elements.forEach( cb );
 	}
 
-	hook( storage ) {
+	async slice(offset = 0, limit = 50, options = {}) {
+		offset = Math.max( 0, Number(offset) || 0 );
+		limit = Math.max( 0, Number(limit) || 0 );
+		const result = [];
+		if( options.reverse ) {
+			for( let index = this.count - 1 - offset;
+				index >= 0 && result.length < limit; index-- )
+				result.push( await this.get(index) );
+		} else {
+			const end = Math.min( this.count, offset + limit );
+			for( let index = offset; index < end; index++ )
+				result.push( await this.get(index) );
+		}
+		return result;
+	}
+
+	hook(storage) {
 		super.hook(storage);
-		regStorage( storage );
+		regStorage(storage);
 	}
-
 }
 
-SlabArray.hook = function( storage ) {
-	regStorage(storage);	
-}
+SlabArray.hook = function(storage) {
+	regStorage(storage);
+};
 
-
-export {SlabArray} 
+export {SlabArray};

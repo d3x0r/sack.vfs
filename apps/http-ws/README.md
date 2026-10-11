@@ -5,6 +5,28 @@ This is a shell static web resource server, and websocket endpoint.
 Environment variables `SSL_PATH` and `SSL_HOST` are used to enable HTTPS.  `SSL_PATH` specifies
 the root directory to find 'fullchain.pem' and 'privkey.pem' which are standard names Lets Encrypt 
 uses at this time.  `SSL_HOST` specifies a list of tilde(~) separated names in the certificate.  
+If `SSL_HOST` is not set, the names are taken from the certificate itself.
+
+To serve several certificates (one per site) both variables may be JSOX arrays; `SSL_HOST` is
+positional with `SSL_PATH`, and an omitted entry is again filled from that certificate:
+
+```
+export "SSL_PATH=['/etc/letsencrypt/live/app.d3x0r.org','/etc/letsencrypt/live/sideplayr.com']"
+export "SSL_HOST=['app.d3x0r.org','www.sideplayr.com']"
+```
+
+An omitted or empty `SSL_HOST` entry takes its names from that certificate.  An entry of `*` or
+`null` means *match anything*: the certificate is registered without a name, and is used whenever
+the requested server name matches nothing, or the client sends no server name at all (e.g. a bare
+IP address).  Here the first certificate answers only its own names and the second answers
+everything else:
+
+```
+export "SSL_HOST=['','*']"
+```
+
+The certificate presented is chosen by the server name (SNI) the client sends.  Without a default
+entry, a request for an unknown name is rejected during the TLS handshake.
 
 More advanced configurations are possible, the server can specify multiple hosts strings each with
 their own certificates and keys.  The server will switch to use one that matches the server requested
@@ -178,6 +200,8 @@ connect();
 Includes a simple router which can be applied to a server mentioned above.
 
 Supports only most basic express-like interface.  Route matching can be done by String or RexExp.
+`use()` handlers match a path prefix and `all()` handlers match a route for any HTTP method.
+When a matching handler calls `next()`, routing falls through to the next matching handler or the static resource handler.
 
 ``` js
 import {uExpress} from "sack.vfs/http-ws/uexpress.mjs"

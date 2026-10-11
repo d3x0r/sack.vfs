@@ -4,6 +4,7 @@
 #  include <node_binding.h>
 #endif
 #include "global.h"
+#include <atomic>
 
 //#define DEBUG_EXIT
 
@@ -183,6 +184,14 @@ static void volumeRemount( const v8::FunctionCallbackInfo<Value>& args ) {
 
 static void dumpMem( const v8::FunctionCallbackInfo<Value>& args ) {
 	DebugDumpMem( );
+}
+
+static void logMem(const v8::FunctionCallbackInfo<Value>& args) {
+	Isolate* isolate = args.GetIsolate();
+	int argc = args.Length();
+	if (argc > 0) {
+		SetAllocateLogging(args[0]->BooleanValue( isolate ));
+	}
 }
 
 #if ( NODE_MAJOR_VERSION > 9 )
@@ -594,9 +603,11 @@ void VolumeObject::doInit( Local<Context> context, Local<Object> exports, bool i
 
 	Local<Function> VolFunc = volumeTemplate->GetFunction(isolate->GetCurrentContext()).ToLocalChecked();
 
+	//SetAllocateLogging( TRUE );
 	(exports)->DefineOwnProperty( isolate->GetCurrentContext(), String::NewFromUtf8Literal(isolate, "memDump" )
 		, v8::Function::New( isolate->GetCurrentContext(), dumpMem ) .ToLocalChecked(), ReadOnlyProperty );
 	SET_READONLY_METHOD( exports, "log", logString );
+	SET_READONLY_METHOD( exports, "memLog", logMem );
 	SET_READONLY_METHOD( exports, "memDump", dumpMem );
 	SET_READONLY_METHOD( VolFunc, "mkdir", mkdir );
 	SET_READONLY_METHOD( VolFunc, "chdir", chDir );
@@ -1127,11 +1138,36 @@ void dontReleaseBufferBackingStore(void* data, size_t length, void* deleter_data
 	(void)deleter_data;;
 }
 
+// V8 sizes an ArrayBuffer by the little JS object, not by the backing store, so a
+// buffer this library owns - a file read into memory, a mapped file, a query blob -
+// looked like a few dozen bytes to the collector.  Nothing here ever reported the
+// real size, so no amount of held-and-dropped file content created any pressure to
+// collect, and the memory only became visible outside the process.
+//
+// The allocate side reports it (makeReleasableBackingStore, always on the isolate
+// thread).  The free side CANNOT: V8 sweeps array buffers on background threads -
+// which is why this deleter has to MakeThread() at all - and neither
+// AdjustAmountOfExternalAllocatedMemory nor Isolate::GetCurrent() is usable from
+// there.  So a release just accumulates here and the next allocation on the isolate
+// thread hands the total back.  Bounded drift, no cross-thread V8 calls.
+static std::atomic<int64_t> externalPendingFreed{ 0 };
+
 void releaseBufferBackingStore( void* data, size_t length, void* deleter_data ) {
-	(void)length;
 	(void)deleter_data;;
 	MakeThread();
+	externalPendingFreed.fetch_add( (int64_t)length, std::memory_order_relaxed );
 	Deallocate( void*, data );
+}
+
+std::shared_ptr<BackingStore> makeReleasableBackingStore( void* data, size_t length ) {
+	Isolate *isolate = Isolate::GetCurrent();
+	if( isolate ) {
+		int64_t freed = externalPendingFreed.exchange( 0, std::memory_order_relaxed );
+		// may collect, which can run the deleter above for other buffers; those land in
+		// externalPendingFreed and are reported by the next call, not lost.
+		isolate->AdjustAmountOfExternalAllocatedMemory( (int64_t)length - freed );
+	}
+	return ArrayBuffer::NewBackingStore( data, length, releaseBufferBackingStore, NULL );
 }
 
 
@@ -1203,7 +1239,7 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 					return;
 				}
 #if ( NODE_MAJOR_VERSION >= 14 )
-				std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+				std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buf, len );
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs);
 #else
 				Local<Object> arrayBuffer = ArrayBuffer::New( isolate, buf, len );
@@ -1230,7 +1266,7 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 					len = sack_fread( buf, len, 1, file );
 
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( buf, len, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( buf, len );
 					Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 
 #else
@@ -1358,7 +1394,7 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		POINTER data = OpenSpace( NULL, *fName, &len );
 		if( data && len ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( data, len, releaseBufferBackingStore, NULL );
+			std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( data, len );
 			MaybeLocal<ArrayBuffer> _arrayBuffer = ArrayBuffer::New( isolate, bs );
 			Local<ArrayBuffer> arrayBuffer = _arrayBuffer.ToLocalChecked();
 #else
@@ -1525,9 +1561,9 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 		VolumeObject *vol = ObjectWrap::Unwrap<VolumeObject>( getFCIHolder(args) );
 		String::Utf8Value fName( USE_ISOLATE( isolate ) args[0] );
 		if( vol->volNative ) {
-			args.GetReturnValue().Set( sack_vfs_exists( vol->vol, *fName ) );
+			args.GetReturnValue().Set(sack_vfs_exists(vol->vol, *fName) ? True(isolate) : False(isolate) );
 		}else {
-			args.GetReturnValue().Set( sack_existsEx( *fName, vol->fsMount )?True(isolate):False(isolate) );
+			args.GetReturnValue().Set( sack_existsEx( *fName, vol->fsMount ) || sack_isPathEx( *fName, vol->fsMount )?True(isolate):False(isolate) );
 		}
 	}
 
@@ -1552,14 +1588,15 @@ void VolumeObject::fileRead( const v8::FunctionCallbackInfo<Value>& args ) {
 			args.GetReturnValue().Set( Boolean::New( isolate, sack_vfs_unlink_file( vol->vol, *fName ) != 0 ) );
 		}
 		else {
-			args.GetReturnValue().Set( Boolean::New( isolate, sack_unlinkEx( 0, *fName, vol->fsMount ) != 0 ) );
+			args.GetReturnValue().Set( Boolean::New( isolate, sack_unlinkEx( 0, *fName, vol->fsMount ) || sack_rmdirEx( 0, *fName, vol->fsMount ) != 0 ) );
 		}
 	}
 
 	void fileDelete( const v8::FunctionCallbackInfo<Value>& args ) {
 		Isolate* isolate = args.GetIsolate();
 		String::Utf8Value fName( USE_ISOLATE( isolate )args[0] );
-		args.GetReturnValue().Set( Boolean::New( isolate, sack_unlink( 0, *fName ) != 0 ) );
+		int a = sack_unlink( 0, *fName ) || sack_rmdir( 0, *fName );
+		args.GetReturnValue().Set( Boolean::New( isolate, a != 0 ) );
 	}
 
 	void VolumeObject::getRootDirectories(const v8::FunctionCallbackInfo<Value>& args) {
@@ -1916,7 +1953,7 @@ void FileObject::readFile(const v8::FunctionCallbackInfo<Value>& args) {
 		}
 		{
 #if ( NODE_MAJOR_VERSION >= 14 )
-			std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( file->buf, file->size, releaseBufferBackingStore, NULL );
+			std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( file->buf, file->size );
 			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
 #else
 			Local<Object> arrayBuffer = ArrayBuffer::New( isolate, file->buf, file->size );

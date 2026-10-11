@@ -12,6 +12,8 @@ struct optionStrings {
 	Eternal<String> *broadcastString;
 	Eternal<String> *messageString;
 	Eternal<String> *closeString;
+	Eternal<String> *errorString;
+	Eternal<String> *timeoutString;
 
 	Eternal<String> *toPortString;
 	Eternal<String> *toAddressString;
@@ -74,6 +76,7 @@ struct tcpOptions {
 	// client side options (else is server)
 	int toPort;
 	char *toAddress;
+	uint32_t connectTimeout;
 
 	bool addressDefault;
 	bool v6;
@@ -94,6 +97,7 @@ struct tcpOptions {
 	PERSISTENT_FUNCTION readyCallback;
 	PERSISTENT_FUNCTION messageCallback;
 	PERSISTENT_FUNCTION closeCallback;
+	PERSISTENT_FUNCTION errorCallback;
 };
 
 
@@ -139,6 +143,7 @@ public:
 //	static Persistent<Function> constructor;
 	PERSISTENT_FUNCTION messageCallback;
 	PERSISTENT_FUNCTION closeCallback;
+	PERSISTENT_FUNCTION errorCallback;
 	struct networkEvent *eventMessage;
 
 public:
@@ -183,6 +188,7 @@ public:
 	PERSISTENT_FUNCTION connectCallback;
 	PERSISTENT_FUNCTION readyCallback;
 	PERSISTENT_FUNCTION closeCallback;
+	PERSISTENT_FUNCTION errorCallback;
 	struct networkEvent *eventMessage; // probably use the same queue?
 
 public:
@@ -350,6 +356,8 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->broadcastString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "broadcast" ) );
 		check->messageString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "message" ) );
 		check->closeString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "close" ) );
+		check->errorString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "error" ) );
+		check->timeoutString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "timeout" ) );
 
 		check->familyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "family" ) );
 		check->v4String = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "IPv4" ) );
@@ -387,8 +395,12 @@ void getOpenPorts(  Local<Name> property, const PropertyCallbackInfo<Value>& arg
 	SackNetstat_GetListeners( &list );
 	DATA_FORALL( list, idx, struct listener_pid_info*, info ){
 		Local<Object> o = Object::New( isolate );
-		SET_READONLY( o, "port", Number::New( isolate, info->port ) );
-		SET_READONLY( o, "pid", Number::New( isolate, info->pid ) );
+		INDEX idx2;
+		uint32_t* pid;
+		DATA_FORALL( info->pdlPids, idx2, uint32_t*, pid ) {
+			SET_READONLY( o, "port", Number::New( isolate, info->port ) );
+			SET_READONLY( o, "pid", Number::New( isolate, pid[0] ) );
+		}
 		SETN( result, idx, o );
 	}
 	DeleteDataList( &list );
@@ -497,7 +509,7 @@ static void udpAsyncMsg_( Isolate *isolate, Local<Context> context, udpObject*ob
 				argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen );
 					ab = ArrayBuffer::New( isolate, bs );
 #else
 					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
@@ -779,6 +791,8 @@ void udpObject::on( const FunctionCallbackInfo<Value>& args ) {
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
+			if (cb->IsFunction())
+				obj->errorCallback.Reset(isolate, cb);
 		}
 		else if( StrCmp( *event, "message" ) == 0 ) {
 			if( cb->IsFunction() )
@@ -820,22 +834,10 @@ void udpObject::send( const FunctionCallbackInfo<Value>& args ) {
 			return;
 		}
 	}
-	if( args[0]->IsArrayBuffer() ) {
-		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
-#if ( NODE_MAJOR_VERSION >= 14 )
-		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
-#else
-		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
-	}
-	else if( args[0]->IsUint8Array() ) {
-		Local<Uint8Array> body = args[0].As<Uint8Array>();
-		Local<ArrayBuffer> ab = body->Buffer();
-#if ( NODE_MAJOR_VERSION >= 14 )
-		SendUDPEx( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength(), dest );
-#else
-		SendUDPEx( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
+	char* sendData;
+	size_t sendLen;
+	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
+		SendUDPEx( obj->pc, sendData, sendLen, dest );
 	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 		SendUDPEx( obj->pc, *buf, buf.length(), dest );
@@ -907,7 +909,7 @@ static void tcpAsyncMsg_( Isolate *isolate, Local<Context> context, tcpObject * 
 					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 0, NULL );
 				break;
 			case NET_EVENT_CONNECT_ERROR:
-				cb = Local<Function>::New( isolate, obj->connectCallback );
+				cb = Local<Function>::New( isolate, obj->errorCallback );
 				argv[0] = Integer::New( isolate, eventMessage->error );
 				if( !cb.IsEmpty() )
 					cb->Call( context, eventMessage->_this.tcp->_this.Get( isolate ), 1, argv );
@@ -916,7 +918,7 @@ static void tcpAsyncMsg_( Isolate *isolate, Local<Context> context, tcpObject * 
 				//argv[1] = ::getAddressBySA( isolate, eventMessage->from );
 				if( !obj->readStrings ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-					std::shared_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen, releaseBufferBackingStore, NULL );
+					std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( (POINTER)eventMessage->buf, eventMessage->buflen );
 					ab = ArrayBuffer::New( isolate, bs );
 #else
 					ab = ArrayBuffer::New( isolate, (POINTER)eventMessage->buf, eventMessage->buflen );
@@ -1021,6 +1023,11 @@ void TCP_Connect( uintptr_t psv, int error ) {
 	else {
 		(*pevt).eventType = NET_EVENT_CONNECT_ERROR;
 		(*pevt).error = error;
+		// netlib closes the client itself after this callback returns (with the
+		// close notice blocked), so this handle is stale by the time the error
+		// reaches JS.  Forget it now: a close() from the error handler then does
+		// nothing instead of RemoveClient() on a recycled client.
+		obj->pc = NULL;
 	}
 	(*pevt)._this.tcp = obj;
 	(*pevt).waiter = NULL;
@@ -1137,7 +1144,7 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 	}
 	NetworkWait( NULL, 256, 2 );
 	SOCKADDR *addr = opts->address?CreateSockAddress( opts->address, opts->port ):NULL;
-	SOCKADDR *toAddr = opts->toAddress?CreateSockAddress( opts->toAddress, opts->port ):NULL;
+	SOCKADDR *toAddr = opts->toAddress?CreateSockAddress( opts->toAddress, opts->toPort ):NULL;
 
 	this->readStrings = opts->readStrings;
 	this->allowSSLfallback = opts->allowSSLfallback;
@@ -1160,6 +1167,8 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		this->readyCallback.Reset(isolate, opts->readyCallback );
 	if( !opts->closeCallback.IsEmpty() )
 		this->closeCallback.Reset(isolate, opts->closeCallback );
+	if( !opts->errorCallback.IsEmpty() )
+		this->errorCallback.Reset(isolate, opts->errorCallback );
 
 	this->ssl = opts->ssl;
 
@@ -1168,17 +1177,20 @@ tcpObject::tcpObject( struct tcpOptions *opts ) {
 		                             , TCP_Close, (uintptr_t)this
 		                             , TCP_Write, (uintptr_t)this
 		                             , TCP_Connect, (uintptr_t)this
-		                             , ((opts->delayConnect || opts->ssl)? OPEN_TCP_FLAG_DELAY_CONNECT:0)
+		                             , ((opts->delayConnect || opts->ssl || opts->connectTimeout)? OPEN_TCP_FLAG_DELAY_CONNECT:0)
 		                               | (( opts->ssl ) ? OPEN_TCP_FLAG_SSL_CLIENT : 0 )
 		                               DBG_SRC );
 	if( pc ) {
+		if( opts->connectTimeout )
+			SetTCPConnectTimeout( pc, opts->connectTimeout );
 		if( opts->ssl ) {
 			ssl_BeginClientSession( pc
 				, opts->key, opts->key_len
 				, opts->pass, opts->pass_len
 				, opts->cert_chain, opts->cert_chain_len );
-			NetworkConnectTCP( pc );
 		}
+		if( opts->ssl || opts->connectTimeout )
+			NetworkConnectTCP( pc );
 	} else {
 		pc = CPPOpenTCPListenerAddr_v2d( addr, TCP_Notify, (uintptr_t)this, TRUE DBG_SRC );
 
@@ -1340,6 +1352,10 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 					tcpOpts.toPort = (int)GETV( opts, optName )->ToInteger( isolate->GetCurrentContext() ).ToLocalChecked()->Value();
 				} else
 					tcpOpts.toPort = 0;
+				// ---- get asynchronous connect timeout
+				if( opts->Has( context, optName = strings->timeoutString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.connectTimeout = (uint32_t)GETV( opts, optName )->Uint32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
+				}
 				// ---- get toAddress
 				if( opts->Has( context, optName = strings->toAddressString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.toAddress = StrDup( *String::Utf8Value( isolate, GETV( opts, optName )->ToString( isolate->GetCurrentContext() ).ToLocalChecked() ) );
@@ -1369,6 +1385,10 @@ void tcpObject::New( const FunctionCallbackInfo<Value>& args ) {
 				// ---- get close callback
 				if( opts->Has( context, optName = strings->closeString->Get( isolate ) ).ToChecked() ) {
 					tcpOpts.closeCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
+				}
+				// ---- get connection error callback
+				if( opts->Has( context, optName = strings->errorString->Get( isolate ) ).ToChecked() ) {
+					tcpOpts.errorCallback.Reset( isolate, Local<Function>::Cast( GETV( opts, optName ) ) );
 				}
 				// ---- get read strings setting
 				if( opts->Has( context, optName = strings->readStringsString->Get( isolate ) ).ToChecked() ) {
@@ -1501,6 +1521,8 @@ void tcpObject::on( const FunctionCallbackInfo<Value>& args ) {
 		Local<Function> cb = Local<Function>::Cast( args[1] );
 		if( StrCmp( *event, "error" ) == 0 ) {
 			// not sure how to get this... so many errors so few callbacks
+			if (cb->IsFunction())
+				obj->errorCallback.Reset(isolate, cb);
 		}
 		else if( StrCmp( *event, "message" ) == 0 ) {
 			if( cb->IsFunction() )
@@ -1548,37 +1570,13 @@ void tcpObject::send( const FunctionCallbackInfo<Value>& args ) {
 		isolate->ThrowException( Exception::Error( String::NewFromUtf8( isolate, TranslateText( "Socket is not open." ), v8::NewStringType::kNormal ).ToLocalChecked() ) );
 		return;
 	}
-	if( args[0]->IsArrayBuffer() ) {
-		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[0] );
+	char* sendData;
+	size_t sendLen;
+	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
 		if( obj->ssl ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			ssl_Send( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			ssl_Send( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
+			ssl_Send( obj->pc, sendData, sendLen );
 		} else {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
-		}
-	}
-	else if( args[0]->IsUint8Array() ) {
-		Local<Uint8Array> body = args[0].As<Uint8Array>();
-		Local<ArrayBuffer> ab = body->Buffer();
-		if( obj->ssl ) {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			ssl_Send( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			ssl_Send( obj->pc, ab->GetContents().Data(), ab->ByteLength(), dest );
-#endif
-		} else {
-#if ( NODE_MAJOR_VERSION >= 14 )
-			SendTCP( obj->pc, ab->GetBackingStore()->Data(), ab->ByteLength() );
-#else
-			SendTCP( obj->pc, ab->GetContents().Data(), ab->ByteLength() );
-#endif
+			SendTCP( obj->pc, sendData, sendLen );
 		}
 	} else if( args[0]->IsString() ) {
 		String::Utf8Value buf( isolate,  args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );

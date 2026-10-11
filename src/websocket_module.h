@@ -117,6 +117,15 @@ public:
 	*/
 	static void disableSSL( const FunctionCallbackInfo<Value>& args );
 
+	/*
+	* in low error, reject the connection outright: no fallback, and the socket is
+	* closed as a failed handshake.  This is the same outcome as returning without
+	* calling anything, but it says so immediately instead of leaving the network
+	* thread parked until the callback returns - which is what lets an app install
+	* a firewall rule for the peer and then drop the connection deterministically.
+	*/
+	static void rejectSSL( const FunctionCallbackInfo<Value>& args );
+
 	// this layer doesn't get 'messages' - this layer handles handshake
 	//static void onMessage( const v8::FunctionCallbackInfo<Value>& args );
 

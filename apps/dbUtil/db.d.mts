@@ -5,6 +5,10 @@ declare class Db {
     MySQL: typeof MySQL;
     Sqlite: typeof Sqlite;
     getSqlDateTime(date: any): string;
+    static isSqlDefaultExpression(def: any): boolean;
+    isSqlDefaultExpression(def: any): boolean;
+    static sqlDefaultValue(def: any): any;
+    sqlDefaultValue(def: any): any;
 }
 declare class MySQL {
     static loadSchema(db: any, table: any): Table;

@@ -5,6 +5,7 @@ import {Events} from "/events/events.mjs"
 import {System} from "./system.mjs"
 
 
+
 export const config = {
 	local : { tasks: {},
 			refresh : ()=>{},
@@ -15,12 +16,61 @@ export const config = {
 }
 
 
+/*
+  The single state a row shows.  `running` alone could not say whether a task was
+  on its way up or on its way down, so a task waiting on a dependency looked
+  simply "Stopped" - indistinguishable from one nobody had asked to run.
+*/
+export function taskState( task ) {
+	if( !task ) return "stopped";
+	if( task.failed ) return "failed";
+	if( task.stopping ) return "stopping";
+	// `running` only says the child exists.  A manager that reports `ready`
+	// keeps `starting` set while the readiness probe (readyPort/readyDelay)
+	// is still pending, and the row stays "Starting" until it clears - showing
+	// "Running" at spawn hid the whole probe.  An older manager never sends
+	// `ready`, so running alone still means running there.
+	if( task.running ) return ( task.starting && task.ready === false ) ? "starting" : "running";
+	if( task.waiting ) return "waiting";
+	if( task.starting ) return "starting";
+	return "stopped";
+}
+
+function applyStatus( task, msg ) {
+	if( msg.failed ) task.running = 0;
+	else task.running = msg.running;
+	task.ended = msg.ended;
+	task.started = msg.started;
+	// only present on newer managers; leaving them undefined just means the row
+	// falls back to running/stopped as before.
+	task.starting = msg.starting;
+	task.waiting  = msg.waiting;
+	task.stopping = msg.stopping;
+	task.failed   = msg.failed;
+	if( "ready" in msg ) task.ready = msg.ready;
+	// a task with no program (see Task.isProbe); shows as Starting while it
+	// probes and Running once its port answers, same as a spawned task.
+	if( "probe" in msg ) task.probe = msg.probe;
+	task.state = taskState( task );
+}
+
 export class MySystem extends System {
 	constructor(msg) {
 		super( {address:""}, msg.id, msg.port, msg.system, msg.tasks )
+		this.disallowUpstreamTaskManagment = !!msg.disallowUpstreamTaskManagment;
+		// the rows come with their flags but no `state`; the master's own list
+		// computes it as it is loaded, and a system that connects later (or is in
+		// the first `tasks` message) has to get the same, or its status column
+		// stays blank until each task next changes
+		if( this.tasks ) for( const task of this.tasks ) task.state = taskState( task );
 	}
 
 	addTask( id, task ) {
+		// keep the id->system map in step the way AddSystem does for the initial
+		// list; getTaskInfo() addresses the owning system through it, so without
+		// this a task added after load was asked for from the master instead.
+		config.local.tasks[id] = task;
+		config.local.systemMap[id] = this;
 		super.addTask( id, task );
 	}
 	updateTasks( tasks ) {
@@ -31,6 +81,8 @@ export class MySystem extends System {
 export class Protocol extends Events {
 	static displayRequests = [];
 	static taskRequests = [];
+	static pluginRequests = [];
+	static pathRequests = [];
 	ws = null;
 
 	stopTask( group, task ) {
@@ -48,8 +100,6 @@ export class Protocol extends Events {
 			this.ws.send( JSOX.stringify( {op:"start", system:system.id, id:task.id } ) );
 		else			
 			this.ws.send( JSOX.stringify( {op:"start", id:task.id } ) );
-	}
-	editTask( ) {
 	}
 	restartTask( group, task ) {
 		const system = config.local.systems.find( system=>system === group );
@@ -90,29 +140,92 @@ export class Protocol extends Events {
 		return p;
 	}
 
-	createTask( task ) {
+	createTask( group, task ) {
 		// event comes back as an addTask
-		this.ws.send( JSOX.stringify( {op:"createTask",task} ) );
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"createTask", system:system.id, task} ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"createTask", task} ) );
 	}
 
-	updateTask( id, task ) {
+	updateTask( group, id, task ) {
 		// event comes back as updateTask
-		this.ws.send( JSOX.stringify( {op:"updateTask",id, task} ) );
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"updateTask", system:system.id, id, task} ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"updateTask", id, task} ) );
 	}
 
-	deleteTask( id ) {
+	// resolves with { plugins, settings } for that service manager
+	async getPlugins( group ) {
+		const system = config.local.systems.find( system=>system === group );
+		const id = system ? system.id : config.local.system;
+		const p = new Promise( (res,rej)=>{
+			Protocol.pluginRequests.push( { id, res } );
+			this.ws.send( JSOX.stringify( { op:"getPlugins", system:id } ) );
+		} );
+		return p;
+	}
+
+	// ask a service manager what a task's bin/altbin/work would resolve to;
+	// resolves with { bin, altbin, work } of { path, exists } (or null if unset)
+	resolvePaths( group, task ) {
+		const system = config.local.systems.find( system=>system === group );
+		const id = "paths-" + Math.random().toString( 36 ).slice( 2 );
+		return new Promise( (res)=>{
+			Protocol.pathRequests.push( { id, res } );
+			this.ws.send( JSOX.stringify( { op:"resolvePaths", system:system ? system.id : config.local.system, id, task } ) );
+		} );
+	}
+
+	setPlugins( group, plugins, settings ) {
+		const system = config.local.systems.find( system=>system === group );
+		const id = system ? system.id : config.local.system;
+		this.ws.send( JSOX.stringify( { op:"setPlugins", system:id, plugins, settings } ) );
+	}
+
+	// stop the service manager itself (and everything it launched)
+	shutdownLauncher( group ) {
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"shutdown", system:system.id } ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"shutdown" } ) );
+	}
+
+	deleteTask( group, task ) {
 		// delete comes back as deleteTask
-		this.ws.send( `{op:deleteTask,id:"${id}"}` );
+		if( !task ) return;
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"deleteTask", system:system.id, id:task.id } ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"deleteTask", id:task.id } ) );
+	}
+
+	// The login token this page holds (from /internal/requestService.js); its
+	// svc.key is presented to the server as `auth`.  A key is one-shot on the
+	// server side, so a login that happens again replaces it and is re-sent.
+	#token = null;
+	login( token ) {
+		this.#token = token;
+		this.#sendAuth();
+	}
+	#sendAuth() {
+		const key = this.#token && this.#token.svc && this.#token.svc.key;
+		if( !key || !this.ws || this.ws.readyState !== 1 ) return;
+		this.ws.send( JSOX.stringify( { op:"auth", uid: key } ) );
 	}
 
  	connect( to ) {
 		to = to || location.protocol.replace( "http", "ws" )+"//"+location.host+"/";
 		const ws = new WebSocket( to, "tasks");
 		config.local.ws = this.ws = ws;
-		ws.onopen = function() {
-		// Web Socket is connected. You can send data by send() method.
-		//ws.send("message to send"); 
-		//ws.send( JSON.stringify( { MsgID: "flashboard" } ) );
+		ws.onopen = ()=>{
+			// a key minted while the socket was down is presented now
+			this.#sendAuth();
 		};
 		ws.onmessage = function (evt) { 
 				const received_msg = evt.data; 
@@ -138,6 +251,7 @@ export class Protocol extends Events {
 				config.local.system = msg.system;
 				config.local.taskData = msg.tasks;
 				for( let task of msg.tasks ) {
+					task.state = taskState( task );
 					protocol.on( "addTask",  [task.id,task] );
 					config.local.tasks[task.id] = task;
 					config.local.systemMap[task.id] = {id:msg.system,tasks:msg.tasks};
@@ -147,6 +261,7 @@ export class Protocol extends Events {
 
 				break;
 			case "addTask":
+				if( msg.task ) msg.task.state = taskState( msg.task );
 				if( msg.system && msg.system !== config.local.system) {
 					for( let system of config.local.systems ) {
 						if( system.id === msg.system ) {
@@ -165,6 +280,16 @@ export class Protocol extends Events {
 				protocol.on( "updateTask", [msg.id, msg.task] );
 				break;
 			case "deleteTask":
+				// route it the way addTask is routed - a remote task lives in
+				// that system's own list and grid, not in the master's.
+				if( msg.system && msg.system !== config.local.system ) {
+					for( let system of config.local.systems ) {
+						if( system.id === msg.system ) {
+							system.deleteTask( msg.id );
+							break;
+						}
+					}
+				}
 				protocol.on( "deleteTask", msg.id );
 				break;
 			case "extern.tasks":
@@ -188,7 +313,7 @@ export class Protocol extends Events {
 			case "backlog":
 				{
 					const log = config.local.logs[msg.id];
-					protocol.on( "insertBackLog", [log,msg.backlog]);
+					protocol.on( "insertBackLog", [log, msg.backlog] );
 				}
 				break;
 			case "log":
@@ -220,22 +345,20 @@ export class Protocol extends Events {
 					const system = config.local.systemMap[msg.id];
 					if( task && !system )
 					{
-						if( msg.failed ) task.running = 0;
-						else task.running = msg.running;
-						task.ended = msg.ended;
-						task.started = msg.started;
+						applyStatus( task, msg );
 						config.local.refresh();
 						//console.log( "Replacing status?  need to update statuses" );
 						return;
-					} else {
+					} else if( system ) {
+						// no system means the task is gone - stopping a task as
+						// part of deleting it reports its status after the
+						// delete was broadcast, so this arrives for a row that
+						// has already been dropped.
 						{
 							let task = null;
 							for( task of system.tasks ) {
 								if( task.id === msg.id ) {
-									if( msg.failed ) task.running = false;
-									else task.running = msg.running;
-									task.ended = msg.ended;
-									task.started = msg.started;
+									applyStatus( task, msg );
 									config.local.refresh();
 									break;
 								}
@@ -252,6 +375,25 @@ export class Protocol extends Events {
 					request( msg.displays );
 				}
 				break;
+			case "plugins":
+				{
+					// a broadcast after someone saved has no request waiting
+					for( let r = 0; r < Protocol.pluginRequests.length; r++ ) {
+						const request = Protocol.pluginRequests[r];
+						if( request.id === msg.system ) {
+							request.res( { plugins: msg.plugins || [], settings: msg.settings || {} } );
+							Protocol.pluginRequests.splice( r, 1 );
+							break;
+						}
+					}
+				}
+				break;
+			case "resolvedPaths":
+				{
+					const at = Protocol.pathRequests.findIndex( request=>request.id === msg.id );
+					if( at >= 0 ) Protocol.pathRequests.splice( at, 1 )[0].res( msg.paths || {} );
+				}
+				break;
 			case "taskInfo":
 				{
 					for( let r = 0; r < Protocol.taskRequests.length; r++ ) {
@@ -264,6 +406,15 @@ export class Protocol extends Events {
 					}
 				}
 				break;
+			case "login":
+				protocol.on( "login", null )
+
+				break;
+			case "auth":
+				// the server's answer to the key sent in connect(): whether this
+				// socket may manage things now
+				protocol.on( "auth", msg );
+				break;
 			}
 		}
 	}
@@ -271,3 +422,27 @@ export class Protocol extends Events {
 
 export const protocol = new Protocol();
 export default protocol;
+
+// Login.  The page does not know which provider its server has - the sideplayr
+// employee login, the d3x0r user database, or none - and it should not: the
+// server's login plugin serves /internal/requestService.js, a module with one
+// call, requestService( domain, service, cb ), that puts its own form over the
+// page and hands cb a token.  Domain and service are null here so the served
+// module fills in its own defaults; a page that wants a specific service names
+// it.  No plugin means a 404, which is the read-only "No User Server" page.
+//
+// The token's `svc.key` is what this page's own server can turn into a person;
+// see Protocol.connect(), which sends it as `auth` on the tasks socket.
+await import( "/internal/requestService.js" ).then( (module)=>{
+	module.requestService( null, null, (token)=>{
+		protocol.login( token );
+		return protocol.on( "login", token );
+	} );
+	return module;
+} ).catch( (err)=>{
+	console.log( "No login provider on this server (no /internal/requestService.js):", err.message || err );
+	setTimeout( ()=>{
+		protocol.on( "login", "No User Server" );
+	}, 25 );
+} );
+
