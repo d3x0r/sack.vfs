@@ -1,8 +1,3 @@
-set_property(GLOBAL PROPERTY USE_FOLDERS On)
-#cmake_minimum_required(VERSION 3.20)
-# limited by ubuntu 10 to 3.10
-cmake_minimum_required(VERSION 3.10)
-
 
 project (sack_gui)
 
@@ -303,12 +298,26 @@ if( INCLUDE_DAWN )
 endif()
 
 if( INCLUDE_OPENXR )
-	set( OPENXR_SOURCES
-		src/gui/openxr/xr_module.h
-		src/gui/openxr/xr_module.cc
-		src/gui/openxr/xr_session.h
-		src/gui/openxr/xr_session.cc
-	)
+	if( WIN32 )
+		set( OPENXR_SOURCES
+			src/gui/openxr/xr_module.h
+			src/gui/openxr/xr_module.cc
+			src/gui/openxr/xr_session.h
+			src/gui/openxr/xr_session.cc
+		)
+	else()
+		# Only the *session* is D3D12-bound. xr_module.cc deliberately compares
+		# extension names as strings rather than including openxr_platform.h, so
+		# the probe is platform-neutral and still reports the runtime here — it
+		# is xr_session.cc that cannot build, and xr_unsupported.cc supplies the
+		# two symbols it owes xr_module.cc. See CMakeLists.openxr.txt.
+		set( OPENXR_SOURCES
+			src/gui/openxr/xr_module.h
+			src/gui/openxr/xr_module.cc
+			src/gui/openxr/xr_session.h
+			src/gui/openxr/xr_unsupported.cc
+		)
+	endif()
 	source_group( "Source Files\\GUI\\openxr" FILES ${OPENXR_SOURCES} )
 	list( APPEND GUI_SOURCES ${OPENXR_SOURCES} )
 endif()

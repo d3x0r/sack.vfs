@@ -81,7 +81,18 @@ if( INCLUDE_OPENXR )
 	if( WIN32 )
 		set( MOREDEFS "${MOREDEFS};INCLUDE_OPENXR;XR_USE_PLATFORM_WIN32;XR_USE_GRAPHICS_API_D3D12" )
 	else( WIN32 )
-		set( MOREDEFS "${MOREDEFS};INCLUDE_OPENXR;XR_USE_GRAPHICS_API_VULKAN" )
+		# The session binding is D3D12-only — see src/gui/openxr/xr_session.cc —
+		# and so is the probe, because XR_KHR_D3D12_ENABLE_EXTENSION_NAME itself
+		# only exists when XR_USE_GRAPHICS_API_D3D12 is defined. Neither source
+		# compiles here, so xr_unsupported.cc is built in their place.
+		#
+		# INCLUDE_OPENXR stays defined deliberately: it is what makes
+		# vfs_module.cc call InitOpenXR, so sack.xr exists and can explain itself
+		# rather than being undefined and failing as "cannot read properties of
+		# undefined". XR_USE_GRAPHICS_API_VULKAN is kept as the marker for where
+		# a real Linux binding would go — Dawn's vulkan/external_memory does
+		# implement OpaqueFD, which is the viable path there.
+		set( MOREDEFS "${MOREDEFS};INCLUDE_OPENXR;XR_USE_GRAPHICS_API_VULKAN;XR_BINDING_UNSUPPORTED" )
 	endif( WIN32 )
 
 	# Static loader pulls in registry + COM lookups for runtime discovery.

@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.21)
 # limited by ubuntu 18 to 3.10
 #cmake_minimum_required(VERSION 3.10)
 
+set_property(GLOBAL PROPERTY USE_FOLDERS On)
+
 project( UnusedProjectName )
 
 ADD_DEFINITIONS( -DNODE_GYP_MODULE_NAME=sack_vfs )

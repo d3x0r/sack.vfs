@@ -28,18 +28,59 @@ else()
     set( USE_CONFIGURATION "${CMAKE_BUILD_TYPE}" )
     set( USE_BINDIR <BINARY_DIR>_tmp/${CMAKE_BUILD_TYPE} )
 
-	set( FORCE_CLANG 
+	set( FORCE_CLANG
 		-DCMAKE_C_COMPILER=clang
 		-DCMAKE_CXX_COMPILER=clang++ )
 
 
 endif()
 
+# Which Dawn backends exist is a platform fact, not a preference, and it has to
+# be stated explicitly in both directions.
+#
+# Dawn derives sensible per-platform defaults for these, but option() honours an
+# explicitly passed -D cache value over its default — the same behaviour that
+# makes TINT_BUILD_HLSL_WRITER below necessary. So passing D3D=ON unconditionally
+# does not get politely ignored off-Windows: it forces Dawn to compile the D3D11
+# and D3D12 backends against d3d12.h on a machine that has no such header.
+if( WIN32 )
+	set( DAWN_PLATFORM_BACKENDS
+		-DDAWN_ENABLE_D3D11=ON         # Direct3D 11 backend
+		-DDAWN_ENABLE_D3D12=ON         # Direct3D 12 backend — the XR interop path
+		# Dawn defaults this to ${DAWN_ENABLE_D3D12}, but option() honours an
+		# existing cache entry, so a tree first configured with D3D12 OFF keeps
+		# the HLSL writer OFF forever and the D3D12 backend fails to build.
+		# Pass it explicitly so a clean build (or another machine) works.
+		-DTINT_BUILD_HLSL_WRITER=ON )
+else()
+	set( DAWN_PLATFORM_BACKENDS
+		-DDAWN_ENABLE_D3D11=OFF
+		-DDAWN_ENABLE_D3D12=OFF )
+endif()
+
 	ExternalProject_Add( Dawn_External
-    SOURCE_DIR      ${CMAKE_BINARY_DIR}/Dawn_External-prefix/src/Dawn_External
-#    GIT_REPOSITORY  "https://github.com/google/dawn"
-#    GIT_TAG         "v20260423.175430"
-#    GIT_SHALLOW     TRUE
+#    SOURCE_DIR      ${CMAKE_BINARY_DIR}/Dawn_External-prefix/src/Dawn_External
+    GIT_REPOSITORY  "https://github.com/google/dawn"
+    GIT_TAG         "v20260423.175430"
+    GIT_SHALLOW     TRUE
+    # ExternalProject runs `git submodule update --init --recursive` by default.
+    # Dawn declares 61 submodules — Chromium infrastructure repos among them
+    # (build, buildtools, testing, catapult, depot_tools) — and recursing into
+    # those reaches repositories that require a Google-internal account, which
+    # is where the chrome-internal credential prompt comes from.
+    #
+    # None of it is needed: DAWN_FETCH_DEPENDENCIES=ON below runs Dawn's own
+    # tools/fetch_dawn_dependencies.py, which pulls the 19-dependency minimal
+    # set a CMake build actually uses from public chromium.googlesource.com.
+    # The submodules are redundant here, and enormous.
+    #
+    # An empty GIT_SUBMODULES means "none" only under policy CMP0097 (added in
+    # 3.16); under OLD it means "all", i.e. the exact opposite. The top-level
+    # CMakeLists sets 3.21 so this is NEW — but note that a
+    # cmake_minimum_required() in an *included* file resets policies for the
+    # rest of the scope, so keep those out of CMakeLists.gui.txt or this line
+    # quietly stops working.
+    GIT_SUBMODULES  ""
 		BINARY_DIR ${CMAKE_BINARY_DIR}/Dawn
 		INSTALL_DIR ${MY_INSTALL_DIR}
 		BUILD_BYPRODUCTS "${DAWN_SHARED_BYPRODUCT}"
@@ -56,13 +97,7 @@ endif()
         	-DDAWN_BUILD_SAMPLES=OFF    # Disables example binaries (GLFW apps, sample code)
 	        -DTINT_ENABLE_INSTALL=OFF   # Disables installing the Tint shader translator (not needed for runtime)
         	-DDAWN_ENABLE_VULKAN=ON        # Force compiles the Vulkan backend layer
-	        -DDAWN_ENABLE_D3D11=ON         # Direct3D 11 backend
-        	-DDAWN_ENABLE_D3D12=ON         # Direct3D 12 backend — the XR interop path
-	        # Dawn defaults this to ${DAWN_ENABLE_D3D12}, but option() honours an
-	        # existing cache entry, so a tree first configured with D3D12 OFF keeps
-	        # the HLSL writer OFF forever and the D3D12 backend fails to build.
-	        # Pass it explicitly so a clean build (or another machine) works.
-	        -DTINT_BUILD_HLSL_WRITER=ON
+	        ${DAWN_PLATFORM_BACKENDS}      # D3D11/D3D12 + HLSL writer on Windows; off elsewhere
 	        # Dawn builds a C++20 module target (dawncpp_module) whenever its own
 	        # probe in src/cmake/DawnCompilerChecks.cmake says the toolchain can
 	        # handle modules. That probe accepts "Visual Studio" generators and
