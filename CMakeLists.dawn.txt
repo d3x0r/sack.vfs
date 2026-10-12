@@ -58,29 +58,53 @@ else()
 		-DDAWN_ENABLE_D3D12=OFF )
 endif()
 
+# Where Dawn comes from is a property of the machine, not of the project, so it
+# is decided here rather than by hand-editing which line is commented out. That
+# toggle lived in tracked content and so flipped back and forth with every sync
+# between Windows and Linux — and worse, a sync that fast-forwards applies the
+# other machine's choice with no conflict to warn you.
+#
+# An existing checkout always wins, because that is where local Dawn patches
+# live. Right now that means Windows: the D3D12 transparency patch
+# (SwapChainD3D.cpp + DirectComposition) is not upstream and has no upstream
+# equivalent, so that build must keep using its own tree.
+#
+# Anywhere else, clone. The Vulkan transparency fix landed upstream as 77e3a0e4a
+# on 2026-09-14 and is contained in the tag below, so a Linux build needs no
+# patched fork at all — it uses the Vulkan backend and gets it from stock Dawn.
+set( DAWN_LOCAL_SOURCE "${CMAKE_BINARY_DIR}/Dawn_External-prefix/src/Dawn_External" )
+if( EXISTS "${DAWN_LOCAL_SOURCE}/CMakeLists.txt" )
+	message( STATUS "Dawn: using existing checkout at ${DAWN_LOCAL_SOURCE}" )
+	set( DAWN_SOURCE_ARGS SOURCE_DIR "${DAWN_LOCAL_SOURCE}" )
+else()
+	message( STATUS "Dawn: no local checkout, cloning v20261009.190412" )
+	set( DAWN_SOURCE_ARGS
+		GIT_REPOSITORY "https://github.com/google/dawn"
+		GIT_TAG        "v20261009.190412"
+		GIT_SHALLOW    TRUE
+		# ExternalProject runs `git submodule update --init --recursive` by
+		# default. Dawn declares 61 submodules — Chromium infrastructure repos
+		# among them (build, buildtools, testing, catapult, depot_tools) — and
+		# recursing into those reaches repositories that require a
+		# Google-internal account, which is where the chrome-internal credential
+		# prompt comes from.
+		#
+		# None of it is needed: DAWN_FETCH_DEPENDENCIES=ON below runs Dawn's own
+		# tools/fetch_dawn_dependencies.py, which pulls the 19-dependency minimal
+		# set a CMake build actually uses from public chromium.googlesource.com.
+		# The submodules are redundant here, and enormous.
+		#
+		# An empty GIT_SUBMODULES means "none" only under policy CMP0097 (added
+		# in 3.16); under OLD it means "all", i.e. the exact opposite. The
+		# top-level CMakeLists sets 3.21 so this is NEW — but note that a
+		# cmake_minimum_required() in an *included* file resets policies for the
+		# rest of the scope, so keep those out of CMakeLists.gui.txt or this
+		# line quietly stops working.
+		GIT_SUBMODULES "" )
+endif()
+
 	ExternalProject_Add( Dawn_External
-#    SOURCE_DIR      ${CMAKE_BINARY_DIR}/Dawn_External-prefix/src/Dawn_External
-    GIT_REPOSITORY  "https://github.com/google/dawn"
-    GIT_TAG         "v20260423.175430"
-    GIT_SHALLOW     TRUE
-    # ExternalProject runs `git submodule update --init --recursive` by default.
-    # Dawn declares 61 submodules — Chromium infrastructure repos among them
-    # (build, buildtools, testing, catapult, depot_tools) — and recursing into
-    # those reaches repositories that require a Google-internal account, which
-    # is where the chrome-internal credential prompt comes from.
-    #
-    # None of it is needed: DAWN_FETCH_DEPENDENCIES=ON below runs Dawn's own
-    # tools/fetch_dawn_dependencies.py, which pulls the 19-dependency minimal
-    # set a CMake build actually uses from public chromium.googlesource.com.
-    # The submodules are redundant here, and enormous.
-    #
-    # An empty GIT_SUBMODULES means "none" only under policy CMP0097 (added in
-    # 3.16); under OLD it means "all", i.e. the exact opposite. The top-level
-    # CMakeLists sets 3.21 so this is NEW — but note that a
-    # cmake_minimum_required() in an *included* file resets policies for the
-    # rest of the scope, so keep those out of CMakeLists.gui.txt or this line
-    # quietly stops working.
-    GIT_SUBMODULES  ""
+	${DAWN_SOURCE_ARGS}
 		BINARY_DIR ${CMAKE_BINARY_DIR}/Dawn
 		INSTALL_DIR ${MY_INSTALL_DIR}
 		BUILD_BYPRODUCTS "${DAWN_SHARED_BYPRODUCT}"
