@@ -44,6 +44,16 @@ console.log( `D3D12     : ${info.d3d12 ? "yes" : "NO — the D3D12 interop plan 
 console.log( `D3D11     : ${info.d3d11 ? "yes" : "no"}` );
 console.log( `extensions: ${info.extensions.length}` );
 
+// AR readiness. ALPHA_BLEND in blendModes is the extension-free route to
+// passthrough; XR_FB_passthrough is Meta's richer layer-based one. Neither is
+// available through SteamVR — passthrough needs the Meta runtime, since only it
+// has the cameras.
+const passthroughExts = info.extensions.filter( e => /passthrough/i.test( e ) );
+console.log( `blendModes: ${info.blendModes ? info.blendModes.join( ", " ) : "n/a (no system)"}` );
+console.log( `AR         : ${info.blendModes?.includes( "ALPHA_BLEND" ) ? "ALPHA_BLEND offered" : "no ALPHA_BLEND — VR only via this runtime"}` );
+if( passthroughExts.length )
+	console.log( `passthrough: ${passthroughExts.join( ", " )}` );
+
 if( info.system ) {
 	const s = info.system;
 	console.log( `system    : ${s.name} (vendor 0x${s.vendorId.toString(16)})` );

@@ -2,7 +2,6 @@
 import {sack} from "@d3x0r/sack-gui"
 
 
-
 export let r = null;
 
 const document = {
@@ -46,7 +45,7 @@ export  class threeSackRenderer extends sack.Renderer {
         #device = null;
 	constructor( opts ) {
 		opts = opts || {};
-		console.log( "This window should be sized 800 600, and WS_EX_NOREDIRECTIONBITMAP", sack.Renderer.attributes.DISPLAY_ATTRIBUTE_NO_REDIRECT.toString(16) );
+		console.log( "This window should be sized", opts.width||800, opts.height||800, "and WS_EX_NOREDIRECTIONBITMAP", sack.Renderer.attributes.DISPLAY_ATTRIBUTE_NO_REDIRECT.toString(16) );
 		const displayMonitor = sack.Task.getDisplays().device.find( d=>d.primary );
 		console.log( displayMonitor );
 		super( 'hello', displayMonitor.width/2 - (opts.width||800)/2
@@ -100,9 +99,16 @@ export  class threeSackRenderer extends sack.Renderer {
 				//this.setSurfaceDepthFormat('depth24plus') ;
 	}
 	get configured() {
+		// XR is VR, and that is only available through the D3D12 interface bindings
+		// on windows at this time.
 		return this.#configured || 
-			sack.gpu.requestAdapter().then( (adapter)=>{
-				return adapter.requestDevice().then( (device)=>{
+			sack.gpu.requestAdapter( {backendType:"d3d12" }).then( (adapter)=>{
+				console.log( "adapter reuslt:", adapter.info );
+				return adapter.requestDevice( {
+				    requiredFeatures: [ 'shared-texture-memory-d3d12-resource' ],
+				    dawnToggles: { enabled: [ 'allow_unsafe_apis'  // this allows shared-texture-memory
+                                     /*, 'dump_tint_ir'*/ ] }
+						}).then( (device)=>{
                                        this.#device = device;
 					// Hook the canvas surface to that device. This is what informs our
 					// imglib-webgpu driver of surface size/format/root Image.

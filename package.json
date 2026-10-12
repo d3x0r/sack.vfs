@@ -124,6 +124,20 @@
     },
     "./getRoot": {
       "import": "./apps/find-package-root/getRoot.mjs"
+    },
+    "./xr": {
+      "import": "./apps/xr/xr.mjs"
+    },
+    "./xr-three": {
+      "import": "./apps/xr/xr-three.mjs"
+    }
+  },
+  "peerDependencies": {
+    "three": ">=0.184.0"
+  },
+  "peerDependenciesMeta": {
+    "three": {
+      "optional": true
     }
   },
   "private": false,
