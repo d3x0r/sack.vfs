@@ -64,6 +64,25 @@ if( INCLUDE_OPENXR )
 			# (This is already the Windows default; set explicitly so a
 			# Linux build doesn't silently produce a .so dependency.)
 			-DDYNAMIC_LOADER=OFF
+			# Compile the vendored jsoncpp into the loader instead of linking
+			# the system one. Only Linux needs jsoncpp at all — the loader
+			# parses runtime manifests there, where Windows reads the registry
+			# — so this is a Linux-only failure.
+			#
+			# The SDK defaults BUILD_WITH_SYSTEM_JSONCPP ON whenever jsoncpp is
+			# found. But distros that ship the library without its CMake config
+			# package (Arch has no /usr/lib/cmake/jsoncpp) leave jsoncpp_DIR
+			# unset, so the SDK's legacy FindJsonCpp.cmake takes over and builds
+			# a local `add_library(jsoncpp_interface INTERFACE)` target. A
+			# *static* openxr_loader records even a PRIVATE dependency as
+			# $<LINK_ONLY:...> in its interface, so install(EXPORT) then tries to
+			# export that local target and fails with "requires target
+			# jsoncpp_interface that is not in any export set".
+			#
+			# Vendored jsoncpp sidesteps it entirely: the three lib_json sources
+			# are compiled straight into the loader with PRIVATE includes, so
+			# there is no target to export and no runtime dependency to ship.
+			-DBUILD_WITH_SYSTEM_JSONCPP=OFF
 			-DBUILD_API_LAYERS=OFF
 			-DBUILD_TESTS=OFF
 			-DBUILD_CONFORMANCE_TESTS=OFF
