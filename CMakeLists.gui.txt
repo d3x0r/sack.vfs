@@ -365,6 +365,19 @@ endif( CMAKE_COMPILER_IS_GNUCC )
 set_target_properties(${PROJECT} PROPERTIES COMPILE_DEFINITIONS "BUILDING_NODE_EXTENSION;TARGETNAME=\"${PROJECT}.node\";${MOREDEFS}" )
 add_dependencies( ${PROJECT} sack intershell dekware )
 
+# Dawn must be built and installed before anything here compiles: our sources
+# include <webgpu/webgpu.h> from its install tree (see the include_directories
+# for Dawn_tmp above), and that header does not exist until Dawn's install step
+# has run.
+#
+# The link line below does not establish this. `webgpu_dawn` is a bare library
+# *name*, not a CMake target -- Dawn is an ExternalProject, so its targets are
+# not visible in this build -- and a bare name creates no ordering edge. With a
+# multi-config IDE generator, and an install tree left over from a previous
+# build, the ordering happens to work anyway; with Ninja and a clean tree it
+# does not, and the first thing to compile fails on a missing webgpu.h.
+add_dependencies( ${PROJECT} Dawn_External )
+
 target_link_libraries( ${PROJECT} webgpu_dawn )
 
 if( INCLUDE_OPENXR )
