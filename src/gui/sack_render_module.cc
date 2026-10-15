@@ -891,17 +891,35 @@ void RenderObject::unlockMouse(const FunctionCallbackInfo<Value>& args) {
 	OwnMouse(r->r, FALSE);
 }
 
+// Cursor visibility is Win32's ShowCursor, not a sack entry point: the display
+// layer only ever calls it from inside the Windows vidlib backends, and nothing
+// in sack's public headers exposes it. So there is nothing to call here on any
+// other platform, and these degrade to no-ops rather than failing to build.
+//
+// The real fix is a render-interface entry so each backend can hide the cursor
+// its own way -- Wayland wants a null cursor surface on the pointer, X11 wants
+// an empty XCursor. Until that exists, a Linux caller gets a cursor it did not
+// ask for, which is a cosmetic problem rather than a broken one.
+//
+// Note ShowCursor is a *counter*, not a flag, which is why hiding loops: the
+// count has to be driven to zero or below, and a single call only decrements.
 void RenderObject::hideMouse(const FunctionCallbackInfo<Value>& args) {
 	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
+	(void)r;
+#ifdef WIN32
 	int c = ShowCursor(TRUE);
 	int x;
 	//lprintf( "cursor count will be %d", c );
 	while (c && (x = ShowCursor(FALSE)));
+#endif
 }
 
 void RenderObject::showMouse(const FunctionCallbackInfo<Value>& args) {
 	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
+	(void)r;
+#ifdef WIN32
 	ShowCursor(TRUE);
+#endif
 }
 
 void RenderObject::getContext( const FunctionCallbackInfo<Value>& args ) {
