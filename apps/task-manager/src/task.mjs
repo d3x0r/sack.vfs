@@ -463,8 +463,16 @@ export class Task extends Events {
 		this.#killed = false;
 		this.stopping = false;
 		this.failed = false;
-		if( this.#task.work && !disk.isDir( this.#task.work ) ){
-			console.log( "Task not available (working path doesn't exist", this.#task.work );
+		const work = this.#task.work && taskWorkPath( this.#task.work );
+		if( work && !disk.isDir( work ) ){
+			// log where the directory was actually looked for: a relative path
+			// such as ../src resolves against the manager's cwd, not where the
+			// config was written, and that is the usual surprise here.
+			const why = `Working directory doesn't exist: ${this.#task.work} -> ${work}`;
+			console.log( "Task not available:", this.name, "-", why );
+			// into the task's own log too: that is where somebody looks when a
+			// task shows Failed, and it used to be empty for this case.
+			this.#send( { time:new Date(), error:true, line:why } );
 			this.running = false;
 			this.failed = true;
 			this.starting = false;
