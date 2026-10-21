@@ -6,7 +6,7 @@
 
 #if( INCLUDE_DAWN )
 	
-	set( MY_INSTALL_DIR "${CMAKE_BINARY_DIR}/Dawn_tmp/${CMAKE_BUILD_TYPE}" ) 
+	set( MY_INSTALL_DIR "${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}" ) 
 
 	include_directories( ${MY_INSTALL_DIR}/include )
 	LINK_DIRECTORIES( ${MY_INSTALL_DIR}/lib )
