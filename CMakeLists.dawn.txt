@@ -22,11 +22,8 @@ endif()
 
 if(WIN32)
     set( USE_CONFIGURATION "$<CONFIG>" )
-    set( USE_BINDIR "<BINARY_DIR>_tmp/$<CONFIG>" )
-    #set( USE_BINDIR "<BINARY_DIR>_tmp/\${CMAKE_INSTALL_CONFIG_NAME}" )
 else()
     set( USE_CONFIGURATION "${CMAKE_BUILD_TYPE}" )
-    set( USE_BINDIR <BINARY_DIR>_tmp/${CMAKE_BUILD_TYPE} )
 
 	set( FORCE_CLANG
 		-DCMAKE_C_COMPILER=clang
@@ -108,7 +105,16 @@ endif()
 		BINARY_DIR ${CMAKE_BINARY_DIR}/Dawn
 		INSTALL_DIR ${MY_INSTALL_DIR}
 		BUILD_BYPRODUCTS "${DAWN_SHARED_BYPRODUCT}"
-	CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${USE_BINDIR}
+	# Install straight into the final output tree. This used to be a separate
+	# Dawn_tmp prefix with finalTarget copying bin/ across afterwards; the
+	# prefix now has to be the real destination, because that copy is gone.
+	#
+	# Note the install delivers only bin/webgpu_dawn.dll -- no headers, no
+	# import library. Everything else comes from Dawn's build and source trees
+	# (webgpu_dawn.lib out of build/Dawn/src/dawn/native/, webgpu/webgpu.h out
+	# of the Dawn checkout), and d3dcompiler_47.dll is not installed at all,
+	# which is why finalTarget copies it explicitly.
+	CMAKE_ARGS -DCMAKE_INSTALL_PREFIX:PATH=${MY_INSTALL_DIR}
 		${FORCE_CLANG}
 		-DCMAKE_BUILD_TYPE:STRING=${USE_CONFIGURATION}
 		-DCMAKE_CXX_FLAGS="-Wno-invalid-constexpr"
