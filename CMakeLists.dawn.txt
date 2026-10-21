@@ -78,30 +78,36 @@ else()
 	set( DAWN_SOURCE_ARGS
 		GIT_REPOSITORY "https://github.com/google/dawn"
 		GIT_TAG        "v20261009.190412"
-		GIT_SHALLOW    TRUE
-		# ExternalProject runs `git submodule update --init --recursive` by
-		# default. Dawn declares 61 submodules — Chromium infrastructure repos
-		# among them (build, buildtools, testing, catapult, depot_tools) — and
-		# recursing into those reaches repositories that require a
-		# Google-internal account, which is where the chrome-internal credential
-		# prompt comes from.
-		#
-		# None of it is needed: DAWN_FETCH_DEPENDENCIES=ON below runs Dawn's own
-		# tools/fetch_dawn_dependencies.py, which pulls the 19-dependency minimal
-		# set a CMake build actually uses from public chromium.googlesource.com.
-		# The submodules are redundant here, and enormous.
-		#
-		# An empty GIT_SUBMODULES means "none" only under policy CMP0097 (added
-		# in 3.16); under OLD it means "all", i.e. the exact opposite. The
-		# top-level CMakeLists sets 3.21 so this is NEW — but note that a
-		# cmake_minimum_required() in an *included* file resets policies for the
-		# rest of the scope, so keep those out of CMakeLists.gui.txt or this
-		# line quietly stops working.
-		GIT_SUBMODULES "" )
+		GIT_SHALLOW    TRUE )
+	# GIT_SUBMODULES is deliberately NOT set here -- see the ExternalProject_Add
+	# call below, where it has to be written literally.
 endif()
 
 	ExternalProject_Add( Dawn_External
 	${DAWN_SOURCE_ARGS}
+	# Do not touch submodules. ExternalProject otherwise runs
+	# `git submodule update --init --recursive`, and Dawn's 61 submodules
+	# include third_party/angle, whose *own* submodule gles1_conform lives on
+	# chrome-internal.googlesource.com -- so the clone stops dead asking for
+	# Google-internal credentials. (Nested one level down, which is why nothing
+	# matching chrome-internal appears in Dawn's own .gitmodules.)
+	#
+	# None of it is wanted anyway: DAWN_FETCH_DEPENDENCIES=ON below runs Dawn's
+	# tools/fetch_dawn_dependencies.py, which fetches the 19 dependencies a CMake
+	# build actually uses from public chromium.googlesource.com.
+	#
+	# This MUST be written literally here rather than carried in
+	# DAWN_SOURCE_ARGS. An empty string is an empty list element, and unquoted
+	# ${...} expansion drops empty elements -- so the variable form arrives as a
+	# bare GIT_SUBMODULES keyword with no value, reads as "not specified", and
+	# gets the default: every submodule, recursively. That is exactly the bug
+	# this line exists to prevent, wearing a disguise.
+	#
+	# Empty also only means "none" under policy CMP0097 (3.16+); under OLD it
+	# means "all". The top-level CMakeLists requires 3.21 so this is NEW -- but a
+	# cmake_minimum_required() in an *included* file resets policies for the rest
+	# of the scope, so keep those out of CMakeLists.gui.txt.
+	GIT_SUBMODULES ""
 		BINARY_DIR ${CMAKE_BINARY_DIR}/Dawn
 		INSTALL_DIR ${MY_INSTALL_DIR}
 		BUILD_BYPRODUCTS "${DAWN_SHARED_BYPRODUCT}"
