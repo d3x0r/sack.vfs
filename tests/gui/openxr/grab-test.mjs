@@ -83,18 +83,26 @@ const handM = controllers.map( () => new THREE.Matrix4() );
 const localM = controllers.map( () => new THREE.Matrix4() );
 const _inv = new THREE.Matrix4(), _s = new THREE.Vector3();
 
-let frames = 0, reportedProfiles = false;
+let frames = 0;
+const lastProfile = controllers.map( () => "none" );
 
 function update( dt ) {
 	frames++;
 
-	// Which profile the runtime bound, once it has bound one. Worth printing:
-	// it's how you confirm a Vive's trackpad landed on the primary axis rather
-	// than silently reporting nothing.
-	if( !reportedProfiles && controllers.some( h => h.active ) ) {
-		reportedProfiles = true;
-		for( const h of controllers )
-			console.log( `hand ${h.index}    : active=${h.active} profile=${h.profile}` );
+	// Report the bound interaction profile on *change*, not once at first
+	// activity. The profile arrives with an INTERACTION_PROFILE_CHANGED event,
+	// which typically lands a frame or two after a hand first reports active --
+	// so a one-shot report fires too early, prints "none", and latches that
+	// forever while the controller is visibly working. Profiles also change
+	// legitimately later, when a controller sleeps, wakes or is swapped, and
+	// those transitions are worth seeing.
+	//
+	// Starting from "none" means the initial idle state prints nothing.
+	for( const h of controllers ) {
+		const p = h.active ? h.profile : "none";
+		if( p === lastProfile[ h.index ] ) continue;
+		lastProfile[ h.index ] = p;
+		console.log( `hand ${h.index}    : active=${h.active} profile=${p}` );
 	}
 
 	for( let h = 0; h < controllers.length; h++ ) {
