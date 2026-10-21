@@ -410,6 +410,13 @@ if( WIN32 )
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
    			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/Dawn_tmp/$<CONFIG>/bin ${CMAKE_BINARY_DIR}/$<CONFIG>/bin
+			# d3dcompiler_47.dll has to be fetched separately because it is not
+			# part of Dawn's install tree. Dawn copies it out of the Windows SDK
+			# into its own *build* directory next to webgpu_dawn.dll, and the
+			# copy_directory above only sees the *install* directory -- so the
+			# DLL never lands beside the webgpu_dawn.dll we actually ship, and
+			# the D3D backend fails to load FXC at runtime.
+   			COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_BINARY_DIR}/Dawn/$<CONFIG>/d3dcompiler_47.dll ${CMAKE_BINARY_DIR}/$<CONFIG>/bin
    			#COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-$<CONFIG>/lib ${CMAKE_BINARY_DIR}/$<CONFIG>
    			#COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/sack-$<CONFIG>/bin ${CMAKE_BINARY_DIR}/$<CONFIG>
 			#${EXTRACOPY}
