@@ -106,15 +106,24 @@ if( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]" )
    ADD_DEFINITIONS( -D_DEBUG )
 endif( ${CMAKE_BUILD_TYPE} MATCHES "[dD][eE][bB][uU][gG]" )
 
-# visual studio headers change with _DEBUG defined... so it can't be release with _DEBUG defined
-if( NOT CMAKE_CXX_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
-	set(  CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG_INFO" )
-endif( NOT CMAKE_CXX_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+# Visual Studio's headers change with _DEBUG defined -- it selects
+# _ITERATOR_DEBUG_LEVEL=2 and the debug CRT -- so a build that links release
+# third-party libraries (Dawn, the OpenXR loader) cannot define it, or the link
+# fails with "mismatch detected for '_ITERATOR_DEBUG_LEVEL'". _DEBUG_INFO is our
+# own switch for "debuggable but ABI-compatible with release", which the code
+# tests alongside _DEBUG (see src/vfs_module.cc).
+#
+# *Append* it rather than rebuilding these from CMAKE_*_FLAGS_DEBUG. Starting
+# from the Debug flags dragged in /Od and /RTC1, which quietly made
+# RelWithDebInfo an unoptimized build -- and invisibly so, because set() without
+# CACHE only shadows the cache entry, leaving the cache still reading /O2.
+if( NOT CMAKE_CXX_FLAGS_RELWITHDEBINFO MATCHES "_DEBUG_INFO" )
+	set(  CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -D_DEBUG_INFO" )
+endif( NOT CMAKE_CXX_FLAGS_RELWITHDEBINFO MATCHES "_DEBUG_INFO" )
 
-# visual studio headers change with _DEBUG defined... so it can't be release with _DEBUG defined
-if( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
-	set(  CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_DEBUG} -D_DEBUG_INFO" )
-endif( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "-D_DEBUG_INFO" )
+if( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "_DEBUG_INFO" )
+	set(  CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -D_DEBUG_INFO" )
+endif( NOT CMAKE_C_FLAGS_RELWITHDEBINFO MATCHES "_DEBUG_INFO" )
 
 if( __ANDROID__ )
 	ADD_DEFINITIONS( -D__ANDROID__ )
@@ -409,7 +418,13 @@ if( WIN32 )
   add_custom_target( finalTarget ALL #TARGET ${PROJECT} POST_BUILD
 			#COMMAND cmake -E echo ${AMALG_COMMAND}
    			COMMAND ${CMAKE_COMMAND} -E echo Updating deps....
-   			COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/Dawn_tmp/$<CONFIG>/bin ${CMAKE_BINARY_DIR}/$<CONFIG>/bin
+			# The copy_directory from Dawn_tmp/$<CONFIG>/bin that used to be here
+			# is gone: Dawn's install step does not populate it (nothing in the
+			# tree does), so it copied from a directory that never exists. The
+			# build links webgpu_dawn.lib out of Dawn's build tree and includes
+			# its headers from Dawn's source tree, so the install tree was never
+			# load-bearing. copy_directory is also a poor fit on Windows, where a
+			# directory's timestamp does not change when its contents do.
 			# d3dcompiler_47.dll has to be fetched separately because it is not
 			# part of Dawn's install tree. Dawn copies it out of the Windows SDK
 			# into its own *build* directory next to webgpu_dawn.dll, and the
