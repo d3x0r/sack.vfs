@@ -881,14 +881,32 @@ void RenderObject::close( const FunctionCallbackInfo<Value>& args ) {
 	r->do_close();
 }
 
+// requestPointerLock() lands here. OwnMouse alone was only half of it: it
+// captures and clips the cursor to the window, which is why a locked window
+// got a clip region but the pointer still crept to an edge and stopped. The
+// recentring that makes motion unbounded lives behind display->mouse.relative,
+// and nothing set it.
+//
+// RelativeMouse owns the whole gesture -- it takes the capture and hides the
+// cursor itself -- so this stays a single call rather than three that have to
+// be ordered correctly. On backends that do not implement it yet (puregl2,
+// pured3d, opengl) the interface entry is NULL and the macro no-ops, so this
+// degrades to "no lock" rather than misbehaving.
 void RenderObject::lockMouse(const FunctionCallbackInfo<Value>& args) {
 	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
-	OwnMouse(r->r, TRUE);
+	r->mouseRelative_ = true;
+	RelativeMouse(r->r, TRUE);
 }
 
 void RenderObject::unlockMouse(const FunctionCallbackInfo<Value>& args) {
 	RenderObject* r = ObjectWrap::Unwrap<RenderObject>(args.This());
-	OwnMouse(r->r, FALSE);
+	r->mouseRelative_ = false;
+	RelativeMouse(r->r, FALSE);
+	// The cursor is sitting at the window centre, while lastMouse* still holds
+	// wherever it was when the lock began. Forgetting the old position stops
+	// the first unlocked move reporting the distance between the two as real
+	// movement; it costs one event's worth of delta instead.
+	r->hasLastMousePos_ = false;
 }
 
 // Cursor visibility is Win32's ShowCursor, not a sack entry point: the display
@@ -1097,8 +1115,16 @@ static uintptr_t CPROC doMouse( uintptr_t psv, int32_t x, int32_t y, uint32_t b 
 	//lprintf( "Mouse:%d,%d,%d", x, y, b );
 	if( r->closed ) return 0;
 
-	// Always fire the original "mouse" event (back-compat).
-	uintptr_t rv = MakeEvent( r, Event_Render_Mouse, x, y, b );
+	// Fire the original "mouse" event (back-compat) only when something is
+	// listening. MakeEvent blocks until the V8 thread has run the event, and
+	// with pointer lock every real movement also produces a recentre message,
+	// so an unlistened round trip is paid twice per motion.
+	//
+	// It would also come back success=true with no listener -- the "allow it"
+	// default -- which tells vidlib the event was handled.
+	uintptr_t rv = r->cbMouse.IsEmpty()
+		? 0
+		: MakeEvent( r, Event_Render_Mouse, x, y, b );
 
 	// Synthesize browser-shaped events from the bitmask diff. We only do
 	// the diff work if at least one expanded listener is registered, so
@@ -1118,8 +1144,25 @@ static uintptr_t CPROC doMouse( uintptr_t psv, int32_t x, int32_t y, uint32_t b 
 	uint8_t alt   = (b & MK_ALT)     ? 1 : 0;
 	uint32_t browserButtons = sackButtonsToBrowserButtons( buttonBits );
 
-	int32_t dx = r->hasLastMousePos_ ? (x - r->lastMouseX_) : 0;
-	int32_t dy = r->hasLastMousePos_ ? (y - r->lastMouseY_) : 0;
+	// Under pointer lock vidlib hands us a delta, not a position, because the
+	// cursor is pinned to the window centre and cannot express one. Taking a
+	// difference of differences here is what made locked motion cancel itself:
+	// a move of +10 reports +10, then the recentre reports 0, and 0 - 10 is an
+	// equal and opposite -10.
+	//
+	// x/y are also held at their last absolute value rather than being replaced
+	// by the delta, which matches pointer lock in a browser: clientX/clientY
+	// freeze and only movementX/movementY carry the motion.
+	int32_t dx, dy;
+	if( r->mouseRelative_ ) {
+		dx = x;
+		dy = y;
+		x = r->lastMouseX_;
+		y = r->lastMouseY_;
+	} else {
+		dx = r->hasLastMousePos_ ? (x - r->lastMouseX_) : 0;
+		dy = r->hasLastMousePos_ ? (y - r->lastMouseY_) : 0;
+	}
 
 	// One mousedown per newly-pressed bit.
 	while( pressed ) {
@@ -1145,8 +1188,10 @@ static uintptr_t CPROC doMouse( uintptr_t psv, int32_t x, int32_t y, uint32_t b 
 			(int)shift, (int)ctrl, (int)alt );
 		released &= released - 1;
 	}
-	// Move if position actually changed.
-	if( r->hasLastMousePos_ && (dx != 0 || dy != 0) ) {
+	// Move if position actually changed. hasLastMousePos_ only gates the
+	// absolute path, where the first event has no previous position to
+	// subtract from; a delta needs no history to be valid.
+	if( (r->hasLastMousePos_ || r->mouseRelative_) && (dx != 0 || dy != 0) ) {
 		MakeEvent( r, Event_Render_MouseExpanded,
 			"mousemove", x, y, dx, dy,
 			(int)-1, browserButtons,
@@ -1265,7 +1310,19 @@ static int CPROC doKey( uintptr_t psv, uint32_t key ) {
 	RenderObject *r = (RenderObject *)psv;
 	if( r->closed ) return 0;
 
-	int rv = (int)MakeEvent( r, Event_Render_Key, key );
+	// An event with no listener comes back success=true -- the "allow it"
+	// default that Event_Init wants. For a key that answer means "handled",
+	// and vidlib stops offering the key to anything else. An app that uses
+	// only keydown/keyup has no legacy "key" handler, so every key claimed to
+	// be handled by a callback that does not exist.
+	//
+	// Skipped entirely when unset, rather than sent and ignored: MakeEvent
+	// blocks this thread until the V8 thread has run the event, so a round
+	// trip nobody listens to is pure latency on every key -- and auto-repeat
+	// makes that a stream.
+	int rv = 0;
+	if( !r->cbKey.IsEmpty() )
+		rv = (int)MakeEvent( r, Event_Render_Key, key );
 
 	bool wantExpanded = r->cbKeyDown_listeners
 	                 || r->cbKeyUp_listeners;
@@ -1286,6 +1343,25 @@ void RenderObject::setKey( const FunctionCallbackInfo<Value>& args ) {
 	Local<Function> arg0 = Local<Function>::Cast( args[0] );
 	SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
 	r->cbKey.Reset( isolate, arg0 );
+}
+
+// addEventListener( type, fn ) with a function already registered for that
+// type is a no-op in a browser, and code written against the DOM relies on it:
+// a control that re-runs its connect() on every enable, or two components
+// sharing one handler, would otherwise stack copies. Every copy is dispatched,
+// so a single click arrives two or three times over.
+//
+// Returns true when the function is already linked, meaning the caller should
+// not add it again. The comparison is StrictEquals on the function object,
+// which is what the DOM uses -- a fresh closure is a different listener.
+static bool alreadyListening( Isolate* isolate, PLIST list, Local<Function> fn ) {
+	INDEX idx;
+	PERSISTENT_FUNCTION* ppf;
+	LIST_FORALL( list, idx, PERSISTENT_FUNCTION*, ppf ) {
+		if( ppf->Get( isolate )->StrictEquals( fn ) )
+			return true;
+	}
+	return false;
 }
 
 void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
@@ -1332,6 +1408,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	// diffs sack's bitmask to synthesize down/up/move/wheel transitions.
 	else if( StrCmp( *fName, "mouseDown" ) == 0 || StrCmp( *fName, "mousedown" ) == 0 ) {
 		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		if( alreadyListening( isolate, r->cbMouseDown_listeners, arg1 ) ) return;
 		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
 		ppf->Reset(isolate, arg1);
 		AddLink(&r->cbMouseDown_listeners, ppf);
@@ -1339,6 +1416,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else if( StrCmp( *fName, "mouseUp" ) == 0 || StrCmp( *fName, "mouseup" ) == 0 ) {
 		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		if( alreadyListening( isolate, r->cbMouseUp_listeners, arg1 ) ) return;
 		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
 		ppf->Reset(isolate, arg1);
 		AddLink(&r->cbMouseUp_listeners, ppf);
@@ -1346,6 +1424,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else if( StrCmp( *fName, "mouseMove" ) == 0 || StrCmp( *fName, "mousemove" ) == 0 ) {
 		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		if( alreadyListening( isolate, r->cbMouseMove_listeners, arg1 ) ) return;
 		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
 		ppf->Reset(isolate, arg1);
 		AddLink(&r->cbMouseMove_listeners, ppf);
@@ -1353,6 +1432,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else if( StrCmp( *fName, "wheel" ) == 0 || StrCmp(*fName, "DOMMouseScroll") == 0 || StrCmp(*fName, "mousewheel") == 0) {
 		SetMouseHandler( r->r, doMouse, (uintptr_t)r );
+		if( alreadyListening( isolate, r->cbWheel_listeners, arg1 ) ) return;
 		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
 		ppf->Reset(isolate, arg1);
 		AddLink(&r->cbWheel_listeners, ppf);
@@ -1361,6 +1441,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	// Browser-shaped keyboard events.
 	else if( StrCmp( *fName, "keyDown" ) == 0 || StrCmp( *fName, "keydown" ) == 0 ) {
 		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
+		if( alreadyListening( isolate, r->cbKeyDown_listeners, arg1 ) ) return;
 		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
 		ppf->Reset(isolate, arg1);
 		AddLink(&r->cbKeyDown_listeners, ppf);
@@ -1368,6 +1449,7 @@ void RenderObject::on( const FunctionCallbackInfo<Value>& args ) {
 	}
 	else if( StrCmp( *fName, "keyUp" ) == 0 || StrCmp( *fName, "keyup" ) == 0 ) {
 		SetKeyboardHandler( r->r, doKey, (uintptr_t)r );
+		if( alreadyListening( isolate, r->cbKeyUp_listeners, arg1 ) ) return;
 		PERSISTENT_FUNCTION* ppf = new PERSISTENT_FUNCTION();
 		ppf->Reset(isolate, arg1);
 		AddLink(&r->cbKeyUp_listeners, ppf);

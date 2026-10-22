@@ -87,6 +87,10 @@ public:
 	int32_t  lastMouseX_       = 0;
 	int32_t  lastMouseY_       = 0;
 	bool     hasLastMousePos_  = false;
+	// Set while pointer lock is held. vidlib then delivers deltas rather than
+	// positions, so the movement below must not be derived by subtracting --
+	// differentiating a delta cancels real motion against the recentre.
+	bool     mouseRelative_    = false;
 	std::unordered_set<uint32_t> keysHeld_;
 
 
