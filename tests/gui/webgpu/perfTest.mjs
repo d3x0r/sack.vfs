@@ -1,5 +1,5 @@
 
-import sack from "sack-gui"
+import sack from "@d3x0r/sack-gui"
 
 const r = sack.Renderer( "title", 1600, 800); 
 
