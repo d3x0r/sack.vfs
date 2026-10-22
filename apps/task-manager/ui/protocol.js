@@ -116,6 +116,17 @@ export class Protocol extends Events {
 			this.ws.send( JSOX.stringify( {op:"log", id:task.id } ) );
 	}
 
+	// stop the stream when the viewer closes the window; showLog() starts it
+	// again, backlog and all
+	closeLog( group, task ) {
+		if( !task ) return;
+		const system = config.local.systems.find( system=>system === group );
+		if( system )
+			this.ws.send( JSOX.stringify( {op:"closeLog", system:system.id, id:task.id } ) );
+		else
+			this.ws.send( JSOX.stringify( {op:"closeLog", id:task.id } ) );
+	}
+
 	setTaskMonitor( task, monitor ) {
 		this.ws.send( JSOX.stringify( {op:"updateDisplay", id:task.id, monitor:monitor}));
 	}

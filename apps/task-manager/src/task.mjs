@@ -420,24 +420,24 @@ export class Task extends Events {
 	}
 
 	set ws( val) {
-		this.#ws.push( val );
-		val.onclose = close;
-		const this_ = this;
+		if( this.#ws.indexOf( val ) < 0 ) this.#ws.push( val );
+		// This used to do `val.onclose = close` to prune itself, which clobbered
+		// the connection's own handler (main.mjs sets ws.onclose = handleClose,
+		// so a client that opened any log stopped being cleaned up on
+		// disconnect), and only ever pruned whichever task subscribed last.
+		// handleClose walks the tasks instead.
 		// log is a getter that returns the tail of the log really
 		const log = JSOX.stringify( {op:"log", system: local.id, id:this.id, log:this.log } );
 		//console.log( "ws sends:", log );
 		val.send( log );
-		function close( code, reason ) {
-			//console.log( "task websocket closed; removing self" );
-			const ws = this_.#ws.findIndex( ws=>ws===val );
-			if( ws > -1 ) this_.#ws.splice( ws, 1 );
-		}
 	}
 
 	stopLog( ws ) {
 		// don't send log to this socket anymore
-		const wsid = this_.#ws.findIndex( val=>ws===val );
-		if( wsid > -1 ) this_.#ws.splice( wsid, 1 );
+		// (`this_` here was undefined - this threw, and nothing called it)
+		const wsid = this.#ws.findIndex( val=>ws===val );
+		if( wsid > -1 ) this.#ws.splice( wsid, 1 );
+		return this.#ws.length;
 	}
 
 	get noKill() { return this.#task.noKill || false }
@@ -661,7 +661,8 @@ export class Task extends Events {
 		const msg = { op:"log", system:local.id, id:this.id, log: buffer };
 		const msg_ = JSOX.stringify( msg ) ;
 		//console.log( "msg to send:", msg_ );
-		this.#ws.forEach( ws=>ws.send( msg_ ) );
+		// a socket that went away without being pruned would throw here
+		this.#ws.forEach( ws=>(ws.readyState === 1) && ws.send( msg_ ) );
 	}
 	// This run is over - the child exited, or a probe was stopped or lost its
 	// port.  One path for all of them so dependants cascade and restart rules

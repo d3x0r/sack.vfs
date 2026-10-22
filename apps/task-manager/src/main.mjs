@@ -259,11 +259,14 @@ function handleLog( ws, msg, msg_ )
 		//console.log( "found remote system:", remote, msg_ );
 		if( remote ) {
 				remote.connection.ws.send( msg_ );
-				// this task can wants to be on this connection.
-				if( local.taskMap[msg.id] )
-					local.taskMap[msg.id].push( ws );
-				else
-					local.taskMap[msg.id] = [ ws ];
+				// who to relay this task's log back to.  This used to be stashed
+				// in local.taskMap, which holds Task objects keyed by local id -
+				// local.logRelays was declared for it and never used.
+				if( local.logRelays[msg.id] ) {
+					if( local.logRelays[msg.id].indexOf( ws ) < 0 )
+						local.logRelays[msg.id].push( ws );
+				} else
+					local.logRelays[msg.id] = [ ws ];
 			}
 		else {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
@@ -272,6 +275,31 @@ function handleLog( ws, msg, msg_ )
 	}
 }
 
+
+// The viewer closed the log window.  Without this a log requested once kept
+// streaming for the life of the connection - leave one open for a week on a
+// thin client and it is the client that pays.
+function handleCloseLog( ws, msg, msg_ ) {
+	if( (!("system" in msg ) ) || msg.system === local.id ){
+		const task = local.taskMap[msg.id];
+		if( task ) {
+			const left = task.stopLog( ws );
+			console.log( "Log window closed for", task.name, "-", left, "viewer(s) left" );
+		}
+		return;
+	}
+	const watching = local.logRelays[msg.id];
+	if( watching ) {
+		const at = watching.indexOf( ws );
+		if( at >= 0 ) watching.splice( at, 1 );
+		// other viewers here may still be watching the same remote task; only
+		// tell the system that owns it to stop once none are.
+		if( watching.length ) return;
+		delete local.logRelays[msg.id];
+	}
+	const remote = local.systems.find( system=>system.id === msg.system );
+	if( remote ) remote.connection.ws.send( msg_ );
+}
 
 function handleTaskInfo( ws, msg, msg_ ) {
 	//console.log( "handleTaskInfo:", msg_ );
@@ -495,7 +523,7 @@ function connect( ws ) {
 		case "log": {
 			// relay log forward... someone asked for logging
 			// to which connections?
-			const sendTo = local.taskMap[msg.id];
+			const sendTo = local.logRelays[msg.id];
 			if( sendTo ) {
 				sendTo.forEach( ws=>(ws.readyState===1) && ws.send( msg_ ) );
 			} else {
@@ -505,7 +533,7 @@ function connect( ws ) {
 		}
 		break;
 		case "backlog": {
-			const sendTo = local.taskMap[msg.id];
+			const sendTo = local.logRelays[msg.id];
 			if( sendTo ) {
 				sendTo.forEach( ws=>(ws.readyState===1) && ws.send( msg_ ) );
 			}else {
@@ -627,6 +655,15 @@ function connect( ws ) {
 			}
 		}
 		console.log( "Client disconnect:", code, reason );
+		// drop it from every log it was watching.  The Task used to hook
+		// ws.onclose for this, which replaced this very handler.
+		local.tasks.forEach( task=>task.stopLog( ws ) );
+		for( const id of Object.keys( local.logRelays ) ) {
+			const watching = local.logRelays[id];
+			const at = watching.indexOf( ws );
+			if( at >= 0 ) watching.splice( at, 1 );
+			if( !watching.length ) delete local.logRelays[id];
+		}
 		const id = local.connections.findIndex( conn=>conn.ws===ws );
 		//console.log( "Did we find the connection?", id );
 		if( id >=0 ) local.connections.splice( id, 1 );
@@ -766,6 +803,9 @@ function handleMessage( ws, msg_ ) {
 			break;
 		case "log":
 			handleLog( ws, msg, msg_ );
+			break;
+		case "closeLog":
+			handleCloseLog( ws, msg, msg_ );
 			break;
 		case "send":
 			handleInput( ws, msg, msg_ );

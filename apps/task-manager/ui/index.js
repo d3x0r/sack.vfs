@@ -113,11 +113,28 @@ function delTime(date) {
 }
 
 function showLogClick(taskList,task) {
+	// closeLogFrame() drops the entry, so an existing one means it is open and
+	// just needs raising; otherwise ask for the stream (and its backlog) again.
 	if( local.logs[task.id] && local.logs[task.id].logFrame ){
 		local.logs[task.id].logFrame.show();
 	}
 	else
 		protocol.showLog( taskList, task )
+}
+
+// Closing the window unsubscribes and throws the rendered lines away.  Hiding
+// it, which is all this used to do, left the server streaming into a list that
+// grew for as long as the window stayed "closed".
+function closeLogFrame( taskId ) {
+	const log = local.logs[taskId];
+	if( !log ) return;
+	delete local.logs[taskId];
+	if( log.loadObserver ) log.loadObserver.disconnect();
+	local.dialogs.delete( log.logFrame );
+	log.logFrame.remove();
+	// systemMap gives the group this task belongs to - `local`-owned tasks are
+	// not in local.systems, so closeLog() leaves the system off for them.
+	protocol.closeLog( local.systemMap[taskId], log.task );
 }
 
 // the server echoes the stored task definition, which has none of the live
@@ -412,6 +429,9 @@ function renderLogLine( span, line, showTime ) {
 
 function addTaskLog( task, log ) {
 	const logFrame = new Popup( task.name, document.body, { enableClose:true} );
+	// a dropped connection closes it like the other per-task dialogs
+	local.dialogs.add( logFrame );
+	logFrame.on( "captionClose", ()=>closeLogFrame( task.id ) );
 
 	const opts = {
 		follow: true, 
