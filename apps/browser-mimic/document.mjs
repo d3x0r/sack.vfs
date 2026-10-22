@@ -55,7 +55,17 @@ const document = {
 					return this.r.getContext( mode );
 				},
 				getBoundingClientRect() {
-					return { x:0, y:0, width: canvas.r.width, height: canvas.r.height };
+					// A real DOMRect carries left/top/right/bottom as well as
+					// x/y/width/height, and callers use all of them -- the
+					// common idiom being `rect.right - rect.left` for width and
+					// `e.clientX - rect.left` to make a coordinate relative.
+					// Returning only x/y/width/height makes both of those NaN,
+					// which does not throw: it propagates silently into whatever
+					// consumes it. A raycaster fed a NaN NDC yields a NaN ray
+					// direction, and anything positioned from it vanishes and
+					// never comes back, because nothing resets the NaN.
+					const w = canvas.r.width, h = canvas.r.height;
+					return { x:0, y:0, left:0, top:0, right:w, bottom:h, width:w, height:h };
 				}
 			}
 			r = canvas.r;
