@@ -2414,9 +2414,10 @@ static uintptr_t webSockServerOpen( PCLIENT pc, uintptr_t psv ) {
 		}
 		(*pevt).eventType = WS_EVENT_OPEN;
 		(*pevt)._this = wssi;
+		// OPEN before JS can see the socket, so a send from the connect handler never finds it CONNECTING
+		wssi->readyState = wsReadyStates::OPEN;
 		EnqueLink( &wssi->eventQueue, pevt );
 		//lprintf( "Send Event:%p", &wss->async );
-		wssi->readyState = wsReadyStates::OPEN;
 #ifdef DEBUG_EVENTS
 		lprintf( "Open event send...%p", &wssi->async );
 #endif
@@ -4200,12 +4201,9 @@ void wssiObject::write( const FunctionCallbackInfo<Value>& args ) {
 	wssiObject* obj = ObjectWrap::Unwrap<wssiObject>( args.This() );
 
 	if( !obj->pc && !obj->server->wsPipe ) {
-		isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Connection has already been closed." ) ) );
+		//isolate->ThrowException( Exception::Error( String::NewFromUtf8Literal( isolate, "Connection has already been closed." ) ) );
 		return;
 	}
-	while( obj->readyState == wsReadyStates::CONNECTING )
-		Relinquish();
-
 	char* sendData;
 	size_t sendLen;
 	if( GetBufferBytes( args[0], &sendData, &sendLen ) ) {
@@ -4820,10 +4818,13 @@ void wscObject::write( const FunctionCallbackInfo<Value>& args ) {
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 	//lprintf( "Send From JS" );
 	if( !obj->pc ) {
+		// writes to closed sockets silently are ignored.
+		/*
 		static char msg[128];
 		snprintf( msg, 128, TranslateText( "Connection is already closed: %d" ), obj->readyState ); 
 		isolate->ThrowException( Exception::Error(
 			String::NewFromUtf8( isolate, msg, v8::NewStringType::kNormal ).ToLocalChecked() ) );
+		*/
 		return;
 	}
 	char* sendData;
@@ -4845,9 +4846,9 @@ void wscObject::getReadyState( const FunctionCallbackInfo<Value>& args ) {
 	Isolate* isolate = args.GetIsolate();
 	wscObject *obj = ObjectWrap::Unwrap<wscObject>( args.This() );
 	if( !obj->pc )
-		args.GetReturnValue().Set( Integer::New( isolate, (int)-1 ) );
+		args.GetReturnValue().Set( Integer::New( isolate, (int)wsReadyStates::CLOSED ) );
 	else
-	args.GetReturnValue().Set( Integer::New( isolate, (int)obj->readyState ) );
+		args.GetReturnValue().Set( Integer::New( isolate, (int)obj->readyState ) );
 #if 0
 	Local<Object> h = getFCIHolder(args);
 	Local<Object> t = args.This();
