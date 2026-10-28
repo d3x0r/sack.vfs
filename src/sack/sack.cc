@@ -21427,7 +21427,8 @@ LOGICAL IsRootDeadstartComplete( void )
 #        ifdef __cplusplus
 extern "C"
 #        endif
-__declspec(dllexport)
+//__declspec(dllexport)
+// I guess DLL Main shouldn't be an export?
 	BOOL WINAPI DllMain(  HINSTANCE hinstDLL,
    DWORD fdwReason,
    LPVOID lpvReserved
@@ -28539,6 +28540,17 @@ Double quote	"""	222
 //#define KEY_DASH
 #define KEY_LEFT_BRACKET KEY_LEFTBRACE
 #define KEY_RIGHT_BRACKET KEY_RIGHTBRACE
+// The kernel spells these without the separating underscore, so the sack names
+// need aliasing like the rest above or they are simply absent on Linux -- which
+// surfaces as "'KEY_NUM_LOCK' was not declared; did you mean 'KEY_NUMLOCK'?",
+// the suggestion being the kernel's own name.
+#define KEY_NUM_LOCK KEY_NUMLOCK
+#define KEY_SCROLL_LOCK KEY_SCROLLLOCK
+// Windows numbers its two Meta keys WINDOW_1/WINDOW_2; the kernel names them by
+// side. Paired left-to-1 and right-to-2 to match how they are consumed -- see
+// sack-gui's sack_dom_key_names.h, which reports them as MetaLeft and MetaRight.
+#define KEY_WINDOW_1 KEY_LEFTMETA
+#define KEY_WINDOW_2 KEY_RIGHTMETA
 #define KEY_PAD_MULT  KEY_KPASTERISK
 #define KEY_PAD_9   KEY_KP9
 #define KEY_PAD_8   KEY_KP8
@@ -32619,6 +32631,7 @@ IMAGE_PROC_PTR( void, ResetImageBuffers )( Image image, LOGICAL image_only );
 	IMAGE_PROC_PTR( void, BlotSlicedImageEx )( Image dest, SlicedImage source, int32_t x, int32_t y, uint32_t width, uint32_t height, int alpha, enum BlotOperation op, ... );
 	IMAGE_PROC_PTR( void, SetSavePortion )( void (CPROC*_SavePortion )( PSPRITE_METHOD psm, uint32_t x, uint32_t y, uint32_t w, uint32_t h ) );
    IMAGE_PROC_PTR( void, FlipImageEx )( Image pif DBG_PASS );
+   int volatile *bGLColorMode;
 } IMAGE_INTERFACE, *PIMAGE_INTERFACE;
 /* Method to define automatic name translation from standard
    names Like BlatColorAlphaEx to the interface the user has
@@ -34168,6 +34181,48 @@ enum DisplayAttributes {
        x :         x relative to the display to set the mouse
        y :         y relative to the display to set the mouse          */
     RENDER_PROC( void , SetMousePosition)     ( PRENDERER, int32_t x, int32_t y );
+	 // This sets a condition of turning the mouse off while over this display.
+    RENDER_PROC( void, HideMouse)( PRENDERER display );
+	 /* Platform-neutral cursor shapes for ShowMouse(). Each backend maps these
+	    to its own vocabulary -- Win32 IDC_*, X11 cursor-font glyphs, Wayland
+	    cursor names -- so a caller never has to name a platform's cursor.
+	    This is what SetDisplayCursor(CTEXTSTR) could not be: that one takes a
+	    Win32 resource name and has nowhere to go on X11 or Wayland.
+	    The names are the CSS cursor keywords. Not decoration: the Wayland and
+	    freedesktop names *are* the CSS names, making that backend's mapping
+	    the identity, and anything presenting a browser-shaped DOM on top of
+	    this receives `cursor:` values already in this vocabulary.            */
+    enum displayCursorShape {
+   // plain arrow; the default mode
+		  CURSOR_SHAPE_DEFAULT = 0
+          // I-beam
+		, CURSOR_SHAPE_TEXT
+		, CURSOR_SHAPE_WAIT
+      // busy, but still interactive
+		, CURSOR_SHAPE_PROGRESS
+		, CURSOR_SHAPE_CROSSHAIR
+       // the "clickable" hand
+		, CURSOR_SHAPE_POINTER
+		, CURSOR_SHAPE_MOVE
+		, CURSOR_SHAPE_NOT_ALLOWED
+		, CURSOR_SHAPE_HELP
+     // horizontal
+		, CURSOR_SHAPE_EW_RESIZE
+     // vertical
+		, CURSOR_SHAPE_NS_RESIZE
+   // diagonal, bottom-left to top-right
+		, CURSOR_SHAPE_NESW_RESIZE
+   // diagonal, top-left to bottom-right
+		, CURSOR_SHAPE_NWSE_RESIZE
+		, CURSOR_SHAPE_COUNT
+	 };
+	 // This sets a condition of turning the mouse on, and selecting a cursor type while over this display.
+    // default mode is 0... (a value from enum displayCursorShape)
+    RENDER_PROC( void, ShowMouse)( PRENDERER display, int mode );
+	 // This sets the mode of the mouse to generate relative input coordinates,
+    // When enabled, also triggers OwnMouse and HideMouse will set the cursor input as a game-control sort of input.
+    // When disabled,
+    RENDER_PROC( void, RelativeMouse)( PRENDERER display, LOGICAL enable );
     /* Test a display to see if it is focused.
        Parameters
        hVideo :  display to check to see if it has focus. (keyboard
@@ -34779,6 +34834,17 @@ struct render_interface_tag
 	//
 	RENDER_PROC_PTR( void, BeginSizeDisplay )(PRENDERER pRenderer, enum sizeDisplayValues sizeFrom );
    RENDER_PROC_PTR( void, WillUpdatePortions)( PRENDERER pRenderer, LOGICAL disableAutoDraw );
+	 // This sets a condition of turning the mouse off while over this display.
+	 // if the display is NULL, this can attempt to hide the system cursor regardless of the display
+    RENDER_PROC_PTR( void, HideMouse)( PRENDERER display );
+	 // This sets a condition of turning the mouse on, and selecting a cursor type while over this display.
+	 // if the display is NULL, this will simply restore the system corsor, and mode is ignored(?)
+    // default mode is 0...
+    RENDER_PROC_PTR( void, ShowMouse)( PRENDERER display, int mode );
+	 // This sets the mode of the mouse to generate relative input coordinates,
+    // When enabled, also triggers OwnMouse and HideMouse will set the cursor input as a game-control sort of input.
+    // When disabled,
+    RENDER_PROC_PTR( void, RelativeMouse)( PRENDERER display, LOGICAL enable );
 };
 #ifdef DEFINE_DEFAULT_RENDER_INTERFACE
 #define USE_RENDER_INTERFACE GetDisplayInterface()
@@ -34868,6 +34934,9 @@ typedef int check_this_variable;
 #define KeyDown                   REND_PROC_ALIAS(KeyDown)
 #define DisplayIsValid            REND_PROC_ALIAS(DisplayIsValid)
 #define OwnMouseEx                REND_PROC_ALIAS(OwnMouseEx)
+#define HideMouse(d)              ((USE_RENDER_INTERFACE&&USE_RENDER_INTERFACE->_HideMouse)?USE_RENDER_INTERFACE->_HideMouse(d):(void)0)
+#define ShowMouse(d,m)            ((USE_RENDER_INTERFACE&&USE_RENDER_INTERFACE->_ShowMouse)?USE_RENDER_INTERFACE->_ShowMouse(d,m):(void)0)
+#define RelativeMouse(d,e)        ((USE_RENDER_INTERFACE&&USE_RENDER_INTERFACE->_RelativeMouse)?USE_RENDER_INTERFACE->_RelativeMouse(d,e):(void)0)
 #define BeginCalibration          REND_PROC_ALIAS(BeginCalibration)
 #define SyncRender                REND_PROC_ALIAS(SyncRender)
 #define OkaySyncRender                REND_PROC_ALIAS(OkaySyncRender)
@@ -49238,6 +49307,12 @@ static void* CPROC sack_filesys_open( uintptr_t psv, const char* filename, const
 	char *tmpFilename = StrDup( filename );
 	{ char* tmp; if( LONG_PATHCHAR ) for( tmp = tmpFilename; tmp[0]; tmp++ ) if( tmp[0] == '\\' ) tmp[0] = LONG_PATHCHAR; }
 	result = fopen( tmpFilename, opts );
+	// fopen fails for the ordinary reasons - the path's directory does not exist,
+	// no permission - and glibc's fileno() dereferences its argument, so NULL
+	// here is a segfault, not an error return.  The _WIN32 branch above already
+	// guards this; opening a file under a directory that was never created took
+	// down a whole service for want of the same test.
+	if( result )
 	{
 		int h = fileno( (FILE*)result );
 		if( h >= 0 ) {
@@ -72058,7 +72133,8 @@ int json6_parse_add_data( struct json_parse_state *state
 							{
 								// in non streaming mode; these would be required to follow
 								if( json6_isWhitespace( c )
-									|| c == ',' || c == ']' || c == '}'  || c == ':' ) {
+/* a comment may directly follow a number */
+									|| c == ',' || c == ']' || c == '}'  || c == ':' || c == '/' ) {
 									//lprintf( "Non numeric character received; push the value we have" );
 									(*output->pos) = 0;
 									break;
