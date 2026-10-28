@@ -365,7 +365,18 @@ function hookJSOX( serverOpts, server ) {
 			const config = disk.read( filePath );
 			if( config ) {
 				res.writeHead( 200, headers );
-				const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + config.toString().replace( "\\", "\\\\" ).replace( '"', '\\"' ) + "`);export default config;";
+				// The file is pasted into a TEMPLATE LITERAL, so exactly three
+				// things can break out of it: a backslash, a backtick, and ${.
+				// A double quote cannot, and escaping it corrupted the data.
+				// Each pattern must be a regex with /g -- a string pattern
+				// replaces only the FIRST occurrence, so a file with two
+				// backticks in it still produced a syntax error.
+				// Backslashes go first, or the escapes added below get escaped.
+				const safe = config.toString()
+					.replace( /\\/g, "\\\\" )
+					.replace( /`/g, "\\`" )
+					.replace( /\$\{/g, "\\${" );
+				const resultContent = "import {JSOX} from '/node_modules/jsox/lib/jsox.mjs';const config = JSOX.parse( `" + safe + "`);export default config;";
 				res.end( resultContent );
 				return;
 			}

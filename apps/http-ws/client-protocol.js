@@ -73,7 +73,7 @@ export class Protocol extends Events {
 
 	static onclose( evt ){
 		const Protocol = Object.getPrototypeOf( this ).constructor;
-		Protocol.clearHeartbeat( this );
+		Protocol.#clearHeartbeat( this );
 		Protocol.debug && console.log( "close?", this, evt );
 		const event = this.on( "close", [evt.code, evt.reason] );
 		Protocol.ws = null;
@@ -101,7 +101,7 @@ export class Protocol extends Events {
 			// surrogate pairs, so data[1]/data[2] would land mid-pair.  Only done
 			// here, where the string is three characters.
 			const parts = [...evt.data];
-			Protocol.armHeartbeat( this, parts[1].codePointAt(0) - HB_BIAS
+			Protocol.#armHeartbeat( this, parts[1].codePointAt(0) - HB_BIAS
 			                           , parts[2].codePointAt(0) - HB_BIAS );
 			return;
 		}
@@ -117,9 +117,10 @@ export class Protocol extends Events {
 	 * (Re)start the watchdog that expects the next server ping.  Only ever armed by
 	 * receiving a ping, so a server that doesn't send them never trips this and
 	 * older servers keep working unchanged.
+	 *  interval default is 25000ms, timeout default is 20000ms, so the server has 45s to send a ping
 	 */
-	static armHeartbeat( this_, interval, timeout ) {
-		Protocol.clearHeartbeat( this_ );
+	static #armHeartbeat( this_, interval, timeout ) {
+		Protocol.#clearHeartbeat( this_ );
 		const budget = ( interval || 25000 ) + ( timeout || 20000 );
 		this_.hbTimer = setTimeout( ()=>{
 			this_.hbTimer = null;
@@ -131,19 +132,19 @@ export class Protocol extends Events {
 		}, budget );
 	}
 
-	static clearHeartbeat( this_ ) {
+	static #clearHeartbeat( this_ ) {
 		if( this_.hbTimer ) { clearTimeout( this_.hbTimer ); this_.hbTimer = null; }
 	}
 
 	send( msg ) {
 		const ws = this.#Protocol.ws;
-		if( ws && ws.readyState === 1 ) {
+		if( ws && ws.readyState ) {
 			if( "object" === typeof msg ) {
 				ws.send( JSOX.stringify(msg) ); 
 			} else
 				ws.send( msg );	
 		} else {
-			Protocol.debug && console.log( "Protocol socket is not in open readystate", ws.readyState );
+			Protocol.debug && console.log( "Protocol socket is still connecting readystate", ws.readyState );
 		}
 	}
 	close( code, reason ) {

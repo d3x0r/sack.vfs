@@ -50,6 +50,7 @@ export class Protocol extends Events {
 	#opts = null;
 	get opts() { return this.#opts }
 	#keepAlive = false;
+	#closed = [];
 	static #WS = null;
 	/** 
 	 * @param {object} opts - options for the protocol
@@ -101,10 +102,22 @@ export class Protocol extends Events {
 			if( results.includes( true ) ) return;
 		}
 
-		function handleClose( code, reason ) {
+		function handleClose(code, reason) {
 			myWS.timeout = false;
-			this_.on( "close", [myWS,code,reason] );
-			myWS.on("close", [code,reason]);
+			if (!this_.#closed.length) {
+				setTimeout(() => {
+					this_.#closed.forEach((c) => {
+						try {
+							this_.on("close", [c.ws, c.code, c.reason]);
+							c.ws.on("close", [c.code, c.reason]);
+						} catch (err) {
+							console.error("Error handling deffered close event:", err);
+						}
+					});
+					this_.#closed.length = 0;
+				}, 5);
+			}
+			this_.#closed.push({ ws: myWS, code, reason });
 		}
 
 		function handleMessage( msg ) {
@@ -178,6 +191,7 @@ export class WS extends Events{
 	#protocol = null; 
 	#keepAlive = false;
 	#heartbeat = 0;
+	lastPong = 0;
 	constructor(ws,protocol){
 		super();
 		this.ws = ws;
@@ -194,7 +208,7 @@ export class WS extends Events{
 			else
 				this.ws.send( msg );	
 		} else {
-			console.trace( "Would have written to a closed socket..." );
+			console.trace( "Would have written to a closed or accepting socket...", this.ws.readyState );
 		}
 	}
 	/**
@@ -222,9 +236,9 @@ export class WS extends Events{
 				? this.#protocol.opts.pingTimeout : DEFAULT_PING_TIMEOUT;
 			if( this.#keepAlive )
 				if( pingInterval > 0 ) {
-					myWS.lastPong = Date.now();
+					this.lastPong = Date.now();
 					this.#heartbeat = setInterval( ()=>{
-						if( ( Date.now() - myWS.lastPong ) > ( pingInterval + pingTimeout ) ) {
+						if( ( Date.now() - this.lastPong ) > ( pingInterval + pingTimeout ) ) {
 							debug_ && console.log( "peer missed the heartbeat; closing" );
 							clearInterval( this.#heartbeat );
 							this.#heartbeat = null;
@@ -233,7 +247,7 @@ export class WS extends Events{
 						}
 						// tell the client the cadence so it can arm its own watchdog without
 						// being configured separately
-						try { myWS.send( PING + hbEncode( pingInterval ) + hbEncode( pingTimeout ) ); }
+						try { this.send( PING + hbEncode( pingInterval ) + hbEncode( pingTimeout ) ); }
 						catch( err ) { }
 					}, pingInterval );
 					if( this.#heartbeat.unref ) this.#heartbeat.unref(); // don't hold the process open

@@ -67,13 +67,13 @@ export class Protocol extends Events {
 	}
 
 	send( msg ) {
-		if( this.ws.readyState === 1 ) {
+		if( this.ws.readyState ) {
 			if( "object" === typeof msg ) 
 				this.ws.send( JSOX.stringify(msg) ); 
 			else
 				this.ws.send( msg );	
 		} else {
-			console.log( "Protocol socket is not in open readystate", this.ws.readyState );
+			console.log( "Protocol socket is still connecting readystate", this.ws.readyState );
 		}
 	}
 } 
