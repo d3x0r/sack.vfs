@@ -6,6 +6,7 @@ import {DataGrid} from "/node_modules/@d3x0r/popups2/controls/data-grid.js"
 import {Checkbox} from "/node_modules/@d3x0r/popups2/controls/checkbox.js"
 import {ChoiceInput} from "/node_modules/@d3x0r/popups2/controls/choice-input.js"
 import {createSimpleForm} from "/node_modules/@d3x0r/popups2/forms/simple-form.js"
+import {JSOX} from "/node_modules/jsox/lib/jsox.mjs"
 import {local} from "./local.js"
 import {config as protocolConfig, protocol} from "./protocol.js"
 
@@ -141,6 +142,20 @@ export class TaskInfoEditor extends Popup {
 		} )
 		this.saveAs.tooltip = task_ ? "Save these settings as a new task, under the name above"
 		                            : "Create this task with these settings";
+
+		// the task as text, both ways: copy it out to paste into another
+		// manager, or paste one in from elsewhere.  Apply reopens this editor
+		// on the pasted config rather than trying to refresh every bound
+		// control in place.
+		this.jsox = new Button( buttonFrame, "JSOX", ()=>{
+			const form = new JsoxForm( collectTask(), (imported)=>{
+				form.remove();
+				this.on( "close", true );
+				this.remove();
+				new TaskInfoEditor( taskId, imported, group );
+			} );
+		} );
+		this.jsox.tooltip = "Show this task's configuration as JSOX to copy, or paste one in to apply";
 
 		if( !task ) {
 			return;
@@ -426,7 +441,9 @@ export class TaskInfoEditor extends Popup {
 
 		//this.center();
 		const this_ = this;		
-		function processForm(create) {
+		// pull the grid-backed pages (args, env, dependencies) into `task` so it
+		// is the whole configuration as the form currently has it
+		function collectTask() {
 			//Object.assign( task_, task );
 			task.args = this_.argVal.map( arg=>arg.arg );
 			setShowState( task, taskOpts.showState );
@@ -437,6 +454,10 @@ export class TaskInfoEditor extends Popup {
 			// always sent, including as [] - Task.update() replaces the set, and
 			// an omitted key would leave the old dependencies in place.
 			task.dependsOn = depRows.filter( row=>row.checked ).map( row=>row.name );
+			return task;
+		}
+		function processForm(create) {
+			collectTask();
 			if( create)
 				protocol.createTask( group, task );
 			else protocol.updateTask( group, taskId, task );
@@ -463,5 +484,81 @@ export class TaskInfoEditor extends Popup {
 		const left = Math.max( 16, Math.round( ( window.innerWidth - rect.width ) / 2 ) );
 		frame.style.left = left + "px";
 		frame.style.top = "96px";
+	}
+}
+
+// Keys the manager puts on a task at runtime (callbacks for moveTo/style);
+// not configuration, and not something another manager should be handed.
+function configOnly( task ) {
+	const copy = JSOX.parse( JSOX.stringify( task ) );
+	for( const key of [ "moveTo", "style" ] )
+		if( copy[key] && "object" === typeof copy[key] ) delete copy[key].cb;
+	return copy;
+}
+
+// A textarea with the task as JSOX.  Copy puts it on the clipboard; Apply
+// parses whatever is in the box and hands it to `apply`.
+class JsoxForm extends Popup {
+	constructor( task, apply ) {
+		super( "Task JSOX", document.body, { suffix:"-task-jsox", shadowFrame: true, enableClose: true } );
+		local.dialogs.add( this );
+		this.on( "captionClose", ()=>this.remove() );
+		this.hide();
+		const styles = [popups.utils.addStyleSheetSrc( this, "/css/styles.css" )
+		  ,popups.utils.addStyleSheetSrc( this, "/css/task-config.css" )];
+
+		const frame = document.createElement( "div" );
+		frame.className = "task-jsox-frame";
+		const text = document.createElement( "textarea" );
+		text.className = "task-jsox-text";
+		text.spellcheck = false;
+		text.value = JSOX.stringify( configOnly( task ), null, "	" );
+		frame.appendChild( text );
+		const status = document.createElement( "div" );
+		status.className = "task-jsox-status";
+		frame.appendChild( status );
+		const buttons = document.createElement( "div" );
+		buttons.className = "task-config-buttons";
+		frame.appendChild( buttons );
+		this.appendChild( frame );
+
+		const copy = new Button( buttons, "Copy", ()=>{
+			navigator.clipboard.writeText( text.value ).then( ()=>{
+				status.textContent = "Copied to clipboard";
+			}, (err)=>{
+				// no clipboard (not a secure context, or denied): leave it
+				// selected so a ctrl-C still does the job
+				text.focus(); text.select();
+				status.textContent = "Could not copy automatically; the text is selected, press Ctrl+C";
+			} );
+		} );
+		copy.tooltip = "Copy this configuration to the clipboard";
+		const applyButton = new Button( buttons, "Apply", ()=>{
+			let imported;
+			try {
+				imported = JSOX.parse( text.value );
+			} catch( err ) {
+				status.textContent = "Not valid JSOX: " + err.message;
+				return;
+			}
+			if( !imported || "object" !== typeof imported || Array.isArray( imported ) ) {
+				status.textContent = "Expected a single task object";
+				return;
+			}
+			apply( imported );
+		} );
+		applyButton.tooltip = "Load the configuration in the box into the editor (nothing is saved until you press Save)";
+		const close = new Button( buttons, "Close", ()=>this.remove() );
+
+		Promise.all( styles ).then( ()=>{
+			this.show();
+			this.center();
+			text.focus();
+			text.select();
+		} );
+	}
+	remove() {
+		local.dialogs.delete( this );
+		super.remove();
 	}
 }

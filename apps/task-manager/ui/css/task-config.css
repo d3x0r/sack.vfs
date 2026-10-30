@@ -449,3 +449,28 @@ select{
 	opacity: 0.4;
 	cursor: not-allowed;
 }
+
+.frameContainer-task-jsox {
+	max-width: min(88vw, 900px);
+	max-height: calc(100vh - 120px);
+	box-sizing: border-box;
+}
+.task-jsox-frame {
+	display: flex;
+	flex-direction: column;
+	gap: .5rem;
+	padding: 1rem;
+	box-sizing: border-box;
+}
+.task-jsox-text {
+	width: min(80vw, 800px);
+	height: 50vh;
+	font-family: monospace;
+	font-size: 1.8vh;
+	white-space: pre;
+	box-sizing: border-box;
+}
+.task-jsox-status {
+	min-height: 1.2em;
+	font-size: 1.8vh;
+}
