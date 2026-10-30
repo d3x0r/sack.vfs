@@ -523,14 +523,23 @@ class JsoxForm extends Popup {
 		this.appendChild( frame );
 
 		const copy = new Button( buttons, "Copy", ()=>{
-			navigator.clipboard.writeText( text.value ).then( ()=>{
-				status.textContent = "Copied to clipboard";
-			}, (err)=>{
-				// no clipboard (not a secure context, or denied): leave it
-				// selected so a ctrl-C still does the job
+			// navigator.clipboard only exists on a secure origin (https or
+			// localhost); a manager reached by plain http from another machine
+			// has none, so go through the selection-based copy there, which
+			// still works from a click.
+			const done = ()=>{ status.textContent = "Copied to clipboard"; };
+			const fallback = ()=>{
 				text.focus(); text.select();
-				status.textContent = "Could not copy automatically; the text is selected, press Ctrl+C";
-			} );
+				let ok = false;
+				try { ok = document.execCommand( "copy" ); } catch( err ) {}
+				status.textContent = ok ? "Copied to clipboard"
+				                        : ( window.isSecureContext
+				                          ? "Could not copy automatically; the text is selected, press Ctrl+C"
+				                          : "Clipboard access needs https (this page is http); the text is selected, press Ctrl+C" );
+			};
+			if( navigator.clipboard && navigator.clipboard.writeText )
+				navigator.clipboard.writeText( text.value ).then( done, fallback );
+			else fallback();
 		} );
 		copy.tooltip = "Copy this configuration to the clipboard";
 		const applyButton = new Button( buttons, "Apply", ()=>{
