@@ -72,17 +72,18 @@ export class Protocol extends Events {
 	}
 
 	static onclose( evt ){
-		const Protocol = Object.getPrototypeOf( this ).constructor;
+		// the subclass holds ws; the private statics live on Protocol itself and aren't inherited,
+		// so they're called on Protocol, never on the subclass
+		const ThisProtocol = Object.getPrototypeOf( this ).constructor;
 		Protocol.#clearHeartbeat( this );
 		Protocol.debug && console.log( "close?", this, evt );
 		const event = this.on( "close", [evt.code, evt.reason] );
-		Protocol.ws = null;
+		ThisProtocol.ws = null;
 		if( evt.code === 1000 ) this.connect();
 		else setTimeout( this.connect.bind(this), 5000 );
 	}
 
 	static onerror( evt ){
-		const Protocol = Object.getPrototypeOf( this ).constructor;
 		Protocol.debug && console.log( "error?", this, evt );
 		//const event = this.on( "close", [evt.code, evt.reason] );
 		//Protocol.ws = null;
