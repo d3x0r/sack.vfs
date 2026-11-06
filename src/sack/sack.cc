@@ -36928,12 +36928,32 @@ struct timer_local_data {
 	PTIMERSET timer_pool;
 	PTHREAD_EVENTSET thread_event_pool;
 	PTIMER timers;
- // this timer is scheduled to be added...
-	PTIMER add_timer;
+	// this timer is scheduled to be added...
+	// volatile: written by whichever thread is adding, read and cleared by
+	// the timer thread, and spun on in InsertTimer below.
+	volatile PTIMER add_timer;
 	PTIMER current_timer;
+	/*
+	 * Out of the bitfield below, on purpose.
+	 *
+	 * These two are written by the timer thread and by whatever thread is
+	 * adding a timer at the same moment.  As adjacent bitfields they shared
+	 * one storage word, so "away_in_timer = 0" on the timer thread was a
+	 * read-modify-write of that whole word and could drop a concurrent
+	 * "insert_while_away" from another thread - and the other way about.
+	 * Two threads writing neighbouring bits of one word is a race whatever
+	 * locks are held, because the hardware has no narrower write.
+	 */
+	volatile uint32_t away_in_timer;
+	/*
+	 * How many threads are inside the away-insert path right now.
+	 *
+	 * A count, not a flag.  As a flag, two threads inserting at the same
+	 * moment both set it, the first to finish cleared it, and the timer
+	 * thread's wait below was satisfied while the second was still going.
+	 */
+	volatile uint32_t insert_while_away_count;
 	struct {
-		BIT_FIELD away_in_timer : 1;
-		BIT_FIELD insert_while_away : 1;
 		BIT_FIELD bExited : 1;
 #ifdef ENABLE_CRITICALSEC_LOGGING
 		BIT_FIELD bLogCriticalSections : 1;
@@ -38391,24 +38411,24 @@ static void InsertTimer( PTIMER timer DBG_PASS )
 {
 	if( NotTimerThread() )
 	{
-		if( globalTimerData.flags.away_in_timer )
+		if( globalTimerData.away_in_timer )
  // if it's away - should be safe to add a new timer
 		{
-			globalTimerData.flags.insert_while_away = 1;
+			globalTimerData.insert_while_away_count++;
 			// set that we're adding a timer while away
-			if( globalTimerData.flags.away_in_timer )
+			if( globalTimerData.away_in_timer )
 			{
 				// if the thread is still away - we can add the timer...
 #ifdef LOG_SLEEPS
 				lprintf( "Timer is away, just add this new timer back in.." );
 #endif
 				DoInsertTimer( timer );
-				globalTimerData.flags.insert_while_away = 0;
+				globalTimerData.insert_while_away_count--;
 				return;
 			}
 			// otherwise he came back before we set our addin
 			// therefore it should be safe to schedule.
-			globalTimerData.flags.insert_while_away = 0;
+			globalTimerData.insert_while_away_count--;
 		}
 #ifdef LOG_INSERTS
 		Log( "Inserting timer...to wait for change allow" );
@@ -38535,21 +38555,42 @@ static int CPROC ProcessTimers( uintptr_t psvForce )
 		}
 		// add and delete new/old timers here...
 		// should be the next event after sleeping (low var-sleep top const-sleep)
-		if( globalTimerData.add_timer )
+		/*
+		 * Take the pending timer OUT of the slot before inserting it.
+		 *
+		 * DoInsertTimer enters csGrab and can block there while another
+		 * thread is inserting.  ProcessTimers is re-entered on this thread
+		 * (the "Recursing timer" warning below is this happening), and the
+		 * guard above only covers current_timer, which is NULL here - so a
+		 * re-entrant pass would read the same still-occupied add_timer and
+		 * insert the very same timer a second time.  A timer spliced into
+		 * the list twice is a cycle: DoInsertTimer's own guard catches it as
+		 * timer->next == timer, and whatever the splice wrote through the
+		 * stale `me` back-pointer has already landed somewhere else.
+		 *
+		 * Clearing first costs nothing and closes the window.
+		 */
 		{
+			PTIMER adding = globalTimerData.add_timer;
+			if( adding )
+			{
 #ifdef LOG_INSERTS
-			Log( "Adding timer really..." );
+				Log( "Adding timer really..." );
 #endif
-			DoInsertTimer( globalTimerData.add_timer );
-			globalTimerData.add_timer = NULL;
+				globalTimerData.add_timer = NULL;
+				DoInsertTimer( adding );
+			}
 		}
-		if( globalTimerData.del_timer )
 		{
+			uint32_t deleting = globalTimerData.del_timer;
+			if( deleting )
+			{
 #ifdef LOG_INSERTS
-			Log( "Scheduled remove timer..." );
+				Log( "Scheduled remove timer..." );
 #endif
-			DoRemoveTimer( globalTimerData.del_timer DBG_SRC );
-			globalTimerData.del_timer = 0;
+				globalTimerData.del_timer = 0;
+				DoRemoveTimer( deleting DBG_SRC );
+			}
 		}
 		// get the time now....
 //GetTickCount();
@@ -38623,7 +38664,7 @@ static int CPROC ProcessTimers( uintptr_t psvForce )
 					//#endif
 					globalTimerData.current_timer = timer;
 					timer->flags.bRescheduled = 0;
-					globalTimerData.flags.away_in_timer = 1;
+					globalTimerData.away_in_timer = 1;
 					globalTimerData.CurrentTimerID = timer->ID;
 					timer->callback( timer->userdata );
 					if( globalTimerData.flags.bLogTimerDispatch )
@@ -38631,8 +38672,8 @@ static int CPROC ProcessTimers( uintptr_t psvForce )
 						level--;
 						lprintf( "timer done. (%d)", level );
 					}
-					globalTimerData.flags.away_in_timer = 0;
-					while( globalTimerData.flags.insert_while_away )
+					globalTimerData.away_in_timer = 0;
+					while( globalTimerData.insert_while_away_count )
 					{
 						// request for insert while away... allow it to
 						// get scheduled...
@@ -38924,7 +38965,7 @@ static void InternalRescheduleTimerEx( PTIMER timer, uint32_t delay )
 	{
 		// grabbing the timer this way should put its delta into the next.
 		PTIMER bGrabbed = GrabTimer( timer, FALSE );
-		if (globalTimerData.flags.away_in_timer && globalTimerData.CurrentTimerID == timer->ID) {
+		if (globalTimerData.away_in_timer && globalTimerData.CurrentTimerID == timer->ID) {
 #ifdef DEBUG_TIMER_RESCHEDULE
 			lprintf("Timer is dispatched/close to being dispatched. %d", timer->ID);
 #endif
