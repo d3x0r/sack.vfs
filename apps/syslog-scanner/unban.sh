@@ -1,2 +1,6 @@
-rule=$(nft -a list table filter |grep $1 | sed  's/.*handle \(\n*\)/\1/g')
-[ ! -z $rule ] &&  nft delete rule filter INPUT handle $rule 
+#!/bin/bash
+# usage: unban.sh <network/prefix>     removes it from the nft-setup.sh sets
+
+case "$1" in *:*) SET=v6;; *) SET=v4;; esac
+
+nft delete element inet banlist $SET "{ $1 }"
