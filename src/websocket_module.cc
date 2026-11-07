@@ -128,8 +128,9 @@ struct optionStrings {
 	Eternal<String> *passString;
 	Eternal<String> *deflateString;
 	Eternal<String> *deflateAllowString;
-	Eternal<String>* resolveString;
-	Eternal<String>* getMacString;
+	Eternal<String> *resolveString;
+	Eternal<String> *getMacString;
+	Eternal<String> *sslString;
 	Eternal<String> *caString;
 	Eternal<String> *vUString;
 	Eternal<String> *connectionString;
@@ -416,6 +417,7 @@ static struct optionStrings *getStrings( Isolate *isolate ) {
 		check->certString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "cert" ) );
 		check->keyString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "key" ) );
 		check->pemString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "pem" ) );
+		check->sslString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "ssl" ) );
 		check->passString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "passphrase" ) );
 		check->resolveString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "resolveNames" ) );
 		check->getMacString = new Eternal<String>( isolate, String::NewFromUtf8Literal( isolate, "getMAC" ) );
@@ -5026,16 +5028,21 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 	Local<Context> context = isolate->GetCurrentContext();
 	httpRequestObject *httpRequest = new httpRequestObject();
 
-	if( secure )
-		httpRequest->port = 443;
-	else
-		httpRequest->port = 80;
-	httpRequest->ssl = secure;
 
 	// incoming message events; aborted, close, readableStream (close, data, end, error, readable)
 	Local<Object> options = args[0]->ToObject( isolate->GetCurrentContext() ).ToLocalChecked();
 	Local<String> optName;
 	optionStrings *strings = getStrings( isolate );
+
+	if (options->Has(context, optName = strings->sslString->Get(isolate)).ToChecked()) {
+		secure = GETV(options, optName)->ToBoolean(isolate)->Value();
+	}
+
+	if (secure)
+		httpRequest->port = 443;
+	else
+		httpRequest->port = 80;
+	httpRequest->ssl = secure;
 
 	if( options->Has( context, optName = strings->hostnameString->Get( isolate ) ).ToChecked() ) {
 		String::Utf8Value value( USE_ISOLATE( isolate ) GETV( options, optName ) );

@@ -1,12 +1,12 @@
 
 import {sack} from "sack.vfs"
+import {addSettings, subnetOf, recentBans} from "./subnet.mjs"
 
 
 const lbs = {
 	command : "/root/bin/iptables-setup",
 	DSN : "maria-firewall",
 	exec_timer : 0,
-	lastban : null,
 	pendingKeys : new Map(), // there's a 2 part ban command...
 	pendingFailAuth : new Map(), // there's a 2 part ban command...
 	db : null,
@@ -15,7 +15,7 @@ const lbs = {
 
 
 const configProcessor = sack.Config();
-configProcessor.add( "command=%m", (c)=>lbs.command = c );
+const settings = addSettings( configProcessor, lbs );
 configProcessor.add( "input=%m", (c)=>{
 	const words = c.split( " " );
 	sack.Task( { bin:words[0], args:words.slice( 1 ).join(" " ), input(buf) { 
@@ -25,6 +25,8 @@ configProcessor.add( "input=%m", (c)=>{
 } );
 configProcessor.add( "DSN=%m", (c)=>lbs.DSN = c );
 configProcessor.go( "linux_syslog_scanner.conf" );
+settings.resolve();
+const banned = recentBans( lbs.banSeconds * 1000 );
 
 lbs.db = sack.DB( lbs.DSN, (db)=>{
 	try {
@@ -130,21 +132,26 @@ function failed_key_close( leader, pid, ip, port, line ) {
 function AddBan( IP, line )
 {
 	console.log( "Handled:", line );
-	console.log( "ban IP:", IP );
+	const net = subnetOf( IP, lbs.v4prefix, lbs.v6prefix );
+	if( !net ) { console.log( "not an address, ignoring:", IP ); return; }
 	if( lbs.db ) {
-		const result = lbs.db.do( "select 1 from banlist where IP=?", IP )
+		const result = lbs.db.do( "select allow from banlist where IP=?", IP )
 		if( result && result[0] ) {
-			console.log( "(will ban anyway?) already banned? %s\n", IP );
+			if( Number( result[0].allow ) ) {
+				console.log( "allow-listed, not banning:", IP );
+				return;
+			}
+			// already known; re-banning below restarts its timeout
 			lbs.db.do( "update banlist set last_hit=now() where IP=?", IP );
-			//return; // no need to include this one.
 		} else {
 			console.log( "insert IP:", IP );
 			lbs.db.do( "insert into banlist (IP) values(?)", IP );
 		}
 	}
-	if( !lbs.lastban || lbs.lastban.localeCompare( IP ) ) {
-		sack.Task( {bin:lbs.command, args:[IP] } );
-	}
+	// the firewall already drops this network; lines still arriving were in flight
+	if( banned.check( net.cidr ) ) return;
+	console.log( "ban:", net.cidr, "for", IP );
+	sack.Task( {bin:lbs.command, args:[net.cidr, lbs.banSeconds + "s"] } );
 }
 
 
