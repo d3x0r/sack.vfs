@@ -91330,6 +91330,23 @@ LOGICAL ssl_BeginClientSession( PCLIENT pc, CPOINTER client_keypair, size_t clie
 	ses->send_callback = ssl_layer_sender;
 	ses->recv_callback = ssl_layer_recver;
 	ses->psvSendRecv = (uintptr_t)pc;
+	/*
+	 * ses->pc is how ssl_RetireSession tells a session that owns a socket -
+	 * park it, and let ssl_finalize free it from TerminateClosedClientEx once
+	 * no dispatch can be in flight - from a pipe session with no socket
+	 * teardown to wait for, which it frees on the spot.
+	 *
+	 * It was only ever assigned on the accept side (ses->pc = pcNew), so every
+	 * OUTBOUND session looked like a pipe session and was freed immediately,
+	 * from the requesting thread inside RemoveClient, while the network thread
+	 * still had a recv() armed into this session's buffers.  ASan on an
+	 * https POST loop: heap-use-after-free, WRITE of size 24 in recv() from
+	 * FinishPendingRead, freed by ssl_DestroySession under GetHttpsQueryEx,
+	 * within four requests.  The response bytes then land in whatever was
+	 * reallocated there, which is why it surfaced far away - a segment ->next
+	 * reading 0x1000 in GetTextSize, a garbage line in LineReleaseEx.
+	 */
+	ses->pc = pc;
 	pc->read.ReadComplete = ssl_ReadComplete;
 	ClearClientFlags( pc, CF_CPPREAD );
 	ses->errorCallback = pc->errorCallback;
