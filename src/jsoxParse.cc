@@ -457,6 +457,34 @@ Local<Object> getObject( struct reviver_data* revive, struct jsox_value_containe
 	return sub_o;
 }
 
+// Store one parsed field on its object.
+//
+// Object::Set() is an ordinary assignment, and for the one name Object.prototype carries
+// an accessor for -- '__proto__' -- that sets the object's prototype instead of making a
+// field.  So `{"__proto__":{"isAdmin":true}}` parsed to an object whose field was gone
+// from Object.keys() and from JSOX.stringify(), while a plain read of it still returned
+// the document's value; a primitive there was dropped outright, the setter ignoring a
+// non-object.  JSON.parse() makes an own property of it, so CreateDataProperty (which
+// defines rather than sets) is used for that name.
+//
+// Only for that name: every other inherited name is a plain data property that assignment
+// already shadows correctly, and defining every field unconditionally measured about five
+// times the cost of an assignment.  The length test keeps even the string compare off all
+// but nine-character keys.  Once the own property exists, a later Set() of it updates the
+// field, so the deferred-reference pass needs no separate case.
+static void setParsedField( Local<Object> o, Local<Context> context, Local<Value> key, Local<Value> value ) {
+	if( key->IsString() ) {
+		Local<String> name = key.As<String>();
+		if( name->Length() == 9
+		 && name->StringEquals( String::NewFromUtf8Literal( context->GetIsolate(), "__proto__",
+		                                                    NewStringType::kInternalized ) ) ) {
+			(void)o->CreateDataProperty( context, name, value );
+			return;
+		}
+	}
+	(void)o->Set( context, key, value );
+}
+
 static Local<Value> getArray( struct reviver_data* revive, struct jsox_value_container* val ) {
 	Local<Value> sub_o;
 #ifdef DEBUG_SET_FIELDCB
@@ -1164,7 +1192,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 					}
 					if( !zObj->IsUndefined() ) {
 						if( val->name )
-							SETV( o, revive->fieldName, zObj );
+							setParsedField( o, context, revive->fieldName, zObj );
 						else
 							SETN( o, currentIndex, zObj );
 					}
@@ -1183,7 +1211,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 				
 #endif
 				if( val->value_type == JSOX_VALUE_UNDEFINED || !tmp->IsUndefined() ) {
-					o->Set( revive->context, revive->fieldName, tmp );
+					setParsedField( o, revive->context, revive->fieldName, tmp );
 				}
 			}
 			break;
@@ -1203,7 +1231,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 					LogObject( sub_v );
 
 					if( !sub_v->IsUndefined() )
-						o->Set( revive->context, revive->fieldName, newObj.ToLocalChecked() );
+						setParsedField( o, revive->context, revive->fieldName, newObj.ToLocalChecked() );
 					else
 						sub_v = o->Get( revive->context, revive->fieldName ).ToLocalChecked();
 				}
@@ -1221,7 +1249,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 #endif
 			}
 			else {
-				o->Set( revive->context, revive->fieldName, sub_v);
+				setParsedField( o, revive->context, revive->fieldName, sub_v );
 			}
 #ifdef DEBUG_REVIVAL_CALLBACKS
 			lprintf( "to build subobject( array ) isUndefined?...%d", o.IsEmpty()?0:o->IsUndefined() );
@@ -1307,14 +1335,14 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 
 						if( !sub_v->IsUndefined() ) {
 							if( val->name )
-								SETV( o, revive->fieldName, sub_v );
+								setParsedField( o, context, revive->fieldName, sub_v );
 							else
 								SETN( o, currentIndex, sub_v );
 						}
 					}
 				}
 				else if( val->name ) {
-					SETV( o, revive->fieldName, sub_v );
+					setParsedField( o, context, revive->fieldName, sub_v );
 				}
 				else {
 					SETN( o, currentIndex, sub_v );
@@ -1384,7 +1412,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 					else
 						lprintf( "set value to index: %d", currentIndex );
 #endif
-					o->Set( context, revive->fieldName, sub_v );
+					setParsedField( o, context, revive->fieldName, sub_v );
 				}
 #endif
 #ifdef DEBUG_REVIVAL_CALLBACKS
@@ -1458,7 +1486,7 @@ static void buildObject( PNVDATALIST msg_data, Local<Object> o, struct reviver_d
 					return;
 				if( !sub_v->IsUndefined() ) {
 					if( val->name ) {
-						SETV( o, revive->fieldName, sub_v );
+						setParsedField( o, context, revive->fieldName, sub_v );
 					}
 					else {
 						SETN( o, currentIndex, sub_v );
@@ -1621,7 +1649,7 @@ static void substituteDeferred( struct reviver_data* revive, Local<Value> node, 
 		INDEX which = findPlaceholder( revive, v );
 		if( which != INVALID_INDEX ) {
 			struct deferredRef* d = (struct deferredRef*)GetDataItem( &revive->pdlDeferred, which );
-			o->Set( revive->context, key, d->resolved );
+			setParsedField( o, revive->context, key, d->resolved );
 		}
 		else
 			substituteDeferred( revive, v, seen );

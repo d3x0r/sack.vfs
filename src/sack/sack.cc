@@ -72752,6 +72752,17 @@ struct jsox_parse_state {
 	LOGICAL literalString;
 	PLINKSTACK *context_stack;
 	PLIST classes;
+	// The same classes, indexed by name, so defining one does not scan every class
+	// already defined -- see jsox_find_class().  Open addressing; a NULL slot ends a
+	// probe and JSOX_CLASS_INDEX_DELETED continues it.  classIndexSize is a power of
+	// two, or 0 before the first class is defined; classIndexUsed counts live entries
+	// and tombstones together, which is what the load factor has to be measured on.
+	PJSOX_CLASS *classIndex;
+	size_t classIndexSize;
+   // live entries plus tombstones -- what the load factor is
+	size_t classIndexUsed;
+   // live entries alone -- what the next table is sized from
+	size_t classIndexLive;
 	PJSOX_CLASS current_class;
 	int current_class_item;
 	int arrayType;
@@ -72882,6 +72893,8 @@ static void registerKnownArrayTypeNames(void) {
 	AddLink( &knownArrayTypeNames, "f64" );
 	AddLink( &knownArrayTypeNames, "ref" );
 }
+// defined with the rest of the class name index, below
+static void jsox_class_index_reset( struct jsox_parse_state *state );
 static void jsox_state_init( struct jsox_parse_state *state )
 {
 	PPLIST ppList;
@@ -72918,6 +72931,7 @@ static void jsox_state_init( struct jsox_parse_state *state )
 		}
 	}
 	DeleteList( &state->classes );
+	jsox_class_index_reset( state );
 	state->line = 1;
  // counted as each character is taken; the first lands on 1
 	state->col = 0;
@@ -72965,6 +72979,117 @@ struct jsox_parse_state * jsox_begin_parse( void )
 	jsox_state_init( state );
 	LeaveCriticalSec( &jxpsd.cs_states  );
 	return state;
+}
+// ---- the class name index -------------------------------------------------------
+//
+// Two problems lived in the three copies of this lookup that used to be written inline
+// at the call sites as
+//    LIST_FORALL( state->classes, idx, PJSOX_CLASS, cls )
+//        if( memcmp( cls->name, val.className, val.classNameLen ) == 0 ) break;
+//
+// First, it compared only as many bytes as the name being looked up has and never
+// consulted cls->nameLen (stored, but used nowhere), so a longer registered name matched
+// any prefix of itself: with 'AB' defined, a reference to 'A' found 'AB', and
+// 'AB{x,y}A{p}' took p as AB's x instead of defining a second class.  It also read
+// classNameLen bytes out of cls->name however long that name really was.  The length is
+// compared first now, the way the typed-array name lookup further down already did it.
+//
+// Second, it was a scan, run once per 'Name{...}' in the document, so a document of N
+// definitions cost O(N^2): 16,000 definitions took 240ms, 32,000 968ms and 64,000
+// (565KB) 3875ms, which let one message hold the thread for seconds.  The names go in a
+// hash table as they are defined, so the lookup no longer grows with the class count.
+#define JSOX_CLASS_INDEX_DELETED ((PJSOX_CLASS)(uintptr_t)1)
+#define JSOX_CLASS_INDEX_MIN 16
+static size_t jsox_class_hash( const char *name, size_t nameLen ) {
+	// FNV-1a; names are short, and only their bytes are available -- they are not
+	// NUL terminated, they point into the parse buffers.
+	size_t n;
+	uint32_t h = 2166136261u;
+	for( n = 0; n < nameLen; n++ ) {
+		h ^= (uint8_t)name[n];
+		h *= 16777619u;
+	}
+	return (size_t)h;
+}
+static void jsox_class_index_place( PJSOX_CLASS *table, size_t size, PJSOX_CLASS cls ) {
+	// only ever called with a name that is not in the table already
+	size_t mask = size - 1;
+	size_t i = jsox_class_hash( cls->name, cls->nameLen ) & mask;
+	while( table[i] && table[i] != JSOX_CLASS_INDEX_DELETED )
+		i = ( i + 1 ) & mask;
+	table[i] = cls;
+}
+static void jsox_class_index_grow( struct jsox_parse_state *state ) {
+	size_t newSize = JSOX_CLASS_INDEX_MIN;
+	size_t n;
+	PJSOX_CLASS *table;
+	// Size from the live entries, and leave the new table at most a quarter full: the
+	// add below grows at half full, so a quarter leaves room for the live count to
+	// double before the next rehash, which is what makes the rehashing amortize away.
+	// (Sizing to exactly the grow threshold instead made every single insert rehash --
+	// slower than the scan it replaced.)
+	while( newSize < ( state->classIndexLive + 1 ) * 4 ) newSize *= 2;
+	table = (PJSOX_CLASS*)Allocate( newSize * sizeof( PJSOX_CLASS ) );
+	MemSet( table, 0, newSize * sizeof( PJSOX_CLASS ) );
+	for( n = 0; n < state->classIndexSize; n++ ) {
+		PJSOX_CLASS cls = state->classIndex[n];
+		if( cls && cls != JSOX_CLASS_INDEX_DELETED )
+			jsox_class_index_place( table, newSize, cls );
+	}
+	if( state->classIndex ) Release( state->classIndex );
+	state->classIndex = table;
+	state->classIndexSize = newSize;
+   // the rehash dropped the tombstones
+	state->classIndexUsed = state->classIndexLive;
+}
+static void jsox_class_index_add( struct jsox_parse_state *state, PJSOX_CLASS cls ) {
+	// grow at half full, counting tombstones, so a probe always meets a NULL slot
+	if( !state->classIndexSize
+	 || ( state->classIndexUsed + 1 ) * 2 >= state->classIndexSize )
+		jsox_class_index_grow( state );
+	jsox_class_index_place( state->classIndex, state->classIndexSize, cls );
+	state->classIndexUsed++;
+	state->classIndexLive++;
+}
+static void jsox_class_index_drop( struct jsox_parse_state *state, PJSOX_CLASS cls ) {
+	size_t mask, i;
+	if( !state->classIndexSize ) return;
+	mask = state->classIndexSize - 1;
+	i = jsox_class_hash( cls->name, cls->nameLen ) & mask;
+	while( state->classIndex[i] ) {
+		if( state->classIndex[i] == cls ) {
+			// a tombstone, not NULL: a NULL here would cut short the probe of any
+			// name that collided with this one and landed further along.  It still
+			// counts in classIndexUsed, and the next rehash is what reclaims it.
+			state->classIndex[i] = JSOX_CLASS_INDEX_DELETED;
+			state->classIndexLive--;
+			return;
+		}
+		i = ( i + 1 ) & mask;
+	}
+}
+static void jsox_class_index_reset( struct jsox_parse_state *state ) {
+	if( state->classIndex ) Release( state->classIndex );
+	state->classIndex = NULL;
+	state->classIndexSize = 0;
+	state->classIndexUsed = 0;
+	state->classIndexLive = 0;
+}
+// Find a class the document has defined, by name.
+static PJSOX_CLASS jsox_find_class( struct jsox_parse_state *state, const char *name, size_t nameLen ) {
+	size_t mask, i;
+	if( !state->classIndexSize ) return NULL;
+	mask = state->classIndexSize - 1;
+	i = jsox_class_hash( name, nameLen ) & mask;
+	while( state->classIndex[i] ) {
+		PJSOX_CLASS cls = state->classIndex[i];
+		if( cls != JSOX_CLASS_INDEX_DELETED
+		 && cls->nameLen == nameLen
+		 && memcmp( cls->name, name, nameLen ) == 0 )
+			return cls;
+		i = ( i + 1 ) & mask;
+	}
+	return NULL;
 }
 char *jsox_escape_string_length( const char *string, size_t len, size_t *outlen ) {
 	size_t m = 0;
@@ -73255,18 +73380,19 @@ static int openObject( struct jsox_parse_state *state, struct jsox_output_buffer
 			lprintf( "define class: %*.*s", (int)state->val.stringLen, (int)state->val.stringLen, state->val.className );
 #endif
 			nextObjectMode = JSOX_OBJECT_CONTEXT_CLASS_FIELD;
-			LIST_FORALL( state->classes, idx, PJSOX_CLASS, cls )
-				if( memcmp( cls->name, state->val.className, state->val.classNameLen ) == 0 )
-					break;
+			cls = jsox_find_class( state, state->val.className, state->val.classNameLen );
 			if( !cls ) {
 				cls = GetFromSet( JSOX_CLASS, &state->classPool );
 				cls->name = state->val.className;
-				cls->nameLen = state->val.stringLen;
+				// the length belonging to className; stringLen is only incidentally the
+				// same here, and the lookup above compares against classNameLen
+				cls->nameLen = state->val.classNameLen;
 				cls->fields = NULL;
 #ifdef DEBUG_CLASS_STATES
 				lprintf( "CREATING CLASS: %s", cls->name );
 #endif
 				AddLink( &state->classes, cls );
+				jsox_class_index_add( state, cls );
 			} else {
 				if( state->allowRedefinition ) {
 					struct jsox_class_field* field;
@@ -73299,9 +73425,7 @@ static int openObject( struct jsox_parse_state *state, struct jsox_output_buffer
  // this is a tagged object open.
 		if( state->val.className ) {
 			if( state->objectContext == JSOX_OBJECT_CONTEXT_CLASS_VALUE ) {
-				LIST_FORALL( state->classes, idx, PJSOX_CLASS, cls )
-					if( memcmp( cls->name, state->val.className, state->val.classNameLen ) == 0 )
-						break;
+				cls = jsox_find_class( state, state->val.className, state->val.classNameLen );
 				// prototype classes don't have to have definitions
 				// which the parser needs to know about.
 				// but then it's got a className and is just a normal object otherwise.
@@ -73330,9 +73454,7 @@ static int openObject( struct jsox_parse_state *state, struct jsox_output_buffer
 	         ) {
 		if( state->val.className ) {
 			// a string value opening a class makes for having a className
-			LIST_FORALL( state->classes, idx, PJSOX_CLASS, cls )
-				if( memcmp( cls->name, state->val.className, state->val.classNameLen ) == 0 )
-					break;
+			cls = jsox_find_class( state, state->val.className, state->val.classNameLen );
 			// it's ok if it's a class type that's not known internally.  This should be returned to
 			// the next assembling layer.
 			//if( !cls ) lprintf( "Referenced class %s has not been defined", state->val.string );
@@ -74305,6 +74427,7 @@ int jsox_parse_add_data( struct jsox_parse_state *state
 							break;
 						}
 						if( GetLinkCount( state->current_class->fields ) == 0 ) {
+							jsox_class_index_drop( state, state->current_class );
 							DeleteLink( &state->classes, state->current_class );
 							DeleteFromSet( JSOX_CLASS, &state->classPool, state->current_class );
 							state->current_class = NULL;
@@ -75575,6 +75698,9 @@ void jsox_dispose_message( PDATALIST *msg_data ) {
 void jsox_parse_clear_state( struct jsox_parse_state *state ) {
 	if( state ) {
 		PJSOX_PARSE_BUFFER buffer;
+		// a fault left behind on the previous message would otherwise have the next
+		// fault's text appended to it, and its buffer would never be reclaimed
+		if( state->pvtError ) VarTextDestroy( &state->pvtError );
 		while( ( buffer = (PJSOX_PARSE_BUFFER)PopLink( state->outBuffers ) ) ) {
 			Deallocate( const char *, buffer->buf );
 			DeleteFromSet( JSOX_PARSE_BUFFER, state->parseBuffers, buffer );
@@ -75605,6 +75731,7 @@ void jsox_parse_clear_state( struct jsox_parse_state *state ) {
 				DeleteFromSet( JSOX_CLASS, &state->classPool, cls );
 				SetLink( &state->classes, idx, NULL );
 			}
+			jsox_class_index_reset( state );
 			//DeleteList( &state->outValBuffers );
 		}
 		state->status = TRUE;
@@ -75650,6 +75777,13 @@ void jsox_parse_dispose_state( struct jsox_parse_state **ppState ) {
 	struct jsox_parse_context *old_context;
 	PJSOX_PARSE_BUFFER buffer;
 	EnterCriticalSec( &jxpsd.cs_states );
+	// The error text is created on demand at the first fault and lives on the state.
+	// This state is about to go back to jxpsd.parseStates, where jsox_state_init() will
+	// set pvtError to NULL on its next life, so anything left here is lost for good --
+	// which leaked a VARTEXT per failed parse, and a caller handed malformed input in a
+	// loop grew the process without bound.
+	if( state->pvtError ) VarTextDestroy( &state->pvtError );
+	jsox_class_index_reset( state );
 	_jsox_dispose_message( state->elements );
 	while( ( buffer = (PJSOX_PARSE_BUFFER)PopLink( state->outBuffers ) ) ) {
 		Deallocate( const char *, buffer->buf );
@@ -75687,6 +75821,18 @@ void jsox_parse_dispose_state( struct jsox_parse_state **ppState ) {
 	if( state->context_stack )
 		DeleteFromSet( PLINKSTACK, jxpsd.linkStacks, state->context_stack );
 		//DeleteLinkStack( &state->context_stack );
+	{
+		// the classes themselves live in classPool, which goes away just below
+		INDEX idx;
+		PJSOX_CLASS cls;
+		LIST_FORALL( state->classes, idx, PJSOX_CLASS, cls )
+			SetLink( &state->classes, idx, NULL );
+		DeleteList( &state->classes );
+	}
+	DeleteSetEx( JSOX_CLASS, &state->classPool );
+	DeleteSetEx( JSOX_CLASS_FIELD, &state->class_fields );
+	DeleteSetEx( JSOX_PARSE_CONTEXT, &state->parseContexts );
+	DeleteSetEx( JSOX_PARSE_BUFFER, &state->parseBuffers );
 	DeleteFromSet( JSOX_PARSE_STATE, jxpsd.parseStates, state );
 	LeaveCriticalSec( &jxpsd.cs_states );
 	//Deallocate( struct jsox_parse_state *, state );

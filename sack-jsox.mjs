@@ -33,6 +33,16 @@ let toProtoTypeRegistrations = []; // external registrations may need to be upda
 let toObjectTypes = new Map();
 let fromProtoTypes = new Map();
 let commonClasses = [];
+// The same classes, indexed for matchObject(), which scanned both lists with
+// Array.prototype.find once per object serialized (twice, when nothing matched by
+// prototype).  First write wins, as find() did.
+let commonClassesByProto = new Map();
+let commonClassesByTag = new Map();
+
+function indexCommonClass( cls ) {
+	if( cls.proto && !commonClassesByProto.has( cls.proto ) ) commonClassesByProto.set( cls.proto, cls );
+	if( !commonClassesByTag.has( cls.tag ) ) commonClassesByTag.set( cls.tag, cls );
+}
 
 sack.JSOX.fromProtoType = fromProtoTypes;
 
@@ -86,6 +96,8 @@ function initPrototypes()
 	toObjectTypes = new Map();
 	fromProtoTypes = new Map();
 	commonClasses = [];
+	commonClassesByProto = new Map();
+	commonClassesByTag = new Map();
 
 	sack.JSOX.setFromPrototypeMap( fromProtoTypes, DateNS );
 	pushToProto( Object.prototype, { external:false, name:Object.prototype.constructor.name, cb:null } );
@@ -133,39 +145,39 @@ function initPrototypes()
 	} );
 
 	pushToProto( Uint8Array.prototype, { external:true, name:"u8"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 	pushToProto( Uint8ClampedArray.prototype, { external:true, name:"cu8"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 	pushToProto( Int8Array.prototype, { external:true, name:"s8"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 	pushToProto( Uint16Array.prototype, { external:true, name:"u16"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 	pushToProto( Int16Array.prototype, { external:true, name:"s16"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 	pushToProto( Uint32Array.prototype, { external:true, name:"u32"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 	pushToProto( Int32Array.prototype, { external:true, name:"s32"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 	if( typeof Uint64Array !== "undefined" )
 		pushToProto( Uint64Array.prototype, { external:true, name:"u64"
-			, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+			, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 		} );
 	if( typeof Int64Array !== "undefined" )
 		pushToProto( Int64Array.prototype, { external:true, name:"s64"
-			, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+			, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 		} );
 	pushToProto( Float32Array.prototype, { external:true, name:"f32"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 	pushToProto( Float64Array.prototype, { external:true, name:"f64"
-		, cb:function() { return "["+getIdentifier(base64ArrayBuffer(this.buffer))+"]" }
+		, cb:function() { return "["+getIdentifier(base64ArrayView(this))+"]" }
 	} );
 
 	pushToProto( Symbol.prototype, { external:true, name:"sym"
@@ -230,6 +242,7 @@ sack.JSOX.defineClass = function( name, obj ) {
 		}
 	}
 	if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
+	indexCommonClass( cls );
 }
 
 sack.JSOX.registerToJSOX = function( name, prototype, f ) {
@@ -320,6 +333,9 @@ let lastLog = Date.now();
 
 sack.JSOX.stringifier = function() {
 	var classes = [];
+	// and the same two indexes over them, for matchObject() below
+	var classesByProto = new Map();
+	var classesByTag = new Map();
 	var useQuote = '"';
 	var sortFields = true; // see the `sort` accessor below
 
@@ -360,6 +376,8 @@ sack.JSOX.stringifier = function() {
 				}
 			}
 			if( cls.proto === Object.getPrototypeOf( {} ) ) cls.proto = null;
+			if( cls.proto && !classesByProto.has( cls.proto ) ) classesByProto.set( cls.proto, cls );
+			if( !classesByTag.has( cls.tag ) ) classesByTag.set( cls.tag, cls );
 		},
 		setDefaultObjectToJSOX( cb ) { objectToJSOX = cb },
 		isEncoding(o) {
@@ -430,14 +448,10 @@ sack.JSOX.stringifier = function() {
 		var k;
 		var cls;
 		var prt = Object.getPrototypeOf(o);
-		cls = classes.find( cls=>{
-			if( cls.proto && cls.proto === prt ) return true;
-		} );
-		if( cls ) return cls;
-		cls = commonClasses.find( cls=>{
-			if( cls.proto && cls.proto === prt ) return true;
-		} );
-		if( cls ) return cls;
+		if( prt ) {
+			cls = classesByProto.get( prt ) || commonClassesByProto.get( prt );
+			if( cls ) return cls;
+		}
 
 		if( classes.length || commonClasses.length ) {
 			if( useK )  {
@@ -456,13 +470,8 @@ sack.JSOX.stringifier = function() {
 				}
 				k = denormKeys.toString();
 			}
-			cls = classes.find( cls=>{
-				if( cls.tag === k ) return true;
-			} );
-			if( !cls )
-				cls = commonClasses.find( cls=>{
-					if( cls.tag === k ) return true;
-				} );
+			cls = classesByTag.get( k );
+			if( !cls ) cls = commonClassesByTag.get( k );
 		}
 		return cls;
 	}
@@ -566,6 +575,8 @@ sack.JSOX.stringifier = function() {
 
 		sack.JSOX.stringifierActive = stringifier_;
 		commonClasses.length = 0;
+		commonClassesByProto = new Map();
+		commonClassesByTag = new Map();
 		if( !(path.length = encoding.length = pathBase ) ){
 			fieldMap = new WeakMap();
 		}else{
@@ -944,10 +955,17 @@ sack.JSOX.stringifier = function() {
 		}
 	}
 
+	// base64 of just the bytes a typed array view covers.  The converters below passed
+	// view.buffer, so a view of part of a buffer came back as the whole array it was cut
+	// from: new Uint8Array([10,20,30,40]).subarray(1,3) stringified as all four bytes.
+	function base64ArrayView(view) {
+		return base64ArrayBuffer( new Uint8Array( view.buffer, view.byteOffset, view.byteLength ) );
+	}
+
 	function base64ArrayBuffer(arrayBuffer) {
 		var base64    = ''
 
-		var bytes	 = new Uint8Array(arrayBuffer)
+		var bytes	 = (arrayBuffer instanceof Uint8Array)?arrayBuffer:new Uint8Array(arrayBuffer)
 		var byteLength    = bytes.byteLength
 		var byteRemainder = byteLength % 3
 		var mainLength    = byteLength - byteRemainder
