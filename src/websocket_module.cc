@@ -687,6 +687,10 @@ public:
 	//wscEvent *eventMessage;
 	LOGICAL closed = FALSE;
 	int connect_failed = 0;
+	// Only ever read for logging.  A connect that fails reports an errno and
+	// nothing else, so without this there is no way to tell which of a
+	// process's websocket clients is the one retrying - see webSockClientError.
+	char *url = NULL;
 	enum wsReadyStates readyState;
 	//Isolate *isolate;
 	class constructorSet *c;
@@ -4312,7 +4316,8 @@ static void webSockClientError( PCLIENT pc, uintptr_t psv, int error ) {
 		return;
 	}
 	struct wscEvent *pevt = GetWscEvent();
-	lprintf( "webSockClientError? %d  %p  %p", error, wsc->c->thread, MakeThread() );
+	lprintf( "webSockClientError? %d  %s  %p  %p", error
+	       , wsc->url ? wsc->url : "<no url>", wsc->c->thread, MakeThread() );
 	(*pevt).eventType = WS_EVENT_ERROR;
 	(*pevt)._this = wsc;
 	(*pevt).code = error;
@@ -4367,6 +4372,7 @@ wscObject::wscObject( wscOptions *opts ) : task(this) {
 	this->_this.Reset( opts->c->isolate, opts->_this );
 	this->Wrap( opts->_this );
 	//lprintf( "Create wscObject (note thread... this is blocked...)" );
+	this->url = opts->url ? StrDup( opts->url ) : NULL;
 	pc = WebSocketOpen( opts->url,(enum WebSocketOptions)((int) WS_DELAY_OPEN | (opts->preferV4?(int)WS_PREFER_V4:0)| (opts->preferV6?(int)WS_PREFER_V6:0))
 		, webSockClientOpen
 		, webSockClientEvent, webSockClientClosed, webSockClientError, (uintptr_t)this, opts->protocol );
@@ -4413,6 +4419,7 @@ wscObject::~wscObject() {
 		RemoveClient( pc );
 	}
 	//all member would have been reset... in the event close
+	if( url ) { Release( url ); url = NULL; }
 	DeleteList( &openCallbacks );
 	DeleteList( &closeCallbacks );
 	DeleteList( &messageCallbacks );
@@ -5180,8 +5187,24 @@ void httpRequestObject::getRequest( const FunctionCallbackInfo<Value>& args, boo
 		opts->writeComplete = requestLongBufferWrite;
 		opts->userData = (uintptr_t)httpRequest;
 
-		ThreadTo( DoRequest, (uintptr_t)httpRequest );
+		/*
+		 * Destroyed BEFORE the request thread starts, not after.
+		 *
+		 * VarTextGet above consumed this vartext into `address`, which goes on
+		 * to opts->address and is then read on the DoRequest thread:
+		 * httpOpenSocket passes GetText( address ) to CreateSockAddressV2, and
+		 * when opts->hostname is NULL - which is every nondefault port -
+		 * GetHttpsQueryEx builds the Host: header from the address text too.
+		 *
+		 * Destroying it after ThreadTo left those two racing over the same
+		 * segments, and whichever lost walked released ones.  That is the
+		 * SIGSEGV in LineReleaseEx with a high-entropy `line` pointer, and the
+		 * one in GetTextSize with 0x1000 sitting in a ->next slot.  Nothing
+		 * between VarTextGet and here touches pvtAddress, so it can simply go
+		 * first; the PTEXT `address` is owned by opts from this point.
+		 */
 		VarTextDestroy( &pvtAddress );
+		ThreadTo( DoRequest, (uintptr_t)httpRequest );
 	}
 
 	if (httpRequest->resultCallback.IsEmpty()) {
