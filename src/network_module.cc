@@ -396,11 +396,28 @@ void getOpenPorts(  Local<Name> property, const PropertyCallbackInfo<Value>& arg
 	DATA_FORALL( list, idx, struct listener_pid_info*, info ){
 		Local<Object> o = Object::New( isolate );
 		INDEX idx2;
-		uint32_t* pid;
-		DATA_FORALL( info->pdlPids, idx2, uint32_t*, pid ) {
-			SET_READONLY( o, "port", Number::New( isolate, info->port ) );
-			SET_READONLY( o, "pid", Number::New( isolate, pid[0] ) );
+		uint8_t* entry;
+		uint32_t nPid = 0;
+		Local<Array> pids = Array::New( isolate );
+		// 'port' belongs to the entry, not to a pid: set inside the loop below it was
+		// missing entirely from a port with no pid attributed to it, and SET_READONLY
+		// meant only the first pid of a port was ever reported.  sack now hands back one
+		// entry per port with every owning pid, so 'pids' is that list; 'pid' stays as
+		// its first element, which is the pid a caller reading it already got.
+		SET_READONLY( o, "port", Number::New( isolate, info->port ) );
+		DATA_FORALL( info->pdlPids, idx2, uint8_t*, entry ) {
+			// netstat_win32 makes the list of uint32_t, netstat_linux of uint64_t
+			double pid = ( info->pdlPids->Size >= sizeof( uint64_t ) )
+			           ? (double)( *(uint64_t*)entry )
+			           : (double)( *(uint32_t*)entry );
+			if( !nPid ) SET_READONLY( o, "pid", Number::New( isolate, pid ) );
+			SETN( pids, nPid++, Number::New( isolate, pid ) );
 		}
+		SET_READONLY( o, "pids", pids );
+		// SackNetstat_GetListeners() makes one of these per port and DeleteDataList()
+		// below only frees the array holding the entries, so the per-port lists leaked
+		// on every read of this property
+		DeleteDataList( &info->pdlPids );
 		SETN( result, idx, o );
 	}
 	DeleteDataList( &list );
