@@ -188,7 +188,7 @@ using namespace v8;
 
 #define GET_NUMBER(name)  int name = 0;  \
 		if( opts->Has( context, optName = strings->name##String->Get( isolate ) ).ToChecked() ) { \
-				if( GETV( opts, optName )->IsString() ) { \
+				if( GETV( opts, optName )->IsNumber() || GETV( opts, optName )->IsString() ) { \
 					name = (int)GETV( opts, optName )->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 ); \
 				} \
 			}

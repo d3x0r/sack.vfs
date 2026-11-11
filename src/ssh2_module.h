@@ -25,6 +25,8 @@ enum SSH2_EventCodes {
 	SSH2_EVENT_NET_REVERSE_CHANNEL,
 	SSH2_EVENT_NET_REVERSE_CONNECT,
 	SSH2_EVENT_LISTEN_ERROR,
+	SSH2_EVENT_CHANNEL_EOF, // remote sent EOF on a channel
+	SSH2_EVENT_CHANNEL_DRAIN, // output that had to wait for the peer's window is all sent
 };
 
 struct SSH2_Event {
@@ -46,7 +48,9 @@ public:
 	Persistent<Object> jsObject;  // the object that represents this channel
 	Persistent<Function> dataCallback; // called when data is received
 	Persistent<Function> closeCallback; // called when the channel is closed
+	Persistent<Function> eofCallback; // called when the remote sends EOF (no more data will arrive)
 	Persistent<Function> requestCallback; // called when a channel request is accepted
+	Persistent<Function> drainCallback; // called when queued output (bufferedAmount) is all sent
 	Persistent<Function> errorCallback; // called when the channel experiences an error outside of a promised result
 
 	Persistent<Promise::Resolver> ptyPromise;
@@ -56,8 +60,8 @@ public:
 
 	PLINKQUEUE activePromises;
 	bool binary = 0;
-	class SSH2_RemoteListen* remoteListen;
-	struct html5_web_socket* wsPipe;
+	class SSH2_RemoteListen* remoteListen = NULL;
+	struct html5_web_socket* wsPipe = NULL;
 	/*
 	* eof Event handler
 	*/
@@ -97,6 +101,21 @@ public:
 	 * Set Close Callback
 	*/
 	static void Close( const v8::FunctionCallbackInfo<Value>& args );
+	/*
+	* eof( callback ) sets the remote-EOF callback; eof() sends EOF to the remote
+	*/
+	static void Eof( const v8::FunctionCallbackInfo<Value>& args );
+	/*
+	* Flow control: drain( callback ) is called when output that had to wait for the
+	* peer's window has all been sent; bufferedAmount is the number of bytes still
+	* waiting.  pause() stops refunding the receive window (the peer stops sending once
+	* it's used up); resume() refunds it and lets data flow again.
+	*/
+	static void Drain( const v8::FunctionCallbackInfo<Value>& args );
+	static void DrainCallback( uintptr_t psv );
+	static void Pause( const v8::FunctionCallbackInfo<Value>& args );
+	static void Resume( const v8::FunctionCallbackInfo<Value>& args );
+	static void getBufferedAmount( const v8::FunctionCallbackInfo<Value>& args );
 	/*
 	* Set Request Callback
 	*/
@@ -138,8 +157,11 @@ public:
 	Persistent<Object> connectOptions;
 	Persistent<Promise::Resolver> connectPromise;
 	Persistent<Promise::Resolver> loginPromise;
-	Persistent<Promise::Resolver> channelPromise;
+	// FIFO of Persistent<Promise::Resolver>* - one per outstanding Channel() call
+	PLINKQUEUE channelPromises = CreateLinkQueue();
 	Persistent<Promise::Resolver> forwardPromise;
+	// accept callback passed to reverse(); handed to the listener object when it is created
+	Persistent<Function> pendingAccept;
 
 	Persistent<Promise::Resolver> *activePromise;
 
@@ -203,8 +225,10 @@ public:
 	SSH2_Object* ssh2;
 	struct ssh_listener* listener;
 	Persistent<Object> jsObject;  // the object that represents this channel
+	// raw accept callback( channel ) - set when reverse() was given a callback instead of being promoted to ws
+	Persistent<Function> acceptCallback;
 	//struct html5_web_socket* ws;
-	class wssObject* wss;
+	class wssObject* wss = NULL;
 
 public:
 	SSH2_RemoteListen();

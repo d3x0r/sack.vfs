@@ -5863,10 +5863,12 @@ static uintptr_t WSReverseConnectCallback( uintptr_t psv, struct ssh_listener* s
 uintptr_t WSReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort ) {
 	SSH2_Object* ssh = (SSH2_Object*)psv;
 	makeEvent( event );
-	sack_ssh_set_forward_listen_accept( listener, WSReverseConnectCallback );
+	if( listener ) // NULL when the server refused the tcpip-forward
+		sack_ssh_set_forward_listen_accept( listener, WSReverseConnectCallback );
 	//lprintf( "create a reverse channe..." );
 	event->code = SSH2_EVENT_WS_REVERSE_CHANNEL;
 	event->data = (void*)listener;
+	event->iData = boundPort;
 	event->waiter = MakeThread();
 	event->done = 0;
 	EnqueLink( &ssh->eventQueue, event );

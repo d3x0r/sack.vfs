@@ -233,6 +233,14 @@ static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Objec
 				break;
 			case SSH2_EVENT_CHANNEL:
 				{
+					// channel opens complete in the order they were requested (sack queues them)
+					Persistent<Promise::Resolver>* promise = (Persistent<Promise::Resolver>*)DequeLink( &ssh->channelPromises );
+					Local<Promise::Resolver> pr;
+					if( promise ) {
+						pr = promise->Get( isolate );
+						promise->Reset();
+						delete promise;
+					}
 					if( event->data ) {
 						constructorSet* c = getConstructors( isolate );
 						//Local<Value>* argv = new Local<Value>[0];
@@ -245,10 +253,53 @@ static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Objec
 						event->data = ch;
 						sack_ssh_set_channel_error( ch->channel, SSH2_Channel::Error );
 
-						ssh->channelPromise.Get( isolate )->Resolve( context, obj );
+						if( !pr.IsEmpty() ) pr->Resolve( context, obj );
 					} else {
 						event->data = NULL;
-						ssh->channelPromise.Get( isolate )->Reject( context, Undefined( isolate ) );
+						if( !pr.IsEmpty() ) {
+							Local<Object> error = Object::New( isolate );
+							error->Set( context, String::NewFromUtf8Literal( isolate, "message" )
+							          , String::NewFromUtf8Literal( isolate, "Channel open failed" ) );
+							pr->Reject( context, error );
+						}
+					}
+				}
+				break;
+			case SSH2_EVENT_NET_REVERSE_CONNECT:
+				{
+					// a connection arrived at a remote listener created with reverse( addr, port, callback )
+					SSH2_RemoteListen* listener = (SSH2_RemoteListen*)event->data2;
+					constructorSet* c = getConstructors( isolate );
+					Local<Function> cons = Local<Function>::New( isolate, c->SSH_Channel_constructor );
+					Local<Object> obj = cons->NewInstance( context, 0, NULL ).ToLocalChecked();
+					SSH2_Channel* ch = SSH2_Channel::Unwrap<SSH2_Channel>( obj );
+					ch->ssh2 = ssh;
+					ch->channel = (ssh_channel*)event->data;
+					ch->remoteListen = listener;
+					sack_ssh_set_channel_error( ch->channel, SSH2_Channel::Error );
+					event->data = ch;
+					if( !listener->acceptCallback.IsEmpty() ) {
+						Local<Value> argv[1] = { obj };
+						Local<Function> cb = Local<Function>::New( isolate, listener->acceptCallback );
+						cb->Call( context, listener->jsObject.Get( isolate ), 1, argv );
+					}
+				}
+				break;
+			case SSH2_EVENT_CHANNEL_DRAIN:
+				{
+					SSH2_Channel* channel = (SSH2_Channel*)event->data;
+					if( channel->channel && !channel->drainCallback.IsEmpty() ) {
+						Local<Function> cb = Local<Function>::New( isolate, channel->drainCallback );
+						cb->Call( context, channel->jsObject.Get( isolate ), 0, NULL );
+					}
+				}
+				break;
+			case SSH2_EVENT_CHANNEL_EOF:
+				{
+					SSH2_Channel* channel = (SSH2_Channel*)event->data;
+					if( !channel->eofCallback.IsEmpty() ) {
+						Local<Function> cb = Local<Function>::New( isolate, channel->eofCallback );
+						cb->Call( context, channel->jsObject.Get( isolate ), 0, NULL );
 					}
 				}
 				break;
@@ -272,6 +323,10 @@ static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Objec
 				break;
 			case SSH2_EVENT_WS_REVERSE_CHANNEL:
 				{
+					Local<Promise::Resolver> pr;
+					if( !ssh->connectPromise.IsEmpty() ) pr = ssh->connectPromise.Get( isolate );
+					ssh->connectPromise.Reset();
+					if( ssh->activePromise == &ssh->connectPromise ) ssh->activePromise = NULL;
 					if( event->data ) {
 						//lprintf( "Build reverse channel SSH_RemoteListen_constructor" );
 						constructorSet* c = getConstructors( isolate );
@@ -283,12 +338,23 @@ static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Objec
 						ch->ssh2 = ssh;
 						ch->listener = (ssh_listener*)event->data;
 						event->data = ch;
+						if( !ssh->pendingAccept.IsEmpty() ) {
+							ch->acceptCallback.Reset( isolate, ssh->pendingAccept.Get( isolate ) );
+							ssh->pendingAccept.Reset();
+						}
+						SET( obj, "port", Integer::New( isolate, event->iData ) );
 						//sack_ssh_set_listener_error( ch->listener, SSH2_RemoteListen::Error );
 
-						ssh->connectPromise.Get( isolate )->Resolve( context, obj );
+						if( !pr.IsEmpty() ) pr->Resolve( context, obj );
 					} else {
 						event->data = NULL;
-						ssh->connectPromise.Get( isolate )->Reject( context, Undefined( isolate ) );
+						ssh->pendingAccept.Reset();
+						if( !pr.IsEmpty() ) {
+							Local<Object> error = Object::New( isolate );
+							error->Set( context, String::NewFromUtf8Literal( isolate, "message" )
+							          , String::NewFromUtf8Literal( isolate, "Remote listen (tcpip-forward) failed" ) );
+							pr->Reject( context, error );
+						}
 					}
 				}
 				break;
@@ -298,8 +364,10 @@ static void SSH2_asyncmsg_( Isolate *isolate, Local<Context> context, SSH2_Objec
 					SSH2_Channel*channel = (SSH2_Channel*)event->data2;
 					if( channel->binary ) {
 #if ( NODE_MAJOR_VERSION >= 14 )
-						std::shared_ptr<BackingStore> bs = makeReleasableBackingStore( event->data, event->length );
-						Local<Object> arrayBuffer = ArrayBuffer::New( isolate, bs );
+						// event->data points into libssh2's packet buffer (which it frees after
+						// this callback returns), so it must be copied, not adopted.
+						Local<ArrayBuffer> arrayBuffer = ArrayBuffer::New( isolate, event->length );
+						MemCpy( arrayBuffer->GetBackingStore()->Data(), event->data, event->length );
 #else
 						Local<Object> arrayBuffer = ArrayBuffer::New( isolate, event->data, event->length );
 						PARRAY_BUFFER_HOLDER holder = GetHolder();
@@ -533,24 +601,55 @@ void SSH2_Object::OpenChannel( const v8::FunctionCallbackInfo<Value>& args ) {
 	GET_NUMBER( packetSize );
 	if( !packetSize ) packetSize = 0x1000;
 
+	// message may also be binary (direct-tcpip/forwarded-tcpip payloads contain NUL bytes)
+	const char* messageData = NULL;
+	size_t messageLen = 0;
+	if( message ) {
+		messageData = *message[0];
+		messageLen = message->length();
+	} else if( opts->Has( context, optName = strings->messageString->Get( isolate ) ).ToChecked() ) {
+		Local<Value> m = GETV( opts, optName );
+		if( m->IsArrayBuffer() ) {
+			Local<ArrayBuffer> ab = m.As<ArrayBuffer>();
+			messageData = (const char*)ab->GetBackingStore()->Data();
+			messageLen = ab->ByteLength();
+		} else if( m->IsArrayBufferView() ) {
+			Local<ArrayBufferView> view = m.As<ArrayBufferView>();
+			messageData = (const char*)view->Buffer()->GetBackingStore()->Data() + view->ByteOffset();
+			messageLen = view->ByteLength();
+		}
+	}
+
+	// queue the promise before starting the open; opens complete in request order
+	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
+	Persistent<Promise::Resolver>* promise = new Persistent<Promise::Resolver>( isolate, pr );
+	EnqueLink( &ssh->channelPromises, promise );
+
+	// sack copies type and message, so they only need to live through this call.
 	sack_ssh_channel_open_v2( ssh->session
 		, type?*type[0]:"session", type ? type->length() : 7
 		, windowSize, packetSize
-		, message ? *message[0] : NULL, message ? message->length() : 0
+		, messageData, messageLen
 		, SSH2_Object::channelOpen );
+	if( type ) delete type;
+	if( message ) delete message;
 
-
-	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
-	ssh->channelPromise.Reset( isolate, pr );
 	args.GetReturnValue().Set( pr->GetPromise() );
 
 }
 
 void eofCallback( uintptr_t psv ) {
 	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	if( !channel ) return;
 	if( channel->internal_eofCallback )
 		channel->internal_eofCallback( channel, channel->wsPipe );
-
+	makeEvent( event );
+	event->code = SSH2_EVENT_CHANNEL_EOF;
+	event->data = channel;
+	event->waiter = NULL;
+	event->done = 0;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+	uv_async_send( &channel->ssh2->async );
 }
 
 uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel ) {
@@ -560,9 +659,11 @@ uintptr_t SSH2_Object::channelOpen( uintptr_t psv, struct ssh_channel* channel )
 	//sack_ssh_set_channel_data( channel, SSH2_Channel::DataCallback );
 	event->code = SSH2_EVENT_CHANNEL;
 	event->data = (void*)channel;
-	sack_ssh_set_channel_eof( channel, eofCallback );
-	sack_ssh_set_channel_close( channel, SSH2_Channel::CloseCallback );
-	sack_ssh_set_channel_request( channel, SSH2_Channel::RequestCallback );
+	if( channel ) {
+		sack_ssh_set_channel_eof( channel, eofCallback );
+		sack_ssh_set_channel_close( channel, SSH2_Channel::CloseCallback );
+		sack_ssh_set_channel_request( channel, SSH2_Channel::RequestCallback );
+	}
 	event->waiter = MakeThread();
 	event->done = 0;
 	EnqueLink( &ssh->eventQueue, event );
@@ -621,6 +722,13 @@ void SSH2_Object::Init( Isolate *isolate, Local<Object> exports ){
 	);
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "send", SSH2_Channel::Send );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "close", SSH2_Channel::Close );
+	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "eof", SSH2_Channel::Eof );
+	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "drain", SSH2_Channel::Drain );
+	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "pause", SSH2_Channel::Pause );
+	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "resume", SSH2_Channel::Resume );
+	channelTemplate->PrototypeTemplate()->SetAccessorProperty( String::NewFromUtf8Literal( isolate, "bufferedAmount" )
+		, FunctionTemplate::New( isolate, SSH2_Channel::getBufferedAmount )
+		, Local<FunctionTemplate>() );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "request", SSH2_Channel::Request );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "pty", SSH2_Channel::OpenPTY );
 	NODE_SET_PROTOTYPE_METHOD( channelTemplate, "setenv", SSH2_Channel::SetEnv );
@@ -766,6 +874,11 @@ void SSH2_Channel::Send( const v8::FunctionCallbackInfo<Value>& args ) {
 			String::NewFromUtf8Literal( args.GetIsolate(), "Send requires data to send with optional stream" ) ) );
 		return;
 	}
+	if( !channel->channel ) {
+		args.GetIsolate()->ThrowException( Exception::Error(
+			String::NewFromUtf8Literal( args.GetIsolate(), "Channel is closed" ) ) );
+		return;
+	}
 	int n = 0;
 	int stream = 0;
 	if( args[0]->IsNumber() ) {
@@ -780,6 +893,10 @@ void SSH2_Channel::Send( const v8::FunctionCallbackInfo<Value>& args ) {
 		Local<ArrayBuffer> ab = Local<ArrayBuffer>::Cast( args[n] );
 		std::shared_ptr<BackingStore> content = ab->GetBackingStore();
 		sack_ssh_channel_write( channel->channel, stream, (const uint8_t*)content->Data(), ab->ByteLength() );
+	} else if( args[n]->IsArrayBufferView() ) {
+		Local<ArrayBufferView> view = Local<ArrayBufferView>::Cast( args[n] );
+		const uint8_t* base = (const uint8_t*)view->Buffer()->GetBackingStore()->Data();
+		sack_ssh_channel_write( channel->channel, stream, base + view->ByteOffset(), view->ByteLength() );
 	} else {
 		args.GetIsolate()->ThrowException( Exception::TypeError(
 			String::NewFromUtf8Literal( args.GetIsolate(), "Send requires data to send with optional stream" ) ) );
@@ -801,11 +918,66 @@ void SSH2_Channel::Read( const v8::FunctionCallbackInfo<Value>& args ) {
 void SSH2_Channel::Close( const v8::FunctionCallbackInfo<Value>& args ) {
 	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
 	if( args.Length() > 0 && args[0]->IsFunction() ) {
-		sack_ssh_set_channel_close( channel->channel, SSH2_Channel::CloseCallback );
+		if( channel->channel )
+			sack_ssh_set_channel_close( channel->channel, SSH2_Channel::CloseCallback );
 		channel->closeCallback.Reset( args.GetIsolate(), Local<Function>::Cast( args[0] ) );
-	} else {
-		sack_ssh_channel_close( channel->channel );
+	} else if( channel->channel ) {
+		// sack releases the ssh_channel; drop our pointer so later calls can't touch it.
+		struct ssh_channel* ch = channel->channel;
+		channel->channel = NULL;
+		sack_ssh_channel_close( ch );
 	}
+}
+
+void SSH2_Channel::Eof( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	if( args.Length() > 0 && args[0]->IsFunction() ) {
+		if( channel->channel )
+			sack_ssh_set_channel_eof( channel->channel, ::eofCallback );
+		channel->eofCallback.Reset( args.GetIsolate(), Local<Function>::Cast( args[0] ) );
+	} else if( channel->channel ) {
+		sack_ssh_channel_eof( channel->channel );
+	}
+}
+
+// may be called on a network thread, or on this thread from inside send/eof/close/resume
+void SSH2_Channel::DrainCallback( uintptr_t psv ) {
+	SSH2_Channel* channel = (SSH2_Channel*)psv;
+	makeEvent( event );
+	event->code = SSH2_EVENT_CHANNEL_DRAIN;
+	event->data = channel;
+	event->waiter = NULL;
+	event->done = 0;
+	EnqueLink( &channel->ssh2->eventQueue, event );
+	uv_async_send( &channel->ssh2->async );
+}
+
+void SSH2_Channel::Drain( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	if( args.Length() < 1 || !args[0]->IsFunction() ) {
+		args.GetIsolate()->ThrowException( Exception::TypeError(
+			String::NewFromUtf8Literal( args.GetIsolate(), "drain requires callback" ) ) );
+		return;
+	}
+	channel->drainCallback.Reset( args.GetIsolate(), Local<Function>::Cast( args[0] ) );
+	if( channel->channel )
+		sack_ssh_set_channel_drain( channel->channel, SSH2_Channel::DrainCallback );
+}
+
+void SSH2_Channel::Pause( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	if( channel->channel ) sack_ssh_channel_pause( channel->channel, TRUE );
+}
+
+void SSH2_Channel::Resume( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	if( channel->channel ) sack_ssh_channel_pause( channel->channel, FALSE );
+}
+
+void SSH2_Channel::getBufferedAmount( const v8::FunctionCallbackInfo<Value>& args ) {
+	SSH2_Channel* channel = Unwrap<SSH2_Channel>( args.This() );
+	size_t n = channel->channel ? sack_ssh_channel_pending( channel->channel ) : 0;
+	args.GetReturnValue().Set( Number::New( args.GetIsolate(), (double)n ) );
 }
 
 void SSH2_Channel::Request( const v8::FunctionCallbackInfo<Value>& args ) {
@@ -1016,6 +1188,52 @@ static uintptr_t NET_ReverseCallback( uintptr_t psv, struct ssh_listener* listen
 }
 #endif
 
+// ---------  Raw channel interface for reverse( address, port, acceptCallback ) -----------
+//   Each connection accepted at the remote listener is handed to JS as a plain SSH_Channel,
+//   which can be read/sent/closed like any other channel (e.g. relayed somewhere else).
+
+static uintptr_t RawReverseConnectCallback( uintptr_t psv, struct ssh_listener* ssh_listener, struct ssh_channel* channel ) {
+	SSH2_RemoteListen* listener = (SSH2_RemoteListen*)psv;
+	sack_ssh_set_channel_eof( channel, eofCallback );
+	sack_ssh_set_channel_close( channel, SSH2_Channel::CloseCallback );
+	sack_ssh_set_channel_request( channel, SSH2_Channel::RequestCallback );
+	makeEvent( event );
+	event->code = SSH2_EVENT_NET_REVERSE_CONNECT;
+	event->data = (void*)channel;
+	event->data2 = listener;
+	event->waiter = MakeThread();
+	event->done = 0;
+	EnqueLink( &listener->ssh2->eventQueue, event );
+	uv_async_send( &listener->ssh2->async );
+	while( !event->done ) {
+		WakeableSleep( 1000 );
+	}
+	// event->data was replaced with the SSH2_Channel; it becomes the channel's psv
+	uintptr_t result = (uintptr_t)event->data;
+	dropEvent( event );
+	return result;
+}
+
+static uintptr_t RawReverseCallback( uintptr_t psv, struct ssh_listener* listener, int boundPort ) {
+	SSH2_Object* ssh = (SSH2_Object*)psv;
+	if( listener )
+		sack_ssh_set_forward_listen_accept( listener, RawReverseConnectCallback );
+	makeEvent( event );
+	event->code = SSH2_EVENT_WS_REVERSE_CHANNEL; // same listener-object creation as the websocket path
+	event->data = (void*)listener;
+	event->iData = boundPort;
+	event->waiter = MakeThread();
+	event->done = 0;
+	EnqueLink( &ssh->eventQueue, event );
+	uv_async_send( &ssh->async );
+	while( !event->done ) {
+		WakeableSleep( 1000 );
+	}
+	uintptr_t result = (uintptr_t)event->data;
+	dropEvent( event );
+	return result;
+}
+
 // ---------  websocket interface to this... should really be in websocket module -----------
 //--------------------------- end WS interface ----------------------------
 
@@ -1025,30 +1243,35 @@ static uintptr_t NET_ReverseCallback( uintptr_t psv, struct ssh_listener* listen
 * @param {string} address - address to listen on
 * @param {number} port - port to listen on
 * 
-* at this time only does reverse for websocket connections
+* @param {function} [onaccept] - if given, each accepted connection is passed to it as an SSH_Channel
+*                                 instead of the listener being reserved for sack.WebSocket.ssh2ws()
+* resolves to a listener object; listener.port is the port the server actually bound.
 */
 void SSH2_Object::Reverse( const v8::FunctionCallbackInfo<Value>&args ) {
 	SSH2_Object* ssh = Unwrap<SSH2_Object>( args.This() );
 	int port = 0;
 	Isolate* isolate = args.GetIsolate();
+	if( !ssh->connectPromise.IsEmpty() ) {
+		isolate->ThrowException( Exception::Error(
+			String::NewFromUtf8Literal( isolate, "reverse: another connect/reverse is still pending" ) ) );
+		return;
+	}
 	String::Utf8Value remoteHost( isolate, args[0]->ToString( isolate->GetCurrentContext() ).ToLocalChecked() );
 	if( args.Length() > 1 )
 		port = args[1]->Int32Value( isolate->GetCurrentContext() ).FromMaybe( 0 );
-	if( args.Length() > 2 ) {
-		// this is probably an option object
-		// 
-		//Local<Object> obj = args[1].Cast<Object>();
+	bool raw = false;
+	if( args.Length() > 2 && args[2]->IsFunction() ) {
+		ssh->pendingAccept.Reset( isolate, Local<Function>::Cast( args[2] ) );
+		raw = true;
 	}
-	// options to reverse for oh this has to be 
-	// NetworkSocket  (like TCP object)
-	// just transparent forward
-	//sack_ssh_forward_listen( ssh->session, *remoteHost, port, SSH_Channel2::something? );
 
-	sack_ssh_forward_listen( ssh->session, *remoteHost, port, WSReverseCallback );
-
+	// set the promise up before starting; the listen completes on the network thread.
 	Local<Promise::Resolver> pr = Promise::Resolver::New( isolate->GetCurrentContext() ).ToLocalChecked();
 	ssh->connectPromise.Reset( isolate, pr );
 	ssh->activePromise = &ssh->connectPromise;
+
+	sack_ssh_forward_listen( ssh->session, *remoteHost, port, raw ? RawReverseCallback : WSReverseCallback );
+
 	args.GetReturnValue().Set( pr->GetPromise() );
 }
 
