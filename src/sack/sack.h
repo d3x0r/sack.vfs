@@ -10996,6 +10996,23 @@ NETWORK_PROC( void, sack_ssh_channel_close )( struct ssh_channel* channel );
  // send EOF on channel
 NETWORK_PROC( void, sack_ssh_channel_eof )( struct ssh_channel* channel );
 /*
+* Flow control.
+*
+* sack_ssh_channel_write never drops data: what the peer's window can't take yet is
+* queued and sent as window adjusts arrive (EOF and close wait behind it).
+* sack_ssh_channel_pending gives the number of bytes still queued; the drain callback
+* is called when that falls back to 0.  It may be called on a network thread, or on a
+* thread that is inside sack_ssh_channel_write/eof/close/pause.
+*
+* sack_ssh_channel_pause( channel, TRUE ) stops refunding the receive window for data
+* already delivered by the data callback, so the peer stops sending once its window is
+* used up; FALSE refunds everything held back and lets it continue.
+*/
+typedef void( *ssh_channel_drain_cb )( uintptr_t psv );
+NETWORK_PROC( ssh_channel_drain_cb, sack_ssh_set_channel_drain )( struct ssh_channel* channel, ssh_channel_drain_cb );
+NETWORK_PROC( size_t, sack_ssh_channel_pending )( struct ssh_channel* channel );
+NETWORK_PROC( void, sack_ssh_channel_pause )( struct ssh_channel* channel, LOGICAL paused );
+/*
 LIBSSH2_API int libssh2_channel_send_eof(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_eof(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_wait_eof(LIBSSH2_CHANNEL *channel);

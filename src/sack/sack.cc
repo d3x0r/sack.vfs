@@ -92179,6 +92179,23 @@ NETWORK_PROC( void, sack_ssh_channel_close )( struct ssh_channel* channel );
  // send EOF on channel
 NETWORK_PROC( void, sack_ssh_channel_eof )( struct ssh_channel* channel );
 /*
+* Flow control.
+*
+* sack_ssh_channel_write never drops data: what the peer's window can't take yet is
+* queued and sent as window adjusts arrive (EOF and close wait behind it).
+* sack_ssh_channel_pending gives the number of bytes still queued; the drain callback
+* is called when that falls back to 0.  It may be called on a network thread, or on a
+* thread that is inside sack_ssh_channel_write/eof/close/pause.
+*
+* sack_ssh_channel_pause( channel, TRUE ) stops refunding the receive window for data
+* already delivered by the data callback, so the peer stops sending once its window is
+* used up; FALSE refunds everything held back and lets it continue.
+*/
+typedef void( *ssh_channel_drain_cb )( uintptr_t psv );
+NETWORK_PROC( ssh_channel_drain_cb, sack_ssh_set_channel_drain )( struct ssh_channel* channel, ssh_channel_drain_cb );
+NETWORK_PROC( size_t, sack_ssh_channel_pending )( struct ssh_channel* channel );
+NETWORK_PROC( void, sack_ssh_channel_pause )( struct ssh_channel* channel, LOGICAL paused );
+/*
 LIBSSH2_API int libssh2_channel_send_eof(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_eof(LIBSSH2_CHANNEL *channel);
 LIBSSH2_API int libssh2_channel_wait_eof(LIBSSH2_CHANNEL *channel);
@@ -92250,8 +92267,7 @@ struct data_buffer {
 	size_t used;
 };
 struct ssh_session {
- // state to go to after handshake
-	enum ssh_states authState;
+	enum ssh_states authState; // state to go to after handshake
 	PDATALIST buffers;
 	PDATAQUEUE pdqStates;
 	PCLIENT pc;
@@ -92278,11 +92294,40 @@ struct ssh_session {
 	ssh_open_cb channel_open;
 	pw_change_cb pw_change;
 	ssh_sftp_open_cb sftp_open;
+	// Channel output is queued and written by whichever thread holds csLock (see
+	// ssh_flush_session).  csOut guards the queues and the flush list; it is never
+	// held while calling into libssh2 or a callback.
+	CRITICALSECTION csOut;
+	PDATAQUEUE pdqDeferred;          // API requests made while another thread held csLock
+	struct ssh_channel* flush_head;  // channels with queued output/eof/close/window work
+	struct ssh_channel* flush_tail;
+	volatile uint32_t out_seq;       // bumped whenever work is queued
+	int busy;                        // csLock holder is inside libssh2 or a flush (no nested flush)
+	int block_recv;                  // RecvCallback reports EAGAIN (flushing must not read packets)
+};
+// data accepted by sack_ssh_channel_write that the peer's window has not taken yet
+struct ssh_out_buffer {
+	struct ssh_out_buffer* next;
+	int stream;
+	size_t length;
+	size_t used;
+	uint8_t data[1];
 };
 struct ssh_channel {
 	LIBSSH2_CHANNEL *channel;
 	uintptr_t psv;
 	struct ssh_session* session;
+	struct ssh_out_buffer* out_head;  // guarded by session->csOut
+	struct ssh_out_buffer* out_tail;
+	volatile size_t out_pending;      // bytes queued in out_head..out_tail
+	struct ssh_channel* flush_next;   // link in session->flush_head
+	int flush_listed;
+	volatile int want_hold;           // sack_ssh_channel_pause() state
+	int eof_pending;                  // send EOF once output drains
+	int close_pending;                // user closed: finish output, then close and release
+	int remote_closed;                // peer closed; queued output can't be sent
+	int out_blocked;                  // a write waited on the window; report drain when empty
+	ssh_channel_drain_cb drain;
 	ssh_channel_error_cb error;
 	ssh_channel_data_cb channel_data;
 	ssh_channel_eof_cb channel_eof;
@@ -92449,8 +92494,10 @@ static void* realloc_callback( void* p, size_t size, void** abstract ) {
 }
 static LIBSSH2_SEND_FUNC( SendCallback ) {
 	// return ssize_t
-	/* int socket		 , const void* buffer
-		, size_t length		 , int flags
+	/* int socket \
+		, const void* buffer
+		, size_t length \
+		, int flags
 		, void** abstract)
 	*/
 	struct ssh_session* cs = (struct ssh_session*)abstract[0];
@@ -92474,11 +92521,16 @@ static void moveBuffers( PDATALIST *pdl ) {
 }
 static LIBSSH2_RECV_FUNC( RecvCallback ) {
 	// return ssize_t
-	/* int socket		 , const void* buffer
-		, size_t length		 , int flags
+	/* int socket \
+		, const void* buffer
+		, size_t length \
+		, int flags
 		, void** abstract)
 	*/
 	struct ssh_session* cs = (struct ssh_session*)abstract[0];
+	// flushing output (possibly on the application's thread) must not process
+	// incoming packets; their callbacks belong on the network thread.
+	if( cs->block_recv ) return -EAGAIN;
 	while( !cs->buffers || !cs->buffers->Cnt ) {
 		return -EAGAIN;
 	}
@@ -92506,6 +92558,205 @@ static void pwChange( LIBSSH2_SESSION *session, char** newpw, int* newpw_len, vo
 		cs->pw_change( cs->psv, newpw, newpw_len );
 	//RemoveClient( cs->pc );
 }
+//----------------------------- Output queue / flow control -----------------------
+static void ssh_list_flush( struct ssh_channel* ch ) {
+	// csOut held
+	struct ssh_session* cs = ch->session;
+	if( !ch->flush_listed ) {
+		ch->flush_listed = 1;
+		ch->flush_next = NULL;
+		if( cs->flush_tail ) cs->flush_tail->flush_next = ch;
+		else cs->flush_head = ch;
+		cs->flush_tail = ch;
+	}
+	cs->out_seq = cs->out_seq + 1;
+}
+static void ssh_drop_output( struct ssh_channel* ch ) {
+	// csOut held
+	struct ssh_out_buffer* buf;
+	while( ( buf = ch->out_head ) ) {
+		ch->out_head = buf->next;
+		ReleaseEx( buf DBG_SRC );
+	}
+	ch->out_tail = NULL;
+	ch->out_pending = 0;
+}
+// csLock held.  Returns TRUE if the channel still has output it couldn't send.
+static LOGICAL ssh_flush_channel( struct ssh_channel* ch ) {
+	struct ssh_session* cs = ch->session;
+	struct ssh_out_buffer* buf;
+	if( !ch->want_hold )
+		libssh2_channel_window_hold( ch->channel, 0 ); // refund anything held back
+	while( 1 ) {
+		EnterCriticalSec( &cs->csOut );
+		buf = ch->out_head;
+		if( buf && ch->remote_closed ) {
+			lprintf( "ssh channel closed by peer; dropping %zu queued bytes", ch->out_pending );
+			ssh_drop_output( ch );
+			buf = NULL;
+		}
+		LeaveCriticalSec( &cs->csOut );
+		if( !buf ) break;
+		ssize_t rc = libssh2_channel_write_ex( ch->channel, buf->stream, (const char*)buf->data + buf->used, buf->length - buf->used );
+		if( rc == LIBSSH2_ERROR_EAGAIN || rc == 0 ) {
+			ch->out_blocked = 1;
+			return TRUE; // peer's window is full; retried after the next packet arrives
+		}
+		EnterCriticalSec( &cs->csOut );
+		if( rc < 0 ) {
+			lprintf( "ssh channel write failed (%zd); dropping %zu queued bytes", rc, ch->out_pending );
+			ssh_drop_output( ch );
+		} else {
+			buf->used += rc;
+			ch->out_pending -= rc;
+			if( buf->used == buf->length ) {
+				ch->out_head = buf->next;
+				if( !ch->out_head ) ch->out_tail = NULL;
+				ReleaseEx( buf DBG_SRC );
+			}
+		}
+		LeaveCriticalSec( &cs->csOut );
+	}
+	if( ch->out_blocked ) {
+		// only report drain after a write had to wait
+		ch->out_blocked = 0;
+		if( ch->drain && !ch->close_pending )
+			ch->drain( ch->psv );
+	}
+	if( ch->eof_pending ) {
+		ch->eof_pending = 0;
+		libssh2_channel_send_eof( ch->channel );
+	}
+	if( ch->close_pending ) {
+		libssh2_channel_abstract( ch->channel )[0] = NULL;
+		libssh2_channel_close( ch->channel );
+		ReleaseEx( ch DBG_SRC );
+	}
+	return FALSE;
+}
+static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length );
+// csLock held.  Start requests deferred by ssh_api_queue, then write whatever queued
+// output the peers' windows allow.
+// csLock held.  Move requests deferred by ssh_api_queue into the state queue (behind
+// what's already there), and start the next one if nothing is in progress.
+static void ssh_start_deferred( struct ssh_session* cs ) {
+	struct pending_state state;
+	LOGICAL moved = FALSE;
+	EnterCriticalSec( &cs->csOut );
+	while( DequeData( &cs->pdqDeferred, &state ) ) {
+		EnqueData( &cs->pdqStates, &state );
+		moved = TRUE;
+	}
+	LeaveCriticalSec( &cs->csOut );
+	if( moved && !cs->busy && cs->pending.state == SSH_STATE_RESET ) {
+		// run the state machine to send the next request; reading is blocked, so
+		// replies (and their callbacks) are left for the network thread.
+		cs->block_recv++;
+		_readCallback( cs, NULL, 0 );
+		cs->block_recv--;
+	}
+}
+static void ssh_flush_session( struct ssh_session* cs ) {
+	struct ssh_channel* list;
+	struct ssh_channel* ch;
+	struct ssh_channel* blocked = NULL;
+	struct ssh_channel* blocked_tail = NULL;
+	ssh_start_deferred( cs );
+	cs->busy++;
+	cs->block_recv++;
+	EnterCriticalSec( &cs->csOut );
+	list = cs->flush_head;
+	cs->flush_head = cs->flush_tail = NULL;
+	for( ch = list; ch; ch = ch->flush_next ) ch->flush_listed = 0;
+	LeaveCriticalSec( &cs->csOut );
+	while( ( ch = list ) ) {
+		list = ch->flush_next;
+		if( ssh_flush_channel( ch ) ) {
+			ch->flush_next = NULL;
+			if( blocked_tail ) blocked_tail->flush_next = ch;
+			else blocked = ch;
+			blocked_tail = ch;
+		}
+	}
+	// still waiting on a window adjust; keep them listed (without bumping out_seq)
+	EnterCriticalSec( &cs->csOut );
+	while( ( ch = blocked ) ) {
+		blocked = ch->flush_next;
+		if( !ch->flush_listed ) {
+			ch->flush_listed = 1;
+			ch->flush_next = NULL;
+			if( cs->flush_tail ) cs->flush_tail->flush_next = ch;
+			else cs->flush_head = ch;
+			cs->flush_tail = ch;
+		}
+	}
+	LeaveCriticalSec( &cs->csOut );
+	cs->block_recv--;
+	cs->busy--;
+}
+// Called (without csLock) after queueing work.  If the session is busy on another
+// thread, that thread flushes before it lets go (it re-checks out_seq after leaving).
+static void ssh_try_flush( struct ssh_session* cs ) {
+	uint32_t seq;
+	int32_t r;
+	do {
+		seq = cs->out_seq;
+		while( ( r = EnterCriticalSecNoWait( &cs->csLock, NULL ) ) < 0 )
+			Relinquish();
+		if( !r ) return;
+		if( cs->busy ) {
+			// re-entered from a callback on the thread already inside the session;
+			// it flushes on the way out.
+			LeaveCriticalSec( &cs->csLock );
+			return;
+		}
+		ssh_flush_session( cs );
+		LeaveCriticalSec( &cs->csLock );
+	} while( seq != cs->out_seq );
+}
+// leave csLock after flushing; picks up work queued by threads that found it locked
+static void ssh_leave_session( struct ssh_session* cs ) {
+	uint32_t seq = cs->out_seq;
+	ssh_flush_session( cs );
+	LeaveCriticalSec( &cs->csLock );
+	if( seq != cs->out_seq )
+		ssh_try_flush( cs );
+}
+// API calls (usually from the application's thread) must not wait for csLock: the
+// network thread holding it may itself be blocked in a callback until the application
+// thread returns.  ssh_api_enter takes the lock only if it's free (or already ours);
+// otherwise the caller hands its request to ssh_api_queue, and the holder starts it.
+// While an API call holds the lock, packets are not read: replies, and the callbacks
+// they cause, stay on the network thread.
+static int ssh_api_enter( struct ssh_session* cs ) {
+	int32_t r;
+	while( ( r = EnterCriticalSecNoWait( &cs->csLock, NULL ) ) < 0 )
+		Relinquish();
+	if( !r ) return 0;
+	cs->block_recv++;
+	// requests deferred earlier go first (channel opens complete in request order)
+	ssh_start_deferred( cs );
+	cs->busy++;
+	return 1;
+}
+static void ssh_api_leave( struct ssh_session* cs ) {
+	cs->block_recv--;
+	cs->busy--;
+	ssh_leave_session( cs );
+}
+static void ssh_api_queue( struct ssh_session* cs, struct pending_state* state, int locked ) {
+	if( locked ) {
+		// another request is in progress; this one runs after it
+		EnqueData( &cs->pdqStates, state );
+		ssh_api_leave( cs );
+		return;
+	}
+	EnterCriticalSec( &cs->csOut );
+	EnqueData( &cs->pdqDeferred, state );
+	cs->out_seq = cs->out_seq + 1;
+	LeaveCriticalSec( &cs->csOut );
+	ssh_try_flush( cs );
+}
 static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length ) {
 	{
 		// got data from socket, need to stuff it into SSH.
@@ -92522,6 +92773,7 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 			}
 		}
 		EnterCriticalSec( &cs->csLock );
+		cs->busy++; // callbacks below may write; they queue, and we flush on the way out
 		while( 1 ) {
 			if( did_one && cs->pending.state != SSH_STATE_RESET ) break;
 			did_one = 1;
@@ -92540,8 +92792,7 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 				break;
 			*/
 			case SSH_STATE_HANDSHAKE:{
-/*sock*/
-					rc = libssh2_session_handshake( cs->session, 1 );
+					rc = libssh2_session_handshake( cs->session, 1/*sock*/ );
 					if( rc == LIBSSH2_ERROR_EAGAIN ) break;
 					else if( rc ) {
 						// error
@@ -92552,8 +92803,7 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 						} else {
 							lprintf( "Session Error(%d):%s", err, errmsg );
 						}
- // allow a different connect?
-						cs->pending.state = SSH_STATE_RESET;
+						cs->pending.state = SSH_STATE_RESET; // allow a different connect?
 						while( !IsDataQueueEmpty( &cs->pdqStates ) ) {
 							// remove all other events too...
 							DequeData( &cs->pdqStates, NULL );
@@ -92561,6 +92811,7 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 						if( cs->pc )
 							RemoveClient( cs->pc );
 						else if( cs->close ) cs->close( cs->psv );
+						cs->busy--;
 						LeaveCriticalSec( &cs->csLock );
 						return;
 					}
@@ -92622,7 +92873,8 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 							cs->auth_complete( cs->psv, FALSE );
 						}
 						cs->pending.state = SSH_STATE_RESET;
-						LeaveCriticalSec( &cs->csLock );
+						cs->busy--;
+						ssh_leave_session( cs );
 						return;
 					} else {
 						if( user ) ReleaseEx( (POINTER)user DBG_SRC );
@@ -92641,17 +92893,19 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 					struct ssh_session* session = (struct ssh_session*)cs->pending.state_data[0];
 					CTEXTSTR remotehost = (CTEXTSTR)cs->pending.state_data[1];
 					int remoteport = (int)cs->pending.state_data[2];
-// (int*)cs->pending.state_data[3];
-					int bound_port;
+					int bound_port;// (int*)cs->pending.state_data[3];
 					LIBSSH2_LISTENER* listener = libssh2_channel_forward_listen_ex( session->session, remotehost, remoteport, &bound_port, 4096 );
 					if( !listener ) {
 						rc = libssh2_session_last_error( session->session, NULL, NULL, 0 );
 						if( rc == LIBSSH2_ERROR_EAGAIN ) break;
 						else if( rc ) {
 							// error
-							if( session->forward_listen_cb )
-								session->forward_listen_cb( session->psv, NULL, 0 );
+							ssh_forward_listen_cb cb = (ssh_forward_listen_cb)cs->pending.state_data[3];
 							cs->pending.state = SSH_STATE_RESET;
+							if( cb )
+								cb( session->psv, NULL, 0 );
+							else if( session->forward_listen_cb )
+								session->forward_listen_cb( session->psv, NULL, 0 );
 						} else {
 							lprintf( "no listener, no error?" );
 						}
@@ -92696,6 +92950,15 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 							} else {
 								lprintf( "Session Error(%d):%s", err, errmsg );
 							}
+							// tell the requester it failed (NULL channel), and let the next state run.
+							Deallocate( CTEXTSTR, type );
+							Deallocate( CTEXTSTR, message );
+							cs->pending.state = SSH_STATE_RESET;
+							ssh_open_cb cb = (ssh_open_cb)cs->pending.state_data[6];
+							if( cb )
+								cb( cs->psv, NULL );
+							else if( cs->channel_open )
+								cs->channel_open( cs->psv, NULL );
 						}
 						else {
 							lprintf( "no channel, no error?");
@@ -92806,7 +93069,7 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 					else {
 						if( cs->pending.state_data[1] )
 							( (ssh_shell_cb)cs->pending.state_data[1] )( channel->psv, TRUE );
-						else
+						else 
 							if( channel->shell_open )
 							channel->shell_open( channel->psv, TRUE );
 						cs->pending.state = SSH_STATE_RESET;
@@ -92875,7 +93138,9 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 			if( rc == LIBSSH2_ERROR_EAGAIN ) break;
 		}
 		//case
-		LeaveCriticalSec( &cs->csLock );
+		cs->busy--;
+		// window adjusts that arrived above may let queued output go
+		ssh_leave_session( cs );
 	}
 }
 static void readCallback( PCLIENT pc, POINTER buffer, size_t length ) {
@@ -92920,24 +93185,15 @@ static void connectCallback( PCLIENT pc, int error ){
 	if( error ) {
 		// error
 #ifdef WIN32
-   // for a message up to 255 bytes.
-		char msgbuf[256];
-    // Microsoft doesn't guarantee this on man page.
-		msgbuf[0] = '\0';
-   // flags
-		DWORD errmsglen = FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                // lpsource
-			NULL,
-               // message id
-			error,
-    // languageid
-			MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),
-              // output buffer
-			msgbuf,
-     // size of msgbuf, bytes
-			sizeof( msgbuf ),
-               // va_list of arguments
-			NULL );
+		char msgbuf[256];   // for a message up to 255 bytes.
+		msgbuf[0] = '\0';    // Microsoft doesn't guarantee this on man page.
+		DWORD errmsglen = FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,   // flags
+			NULL,                // lpsource
+			error,               // message id
+			MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),    // languageid
+			msgbuf,              // output buffer
+			sizeof( msgbuf ),     // size of msgbuf, bytes
+			NULL );               // va_list of arguments
 		CTEXTSTR errmsg = msgbuf;
 #else
 		CTEXTSTR errmsg = strerror( error ); int errmsglen = strlen( errmsg );
@@ -92953,20 +93209,19 @@ static void connectCallback( PCLIENT pc, int error ){
 			// remove all other events too...
 			DequeData( &session->pdqStates, NULL );
 		}
- // allow a different connect?
-		session->pending.state = SSH_STATE_RESET;
+		session->pending.state = SSH_STATE_RESET; // allow a different connect?
 	}
 	else {
 		// success
 		uintptr_t cb = GetNetworkLong( session->pc, 1 );
 		set_pending_state( session->pending, SSH_STATE_HANDSHAKE, { (uintptr_t)cb } );
-/*sock*/
-		libssh2_session_handshake( session->session, 1 );
+		libssh2_session_handshake( session->session, 1/*sock*/ );
 	}
 }
 static void closeCallback( PCLIENT pc ) {
 	struct ssh_session* session = (struct ssh_session*)GetNetworkLong( pc, 0 );
 	DeleteCriticalSec( &session->csLock );
+	DeleteCriticalSec( &session->csOut );
 	libssh2_session_free( session->session );
 	ReleaseEx( session DBG_SRC );
 }
@@ -92981,6 +93236,7 @@ struct ssh_session * sack_ssh_session_init(uintptr_t psv){
 	MemSet( session, 0, sizeof( struct ssh_session ) );
 	session->buffers = NULL;
 	InitializeCriticalSection( &session->csLock );
+	InitializeCriticalSection( &session->csOut );
 	session->pdqStates = CreateDataQueue( sizeof( struct pending_state ) );
 	session->psv = psv;
 	session->buffers = CreateDataList( sizeof( struct data_buffer ) );
@@ -92996,8 +93252,7 @@ void sack_ssh_session_open( struct ssh_session* session, ssh_session_read_cb *re
 	if( session->pending.state != SSH_STATE_RESET ) {
 		lprintf( "session is already in progress" );
 	}
-//OpenTCPClientExxx( host, port?port:22, readCallback, closeCallback, NULL, connectCallback, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
-	session->pc = NULL;
+	session->pc = NULL;//OpenTCPClientExxx( host, port?port:22, readCallback, closeCallback, NULL, connectCallback, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
 	read[0] = (ssh_session_read_cb)_readCallback;
 	session->write = write;
 	session->close = close;
@@ -93042,6 +93297,7 @@ void sack_ssh_session_close( struct ssh_session*session ){
 	if( session->user ) ReleaseEx( (POINTER)session->user DBG_SRC );
 	if( session->pass ) ReleaseEx( (POINTER)session->pass DBG_SRC );
 	if( session->pdqStates ) DeleteDataQueue( &session->pdqStates );
+	if( session->pdqDeferred ) DeleteDataQueue( &session->pdqDeferred );
 	if( session->session ) libssh2_session_free( session->session );
 	// might ave a pending read with a buffer reference....
 	if( session->buffers ) {
@@ -93115,21 +93371,35 @@ ssh_exec_cb sack_ssh_set_exec_done( struct ssh_channel* channel, void( *exec_don
 	channel->exec_done = exec_done;
 	return cb;
 }
+// channel_abstract[0] is cleared by sack_ssh_channel_close(), so late callbacks are dropped.
+// A channel the user closed (close_pending) is only finishing its output; its user
+// callbacks are not called any more.
 static LIBSSH2_CHANNEL_EOF_FUNC( channel_eof_relay ) {
 	struct ssh_channel* ssh_channel = (struct ssh_channel*)channel_abstract[0];
-	ssh_channel->channel_eof( ssh_channel->psv );
+	if( ssh_channel && !ssh_channel->close_pending && ssh_channel->channel_eof ) ssh_channel->channel_eof( ssh_channel->psv );
 }
 static LIBSSH2_CHANNEL_CLOSE_FUNC( channel_close_relay ) {
 	struct ssh_channel* ssh_channel = (struct ssh_channel*)channel_abstract[0];
-	ssh_channel->channel_close( ssh_channel->psv );
+	if( !ssh_channel ) return;
+	// queued output can't go anywhere now; the next flush drops it (and finishes a pending close)
+	EnterCriticalSec( &ssh_channel->session->csOut );
+	ssh_channel->remote_closed = 1;
+	ssh_list_flush( ssh_channel );
+	LeaveCriticalSec( &ssh_channel->session->csOut );
+	if( !ssh_channel->close_pending && ssh_channel->channel_close ) ssh_channel->channel_close( ssh_channel->psv );
 }
 static LIBSSH2_CHANNEL_DATA_FUNC( channel_data_relay ) {
 	struct ssh_channel* ssh_channel = (struct ssh_channel*)channel_abstract[0];
-	ssh_channel->channel_data( ssh_channel->psv, stream, buffer, length );
+	if( ssh_channel && !ssh_channel->close_pending && ssh_channel->channel_data ) ssh_channel->channel_data( ssh_channel->psv, stream, buffer, length );
 }
 static LIBSSH2_CHANNEL_REQUEST_FUNC( channel_request_relay ) {
 	struct ssh_channel* ssh_channel = (struct ssh_channel*)channel_abstract[0];
-	ssh_channel->channel_request( ssh_channel->psv, request, request_len );
+	if( ssh_channel && !ssh_channel->close_pending && ssh_channel->channel_request ) ssh_channel->channel_request( ssh_channel->psv, request, request_len );
+}
+ssh_channel_drain_cb sack_ssh_set_channel_drain( struct ssh_channel* channel, ssh_channel_drain_cb drain ) {
+	ssh_channel_drain_cb cb = channel->drain;
+	channel->drain = drain;
+	return cb;
 }
 ssh_channel_data_cb sack_ssh_set_channel_data( struct ssh_channel*channel, ssh_channel_data_cb channel_data ){
 	ssh_channel_data_cb cb = channel->channel_data;
@@ -93286,17 +93556,16 @@ static struct keyparts* CertToBinary( const char* cert, size_t* result ) {
 #undef data
 }
 void sack_ssh_auth_user_password( struct ssh_session*session, CTEXTSTR user, CTEXTSTR pass, ssh_auth_cb cb ){
-	EnterCriticalSec( &session->csLock );
-	if( session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( session );
+	if( !locked || session->pending.state != SSH_STATE_RESET ) {
 		// error
 		struct pending_state state = {SSH_STATE_AUTH_PW, {(uintptr_t)StrDup( user ), StrLen(user), (uintptr_t)StrDup( pass ), StrLen( pass ), (uintptr_t)cb}};
-		EnqueData( &session->pdqStates, &state );
-		LeaveCriticalSec( &session->csLock );
+		ssh_api_queue( session, &state, locked );
 		return;
 	}
 	set_pending_state( session->pending, SSH_STATE_AUTH_PW, {(uintptr_t)StrDup( user ), StrLen( user ), (uintptr_t)StrDup( pass ), StrLen(pass), (uintptr_t)cb });
 	libssh2_userauth_password_ex( session->session, user, (unsigned int)session->pending.state_data[1], pass, (unsigned int)session->pending.state_data[3], pwChange );
-	LeaveCriticalSec( &session->csLock );
+	ssh_api_leave( session );
 }
 void sack_ssh_auth_user_cert( struct ssh_session*session, CTEXTSTR user
                         , uint8_t* pubkey, size_t pubkeylen
@@ -93311,8 +93580,7 @@ void sack_ssh_auth_user_cert( struct ssh_session*session, CTEXTSTR user
 				return;
 			}
 			session->bincert = bincert;
- // some part of keyparts?
-			session->pubKey = bincert->keys[0].pubkey;
+			session->pubKey = bincert->keys[0].pubkey; // some part of keyparts?
 			session->pubKey_len = bincert->keys[0].pubkeylen;
 			session->privKey = bincert->keys[0].privkey;
 			session->privKey_len = bincert->keys[0].privkeylen;
@@ -93344,12 +93612,11 @@ void sack_ssh_auth_user_cert( struct ssh_session*session, CTEXTSTR user
 		return;
 	}
 	session->pass = StrDup( pass );
-	EnterCriticalSec( &session->csLock );
-	if( session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( session );
+	if( !locked || session->pending.state != SSH_STATE_RESET ) {
 		// error
 		struct pending_state state = { SSH_STATE_AUTH_PK, {(uintptr_t)cb} };
-		EnqueData( &session->pdqStates, &state );
-		LeaveCriticalSec( &session->csLock );
+		ssh_api_queue( session, &state, locked );
 		return;
 	}
 	set_pending_state( session->pending, SSH_STATE_AUTH_PK, {(uintptr_t)cb});
@@ -93359,21 +93626,28 @@ void sack_ssh_auth_user_cert( struct ssh_session*session, CTEXTSTR user
 	                                     , (const char*)session->pubKey, session->pubKey_len
 	                                     , (const char*)session->privKey, session->privKey_len
 	                                     , pass );
-	LeaveCriticalSec( &session->csLock );
+	ssh_api_leave( session );
+}
+// channel-open messages are binary (direct-tcpip has embedded NULs), so copy by length, not StrDup.
+static char* ssh_message_dup( CTEXTSTR message, size_t message_len ) {
+	if( !message ) return NULL;
+	char* copy = NewArray( char, message_len + 1 );
+	MemCpy( copy, message, message_len );
+	copy[message_len] = 0;
+	return copy;
 }
 void sack_ssh_channel_open_v2( struct ssh_session* session, CTEXTSTR type, size_t type_len, uint32_t window_size, uint32_t packet_size,
 	CTEXTSTR message, size_t message_len, ssh_open_cb cb ) {
-	EnterCriticalSec( &session->csLock );
-	if( session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( session );
+	if( !locked || session->pending.state != SSH_STATE_RESET ) {
 		// error
-		struct pending_state state = { SSH_STATE_OPEN_CHANNEL, {(uintptr_t)StrDup( type ), type_len, window_size, packet_size, (uintptr_t)StrDup( message ), message_len, (uintptr_t)cb }};
-		EnqueData( &session->pdqStates, &state );
-		LeaveCriticalSec( &session->csLock );
+		struct pending_state state = { SSH_STATE_OPEN_CHANNEL, {(uintptr_t)StrDup( type ), type_len, window_size, packet_size, (uintptr_t)ssh_message_dup( message, message_len ), message_len, (uintptr_t)cb }};
+		ssh_api_queue( session, &state, locked );
 		return;
 	}
-	set_pending_state( session->pending, SSH_STATE_OPEN_CHANNEL, {(uintptr_t)StrDup( type ), type_len, window_size, packet_size, (uintptr_t)StrDup( message ), message_len, (uintptr_t)cb } );
+	set_pending_state( session->pending, SSH_STATE_OPEN_CHANNEL, {(uintptr_t)StrDup( type ), type_len, window_size, packet_size, (uintptr_t)ssh_message_dup( message, message_len ), message_len, (uintptr_t)cb } );
 	libssh2_channel_open_ex( session->session, type, (unsigned int)type_len, window_size, packet_size, message, (unsigned int)message_len );
-	LeaveCriticalSec( &session->csLock );
+	ssh_api_leave( session );
 }
 void sack_ssh_channel_free( struct ssh_channel* channel ){
 	libssh2_channel_close( channel->channel );
@@ -93381,44 +93655,71 @@ void sack_ssh_channel_free( struct ssh_channel* channel ){
 void sack_ssh_channel_open( struct ssh_session *session ) {
 	sack_ssh_channel_open_v2( session, "session", 7, 0x4000, 0x1000, NULL, 0, NULL );
 }
+// Close happens after queued output is sent (or dropped, if the peer closes first).
+// From here on no callbacks reach the caller, and the channel must not be used again;
+// the flush that sends the close releases it.
 void sack_ssh_channel_close( struct ssh_channel* channel ) {
-	libssh2_channel_close( channel->channel );
-	ReleaseEx( channel DBG_SRC );
+	struct ssh_session* cs = channel->session;
+	EnterCriticalSec( &cs->csOut );
+	channel->close_pending = 1;
+	ssh_list_flush( channel );
+	LeaveCriticalSec( &cs->csOut );
+	ssh_try_flush( cs );
 }
+// EOF goes after queued output.
 void sack_ssh_channel_eof( struct ssh_channel* channel ) {
-	libssh2_channel_send_eof( channel->channel );
+	struct ssh_session* cs = channel->session;
+	EnterCriticalSec( &cs->csOut );
+	channel->eof_pending = 1;
+	ssh_list_flush( channel );
+	LeaveCriticalSec( &cs->csOut );
+	ssh_try_flush( cs );
+}
+size_t sack_ssh_channel_pending( struct ssh_channel* channel ) {
+	return channel->out_pending;
+}
+void sack_ssh_channel_pause( struct ssh_channel* channel, LOGICAL paused ) {
+	struct ssh_session* cs = channel->session;
+	channel->want_hold = paused ? 1 : 0;
+	if( paused ) {
+		// only sets a flag in libssh2 (no I/O); takes effect for the next packet
+		libssh2_channel_window_hold( channel->channel, 1 );
+		return;
+	}
+	// releasing sends a window adjust, which needs the session lock
+	EnterCriticalSec( &cs->csOut );
+	ssh_list_flush( channel );
+	LeaveCriticalSec( &cs->csOut );
+	ssh_try_flush( cs );
 }
 void sack_ssh_channel_request_pty( struct ssh_channel* channel, CTEXTSTR term, ssh_pty_cb cb ) {
-	EnterCriticalSec( &channel->session->csLock );
-	if( channel->session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( channel->session );
+	if( !locked || channel->session->pending.state != SSH_STATE_RESET ) {
 		// error
 		struct pending_state state = {SSH_STATE_REQUEST_PTY, {(uintptr_t)channel, (uintptr_t)StrDup(term), (uintptr_t)cb}};
-		EnqueData( &channel->session->pdqStates, &state );
-		LeaveCriticalSec( &channel->session->csLock );
+		ssh_api_queue( channel->session, &state, locked );
 		return;
 	}
 	set_pending_state( channel->session->pending, SSH_STATE_REQUEST_PTY, { (uintptr_t)channel, (uintptr_t)StrDup( term ), (uintptr_t)cb } );
 	libssh2_channel_request_pty( channel->channel, term );
-	LeaveCriticalSec( &channel->session->csLock );
+	ssh_api_leave( channel->session );
 }
 void sack_ssh_channel_setenv( struct ssh_channel* channel, CTEXTSTR key, CTEXTSTR value, ssh_setenv_cb cb ) {
-	EnterCriticalSec( &channel->session->csLock );
-	if( channel->session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( channel->session );
+	if( !locked || channel->session->pending.state != SSH_STATE_RESET ) {
 		struct pending_state state = { SSH_STATE_SETENV, {(uintptr_t)StrDup( key),(uintptr_t)StrDup( value ), (uintptr_t)channel, (uintptr_t)cb}};
-		EnqueData( &channel->session->pdqStates, &state );
-		LeaveCriticalSec( &channel->session->csLock );
+		ssh_api_queue( channel->session, &state, locked );
 		return;
 	}
 	set_pending_state( channel->session->pending, SSH_STATE_SETENV, {(uintptr_t)StrDup( key),(uintptr_t)StrDup( value ), (uintptr_t)channel, (uintptr_t)cb });
 	libssh2_channel_setenv( channel->channel, key, value );
-	LeaveCriticalSec( &channel->session->csLock );
+	ssh_api_leave( channel->session );
 }
 void sack_ssh_channel_shell( struct ssh_channel* channel, ssh_shell_cb cb ) {
-	EnterCriticalSec( &channel->session->csLock );
-	if( channel->session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( channel->session );
+	if( !locked || channel->session->pending.state != SSH_STATE_RESET ) {
 		struct pending_state state = { SSH_STATE_SHELL, { (uintptr_t)channel, (uintptr_t)cb } };
-		EnqueData( &channel->session->pdqStates, &state );
-		LeaveCriticalSec( &channel->session->csLock );
+		ssh_api_queue( channel->session, &state, locked );
 		return;
 	}
 	set_pending_state( channel->session->pending, SSH_STATE_SHELL, { (uintptr_t)channel, (uintptr_t)cb } );
@@ -93438,36 +93739,58 @@ void sack_ssh_channel_shell( struct ssh_channel* channel, ssh_shell_cb cb ) {
 				channel->shell_open( channel->psv, FALSE );
 		channel->session->pending.state = SSH_STATE_RESET;
 	}
-	LeaveCriticalSec( &channel->session->csLock );
+	ssh_api_leave( channel->session );
 }
 void sack_ssh_channel_exec( struct ssh_channel* channel, CTEXTSTR shell, ssh_exec_cb cb ) {
-	EnterCriticalSec( &channel->session->csLock );
-	if( channel->session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( channel->session );
+	if( !locked || channel->session->pending.state != SSH_STATE_RESET ) {
 		struct pending_state state = { SSH_STATE_EXEC, { (uintptr_t)channel, (uintptr_t)StrDup( shell ), (uintptr_t)cb}};
-		EnqueData( &channel->session->pdqStates, &state );
-		LeaveCriticalSec( &channel->session->csLock );
+		ssh_api_queue( channel->session, &state, locked );
 		return;
 	}
 	set_pending_state( channel->session->pending, SSH_STATE_EXEC, { (uintptr_t)channel, (uintptr_t)StrDup( shell ), (uintptr_t)cb } );
 	libssh2_channel_exec( channel->channel, (CTEXTSTR)channel->session->pending.state_data[1] );
-	LeaveCriticalSec( &channel->session->csLock );
+	ssh_api_leave( channel->session );
 }
+// Queue the data and write as much as the peer's window allows now; the rest goes
+// as window adjusts arrive.  sack_ssh_channel_pending() tells how much is waiting.
 void sack_ssh_channel_write( struct ssh_channel* channel, int stream, const uint8_t* buffer, size_t length ) {
-	libssh2_channel_write_ex( channel->channel, stream, (const char*)buffer, length );
+	struct ssh_session* cs = channel->session;
+	struct ssh_out_buffer* buf;
+	if( !length ) return;
+	buf = (struct ssh_out_buffer*)AllocateEx( sizeof( struct ssh_out_buffer ) + length DBG_SRC );
+	buf->next = NULL;
+	buf->stream = stream;
+	buf->length = length;
+	buf->used = 0;
+	MemCpy( buf->data, buffer, length );
+	EnterCriticalSec( &cs->csOut );
+	if( channel->close_pending || channel->eof_pending ) {
+		LeaveCriticalSec( &cs->csOut );
+		ReleaseEx( buf DBG_SRC );
+		lprintf( "ssh channel write after eof/close; %zu bytes dropped", length );
+		return;
+	}
+	if( channel->out_tail ) channel->out_tail->next = buf;
+	else channel->out_head = buf;
+	channel->out_tail = buf;
+	channel->out_pending += length;
+	ssh_list_flush( channel );
+	LeaveCriticalSec( &cs->csOut );
+	ssh_try_flush( cs );
 }
 //------------------------- SOCKET FORWARDING ----------------------------
 void sack_ssh_forward_listen( struct ssh_session* session, CTEXTSTR remotehost, uint16_t remoteport, ssh_forward_listen_cb cb ) {
-	EnterCriticalSec( &session->csLock );
-	if( session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( session );
+	if( !locked || session->pending.state != SSH_STATE_RESET ) {
 		struct pending_state state = { SSH_STATE_LISTEN, { (uintptr_t)session, (uintptr_t)StrDup( remotehost ), remoteport, (uintptr_t)cb}};
-		EnqueData( &session->pdqStates, &state );
-		LeaveCriticalSec( &session->csLock );
+		ssh_api_queue( session, &state, locked );
 		return;
 	}
 	set_pending_state( session->pending, SSH_STATE_LISTEN, { (uintptr_t)session, (uintptr_t)StrDup( remotehost ), remoteport, (uintptr_t)cb } );
 	// bound_port can't be used until much later... this will be a wait for completion.
 	libssh2_channel_forward_listen_ex( session->session, remotehost, remoteport, NULL, 4096 );
-	LeaveCriticalSec( &session->csLock );
+	ssh_api_leave( session );
 }
 static void AcceptedClient( PCLIENT pc, PCLIENT pcNew ) {
 	struct ssh_director_listener* listen = (struct ssh_director_listener*)GetNetworkLong( pc, 0 );
@@ -93475,17 +93798,16 @@ static void AcceptedClient( PCLIENT pc, PCLIENT pcNew ) {
 	MemSet( director, 0, sizeof( struct ssh_director ) );
 	director->pc = pcNew;
 	director->director = listen;
-	EnterCriticalSec( &listen->session->csLock );
-	if( listen->session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( listen->session );
+	if( !locked || listen->session->pending.state != SSH_STATE_RESET ) {
 		struct pending_state state = { SSH_STATE_FORWARD, { (uintptr_t)director } };
-		EnqueData( &listen->session->pdqStates, &state );
-		LeaveCriticalSec( &listen->session->csLock );
+		ssh_api_queue( listen->session, &state, locked );
 		return;
-	}
+	}	
 	set_pending_state( listen->session->pending, SSH_STATE_FORWARD, { (uintptr_t)director } );
 	if( OpenForwardDirector( director ) )
 		listen->session->pending.state = SSH_STATE_RESET;
-	LeaveCriticalSec( &listen->session->csLock );
+	ssh_api_leave( listen->session );
 }
 static void CPROC ForwardSocketRead( PCLIENT pc, POINTER buffer, size_t length ) {
 	struct ssh_director* director = (struct ssh_director*)GetNetworkLong( pc, 0 );
@@ -93595,17 +93917,16 @@ PCLIENT sack_ssh_forward_connect( struct ssh_session* session
 //void sack_ssh_channel_
 //------------------------- SFTP Interface ----------------------------
 void sack_ssh_sftp_init( struct ssh_session* session ) {
-	EnterCriticalSec( &session->csLock );
-	if( session->pending.state != SSH_STATE_RESET ) {
+	int locked = ssh_api_enter( session );
+	if( !locked || session->pending.state != SSH_STATE_RESET ) {
 		struct pending_state state = { SSH_STATE_SFTP, { (uintptr_t)session }};
-		EnqueData( &session->pdqStates, &state );
-		LeaveCriticalSec( &session->csLock );
+		ssh_api_queue( session, &state, locked );
 		return;
 	}
 	set_pending_state( session->pending, SSH_STATE_SFTP, { (uintptr_t)session } );
 	// can never complete immediately...
 	libssh2_sftp_init( session->session );
-	LeaveCriticalSec( &session->csLock );
+	ssh_api_leave( session );
 }
 //------------------------- Websocket Interface ----------------------------
 static void WebSocketData( uintptr_t psv, int stream, const uint8_t* data, size_t len ) {
@@ -93644,8 +93965,7 @@ struct ssh_websocket* sack_ssh_channel_serve_websocket( struct ssh_channel* chan
 	web_socket_event ws_event,
 	web_socket_closed ws_close,
 	web_socket_error ws_error,
-  // server socket event
-	web_socket_accept ws_accept,
+	web_socket_accept ws_accept,  // server socket event
 	web_socket_http_request ws_http,
 	web_socket_http_close ws_http_close,
 	web_socket_completion ws_completion,
