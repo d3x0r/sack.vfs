@@ -389,6 +389,14 @@ foreach( path libssh2 libssh2/cmake libssh2/include libssh2/LICENSES libssh2/src
 		endif()
 	endforeach()
 endforeach()
+# upstream libssh2 installs these (with no option to skip them) whenever
+# install is enabled, and the external build needs install for libssh2_tmp.
+FILE( MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/docs )
+foreach( file docs/AUTHORS docs/BINDINGS.md docs/HACKING.md )
+	if( EXISTS ${SACK_BASE}/src/contrib/libssh2/${file} )
+		FILE( COPY_FILE ${SACK_BASE}/src/contrib/libssh2/${file} ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/${file} ONLY_IF_DIFFERENT )
+	endif()
+endforeach()
 #FILE( COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/local/CMakeLists.txt ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/CMakeLists.txt )
 #FILE( COPY_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/src/local/CMakeLists.txt ${CMAKE_CURRENT_SOURCE_DIR}/src/sack/libssh2/src/CMakeLists.txt )
 else()
