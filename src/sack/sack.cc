@@ -92323,7 +92323,8 @@ struct ssh_channel {
 	struct ssh_channel* flush_next;   // link in session->flush_head
 	int flush_listed;
 	volatile int want_hold;           // sack_ssh_channel_pause() state
-	int eof_pending;                  // send EOF once output drains
+	int eof_pending;                  // send EOF once output drains (stays set: no writes after)
+	int eof_sent;
 	int close_pending;                // user closed: finish output, then close and release
 	int remote_closed;                // peer closed; queued output can't be sent
 	int out_blocked;                  // a write waited on the window; report drain when empty
@@ -92507,17 +92508,18 @@ static LIBSSH2_SEND_FUNC( SendCallback ) {
 		cs->write( cs->psv, (uint8_t*)buffer, length );
 	return length;
 }
-static void moveBuffers( PDATALIST *pdl ) {
-	struct data_buffer* buf;
+// move the buffer at `at` (just fully consumed) to the end of the list, keeping the
+// rest in order: filled buffers stay at the front in arrival order, free ones behind.
+static void moveBuffers( PDATALIST *pdl, INDEX at ) {
+	struct data_buffer* bufs;
+	struct data_buffer moved;
 	INDEX idx;
-	struct data_buffer buf0;
-	DATA_FORALL( (*pdl), idx, struct data_buffer*, buf ) {
-		if( !idx ) buf0 = buf[0];
-		else {
-			buf[-1] = buf[0];
-		}
-	}
-	if( buf ) buf[idx] = buf0;
+	if( !(*pdl) || (*pdl)->Cnt < 2 || at >= (*pdl)->Cnt - 1 ) return;
+	bufs = (struct data_buffer*)(*pdl)->data;
+	moved = bufs[at];
+	for( idx = at + 1; idx < (*pdl)->Cnt; idx++ )
+		bufs[idx-1] = bufs[idx];
+	bufs[(*pdl)->Cnt-1] = moved;
 }
 static LIBSSH2_RECV_FUNC( RecvCallback ) {
 	// return ssize_t
@@ -92534,23 +92536,43 @@ static LIBSSH2_RECV_FUNC( RecvCallback ) {
 	while( !cs->buffers || !cs->buffers->Cnt ) {
 		return -EAGAIN;
 	}
-	struct data_buffer* buf;
-	INDEX idx;
-	//cs->waiter = MakeThread();
-	DATA_FORALL( cs->buffers, idx, struct data_buffer*, buf ) {
-		if( buf->length ) {
-			ssize_t filled;
-			MemCpy( buffer, buf->buffer+buf->used, filled = ((( buf->length-buf->used)< length)?(buf->length-buf->used):length) );
-			buf->used += filled;
-			if( buf->used == buf->length ) {
-				buf->used = 0;
-				buf->length = 0;
-				moveBuffers( &cs->buffers );
+	// Fill as much of the request as the queued reads allow.  libssh2 treats a short
+	// read as "wait for the socket"; here nothing else re-triggers it until more TCP
+	// data arrives, so bytes left in these buffers would sit unprocessed (the last
+	// packets of a stream - data, EOF, close - would never be seen).
+	size_t total = 0;
+	while( total < length ) {
+		struct data_buffer* buf;
+		INDEX idx;
+		LOGICAL found = FALSE;
+		DATA_FORALL( cs->buffers, idx, struct data_buffer*, buf ) {
+			if( buf->length ) {
+				size_t avail = buf->length - buf->used;
+				size_t filled = ( avail < ( length - total ) ) ? avail : ( length - total );
+				MemCpy( (uint8_t*)buffer + total, buf->buffer + buf->used, filled );
+				buf->used += filled;
+				total += filled;
+				if( buf->used == buf->length ) {
+					buf->used = 0;
+					buf->length = 0;
+					moveBuffers( &cs->buffers, idx );
+				}
+				found = TRUE;
+				break; // the list may have been reordered; rescan from the front
 			}
-			return filled;
 		}
+		if( !found ) break;
 	}
-	return -EAGAIN;
+	return total ? (ssize_t)total : -EAGAIN;
+}
+// bytes received from the socket that libssh2 hasn't taken yet
+static size_t ssh_unconsumed( struct ssh_session* cs ) {
+	size_t left = 0;
+	INDEX idx;
+	struct data_buffer* db;
+	DATA_FORALL( cs->buffers, idx, struct data_buffer*, db )
+		if( db->length ) left += db->length - db->used;
+	return left;
 }
 static void pwChange( LIBSSH2_SESSION *session, char** newpw, int* newpw_len, void **abstract ) {
 	struct ssh_session* cs = (struct ssh_session*)abstract[0];
@@ -92585,6 +92607,7 @@ static void ssh_drop_output( struct ssh_channel* ch ) {
 static LOGICAL ssh_flush_channel( struct ssh_channel* ch ) {
 	struct ssh_session* cs = ch->session;
 	struct ssh_out_buffer* buf;
+	LOGICAL drained = FALSE, send_eof = FALSE, do_close = FALSE;
 	if( !ch->want_hold )
 		libssh2_channel_window_hold( ch->channel, 0 ); // refund anything held back
 	while( 1 ) {
@@ -92595,8 +92618,19 @@ static LOGICAL ssh_flush_channel( struct ssh_channel* ch ) {
 			ssh_drop_output( ch );
 			buf = NULL;
 		}
+		if( !buf ) {
+			// The queue is empty: decide drain/EOF/close in the same step, so output
+			// another thread queues after this point can't be overtaken by them (the
+			// peer discards data that arrives after EOF).
+			drained = ch->out_blocked;
+			ch->out_blocked = 0;
+			send_eof = ch->eof_pending && !ch->eof_sent;
+			if( send_eof ) ch->eof_sent = 1;
+			do_close = ch->close_pending;
+			LeaveCriticalSec( &cs->csOut );
+			break;
+		}
 		LeaveCriticalSec( &cs->csOut );
-		if( !buf ) break;
 		ssize_t rc = libssh2_channel_write_ex( ch->channel, buf->stream, (const char*)buf->data + buf->used, buf->length - buf->used );
 		if( rc == LIBSSH2_ERROR_EAGAIN || rc == 0 ) {
 			ch->out_blocked = 1;
@@ -92617,17 +92651,13 @@ static LOGICAL ssh_flush_channel( struct ssh_channel* ch ) {
 		}
 		LeaveCriticalSec( &cs->csOut );
 	}
-	if( ch->out_blocked ) {
-		// only report drain after a write had to wait
-		ch->out_blocked = 0;
-		if( ch->drain && !ch->close_pending )
-			ch->drain( ch->psv );
-	}
-	if( ch->eof_pending ) {
-		ch->eof_pending = 0;
+	// report drain if a write left data waiting (the window was full, or another
+	// thread had the session)
+	if( drained && ch->drain && !do_close )
+		ch->drain( ch->psv );
+	if( send_eof )
 		libssh2_channel_send_eof( ch->channel );
-	}
-	if( ch->close_pending ) {
+	if( do_close ) {
 		libssh2_channel_abstract( ch->channel )[0] = NULL;
 		libssh2_channel_close( ch->channel );
 		ReleaseEx( ch DBG_SRC );
@@ -92774,9 +92804,12 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 		}
 		EnterCriticalSec( &cs->csLock );
 		cs->busy++; // callbacks below may write; they queue, and we flush on the way out
+		size_t pass_start;
+		int idle_retries = 0;
 		while( 1 ) {
 			if( did_one && cs->pending.state != SSH_STATE_RESET ) break;
 			did_one = 1;
+			pass_start = ssh_unconsumed( cs );
 			if( cs->pending.state == SSH_STATE_RESET )
 				DequeData( &cs->pdqStates, &cs->pending );
 			switch( cs->pending.state ) {
@@ -93133,9 +93166,27 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 				break;
 			case SSH_STATE_RESET:
 				rc = libssh2_session_read( cs->session );
+				if( rc < 0 && rc != LIBSSH2_ERROR_EAGAIN ) {
+					// the session is unusable (decrypt/MAC failure, disconnect...);
+					// retrying would only spin on the same data.
+					lprintf( "ssh session read failed (%d)", rc );
+					rc = LIBSSH2_ERROR_EAGAIN;
+				}
 				break;
 			}
-			if( rc == LIBSSH2_ERROR_EAGAIN ) break;
+			if( rc == LIBSSH2_ERROR_EAGAIN ) {
+				// libssh2 may stop with received bytes still queued here (it parses the
+				// next packet's header, then waits for the socket before reading the
+				// rest).  Nothing else re-triggers it until more TCP data arrives, so
+				// keep going while it makes progress (one retry without progress
+				// covers that header case).
+				size_t now = ssh_unconsumed( cs );
+				if( !now ) break;
+				if( now < pass_start ) idle_retries = 0;
+				else if( idle_retries++ ) break;
+				did_one = 0; // run the same pending state again
+				continue;
+			}
 		}
 		//case
 		cs->busy--;
@@ -93778,6 +93829,11 @@ void sack_ssh_channel_write( struct ssh_channel* channel, int stream, const uint
 	ssh_list_flush( channel );
 	LeaveCriticalSec( &cs->csOut );
 	ssh_try_flush( cs );
+	// anything still queued is the caller's bufferedAmount; make sure whoever sends
+	// it reports drain (checked with the queue under csOut, so it can't be missed).
+	EnterCriticalSec( &cs->csOut );
+	if( channel->out_head ) channel->out_blocked = 1;
+	LeaveCriticalSec( &cs->csOut );
 }
 //------------------------- SOCKET FORWARDING ----------------------------
 void sack_ssh_forward_listen( struct ssh_session* session, CTEXTSTR remotehost, uint16_t remoteport, ssh_forward_listen_cb cb ) {

@@ -268,6 +268,11 @@ that `module://` support was added.  TODO: Fix stall, workaround, use `module://
    - Added `res.statusCode`, settable; a response whose handler never called `writeHead()` now gets a status line from it instead of going out with none.
    - Report the size of library-owned ArrayBuffers to V8 (`AdjustAmountOfExternalAllocatedMemory`), so file reads, mapped files, query blobs and socket messages create collection pressure instead of accumulating invisibly.  New `makeReleasableBackingStore()` replaces every `NewBackingStore(...,releaseBufferBackingStore,NULL)`.
    - Update JSOX parsing to align more with the standard - NBSP is a non-breaking space, allowed in unquoted strings.  Allow '/' in unquoted strings.
+   - SSH channels: `send()` queues data the remote's window can't take instead of dropping it; `eof()`/`close()` wait for queued data.  Added `bufferedAmount`, `drain(cb)`, `pause()` and `resume()` for flow control.  `reverse(addr, port, cb)` delivers raw channels.  Fixed a deadlock when calling SSH methods from JS while the session's network thread was delivering data.
+   - Added `apps/ssh-relay`, which joins a remote listener on one SSH server to `direct-tcpip` channels through another.
+   - Windows builds of libssh2 now use the bundled LibreSSL instead of WinCNG; WinCNG offered no key exchange current OpenSSH (10.x) accepts and could not load OpenSSH-format RSA keys.
+   - Fixed SSH receive-buffer rotation that duplicated a buffer and overwrote unread data once more than one read was queued (corrupted streams, then a 100% CPU spin); a session read error no longer spins.
+   - Fixed SSH sessions leaving received bytes unprocessed until more data arrived (libssh2 was fed one 4K read at a time, and stops after a short read); the end of a stream - last data, EOF, close - could stall indefinitely, especially with chacha20-poly1305.
 - 1.3.133
    - Added `getRoot` export utility that can find the root package.json.
    - Added program name to task information in task manager.  Program name support is used for process exit signal generation.

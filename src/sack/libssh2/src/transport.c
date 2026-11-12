@@ -783,7 +783,11 @@ int ssh2_transport_read(LIBSSH2_SESSION *session)
 
                 if(rc != LIBSSH2_ERROR_NONE) {
                     p->total_num = 0; /* no packet buffer available */
-                    return rc;
+                    if(p->payload)
+                        SSH2_SAFEFREE(session, p->payload);
+                    /* the crypt hook reports failure as a positive value, which
+                       callers would take for a packet type */
+                    return rc < 0 ? rc : LIBSSH2_ERROR_DECRYPT;
                 }
 
                 memcpy(p->wptr, &p->buf[p->readidx], numbytes);

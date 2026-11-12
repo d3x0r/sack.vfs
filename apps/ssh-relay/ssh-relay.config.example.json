@@ -1,0 +1,18 @@
+{
+	"listen": {
+		"address": "public-host.example:22",
+		"user": "relay",
+		"password": "",
+		"privKeyFile": "rsa",
+		"bind": "0.0.0.0",
+		"port": 8443
+	},
+	"target": {
+		"address": "ws-service-host.internal:22",
+		"user": "relay",
+		"password": "",
+		"privKeyFile": "rsa",
+		"host": "localhost",
+		"port": 443
+	}
+}

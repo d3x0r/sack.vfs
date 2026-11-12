@@ -14,6 +14,12 @@ OPTION( NEED_LIBSSH2 "Build internal libssh2 library" ON )
     set( SSH_LIBS ${CMAKE_BINARY_DIR}/libssh2_tmp/lib/libssh2${EXTENSION} )
 
 if( INCLUDE_LIBSSH2 )
+	# On Windows libssh2 would pick WinCNG first, which has no curve25519/ed25519 and
+	# can't load OpenSSH-format RSA keys; current OpenSSH (10.x) also dropped the
+	# diffie-hellman kex WinCNG offers.  Use the bundled LibreSSL instead.
+	if( WIN32 )
+		set( SSH_CRYPTO_OPTS -DCRYPTO_BACKEND=LibreSSL -DLIBRESSL_VERSION=${LIBRESSL_VERSION} )
+	endif( WIN32 )
 	include_directories( src/sack/libssh2/include )
 	LINK_DIRECTORIES( ${CMAKE_BINARY_DIR}/libssh2_tmp/lib )
 	
@@ -32,6 +38,7 @@ if( INCLUDE_LIBSSH2 )
 			-DLIBSSH2_BUILD_OBJECT_LIBRARY=OFF
 			-DLIBSSH2_DISABLE_INSTALL=OFF
 			-DLIBRESSL_INSTALL_DIR=${CMAKE_BINARY_DIR}/lssl_tmp
+			${SSH_CRYPTO_OPTS}
 			-DBUILD_SHARED_LIBS=OFF
 			-DBUILD_STATIC_LIBS=ON
 			-DBUILD_EXAMPLES=OFF

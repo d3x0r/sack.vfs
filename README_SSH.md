@@ -59,7 +59,9 @@ const loginPromise = connectPromise.then( (fingerprint) =>{
 - login() - finishes a connection if skip login option was enabled.
 - Channel() - returns a new channel to the remote.  Returns a promise that resolves with the new channel; may reject on error.
 - forward(localAddrress, localPort, remoteAddress, remotePort) - forwards a connection to the remote from a locally hosted listener.  `sshd` you are connected to will probably open a remote socket to the specied remote address.  Addresses are strings and Ports are 16 bit unsigned numbers.
-- reverse(addr,port) - has the `sshd` this connects to open a port on the remote side to accept listeners. Returns a promise that resolves with a listener; or rejects on error.  Connections to that listener are fowarded as channel 
+- reverse(addr,port [,onChannel]) - has the `sshd` this connects to open a port on the remote side to accept listeners. Returns a promise that resolves with a listener; or rejects on error.  The listener's `port` is the port actually bound (useful when `port` is 0).  If `onChannel` is given, each connection to that remote port is passed to it as a raw channel (see Channel methods below); otherwise connections are served as HTTP/WebSocket (see `sack.WebSocket.ssh2ws`).
+
+Only one `connect()`/`reverse()` may be pending at a time on an SSH object; wait for the previous promise before starting another.  `Channel()` calls do not need to wait. 
 
 ## Channel creation
 
@@ -73,13 +75,42 @@ If no options are passed to the channel, these are the default values used inter
 Channel objects have a few methods
 
 - binary = true/false - set whether tha read() callback is passed an arraybuffer or string.
-read( cb) - set a callback to be called when data is received.  It receives parameters (stream, string/buffer, depending on binary setting above )
-- send( [stream,] string/arraybuffer ) - send data to the channel, an optional stream number can be passed, it defaults to 0 or what is typically stdio (stderr is received as 1, I don't know that it's legal to send on stderr; other applications may used stream IDs for multiple purposes).
+- read( cb ) - set a callback to be called when data is received.  It receives parameters `(data, stream)`; `data` is a string or ArrayBuffer depending on `binary` above, `stream` is 0 for normal data and 1 for stderr.
+- send( [stream,] string/arraybuffer ) - send data to the channel, an optional stream number can be passed, it defaults to 0 or what is typically stdio (stderr is received as 1, I don't know that it's legal to send on stderr; other applications may used stream IDs for multiple purposes).  Data is never dropped: whatever the remote's window can't take yet is queued and sent as the remote makes room (see `bufferedAmount` and `drain()`).
+- bufferedAmount - (read-only) bytes passed to `send()` that have not been written to the connection yet.
+- drain( cb ) - set a callback called when the send queue has emptied after a `send()` had to wait for the remote's window.  Not called if nothing ever had to wait.
+- pause() - stop granting the remote more receive window, so it stops sending once the window it already has is used.  Data already in flight is still delivered to `read()`.
+- resume() - grant the window held back while paused, letting the remote send again.
+- eof() - send end-of-file (no more data from this side); sent after any queued data.
+- eof( cb ) - set a callback called when the remote sends end-of-file.
 - pty() - establishses a pty on the connection (mostly an interface the other side needs).  Returns a promise that resolves to Undefined.  May reject with error.
 - setenv(key,value) - sets a remote environment data, doesn't seem to work for me actually.  returns a promise that completes when it finished or rejects with an error.
 - shell() - opens the default remote shell.  Returns a Promise that resolves when the shell has started, may reject with an error;
 - exec( cmd) - sends a command to exec().  Returns a Promise that resolves when the command has executed (finish is probably by close); may reject with an error.
-- close() - closes the channel.  No return value.
+- close() - closes the channel, after any queued data has been sent.  No return value.  The channel object must not be used afterwards.
+- close( cb ) - set a callback called when the remote closes the channel.
+
+### Flow control
+
+When copying from one channel to another (or to any slower destination), pause the source while
+the destination is backed up, and resume it from the destination's `drain()`.  This bounds memory
+use to roughly one SSH window plus the high-water mark, and the slow end's pace propagates back to
+the sender.
+
+``` js
+const HIGH_WATER = 1024*1024;
+function pipe( src, dst ) {
+    let paused = false;
+    src.read( (buf, stream) => {
+        dst.send( buf );
+        if( !paused && dst.bufferedAmount > HIGH_WATER ) { paused = true; src.pause(); }
+    } );
+    dst.drain( () => { if( paused ) { paused = false; src.resume(); } } );
+}
+```
+
+See [apps/ssh-relay](apps/ssh-relay/) for a complete relay that joins a `reverse()` listener on one
+server to `direct-tcpip` channels opened through a second server.
 
 
 
