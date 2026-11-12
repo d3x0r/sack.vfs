@@ -12,17 +12,14 @@
 //   (defaults to ssh-relay.config.json next to this script; see ssh-relay.config.example.json)
 
 import {sack} from "sack.vfs";
-import fs from "node:fs";
-import path from "node:path";
-import url from "node:url";
+const disk = sack.Volume();
 
-const here = path.dirname( url.fileURLToPath( import.meta.url ) );
-const configPath = path.resolve( process.argv[2] || path.join( here, "ssh-relay.config.json" ) );
-const config = JSON.parse( fs.readFileSync( configPath, "utf8" ) );
-const configDir = path.dirname( configPath );
+const pwdBare = process.cwd();
+const config = (await import( "file://"+pwdBare + "/config.jsox" )).default;
 
 function readKey( file ) {
-	return file ? fs.readFileSync( path.resolve( configDir, file ), "utf8" ) : null;
+	const data = disk.read( file );
+	return file && data ? data.toString() : null;
 }
 
 async function connect( name, opts ) {
