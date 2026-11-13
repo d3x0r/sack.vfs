@@ -404,6 +404,42 @@ export class Task extends Events {
 		return this.#restart;
 	}
 
+	/**
+	 * Bounce this task ONCE, now, whatever its configuration says.
+	 *
+	 * `restart = true` is not this.  That setter arms the standing
+	 * restart-on-exit POLICY, and it only acts at all when the task's own
+	 * configuration permits that policy -- so asking it to restart a RUNNING
+	 * task whose "restart automatically" box is unticked falls through every
+	 * branch and does nothing at all.  Right for a policy, wrong for a button:
+	 * the services people most want to bounce by hand are exactly the ones
+	 * they have told the launcher not to bounce on its own.
+	 *
+	 * That dead button is worse than it sounds for anything this manager's own
+	 * page authenticates through -- the game proxy -- because the only way
+	 * left to bounce it was Stop followed by Start, and the Stop takes the
+	 * login with it, so the Start can never be clicked.
+	 *
+	 * Deliberately does not TOUCH the restart policy: pressing a button once
+	 * should not quietly leave a task set to come back for ever after, which
+	 * is what routing it through the setter did.  `held` is cleared for the
+	 * same reason an explicit start clears it -- somebody asked for this by
+	 * hand, so this task's dependants are allowed to run again too.
+	 *
+	 * @returns {Promise<void>} resolves once it has been started again
+	 */
+	restartNow() {
+		this.held = false;
+		if( !this.running ) { this.start(); return Promise.resolve(); }
+		// stop() resolves when the process is actually gone; starting on top of
+		// one that has not exited yet is how you end up with two of them
+		return Promise.resolve( this.stop() ).then( ()=>{
+			// a task configured restart:true may have come back on its own
+			// while we waited; do not bounce it a second time
+			if( !this.running ) this.start();
+		} );
+	}
+
 	get log() {
 		const total = this.#logBase + this.#log.length;
 		if( this.#log.length > 20 )

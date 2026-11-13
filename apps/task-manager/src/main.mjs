@@ -173,10 +173,18 @@ function handleRestart( ws, msg, msg_ ) {
 		if( !task ) {
 			ws.send( JSOX.stringify( {op:"delete", id: msg.id } ) );
 		} else {
-			console.log( "Set task restart:", task );
-			task.held = false;
-			task.restart = true;
-			console.log( "Task is running alrady?", task.running );
+			/*
+			 * An explicit one-shot bounce, not `restart = true`.
+			 *
+			 * That assignment arms the restart-on-exit POLICY, which the
+			 * setter only applies when the task's configuration permits it --
+			 * so on a running task with that box unticked it did nothing, and
+			 * the only way left to bounce it was Stop then Start.  For the
+			 * game proxy that is a trap: stopping it drops the login this very
+			 * page authenticates with, so the Start click never arrives.
+			 */
+			console.log( "Restarting task:", task.name, "- running:", task.running );
+			task.restartNow();
 		}
 	} else {
 		const remote = local.systems.find( system=>system.id === msg.system );

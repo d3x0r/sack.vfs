@@ -167,11 +167,11 @@ export function setupRest( server ) {
 		const task = taskResult.task;
 		console.log( "restart?", req.CGI.task || req.CGI.id, task?.running );
 		if( task )  {
-			whenStopped( task ).then( ()=>{
-				// a task configured restart:true may have come back up on its own
-				// while we waited; do not bounce it a second time.
-				task.held = false;
-				if( !task.running ) task.restart = true; // setter with side effect start()
+			// One spelling of "bounce it", shared with the button (handleRestart).
+			// This route worked where the button did not, because stopping first
+			// left the setter's `!running -> start()` branch to do the work -- an
+			// accident worth not keeping two copies of.
+			task.restartNow().then( ()=>{
 				res.writeHead( 200 );
 				res.end( "set to restart." );
 			} );
