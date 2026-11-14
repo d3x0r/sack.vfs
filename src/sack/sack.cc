@@ -35275,7 +35275,8 @@ static uintptr_t CPROC HandleTaskOutput( PTHREAD thread ) {
 #  ifdef _DEBUG
 						//lprintf( "Ending system thread because of broke pipe! %d", errno );
 #  endif
-						lprintf( "%d read = pipe failure. %d", dwRead, err );
+						if( dwRead || err )
+							lprintf( "%d read = pipe failure. %d", dwRead, err );
 						break;
 					}
 					if( task->flags.log_input )
@@ -70047,6 +70048,16 @@ static int gatherString( CTEXTSTR msg, CTEXTSTR *msg_input, size_t msglen, TEXTS
 	(*pmOut) = mOut;
 	return status;
 }
+// A delimiter arrived while a keyword was still being spelled out: 'tru'.  The keyword
+// states sort after WORD_POS_END and before WORD_POS_FIELD, so one range test finds any
+// of them.  Without this, `{"b":tru}` parsed as `{}` -- the field quietly vanished
+// instead of the document being rejected, which is what json6_parser.c does here.
+#define JSON_PARTIAL_KEYWORD_PENDING() ( state->word > WORD_POS_END && state->word < WORD_POS_FIELD )
+static void json_partial_keyword_fault( struct json_parse_state *state, const char *where ) {
+	state->status = FALSE;
+	if( !state->pvtError ) state->pvtError = VarTextCreate();
+	vtprintf( state->pvtError, "Incomplete keyword %s at %" _size_f, where, state->n );
+}
 static void json_state_init( struct json_parse_state *state )
 {
 	PPDATALIST ppElements;
@@ -70214,6 +70225,16 @@ int json_parse_add_data( struct json_parse_state *state
 			}
 			break;
 			case ':':
+				// Every other separator -- '}' ']' ',' and whitespace -- lets a new word
+				// start here, and ':' did not: a quoted field name leaves word at
+				// WORD_POS_END, so the keyword lexer below ('t' of true, 'f' of false,
+				// 'n' of null) saw a non-RESET word and faulted.  `{"b":true}` was
+				// rejected while `{"b": true}` parsed, because the space reset it, and
+				// numbers and strings were fine because neither looks at word.
+				if( state->word == WORD_POS_END ) {
+					// allow starting a new word
+					state->word = WORD_POS_RESET;
+				}
 				if( state->parse_context == CONTEXT_IN_OBJECT )
 				{
 					if( state->val.name ) {
@@ -70238,6 +70259,10 @@ int json_parse_add_data( struct json_parse_state *state
 				}
 				break;
 			case '}':
+				if( JSON_PARTIAL_KEYWORD_PENDING() ) {
+					json_partial_keyword_fault( state, "before '}'" );
+					break;
+				}
 				if( state->word == WORD_POS_END ) {
 					// allow starting a new word
 					state->word = WORD_POS_RESET;
@@ -70273,6 +70298,10 @@ int json_parse_add_data( struct json_parse_state *state
 				}
 				break;
 			case ']':
+				if( JSON_PARTIAL_KEYWORD_PENDING() ) {
+					json_partial_keyword_fault( state, "before ']'" );
+					break;
+				}
 				if( state->word == WORD_POS_END ) {
 					// allow starting a new word
 					state->word = WORD_POS_RESET;
@@ -70306,6 +70335,10 @@ int json_parse_add_data( struct json_parse_state *state
 				}
 				break;
 			case ',':
+				if( JSON_PARTIAL_KEYWORD_PENDING() ) {
+					json_partial_keyword_fault( state, "before ','" );
+					break;
+				}
 				if( state->word == WORD_POS_END ) {
 					// allow starting a new word
 					state->word = WORD_POS_RESET;
@@ -70679,14 +70712,34 @@ LOGICAL json_parse_message( const char * msg
 	state->complete_at_end = TRUE;
 	int result = json_parse_add_data( state, msg, msglen );
 	if( jpsd.json_state ) json_parse_dispose_state( &jpsd.json_state );
+	// the state a previous failure kept for json_parse_get_error(); the caller has had
+	// its chance to read it by now
+	if( jpsd.last_parse_state ) json_parse_dispose_state( &jpsd.last_parse_state );
 	if( result > 0 ) {
 		(*_msg_output) = json_parse_get_data( state );
 		jpsd.json_state = state;
 		//json6_parse_dispose_state( &state );
 		return TRUE;
 	}
+	if( result == 0 && !state->pvtError ) {
+		// ran out of document with nothing completed and no fault recorded; say why,
+		// rather than leaving the caller to report that no error was posted
+		state->pvtError = VarTextCreate();
+		if( state->gatheringString )
+			vtprintf( state->pvtError, "Incomplete string at end of document" );
+		else if( JSON_PARTIAL_KEYWORD_PENDING() )
+			vtprintf( state->pvtError, "Incomplete keyword at end of document" );
+		else if( state->parse_context != CONTEXT_UNKNOWN )
+			vtprintf( state->pvtError, "Unclosed object or array at end of document" );
+		else
+			vtprintf( state->pvtError, "No value found in document" );
+	}
 	(*_msg_output) = NULL;
-	json_parse_dispose_state( &state );
+	// json_parse_get_error( NULL ) reads jpsd.last_parse_state, so the state has to
+	// outlive this call -- disposing it here is why a rejected document surfaced as
+	// "JSON Error not posted." instead of saying what was wrong.  Freed by the next
+	// parse, as json6_parse_message() does with its own failures.
+	jpsd.last_parse_state = state;
 	return FALSE;
 }
 struct json_parse_state *json_get_message_parser( void ) {
@@ -72447,6 +72500,9 @@ void json_parse_dispose_state( struct json_parse_state **ppState ) {
 	if( state->context_stack )
 		DeleteFromSet( PLINKSTACK, jpsd.linkStacks, state->context_stack );
 		//DeleteLinkStack( &state->context_stack );
+	// json_begin_parse() only sets this NULL when it recycles a state, so every parse
+	// that recorded a fault dropped its VARTEXT on the floor
+	if( state->pvtError ) VarTextDestroy( &state->pvtError );
 	DeleteFromSet( PARSE_STATE, jpsd.parseStates, state );
 	//Deallocate( struct json_parse_state *, state );
 	(*ppState) = NULL;
@@ -92267,7 +92323,8 @@ struct data_buffer {
 	size_t used;
 };
 struct ssh_session {
-	enum ssh_states authState; // state to go to after handshake
+ // state to go to after handshake
+	enum ssh_states authState;
 	PDATALIST buffers;
 	PDATAQUEUE pdqStates;
 	PCLIENT pc;
@@ -92298,12 +92355,17 @@ struct ssh_session {
 	// ssh_flush_session).  csOut guards the queues and the flush list; it is never
 	// held while calling into libssh2 or a callback.
 	CRITICALSECTION csOut;
-	PDATAQUEUE pdqDeferred;          // API requests made while another thread held csLock
-	struct ssh_channel* flush_head;  // channels with queued output/eof/close/window work
+          // API requests made while another thread held csLock
+	PDATAQUEUE pdqDeferred;
+  // channels with queued output/eof/close/window work
+	struct ssh_channel* flush_head;
 	struct ssh_channel* flush_tail;
-	volatile uint32_t out_seq;       // bumped whenever work is queued
-	int busy;                        // csLock holder is inside libssh2 or a flush (no nested flush)
-	int block_recv;                  // RecvCallback reports EAGAIN (flushing must not read packets)
+       // bumped whenever work is queued
+	volatile uint32_t out_seq;
+                        // csLock holder is inside libssh2 or a flush (no nested flush)
+	int busy;
+                  // RecvCallback reports EAGAIN (flushing must not read packets)
+	int block_recv;
 };
 // data accepted by sack_ssh_channel_write that the peer's window has not taken yet
 struct ssh_out_buffer {
@@ -92317,17 +92379,25 @@ struct ssh_channel {
 	LIBSSH2_CHANNEL *channel;
 	uintptr_t psv;
 	struct ssh_session* session;
-	struct ssh_out_buffer* out_head;  // guarded by session->csOut
+  // guarded by session->csOut
+	struct ssh_out_buffer* out_head;
 	struct ssh_out_buffer* out_tail;
-	volatile size_t out_pending;      // bytes queued in out_head..out_tail
-	struct ssh_channel* flush_next;   // link in session->flush_head
+      // bytes queued in out_head..out_tail
+	volatile size_t out_pending;
+   // link in session->flush_head
+	struct ssh_channel* flush_next;
 	int flush_listed;
-	volatile int want_hold;           // sack_ssh_channel_pause() state
-	int eof_pending;                  // send EOF once output drains (stays set: no writes after)
+           // sack_ssh_channel_pause() state
+	volatile int want_hold;
+                  // send EOF once output drains (stays set: no writes after)
+	int eof_pending;
 	int eof_sent;
-	int close_pending;                // user closed: finish output, then close and release
-	int remote_closed;                // peer closed; queued output can't be sent
-	int out_blocked;                  // a write waited on the window; report drain when empty
+                // user closed: finish output, then close and release
+	int close_pending;
+                // peer closed; queued output can't be sent
+	int remote_closed;
+                  // a write waited on the window; report drain when empty
+	int out_blocked;
 	ssh_channel_drain_cb drain;
 	ssh_channel_error_cb error;
 	ssh_channel_data_cb channel_data;
@@ -92495,10 +92565,8 @@ static void* realloc_callback( void* p, size_t size, void** abstract ) {
 }
 static LIBSSH2_SEND_FUNC( SendCallback ) {
 	// return ssize_t
-	/* int socket \
-		, const void* buffer
-		, size_t length \
-		, int flags
+	/* int socket		 , const void* buffer
+		, size_t length		 , int flags
 		, void** abstract)
 	*/
 	struct ssh_session* cs = (struct ssh_session*)abstract[0];
@@ -92523,10 +92591,8 @@ static void moveBuffers( PDATALIST *pdl, INDEX at ) {
 }
 static LIBSSH2_RECV_FUNC( RecvCallback ) {
 	// return ssize_t
-	/* int socket \
-		, const void* buffer
-		, size_t length \
-		, int flags
+	/* int socket		 , const void* buffer
+		, size_t length		 , int flags
 		, void** abstract)
 	*/
 	struct ssh_session* cs = (struct ssh_session*)abstract[0];
@@ -92558,7 +92624,8 @@ static LIBSSH2_RECV_FUNC( RecvCallback ) {
 					moveBuffers( &cs->buffers, idx );
 				}
 				found = TRUE;
-				break; // the list may have been reordered; rescan from the front
+ // the list may have been reordered; rescan from the front
+				break;
 			}
 		}
 		if( !found ) break;
@@ -92609,7 +92676,8 @@ static LOGICAL ssh_flush_channel( struct ssh_channel* ch ) {
 	struct ssh_out_buffer* buf;
 	LOGICAL drained = FALSE, send_eof = FALSE, do_close = FALSE;
 	if( !ch->want_hold )
-		libssh2_channel_window_hold( ch->channel, 0 ); // refund anything held back
+ // refund anything held back
+		libssh2_channel_window_hold( ch->channel, 0 );
 	while( 1 ) {
 		EnterCriticalSec( &cs->csOut );
 		buf = ch->out_head;
@@ -92634,7 +92702,8 @@ static LOGICAL ssh_flush_channel( struct ssh_channel* ch ) {
 		ssize_t rc = libssh2_channel_write_ex( ch->channel, buf->stream, (const char*)buf->data + buf->used, buf->length - buf->used );
 		if( rc == LIBSSH2_ERROR_EAGAIN || rc == 0 ) {
 			ch->out_blocked = 1;
-			return TRUE; // peer's window is full; retried after the next packet arrives
+ // peer's window is full; retried after the next packet arrives
+			return TRUE;
 		}
 		EnterCriticalSec( &cs->csOut );
 		if( rc < 0 ) {
@@ -92803,12 +92872,17 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 			}
 		}
 		EnterCriticalSec( &cs->csLock );
-		cs->busy++; // callbacks below may write; they queue, and we flush on the way out
+ // callbacks below may write; they queue, and we flush on the way out
+		cs->busy++;
 		size_t pass_start;
 		int idle_retries = 0;
 		while( 1 ) {
 			if( did_one && cs->pending.state != SSH_STATE_RESET ) break;
 			did_one = 1;
+			// A request that completes below leaves rc alone, so a stale EAGAIN from an
+			// earlier pass would end the loop before the next queued request starts;
+			// it would then wait for unrelated traffic on this session.
+			rc = 0;
 			pass_start = ssh_unconsumed( cs );
 			if( cs->pending.state == SSH_STATE_RESET )
 				DequeData( &cs->pdqStates, &cs->pending );
@@ -92825,7 +92899,8 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 				break;
 			*/
 			case SSH_STATE_HANDSHAKE:{
-					rc = libssh2_session_handshake( cs->session, 1/*sock*/ );
+/*sock*/
+					rc = libssh2_session_handshake( cs->session, 1 );
 					if( rc == LIBSSH2_ERROR_EAGAIN ) break;
 					else if( rc ) {
 						// error
@@ -92836,7 +92911,8 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 						} else {
 							lprintf( "Session Error(%d):%s", err, errmsg );
 						}
-						cs->pending.state = SSH_STATE_RESET; // allow a different connect?
+ // allow a different connect?
+						cs->pending.state = SSH_STATE_RESET;
 						while( !IsDataQueueEmpty( &cs->pdqStates ) ) {
 							// remove all other events too...
 							DequeData( &cs->pdqStates, NULL );
@@ -92926,7 +93002,8 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 					struct ssh_session* session = (struct ssh_session*)cs->pending.state_data[0];
 					CTEXTSTR remotehost = (CTEXTSTR)cs->pending.state_data[1];
 					int remoteport = (int)cs->pending.state_data[2];
-					int bound_port;// (int*)cs->pending.state_data[3];
+// (int*)cs->pending.state_data[3];
+					int bound_port;
 					LIBSSH2_LISTENER* listener = libssh2_channel_forward_listen_ex( session->session, remotehost, remoteport, &bound_port, 4096 );
 					if( !listener ) {
 						rc = libssh2_session_last_error( session->session, NULL, NULL, 0 );
@@ -93102,7 +93179,7 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 					else {
 						if( cs->pending.state_data[1] )
 							( (ssh_shell_cb)cs->pending.state_data[1] )( channel->psv, TRUE );
-						else 
+						else
 							if( channel->shell_open )
 							channel->shell_open( channel->psv, TRUE );
 						cs->pending.state = SSH_STATE_RESET;
@@ -93184,7 +93261,8 @@ static void _readCallback( struct ssh_session* cs, POINTER buffer, size_t length
 				if( !now ) break;
 				if( now < pass_start ) idle_retries = 0;
 				else if( idle_retries++ ) break;
-				did_one = 0; // run the same pending state again
+ // run the same pending state again
+				did_one = 0;
 				continue;
 			}
 		}
@@ -93236,15 +93314,24 @@ static void connectCallback( PCLIENT pc, int error ){
 	if( error ) {
 		// error
 #ifdef WIN32
-		char msgbuf[256];   // for a message up to 255 bytes.
-		msgbuf[0] = '\0';    // Microsoft doesn't guarantee this on man page.
-		DWORD errmsglen = FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,   // flags
-			NULL,                // lpsource
-			error,               // message id
-			MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),    // languageid
-			msgbuf,              // output buffer
-			sizeof( msgbuf ),     // size of msgbuf, bytes
-			NULL );               // va_list of arguments
+   // for a message up to 255 bytes.
+		char msgbuf[256];
+    // Microsoft doesn't guarantee this on man page.
+		msgbuf[0] = '\0';
+   // flags
+		DWORD errmsglen = FormatMessage( FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                // lpsource
+			NULL,
+               // message id
+			error,
+    // languageid
+			MAKELANGID( LANG_NEUTRAL, SUBLANG_DEFAULT ),
+              // output buffer
+			msgbuf,
+     // size of msgbuf, bytes
+			sizeof( msgbuf ),
+               // va_list of arguments
+			NULL );
 		CTEXTSTR errmsg = msgbuf;
 #else
 		CTEXTSTR errmsg = strerror( error ); int errmsglen = strlen( errmsg );
@@ -93260,13 +93347,15 @@ static void connectCallback( PCLIENT pc, int error ){
 			// remove all other events too...
 			DequeData( &session->pdqStates, NULL );
 		}
-		session->pending.state = SSH_STATE_RESET; // allow a different connect?
+ // allow a different connect?
+		session->pending.state = SSH_STATE_RESET;
 	}
 	else {
 		// success
 		uintptr_t cb = GetNetworkLong( session->pc, 1 );
 		set_pending_state( session->pending, SSH_STATE_HANDSHAKE, { (uintptr_t)cb } );
-		libssh2_session_handshake( session->session, 1/*sock*/ );
+/*sock*/
+		libssh2_session_handshake( session->session, 1 );
 	}
 }
 static void closeCallback( PCLIENT pc ) {
@@ -93289,6 +93378,7 @@ struct ssh_session * sack_ssh_session_init(uintptr_t psv){
 	InitializeCriticalSection( &session->csLock );
 	InitializeCriticalSection( &session->csOut );
 	session->pdqStates = CreateDataQueue( sizeof( struct pending_state ) );
+	session->pdqDeferred = CreateDataQueue( sizeof( struct pending_state ) );
 	session->psv = psv;
 	session->buffers = CreateDataList( sizeof( struct data_buffer ) );
 	session->session = libssh2_session_init_ex(alloc_callback, free_callback, realloc_callback, session);
@@ -93303,7 +93393,8 @@ void sack_ssh_session_open( struct ssh_session* session, ssh_session_read_cb *re
 	if( session->pending.state != SSH_STATE_RESET ) {
 		lprintf( "session is already in progress" );
 	}
-	session->pc = NULL;//OpenTCPClientExxx( host, port?port:22, readCallback, closeCallback, NULL, connectCallback, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
+//OpenTCPClientExxx( host, port?port:22, readCallback, closeCallback, NULL, connectCallback, OPEN_TCP_FLAG_DELAY_CONNECT DBG_SRC );
+	session->pc = NULL;
 	read[0] = (ssh_session_read_cb)_readCallback;
 	session->write = write;
 	session->close = close;
@@ -93631,7 +93722,8 @@ void sack_ssh_auth_user_cert( struct ssh_session*session, CTEXTSTR user
 				return;
 			}
 			session->bincert = bincert;
-			session->pubKey = bincert->keys[0].pubkey; // some part of keyparts?
+ // some part of keyparts?
+			session->pubKey = bincert->keys[0].pubkey;
 			session->pubKey_len = bincert->keys[0].pubkeylen;
 			session->privKey = bincert->keys[0].privkey;
 			session->privKey_len = bincert->keys[0].privkeylen;
@@ -93859,7 +93951,7 @@ static void AcceptedClient( PCLIENT pc, PCLIENT pcNew ) {
 		struct pending_state state = { SSH_STATE_FORWARD, { (uintptr_t)director } };
 		ssh_api_queue( listen->session, &state, locked );
 		return;
-	}	
+	}
 	set_pending_state( listen->session->pending, SSH_STATE_FORWARD, { (uintptr_t)director } );
 	if( OpenForwardDirector( director ) )
 		listen->session->pending.state = SSH_STATE_RESET;
@@ -94021,7 +94113,8 @@ struct ssh_websocket* sack_ssh_channel_serve_websocket( struct ssh_channel* chan
 	web_socket_event ws_event,
 	web_socket_closed ws_close,
 	web_socket_error ws_error,
-	web_socket_accept ws_accept,  // server socket event
+  // server socket event
+	web_socket_accept ws_accept,
 	web_socket_http_request ws_http,
 	web_socket_http_close ws_http_close,
 	web_socket_completion ws_completion,
