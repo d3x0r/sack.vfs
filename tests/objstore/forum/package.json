@@ -7,6 +7,6 @@
 		"test":"node forumDb.test.mjs && node ui/markdown.test.mjs"
 	},
 	"dependencies":{
-		"katex":"^0.16.22"
+		"katex":"^0.19.1"
 	}
 }
