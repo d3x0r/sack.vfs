@@ -35275,7 +35275,8 @@ static uintptr_t CPROC HandleTaskOutput( PTHREAD thread ) {
 #  ifdef _DEBUG
 						//lprintf( "Ending system thread because of broke pipe! %d", errno );
 #  endif
-						lprintf( "%d read = pipe failure. %d", dwRead, err );
+						if( dwRead || err )
+							lprintf( "%d read = pipe failure. %d", dwRead, err );
 						break;
 					}
 					if( task->flags.log_input )
