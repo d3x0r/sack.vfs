@@ -1,0 +1,61 @@
+body[data-layout="expandable"] {
+  margin: 0;
+  min-height: 100vh;
+  color: #f1f2f7;
+  background-color: #09090c;
+  background-image:
+    radial-gradient(ellipse at 0% 35%, #641c2b66 0%, transparent 52%),
+    radial-gradient(ellipse at 100% 80%, #751e2d55 0%, transparent 48%),
+    radial-gradient(ellipse at 50% 0%, #ba8f8f12 0%, transparent 60%);
+  background-attachment: fixed;
+  background-size: 100vw 100vh;
+  background-repeat: no-repeat;
+}
+body[data-layout="expandable"] .frameContainer-service-manager,
+body[data-layout="expandable"] .formContainer-service-manager { width: max-content; max-width: 100%; min-width: 0; box-sizing: border-box; }
+body[data-layout="expandable"] .frameCaption-service-manager { cursor: move; }
+.service-list { font: clamp(22px, 1.65vw, 36px)/1.35 system-ui, sans-serif; width: 100%; min-width: 0; box-sizing: border-box; padding: .4em; }
+.service-list *, .service-list *::before { box-sizing: border-box; }
+.service-filters { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: .7em; }
+.service-search, .service-filter { font: inherit; font-size: .75em; color: #f1f2f7; background: #212130; border: 1px solid #74748c; border-radius: .35em; padding: .55em .7em; min-width: 0; }
+.service-search { flex: 1 1 14em; }
+.service-filter { max-width: 100%; }
+.service-count { font-size: .65em; color: #c2c4d3; white-space: nowrap; }
+.service-rows { border: 1px solid #626278; border-radius: .35em; overflow: hidden; }
+.service-row + .service-row { border-top: 1px solid #55556b; }
+.service-summary { display: grid; grid-template-columns: .7em minmax(0, 1fr) auto auto; gap: .5em; align-items: center; padding: .5em .65em; cursor: pointer; list-style: none; }
+.service-summary::-webkit-details-marker { display: none; }
+.service-summary:hover { background: #393950; }
+.service-chevron { color: #b1b6cd; transition: transform .12s; text-align: center; }
+.service-row[open] > summary .service-chevron { transform: rotate(90deg); }
+.service-row[open] { background: #242435; }
+.service-row[open] > summary { background: #36384f; }
+.service-name { overflow-wrap: anywhere; }
+.service-status { font-size: .72em; white-space: nowrap; color: #c7c9d6; font-variant-numeric: tabular-nums; }
+.service-status::before { content: ''; display: inline-block; width: .5em; height: .5em; border-radius: 50%; margin-right: .5em; background: #9b9fb2; }
+.service-status[data-state="running"] { color: #a4e8bd; }
+.service-status[data-state="running"]::before { background: #72d49a; }
+.service-status[data-state="failed"] { color: #ffb1b6; }
+.service-status[data-state="failed"]::before { background: #ff7884; }
+.service-status[data-state="starting"], .service-status[data-state="waiting"], .service-status[data-state="stopping"] { color: #f3d28d; }
+.service-panel { padding: .6em .8em .8em 1.85em; }
+.service-changed { font-size: .65em; color: #c2c4d3; margin-bottom: .8em; }
+.service-actions { display: flex; flex-wrap: wrap; gap: .45em; }
+.service-action { font: inherit; font-size: .75em; color: #f3f4f9; background: #41445d; border: 1px solid #737994; border-radius: .35em; padding: .45em .85em; cursor: pointer; }
+.service-action:hover { filter: brightness(1.25); }
+.service-action[data-action="run once"] { background: #245a3c; border-color: #509a70; }
+.service-action[data-action="restart"] { background: #665025; border-color: #a48c51; }
+.service-action[data-action="stop"], .service-action[data-action="delete"] { color: #ffc3c8; border-color: #9e626e; background: #4b303d; }
+.service-list :focus-visible { outline: 3px solid #8dc9ff; outline-offset: 3px; }
+.service-error { color: #ffc3c8; font-size: .7em; }
+.service-error:empty { display: none; }
+.service-empty { font-size: .8em; color: #c2c4d3; }
+.service-list [hidden] { display: none !important; }
+body[data-layout="expandable"] .task-list-add { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .4em; padding: .5em; }
+body[data-layout="expandable"] .task-list-add > * { float: none; }
+@media(max-width: 850px) {
+  .service-summary { grid-template-columns: .7em minmax(0, 1fr) auto; }
+  .service-status { grid-column: 2; }
+  .service-summary > button { grid-column: 3; grid-row: 1 / span 2; }
+  .service-panel { padding-left: 1.85em; }
+}

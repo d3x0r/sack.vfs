@@ -6,6 +6,7 @@ import {Popup,popups} from "/node_modules/@d3x0r/popups2/popups.js"
 import "/node_modules/@d3x0r/popups2/controls/button.js"
 import {PagedFrame} from "/node_modules/@d3x0r/popups2/controls/paged-frame.js"
 import {DataGrid} from "/node_modules/@d3x0r/popups2/controls/data-grid.js"
+import {ExpandableTasks} from "./expandable-tasks.js"
 import {Checkbox} from "/node_modules/@d3x0r/popups2/controls/checkbox.js"
 
 import {TaskConfiguration} from "./taskConfiguration.js"
@@ -68,6 +69,7 @@ function showForm(arg) {
 class Display extends Popup {
 	constructor() {
 		super("Service Manager", document.body, { suffix: "-service-manager" });
+		this.divFrame.classList.add( "resizable-popup" );
 
 
 		// "Add Task" now lives on each page (see AddTaskList) so that it can
@@ -230,6 +232,12 @@ function AddTaskList(display, object, field) {
 		addFrame.className = "task-list-add";
 		display.appendChild( addFrame );
 		display.taskListAdd = addFrame;
+		const alternate = document.createElement( "a" );
+		const expandable = document.body.dataset.layout === "expandable";
+		alternate.href = expandable ? "./index-grid.html" : "./index.html";
+		alternate.textContent = expandable ? "Grid view" : "Expandable view";
+		alternate.className = "task-layout-link";
+		addFrame.appendChild( alternate );
 		if( managed )
 			popups.makeButton( addFrame, "Add Task", ()=>{
 				// `object` is this page's group: `local` for the master list, or
@@ -275,7 +283,7 @@ function AddTaskList(display, object, field) {
 		, { name:"Display", className: "-display", type:{suffix:" plum", click:(gridRow)=>showTaskAdmin(object,gridRow.rowData/*task*/), text: "✎"} }
 		, { name:"Show Log", className: "-log", type:{suffix:" blue", click:(gridRow)=>showLogClick(object,gridRow.rowData/*task*/), text: "🗎"} }
 		, { name:"Stop"    , className: "-stop", type:{suffix:" red", click(gridRow){protocol.stopTask(object,gridRow.rowData)}, text: "▢"} }
-		, { name:"Start"   , className: "-start", type:{suffix:" green", click(gridRow){protocol.startTask(object,gridRow.rowData)}, text: "▷"} }
+		, { name:"Run Once", className: "-start", type:{suffix:" green", click(gridRow){protocol.startTask(object,gridRow.rowData)}, text: "▷"} }
 		, { name:"Restart" , className: "-restart", type:{suffix:" pumpkin", click(gridRow){protocol.restartTask(object,gridRow.rowData)}, text: "↻"} }
 		//, { name:"Edit"    , className: "edit", type:{click:protocol.editTask.bind( protocol,object), text: "Edit ✎"} }
 	];
@@ -296,7 +304,8 @@ function AddTaskList(display, object, field) {
 		}, text: "🗑"} } );
 
 
-	const dataGrid = new DataGrid( display, object, field, {//suffix:'-browse'
+	const TaskList = document.body.dataset.layout === "expandable" ? ExpandableTasks : DataGrid;
+	const dataGrid = new TaskList( display, object, field, {//suffix:'-browse'
 		edit:false,
 		filter:true,
       columns } );
@@ -424,11 +433,27 @@ function getLogLineText( line, showTime ) {
 }
 
 function renderLogLine( span, line, showTime ) {
-	span.textContent = getLogLineText( line, showTime );
+	span.textContent = "";
+	const appendTime = text => {
+		const time = document.createElement( "span" );
+		time.className = "task-log-time";
+		time.textContent = text;
+		span.appendChild( time );
+	};
+	if( showTime && line && line.time ) {
+		const timestamp = formatLogTimestamp( line.time );
+		if( timestamp ) appendTime( "[" + timestamp + "] " );
+	}
+	const text = String( getLogLineText( line, false ) ?? "" );
+	// Native task output may already begin with an elapsed-time segment.
+	const prefix = text.match( /^\d+:\d{2}:\d{2}(?:\.\d+)?(?=\|)/ );
+	if( prefix ) appendTime( prefix[0] );
+	span.appendChild( document.createTextNode( prefix ? text.slice( prefix[0].length ) : text ) );
 }
 
 function addTaskLog( task, log ) {
 	const logFrame = new Popup( task.name, document.body, { enableClose:true} );
+	logFrame.divFrame.classList.add( "resizable-popup", "task-log-window" );
 	// a dropped connection closes it like the other per-task dialogs
 	local.dialogs.add( logFrame );
 	logFrame.on( "captionClose", ()=>closeLogFrame( task.id ) );
@@ -437,8 +462,11 @@ function addTaskLog( task, log ) {
 		follow: true, 
 		showTime: false,
 	}
-	const follow = popups.makeCheckbox( logFrame,  opts, "follow", "Follow Log" );
-	const showTime = popups.makeCheckbox( logFrame, opts, "showTime", "Show Time Stamps" );
+	const logControls = document.createElement( "div" );
+	logControls.className = "task-log-controls";
+	logFrame.appendChild( logControls );
+	const follow = popups.makeCheckbox( logControls, opts, "follow", "Follow Log" );
+	const showTime = popups.makeCheckbox( logControls, opts, "showTime", "Show Time Stamps" );
 	// add() chases the tail when following; backlog inserts have to opt out of
 	// that or every inserted line snaps the view to the bottom.
 	const state = { suspendFollow:false };

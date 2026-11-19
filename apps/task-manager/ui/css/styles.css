@@ -54,6 +54,37 @@
 	margin-bottom: 2px;
 }
 
+/* Separate overlapping windows without brightening their contents. */
+[class^="frameContainer"] {
+	border-color: #a5a9bb;
+	box-shadow: 0 0 0 1px #08090d, 0 10px 30px #0009;
+}
+
+.resizable-popup {
+	resize: both;
+	overflow: hidden;
+	display: flex;
+	flex-direction: column;
+	min-width: min(22rem, 100vw);
+	min-height: 12rem;
+	box-sizing: border-box;
+}
+.resizable-popup > [class^="frameCaption"] { flex: 0 0 auto; cursor: move; }
+.resizable-popup > [class^="frameContent"] {
+	flex: 1 1 auto;
+	min-width: 0;
+	min-height: 0;
+	overflow: auto;
+}
+.task-layout-link { display: inline-block; padding: .4em .7em; color: #b8dcff; font: 18px system-ui, sans-serif; }
+.task-log-window { width: 64vw; height: 85vh; }
+.task-log-window > [class^="frameContent"] { display: flex; flex-direction: column; }
+.task-log-window .task-log-listbox { flex: 1 1 auto; width: auto; height: auto; min-height: 0; }
+.task-log-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1.5rem; flex: 0 0 auto; padding: .35rem 0; }
+.task-log-controls > [class^="fieldUnit"] { display: flex; align-items: center; gap: .6rem; width: auto; margin: 0; padding: .25rem .4rem; box-shadow: none; }
+.task-log-controls .field-unit-span { width: auto; margin: 0; white-space: nowrap; }
+.task-log-controls [class^="checkOption"] { float: none; position: static; margin: 0; }
+.task-log-listbox .task-log-time { color: #fff; }
 .task-log-listbox {
     /* make scrollable */
     height: 80vh;
